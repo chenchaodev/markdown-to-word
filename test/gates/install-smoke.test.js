@@ -66,6 +66,7 @@ import {
 } from "../../gates/artifacts/check-install-smoke.mjs";
 import { SMOKE_MARKERS } from "../../gates/smoke/smoke-proc.mjs";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 import { ROOT } from "../harness/paths.js";
 import { removeFile } from "../harness/temp-resource.js";
 
@@ -1005,6 +1006,7 @@ async function runInstallWithFakeResidue({
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const realReleaseBefore = treeFingerprint(path.join(ROOT, "release"));
   /** @type {string[]} */
   const sandboxes = [];
@@ -1012,28 +1014,36 @@ export async function run() {
   let failure = null;
   try {
     // ---------- 0. 沙箱纪律:脚本原位执行 + 契约常量非空 ----------
-    {
+    await suite.describe("0. 沙箱纪律:脚本原位执行 + 契约常量非空", async (s) => {
       // ⚠ 这里曾有一条「沙盒副本与生产脚本逐字节一致」的断言,随副本机制一并删除:
       //   它是**自指**的(复制是为了断言复制品等于原件),而真脚本原位执行后该断言
       //   恒成立且无信息量。防「测的不是被测实现」现在由构造方式本身保证:
       //   spawn 的目标是 path.join(ROOT, …) 那一份,沙盒里没有任何脚本副本。
       const root = createSandbox();
       sandboxes.push(root);
-      assert(
-        !fs.existsSync(path.join(root, "gates", "artifacts", "check-unpacked-smoke.mjs")),
-        "沙盒内不应存在被测脚本副本(它从仓内原位跑)",
-      );
-      // 标记清单自检:非空且全部取自 smoke 输出的 [smoke] 前缀,否则「缺哪几条」断言失去意义
-      assert(SMOKE_MARKERS.length === 5, `诊断标记应为 5 条,实际 ${SMOKE_MARKERS.length}`);
-      assert(
-        SMOKE_MARKERS.every((marker) => marker.token.startsWith("[smoke] ")),
-        "诊断标记应全部取自 smoke 输出的 [smoke] 前缀",
-      );
+
+      await s.case("0a 沙盒内不存在被测脚本副本(它从仓内原位跑)", () => {
+        assert(
+          !fs.existsSync(path.join(root, "gates", "artifacts", "check-unpacked-smoke.mjs")),
+          "沙盒内不应存在被测脚本副本(它从仓内原位跑)",
+        );
+      });
+
+      await s.case("0b 诊断标记清单非空且全部取自 [smoke] 前缀", () => {
+        // 标记清单自检:非空且全部取自 smoke 输出的 [smoke] 前缀,否则「缺哪几条」断言失去意义
+        assert(SMOKE_MARKERS.length === 5, `诊断标记应为 5 条,实际 ${SMOKE_MARKERS.length}`);
+        assert(
+          SMOKE_MARKERS.every((marker) => marker.token.startsWith("[smoke] ")),
+          "诊断标记应全部取自 smoke 输出的 [smoke] 前缀",
+        );
+      });
       removeSandbox(root);
-    }
+    });
 
     // ---------- 1. 解包产物正常路径:调用序 + 隔离 + 清理 + 零改动 ----------
-    {
+    await suite.describe("1. 解包产物正常路径:调用序 + 隔离 + 清理 + 零改动", async (s) => {
+      // 一次真启动 + 留痕读数备在 case 之外:下面四条 case 共用同一份结果,
+      // 而它要真起一次子进程(秒级),搬进任一 case 只会把同一件事测四遍
       const root = createSandbox();
       sandboxes.push(root);
       const scratch = path.join(root, "scratch");
@@ -1045,41 +1055,54 @@ export async function run() {
         ["--scratch", scratch, "--launcher", path.join(root, "stub.mjs"), "--launcher-runtime", NODE],
         { M2W_STUB_MODE: "ok", M2W_STUB_TRACE: tracePath },
       );
-      assert(result.code === 0, `解包 smoke 正常路径应通过,实际 ${result.code}\n${result.output}`);
-      assert(/解包产物 smoke 通过/.test(result.output), `应报告通过文案;实际:${result.output}`);
-      // 「断言跑了」的可分辨判据:通过也必须报落位计数,否则「跑了且通过」与「压根没跑」同形
-      assert(
-        /转发器落位已核对 1\/1\(m2w\.cmd/.test(result.output),
-        `通过结论行应带转发器落位计数(证明断言真的跑了);实际:${result.output}`,
-      );
-
       const trace = readTrace(tracePath);
-      assert(trace.length === 1, `桩应只被启动一次,实际 ${trace.length} 次`);
       const call = trace[0];
+      // 取数前置留在分组主体:桩没留下调用记录时,下面两条关于「桩被如何启动」的 case
+      // 都会退化成 undefined 上的连带失败,盖掉真因
+      assert(trace.length === 1, `桩应只被启动一次,实际 ${trace.length} 次`);
       assert(call !== undefined, "桩未留下调用记录");
-      assert(call.argv.includes("--smoke"), `启动参数应含 --smoke,实际 ${JSON.stringify(call.argv)}`);
-      const userDataArg = /** @type {string} */ (call.argv.find((arg) => arg.startsWith("--user-data-dir=")));
-      assert(userDataArg !== "", `启动参数应含 --user-data-dir,实际 ${JSON.stringify(call.argv)}`);
-      assert(userDataArg.includes(scratch), `--user-data-dir 应落在临时根内,实际 ${userDataArg}`);
-      assert(
-        call.argv.indexOf("--smoke") < call.argv.indexOf(userDataArg),
-        `参数序应为 --smoke 在前、--user-data-dir 在后,实际 ${JSON.stringify(call.argv)}`,
-      );
-      assert(
-        call.appdata.includes(scratch) && call.localappdata.includes(scratch),
-        `APPDATA/LOCALAPPDATA 应被重定向进临时根(实际 ${call.appdata} / ${call.localappdata})`,
-      );
-      assert(scratchIsClean(scratch), `通过后不应残留一次性 userData:${safeList(scratch)}`);
-      assert(!fs.existsSync(path.join(scratch, "unpacked-smoke.log")), "通过路径不应留痕日志");
-      assert(
-        treeFingerprint(path.join(root, "release", "win-unpacked")) === unpackedBefore,
-        "解包目录内产物不得被改动",
-      );
+
+      await s.case("1a 正常路径通过:退出码 0 + 通过文案 + 转发器落位计数", () => {
+        assert(result.code === 0, `解包 smoke 正常路径应通过,实际 ${result.code}\n${result.output}`);
+        assert(/解包产物 smoke 通过/.test(result.output), `应报告通过文案;实际:${result.output}`);
+        // 「断言跑了」的可分辨判据:通过也必须报落位计数,否则「跑了且通过」与「压根没跑」同形
+        assert(
+          /转发器落位已核对 1\/1\(m2w\.cmd/.test(result.output),
+          `通过结论行应带转发器落位计数(证明断言真的跑了);实际:${result.output}`,
+        );
+      });
+
+      await s.case("1b 启动调用序:参数带 --smoke 与落在临时根内的 --user-data-dir", () => {
+        assert(call.argv.includes("--smoke"), `启动参数应含 --smoke,实际 ${JSON.stringify(call.argv)}`);
+        const userDataArg = /** @type {string} */ (call.argv.find((arg) => arg.startsWith("--user-data-dir=")));
+        assert(userDataArg !== "", `启动参数应含 --user-data-dir,实际 ${JSON.stringify(call.argv)}`);
+        assert(userDataArg.includes(scratch), `--user-data-dir 应落在临时根内,实际 ${userDataArg}`);
+        assert(
+          call.argv.indexOf("--smoke") < call.argv.indexOf(userDataArg),
+          `参数序应为 --smoke 在前、--user-data-dir 在后,实际 ${JSON.stringify(call.argv)}`,
+        );
+      });
+
+      await s.case("1c 隔离:APPDATA / LOCALAPPDATA 被重定向进临时根", () => {
+        assert(
+          call.appdata.includes(scratch) && call.localappdata.includes(scratch),
+          `APPDATA/LOCALAPPDATA 应被重定向进临时根(实际 ${call.appdata} / ${call.localappdata})`,
+        );
+      });
+
+      await s.case("1d 清理与零改动:不留 userData 与日志,解包目录逐字节未动", () => {
+        assert(scratchIsClean(scratch), `通过后不应残留一次性 userData:${safeList(scratch)}`);
+        assert(!fs.existsSync(path.join(scratch, "unpacked-smoke.log")), "通过路径不应留痕日志");
+        assert(
+          treeFingerprint(path.join(root, "release", "win-unpacked")) === unpackedBefore,
+          "解包目录内产物不得被改动",
+        );
+      });
       console.log("[ok] install-smoke:解包 smoke 正常路径通过(退出码 0 + 五条标记齐备),启动调用序与清理正确");
-    }
+    });
 
     // ---------- 2. 非零退出判红:退出码与缺失标记都指名道姓 ----------
-    {
+    await suite.describe("2. 非零退出判红:退出码与缺失标记都指名道姓", async (s) => {
       const root = createSandbox();
       sandboxes.push(root);
       const scratch = path.join(root, "scratch");
@@ -1089,24 +1112,30 @@ export async function run() {
         ["--scratch", scratch, "--launcher", path.join(root, "stub.mjs"), "--launcher-runtime", NODE],
         { M2W_STUB_MODE: "fail" },
       );
-      assert(result.code === 1, `非零退出应判红,实际 ${result.code}\n${result.output}`);
-      assert(/退出码为 3,期望 0/.test(result.output), `应报出实际退出码;实际:${result.output}`);
-      const missing = SMOKE_MARKERS.slice(2).map((marker) => marker.label);
-      assert(
-        result.output.includes(`输出缺少诊断标记:${missing.join("、")}`),
-        `应逐条报出缺失的标记(${missing.join("、")});实际:${result.output}`,
-      );
-      assert(/完整输出已留痕/.test(result.output), `失败应留痕完整输出;实际:${result.output}`);
-      assert(
-        fs.existsSync(path.join(scratch, "unpacked-smoke.log")),
-        "失败应在临时根内留痕日志(不写仓库其它位置)",
-      );
-      assert(scratchIsClean(scratch), "失败路径同样不得残留一次性 userData");
+
+      await s.case("2a 判红并报出实际退出码与逐条缺失的诊断标记", () => {
+        assert(result.code === 1, `非零退出应判红,实际 ${result.code}\n${result.output}`);
+        assert(/退出码为 3,期望 0/.test(result.output), `应报出实际退出码;实际:${result.output}`);
+        const missing = SMOKE_MARKERS.slice(2).map((marker) => marker.label);
+        assert(
+          result.output.includes(`输出缺少诊断标记:${missing.join("、")}`),
+          `应逐条报出缺失的标记(${missing.join("、")});实际:${result.output}`,
+        );
+        assert(/完整输出已留痕/.test(result.output), `失败应留痕完整输出;实际:${result.output}`);
+      });
+
+      await s.case("2b 失败留痕只写在临时根内,且不留残留一次性 userData", () => {
+        assert(
+          fs.existsSync(path.join(scratch, "unpacked-smoke.log")),
+          "失败应在临时根内留痕日志(不写仓库其它位置)",
+        );
+        assert(scratchIsClean(scratch), "失败路径同样不得残留一次性 userData");
+      });
       console.log("[ok] install-smoke:非零退出判红,退出码与缺失标记逐条可读,失败留痕且 userData 已清");
-    }
+    });
 
     // ---------- 3. 超时判红:硬超时生效 + 进程树连带硬杀 + 不留孤儿 ----------
-    {
+    await suite.describe("3. 超时判红:硬超时生效 + 进程树连带硬杀 + 不留孤儿", async (s) => {
       const root = createSandbox();
       sandboxes.push(root);
       const scratch = path.join(root, "scratch");
@@ -1129,93 +1158,119 @@ export async function run() {
         ],
         { M2W_STUB_MODE: "hang", M2W_STUB_PID_FILE: pidFile, M2W_STUB_BEACON: beacon },
       );
-      assert(result.code === 1, `超时应判红,实际 ${result.code}\n${result.output}`);
-      assert(/超过硬超时未自行退出,已硬杀进程树/.test(result.output), `应报出硬超时与硬杀;实际:${result.output}`);
-      assert(result.ms < 60_000, `判定脚本自身不得被挂住(实际耗时 ${result.ms}ms)`);
-      assert(fs.existsSync(pidFile), "桩应已启动过(否则超时断言测的不是真启动)");
-      const stubPid = Number(fs.readFileSync(pidFile, "utf8"));
-      assert(!isAlive(stubPid), `桩进程应已被硬杀(仍存活:${stubPid})`);
-      assert(scratchIsClean(scratch), "超时路径同样不得残留一次性 userData");
-      if (process.platform === "win32") {
-        // 孙进程存活信标:Windows 无进程组,只有 taskkill /T 才连它一起收掉
-        const watch = await watchBeaconAbsent(beacon, launchedAt);
-        assert(
-          watch.absent,
-          `超时后孙进程仍在跑(进程树未连带硬杀,会留孤儿):存活信标在启动后 ${watch.elapsedMs}ms 出现:${beacon}`,
-        );
-        console.log("[ok] install-smoke:超时判红,桩与其派生的孙进程均被连带硬杀(无孤儿进程)");
-      } else {
-        await new Promise((resolve) => setTimeout(resolve, 4000));
-        assert(fs.existsSync(beacon), "非 win32 平台 SIGKILL 不含后代进程,孙进程存活属预期");
-        removeFile(beacon); // 活下来的一次性信标文件:走 removeFile(退避重试 + 删后复查)
-        console.log("[skip] install-smoke:进程树连带硬杀断言仅在 win32 覆盖(本平台 SIGKILL 不含后代进程)");
-      }
+
+      await s.case("3a 硬超时生效:判红、报出硬杀、判定脚本自身未被挂住", () => {
+        assert(result.code === 1, `超时应判红,实际 ${result.code}\n${result.output}`);
+        assert(/超过硬超时未自行退出,已硬杀进程树/.test(result.output), `应报出硬超时与硬杀;实际:${result.output}`);
+        assert(result.ms < 60_000, `判定脚本自身不得被挂住(实际耗时 ${result.ms}ms)`);
+      });
+
+      await s.case("3b 桩确实启动过且已被硬杀,临时根无残留", () => {
+        assert(fs.existsSync(pidFile), "桩应已启动过(否则超时断言测的不是真启动)");
+        const stubPid = Number(fs.readFileSync(pidFile, "utf8"));
+        assert(!isAlive(stubPid), `桩进程应已被硬杀(仍存活:${stubPid})`);
+        assert(scratchIsClean(scratch), "超时路径同样不得残留一次性 userData");
+      });
+
+      await s.case("3c 进程树连带硬杀:桩派生的孙进程一并收掉(win32 口径)", async () => {
+        if (process.platform === "win32") {
+          // 孙进程存活信标:Windows 无进程组,只有 taskkill /T 才连它一起收掉
+          const watch = await watchBeaconAbsent(beacon, launchedAt);
+          assert(
+            watch.absent,
+            `超时后孙进程仍在跑(进程树未连带硬杀,会留孤儿):存活信标在启动后 ${watch.elapsedMs}ms 出现:${beacon}`,
+          );
+          console.log("[ok] install-smoke:超时判红,桩与其派生的孙进程均被连带硬杀(无孤儿进程)");
+        } else {
+          await new Promise((resolve) => setTimeout(resolve, 4000));
+          assert(fs.existsSync(beacon), "非 win32 平台 SIGKILL 不含后代进程,孙进程存活属预期");
+          removeFile(beacon); // 活下来的一次性信标文件:走 removeFile(退避重试 + 删后复查)
+          console.log("[skip] install-smoke:进程树连带硬杀断言仅在 win32 覆盖(本平台 SIGKILL 不含后代进程)");
+        }
+      });
       console.log("[ok] install-smoke:超时判红(硬超时生效、不留孤儿进程、userData 已清)");
-    }
+    });
 
     // ---------- 4. 预演模式零系统副作用 ----------
-    {
+    await suite.describe("4. 预演模式零系统副作用", async (s) => {
       const root = createSandbox();
       sandboxes.push(root);
       const installDir = path.join(root, "installed", FIXTURE_PRODUCT);
       const scratch = path.join(root, "scratch");
       const before = treeFingerprint(root);
       const result = runScript(root, "check-install-smoke.mjs", ["--install-dir", installDir, "--scratch", scratch]);
-      assert(result.code === 0, `预演模式应零退出,实际 ${result.code}\n${result.output}`);
-      assert(/预演模式/.test(result.output), `应声明处于预演模式;实际:${result.output}`);
-      assert(
-        result.output.includes(`${FIXTURE_PRODUCT}-Setup-${FIXTURE_VERSION}.exe /S`) &&
-          result.output.includes(`/D=${installDir}`),
-        `应预告静默安装命令(含 /S 与 /D=);实际:${result.output}`,
-      );
-      assert(/启动并跑 smoke/.test(result.output), `应预告启动 smoke 步骤;实际:${result.output}`);
-      assert(
-        result.output.includes(`Uninstall ${FIXTURE_PRODUCT}.exe`) && /\/S/.test(result.output),
-        `应预告静默卸载命令;实际:${result.output}`,
-      );
-      assert(/退出码为 0/.test(result.output), `应预告启动判定项(退出码);实际:${result.output}`);
-      assert(/诊断标记/.test(result.output), `应预告启动判定项(诊断标记);实际:${result.output}`);
-      assert(/安装目录已消失/.test(result.output), `应预告卸载后的安装目录校验项;实际:${result.output}`);
-      assert(/开始菜单痕迹已清理/.test(result.output), `应预告开始菜单残留校验项;实际:${result.output}`);
-      assert(/卸载注册表无新增项/.test(result.output), `应预告注册表残留校验项;实际:${result.output}`);
-      assert(!/即将真实执行安装/.test(result.output), "预演模式不得打印真实执行警告(那是 --execute 的门禁标记)");
-      assert(!fs.existsSync(installDir), "预演模式不得创建安装目录(未执行安装命令)");
-      assert(!fs.existsSync(scratch), "预演模式不得创建一次性 userData 目录");
-      assert(treeFingerprint(root) === before, "预演模式不得改动任何文件(含沙盒内的 release 产物)");
+
+      await s.case("4a 预演只打印三步计划:安装 / 启动 smoke / 卸载的命令与判定项", () => {
+        assert(result.code === 0, `预演模式应零退出,实际 ${result.code}\n${result.output}`);
+        assert(/预演模式/.test(result.output), `应声明处于预演模式;实际:${result.output}`);
+        assert(
+          result.output.includes(`${FIXTURE_PRODUCT}-Setup-${FIXTURE_VERSION}.exe /S`) &&
+            result.output.includes(`/D=${installDir}`),
+          `应预告静默安装命令(含 /S 与 /D=);实际:${result.output}`,
+        );
+        assert(/启动并跑 smoke/.test(result.output), `应预告启动 smoke 步骤;实际:${result.output}`);
+        assert(
+          result.output.includes(`Uninstall ${FIXTURE_PRODUCT}.exe`) && /\/S/.test(result.output),
+          `应预告静默卸载命令;实际:${result.output}`,
+        );
+        assert(/退出码为 0/.test(result.output), `应预告启动判定项(退出码);实际:${result.output}`);
+        assert(/诊断标记/.test(result.output), `应预告启动判定项(诊断标记);实际:${result.output}`);
+        assert(/安装目录已消失/.test(result.output), `应预告卸载后的安装目录校验项;实际:${result.output}`);
+        assert(/开始菜单痕迹已清理/.test(result.output), `应预告开始菜单残留校验项;实际:${result.output}`);
+        assert(/卸载注册表无新增项/.test(result.output), `应预告注册表残留校验项;实际:${result.output}`);
+      });
+
+      await s.case("4b 零系统副作用:不打印真实执行警告、不建任何目录、文件树逐字节未动", () => {
+        assert(!/即将真实执行安装/.test(result.output), "预演模式不得打印真实执行警告(那是 --execute 的门禁标记)");
+        assert(!fs.existsSync(installDir), "预演模式不得创建安装目录(未执行安装命令)");
+        assert(!fs.existsSync(scratch), "预演模式不得创建一次性 userData 目录");
+        assert(treeFingerprint(root) === before, "预演模式不得改动任何文件(含沙盒内的 release 产物)");
+      });
       console.log("[ok] install-smoke:预演模式只打印三步计划,零系统副作用(未执行安装命令/未建任何目录)");
-    }
+    });
 
     // ---------- 5. 产物缺失:可操作提示(先跑 dist 链) ----------
-    {
+    await suite.describe("5. 产物缺失:可操作提示(先跑 dist 链)", async (s) => {
       const root = createSandbox({ installer: false });
       sandboxes.push(root);
-      fs.mkdirSync(path.join(root, "release"), { recursive: true });
-      const noInstaller = runScript(root, "check-install-smoke.mjs", ["--install-dir", path.join(root, "installed")]);
-      assert(noInstaller.code === 1, `缺安装包应判红,实际 ${noInstaller.code}\n${noInstaller.output}`);
-      assert(
-        noInstaller.output.includes("安装包缺失或为空") && noInstaller.output.includes("请先运行 npm run dist"),
-        `缺安装包应给出「先跑 dist 链」的可操作提示;实际:${noInstaller.output}`,
-      );
-      fs.rmSync(path.join(root, "release"), { recursive: true, force: true });
-      const noRelease = runScript(root, "check-install-smoke.mjs", ["--install-dir", path.join(root, "installed")]);
-      assert(noRelease.code === 1, `缺发布目录应判红,实际 ${noRelease.code}\n${noRelease.output}`);
-      assert(
-        noRelease.output.includes("发布目录不存在") && noRelease.output.includes("npm run dist"),
-        `缺发布目录应给出可操作提示;实际:${noRelease.output}`,
-      );
-      fs.mkdirSync(path.join(root, "release"), { recursive: true });
-      const noUnpacked = runScript(root, "check-unpacked-smoke.mjs", ["--scratch", path.join(root, "scratch")]);
-      assert(noUnpacked.code === 1, `缺解包目录应判红,实际 ${noUnpacked.code}\n${noUnpacked.output}`);
-      assert(
-        noUnpacked.output.includes("解包目录不存在") && noUnpacked.output.includes("npm run dist"),
-        `缺解包目录应给出可操作提示;实际:${noUnpacked.output}`,
-      );
-      assert(/未启动任何进程/.test(noUnpacked.output), `预检未通过时应声明未启动任何进程;实际:${noUnpacked.output}`);
+
+      // 三个漂移各自铺自己的目录形状再各跑一次:前一条 case 失败不该让后一条
+      // 连带失败(那会把「哪一类产物缺失没给出提示」退化成看不出是哪一类)
+      await s.case("5a 缺安装包:判红并给出「先跑 dist 链」的可操作提示", () => {
+        fs.mkdirSync(path.join(root, "release"), { recursive: true });
+        const noInstaller = runScript(root, "check-install-smoke.mjs", ["--install-dir", path.join(root, "installed")]);
+        assert(noInstaller.code === 1, `缺安装包应判红,实际 ${noInstaller.code}\n${noInstaller.output}`);
+        assert(
+          noInstaller.output.includes("安装包缺失或为空") && noInstaller.output.includes("请先运行 npm run dist"),
+          `缺安装包应给出「先跑 dist 链」的可操作提示;实际:${noInstaller.output}`,
+        );
+      });
+
+      await s.case("5b 缺发布目录:判红并给出可操作提示", () => {
+        fs.rmSync(path.join(root, "release"), { recursive: true, force: true });
+        const noRelease = runScript(root, "check-install-smoke.mjs", ["--install-dir", path.join(root, "installed")]);
+        assert(noRelease.code === 1, `缺发布目录应判红,实际 ${noRelease.code}\n${noRelease.output}`);
+        assert(
+          noRelease.output.includes("发布目录不存在") && noRelease.output.includes("npm run dist"),
+          `缺发布目录应给出可操作提示;实际:${noRelease.output}`,
+        );
+      });
+
+      await s.case("5c 缺解包目录:判红、给出提示,并声明未启动任何进程", () => {
+        fs.mkdirSync(path.join(root, "release"), { recursive: true });
+        const noUnpacked = runScript(root, "check-unpacked-smoke.mjs", ["--scratch", path.join(root, "scratch")]);
+        assert(noUnpacked.code === 1, `缺解包目录应判红,实际 ${noUnpacked.code}\n${noUnpacked.output}`);
+        assert(
+          noUnpacked.output.includes("解包目录不存在") && noUnpacked.output.includes("npm run dist"),
+          `缺解包目录应给出可操作提示;实际:${noUnpacked.output}`,
+        );
+        assert(/未启动任何进程/.test(noUnpacked.output), `预检未通过时应声明未启动任何进程;实际:${noUnpacked.output}`);
+      });
       console.log("[ok] install-smoke:产物缺失(发布目录/安装包/解包目录)均判红并给出「先跑 npm run dist」的可操作提示");
-    }
+    });
 
     // ---------- 6. 能力缺口告警:asar 内缺冒烟入口 ----------
-    {
+    await suite.describe("6. 能力缺口告警:asar 内缺冒烟入口", async (s) => {
       const root = createSandbox({ smokeEntryInAsar: false });
       sandboxes.push(root);
       const result = runScript(
@@ -1224,16 +1279,20 @@ export async function run() {
         ["--scratch", path.join(root, "scratch"), "--launcher", path.join(root, "stub.mjs"), "--launcher-runtime", NODE],
         { M2W_STUB_MODE: "ok" },
       );
-      assert(result.code === 0, `桩跑通时判定应通过(能力缺口只告警);实际 ${result.code}\n${result.output}`);
-      assert(
-        result.output.includes("app.asar 内未找到冒烟入口") && result.output.includes(SMOKE_ENTRY),
-        `包内缺冒烟入口应告警并点名路径;实际:${result.output}`,
-      );
+
+      await s.case("6a 桩跑通时判定仍通过,只以可操作告警点名缺失的冒烟入口", () => {
+        assert(result.code === 0, `桩跑通时判定应通过(能力缺口只告警);实际 ${result.code}\n${result.output}`);
+        assert(
+          result.output.includes("app.asar 内未找到冒烟入口") && result.output.includes(SMOKE_ENTRY),
+          `包内缺冒烟入口应告警并点名路径;实际:${result.output}`,
+        );
+      });
       console.log("[ok] install-smoke:app.asar 内缺冒烟入口时先以可操作告警点出能力缺口(不吞也不误判)");
-    }
+    });
 
     // ---------- 7. 隔离契约:两次运行目录不同,退出即清 ----------
-    {
+    await suite.describe("7. 隔离契约:两次运行目录不同,退出即清", async (s) => {
+      // 两次真启动与留痕读数备在 case 之外(与 1 组同理):下面三条 case 共用这一份事实
       const root = createSandbox();
       sandboxes.push(root);
       const tracePath = path.join(root, "trace.jsonl");
@@ -1248,15 +1307,24 @@ export async function run() {
         assert(result.code === 0, `第 ${i + 1} 次运行应通过,实际 ${result.code}\n${result.output}`);
       }
       const trace = readTrace(tracePath);
-      assert(trace.length === 2, `两次运行应各启动一次桩,实际 ${trace.length} 次`);
       const switches = trace.map((entry) => /** @type {string} */ (entry.argv.find((arg) => arg.startsWith("--user-data-dir="))));
-      assert(switches[0] !== switches[1], `两次运行应使用不同的一次性 userData(实际 ${switches.join(" / ")})`);
-      assert(scratchIsClean(scratch), `两次运行后不应残留任何一次性 userData:${safeList(scratch)}`);
+
+      await s.case("7a 两次运行各启动一次桩", () => {
+        assert(trace.length === 2, `两次运行应各启动一次桩,实际 ${trace.length} 次`);
+      });
+
+      await s.case("7b 两次运行使用不同的一次性 userData", () => {
+        assert(switches[0] !== switches[1], `两次运行应使用不同的一次性 userData(实际 ${switches.join(" / ")})`);
+      });
+
+      await s.case("7c 两次运行后临时根无任何残留", () => {
+        assert(scratchIsClean(scratch), `两次运行后不应残留任何一次性 userData:${safeList(scratch)}`);
+      });
       console.log("[ok] install-smoke:每次运行独立 userData、退出即清理(两次运行目录不同且无残留)");
-    }
+    });
 
     // ---------- 8. --execute 路径(沙盒替身执行器):调用序 + 警告 + 清理 ----------
-    {
+    await suite.describe("8. --execute 路径(沙盒替身执行器):调用序 + 警告 + 清理", async (s) => {
       const root = createSandbox();
       sandboxes.push(root);
       const installDir = path.join(root, "installed", FIXTURE_PRODUCT);
@@ -1264,138 +1332,172 @@ export async function run() {
       const { result: flow, output } = await withCapturedOutput(() =>
         runInstallExecuteWithStubs({ installDir, scratchRoot: scratch }),
       );
-      assert(flow.code === 0, `沙盒 execute 路径应通过,实际 ${flow.code}\n${output}`);
-      assert(
-        flow.calls.length === 2 &&
-          flow.calls[0] === `fake-installer.exe /S /D=${installDir}` &&
-          flow.calls[1] === `Uninstall ${FIXTURE_PRODUCT}.exe /S`,
-        `调用序应为 安装(/S /D=) → 卸载(/S),实际 ${JSON.stringify(flow.calls)}`,
-      );
-      assert(flow.launchCalls.length === 1, `启动 smoke 应恰好一次,实际 ${flow.launchCalls.length} 次`);
       const launch = flow.launchCalls[0];
+      // 取数前置留在分组主体:启动调用没被记录时,下面两条关于 userData 生命周期的
+      // case 全都会退化成 undefined 上的连带失败,盖掉真因
       assert(launch !== undefined, "启动调用未被记录");
-      assert(launch.userDataDir.includes(scratch), `启动应使用临时根内的 userData,实际 ${launch.userDataDir}`);
-      assert(launch.existedDuring, "启动期间一次性 userData 目录应已就绪");
-      assert(!fs.existsSync(launch.userDataDir), "退出后一次性 userData 必须被清理");
-      assert(/即将真实执行安装/.test(output), `execute 路径必须先打印醒目警告;实际:${output}`);
-      assert(output.includes(installDir), `警告应点名安装目录;实际:${output}`);
-      assert(/管理员权限/.test(output), `警告应提示管理员权限(UAC);实际:${output}`);
-      assert(
-        output.indexOf("步骤 1/3") < output.indexOf("步骤 2/3") && output.indexOf("步骤 2/3") < output.indexOf("步骤 3/3"),
-        `三步顺序应为 安装 → 启动 → 卸载;实际:${output}`,
-      );
+
+      await s.case("8a 调用序:安装(/S /D=) → 卸载(/S)", () => {
+        assert(flow.code === 0, `沙盒 execute 路径应通过,实际 ${flow.code}\n${output}`);
+        assert(
+          flow.calls.length === 2 &&
+            flow.calls[0] === `fake-installer.exe /S /D=${installDir}` &&
+            flow.calls[1] === `Uninstall ${FIXTURE_PRODUCT}.exe /S`,
+          `调用序应为 安装(/S /D=) → 卸载(/S),实际 ${JSON.stringify(flow.calls)}`,
+        );
+      });
+
+      await s.case("8b 启动 smoke 恰好一次,userData 启动期间就绪且退出即清", () => {
+        assert(flow.launchCalls.length === 1, `启动 smoke 应恰好一次,实际 ${flow.launchCalls.length} 次`);
+        assert(launch.userDataDir.includes(scratch), `启动应使用临时根内的 userData,实际 ${launch.userDataDir}`);
+        assert(launch.existedDuring, "启动期间一次性 userData 目录应已就绪");
+        assert(!fs.existsSync(launch.userDataDir), "退出后一次性 userData 必须被清理");
+      });
+
+      await s.case("8c 先打印醒目警告(点名安装目录与提权)且三步顺序为 安装 → 启动 → 卸载", () => {
+        assert(/即将真实执行安装/.test(output), `execute 路径必须先打印醒目警告;实际:${output}`);
+        assert(output.includes(installDir), `警告应点名安装目录;实际:${output}`);
+        assert(/管理员权限/.test(output), `警告应提示管理员权限(UAC);实际:${output}`);
+        assert(
+          output.indexOf("步骤 1/3") < output.indexOf("步骤 2/3") && output.indexOf("步骤 2/3") < output.indexOf("步骤 3/3"),
+          `三步顺序应为 安装 → 启动 → 卸载;实际:${output}`,
+        );
+      });
       console.log("[ok] install-smoke:--execute 路径(替身执行器)按 安装→启动→卸载 执行,先打印警告,userData 退出即清");
-    }
+    });
 
     // ---------- 9. --execute 路径的判红:启动非零 / 超时 / 卸载残留 / 安装失败 ----------
-    {
+    await suite.describe("9. --execute 路径的判红:启动非零 / 超时 / 卸载残留 / 安装失败", async (s) => {
       const root = createSandbox();
       sandboxes.push(root);
       const installDir = path.join(root, "installed", FIXTURE_PRODUCT);
       const scratch = path.join(root, "scratch");
 
-      const nonZero = await withCapturedOutput(() =>
-        runInstallExecuteWithStubs({
-          installDir,
-          scratchRoot: scratch,
-          launchResult: { code: 9, signal: null, timedOut: false, output: `${SMOKE_MARKERS[0]?.token ?? ""} fixture\n` },
-        }),
-      );
-      assert(nonZero.result.code === 1, `安装后 smoke 非零退出应判红,实际 ${nonZero.result.code}\n${nonZero.output}`);
-      assert(
-        /安装后 smoke 退出码为 9,期望 0/.test(nonZero.output),
-        `应报出退出码;实际:${nonZero.output}`,
-      );
-      assert(/输出缺少诊断标记/.test(nonZero.output), `应报出缺失标记;实际:${nonZero.output}`);
-      const launchCall = nonZero.result.launchCalls[0];
-      assert(launchCall !== undefined && !fs.existsSync(launchCall.userDataDir), "判红路径同样不得残留一次性 userData");
+      // 四条判红各自造自己的替身结果:彼此独立,合成一条会让「哪一类失败原因
+      // 没被指名道姓」退化成只看第一条诊断
+      await s.case("9a 安装后 smoke 非零退出:判红并报出退出码与缺失标记", async () => {
+        const nonZero = await withCapturedOutput(() =>
+          runInstallExecuteWithStubs({
+            installDir,
+            scratchRoot: scratch,
+            launchResult: { code: 9, signal: null, timedOut: false, output: `${SMOKE_MARKERS[0]?.token ?? ""} fixture\n` },
+          }),
+        );
+        assert(nonZero.result.code === 1, `安装后 smoke 非零退出应判红,实际 ${nonZero.result.code}\n${nonZero.output}`);
+        assert(
+          /安装后 smoke 退出码为 9,期望 0/.test(nonZero.output),
+          `应报出退出码;实际:${nonZero.output}`,
+        );
+        assert(/输出缺少诊断标记/.test(nonZero.output), `应报出缺失标记;实际:${nonZero.output}`);
+        const launchCall = nonZero.result.launchCalls[0];
+        assert(launchCall !== undefined && !fs.existsSync(launchCall.userDataDir), "判红路径同样不得残留一次性 userData");
+      });
 
-      const timedOut = await withCapturedOutput(() =>
-        runInstallExecuteWithStubs({
-          installDir,
-          scratchRoot: scratch,
-          launchResult: { code: null, signal: "SIGKILL", timedOut: true, output: "" },
-        }),
-      );
-      assert(timedOut.result.code === 1, `启动超时应判红,实际 ${timedOut.result.code}\n${timedOut.output}`);
-      assert(
-        /安装后 smoke 超过硬超时未自行退出,已硬杀进程树/.test(timedOut.output),
-        `应报出硬超时;实际:${timedOut.output}`,
-      );
-      // 超时也要走完卸载(不留安装痕迹),调用序仍是 安装 → 启动 → 卸载
-      assert(timedOut.result.calls.length === 2, `超时应仍执行卸载,实际 ${JSON.stringify(timedOut.result.calls)}`);
+      await s.case("9b 启动超时:判红、报出硬杀,且仍走完卸载", async () => {
+        const timedOut = await withCapturedOutput(() =>
+          runInstallExecuteWithStubs({
+            installDir,
+            scratchRoot: scratch,
+            launchResult: { code: null, signal: "SIGKILL", timedOut: true, output: "" },
+          }),
+        );
+        assert(timedOut.result.code === 1, `启动超时应判红,实际 ${timedOut.result.code}\n${timedOut.output}`);
+        assert(
+          /安装后 smoke 超过硬超时未自行退出,已硬杀进程树/.test(timedOut.output),
+          `应报出硬超时;实际:${timedOut.output}`,
+        );
+        // 超时也要走完卸载(不留安装痕迹),调用序仍是 安装 → 启动 → 卸载
+        assert(timedOut.result.calls.length === 2, `超时应仍执行卸载,实际 ${JSON.stringify(timedOut.result.calls)}`);
+      });
 
-      const leftoverKey = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{fixture}_is1";
-      const residue = await withCapturedOutput(() =>
-        runInstallExecuteWithStubs({
-          installDir,
-          scratchRoot: scratch,
-          registryAfter: [leftoverKey],
-        }),
-      );
-      assert(residue.result.code === 1, `卸载后注册表残留应判红,实际 ${residue.result.code}\n${residue.output}`);
-      assert(
-        residue.output.includes("本次运行新增了安装残留") && residue.output.includes(leftoverKey),
-        `应报出新增残留并点名具体键名;实际:${residue.output}`,
-      );
-      assert(
-        residue.result.deletedKeys.join("|") === leftoverKey,
-        `残留的卸载注册表项应被自愈清掉(沙盒记账替身);实际 ${JSON.stringify(residue.result.deletedKeys)}`,
-      );
+      await s.case("9c 卸载后注册表残留:判红、点名具体键、并被自愈清掉", async () => {
+        const leftoverKey = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{fixture}_is1";
+        const residue = await withCapturedOutput(() =>
+          runInstallExecuteWithStubs({
+            installDir,
+            scratchRoot: scratch,
+            registryAfter: [leftoverKey],
+          }),
+        );
+        assert(residue.result.code === 1, `卸载后注册表残留应判红,实际 ${residue.result.code}\n${residue.output}`);
+        assert(
+          residue.output.includes("本次运行新增了安装残留") && residue.output.includes(leftoverKey),
+          `应报出新增残留并点名具体键名;实际:${residue.output}`,
+        );
+        assert(
+          residue.result.deletedKeys.join("|") === leftoverKey,
+          `残留的卸载注册表项应被自愈清掉(沙盒记账替身);实际 ${JSON.stringify(residue.result.deletedKeys)}`,
+        );
+      });
 
-      const installFail = await withCapturedOutput(() =>
-        runInstallExecuteWithStubs({
-          installDir,
-          scratchRoot: scratch,
-          installResult: { code: 1603, signal: null, timedOut: false, output: "[fixture] fatal\n" },
-        }),
-      );
-      assert(installFail.result.code === 1, `安装失败应判红,实际 ${installFail.result.code}\n${installFail.output}`);
-      assert(
-        /静默安装 退出码为 1603/.test(installFail.output),
-        `应报出安装失败退出码;实际:${installFail.output}`,
-      );
-      assert(
-        installFail.result.calls.length === 1,
-        `安装失败(未落文件)不应继续启动 smoke 或卸载,实际 ${JSON.stringify(installFail.result.calls)}`,
-      );
-      assert(
-        installFail.result.launchCalls.length === 0,
-        `安装失败不应启动 smoke,实际启动 ${installFail.result.launchCalls.length} 次`,
-      );
-      assert(/跳过静默卸载/.test(installFail.output), `无卸载器时应留痕跳过;实际:${installFail.output}`);
+      await s.case("9d 安装失败:判红、不启动 smoke、不卸载并留痕跳过", async () => {
+        const installFail = await withCapturedOutput(() =>
+          runInstallExecuteWithStubs({
+            installDir,
+            scratchRoot: scratch,
+            installResult: { code: 1603, signal: null, timedOut: false, output: "[fixture] fatal\n" },
+          }),
+        );
+        assert(installFail.result.code === 1, `安装失败应判红,实际 ${installFail.result.code}\n${installFail.output}`);
+        assert(
+          /静默安装 退出码为 1603/.test(installFail.output),
+          `应报出安装失败退出码;实际:${installFail.output}`,
+        );
+        assert(
+          installFail.result.calls.length === 1,
+          `安装失败(未落文件)不应继续启动 smoke 或卸载,实际 ${JSON.stringify(installFail.result.calls)}`,
+        );
+        assert(
+          installFail.result.launchCalls.length === 0,
+          `安装失败不应启动 smoke,实际启动 ${installFail.result.launchCalls.length} 次`,
+        );
+        assert(/跳过静默卸载/.test(installFail.output), `无卸载器时应留痕跳过;实际:${installFail.output}`);
+      });
       console.log("[ok] install-smoke:--execute 路径对 启动非零/超时/注册表残留/安装失败 均判红且原因可读");
-    }
+    });
 
     // ---------- 10. 参数面:未知选项与 --help ----------
-    {
+    await suite.describe("10. 参数面:未知选项与 --help", async (s) => {
       const root = createSandbox();
       sandboxes.push(root);
-      const help = runScript(root, "check-install-smoke.mjs", ["--help"]);
-      assert(help.code === 0 && /--execute/.test(help.output), `--help 应零退出并说明 --execute;实际:${help.output}`);
-      const bad = runScript(root, "check-install-smoke.mjs", ["--exeecute"]);
-      assert(bad.code === 1 && /无法识别的选项/.test(bad.output), `未知选项应显式失败;实际:${bad.output}`);
-      const badTimeout = runScript(root, "check-install-smoke.mjs", ["--timeout", "0"]);
-      assert(
-        badTimeout.code === 1 && /--timeout 须为正毫秒数/.test(badTimeout.output),
-        `--timeout 0 应拒绝(会退化成「永不超时」);实际:${badTimeout.output}`,
-      );
-      const unpackedHelp = runScript(root, "check-unpacked-smoke.mjs", ["--help"]);
-      assert(
-        unpackedHelp.code === 0 && /--launcher/.test(unpackedHelp.output),
-        `解包检查 --help 应说明启动器选项;实际:${unpackedHelp.output}`,
-      );
+
+      await s.case("10a 安装检查 --help:零退出并说明 --execute", () => {
+        const help = runScript(root, "check-install-smoke.mjs", ["--help"]);
+        assert(help.code === 0 && /--execute/.test(help.output), `--help 应零退出并说明 --execute;实际:${help.output}`);
+      });
+
+      await s.case("10b 未知选项显式失败(不给「假通过」的口子)", () => {
+        const bad = runScript(root, "check-install-smoke.mjs", ["--exeecute"]);
+        assert(bad.code === 1 && /无法识别的选项/.test(bad.output), `未知选项应显式失败;实际:${bad.output}`);
+      });
+
+      await s.case("10c --timeout 0 被拒(会退化成「永不超时」)", () => {
+        const badTimeout = runScript(root, "check-install-smoke.mjs", ["--timeout", "0"]);
+        assert(
+          badTimeout.code === 1 && /--timeout 须为正毫秒数/.test(badTimeout.output),
+          `--timeout 0 应拒绝(会退化成「永不超时」);实际:${badTimeout.output}`,
+        );
+      });
+
+      await s.case("10d 解包检查 --help:零退出并说明启动器选项", () => {
+        const unpackedHelp = runScript(root, "check-unpacked-smoke.mjs", ["--help"]);
+        assert(
+          unpackedHelp.code === 0 && /--launcher/.test(unpackedHelp.output),
+          `解包检查 --help 应说明启动器选项;实际:${unpackedHelp.output}`,
+        );
+      });
       console.log("[ok] install-smoke:--help/未知选项/非法超时均按预期处理(不给「假通过」的口子)");
-    }
+    });
 
     // ---------- 11. 默认安装目录按构建口径推导 + 警告文案按口径生成 ----------
-    {
+    await suite.describe("11. 默认安装目录按构建口径推导 + 警告文案按口径生成", async (s) => {
       const root = createSandbox();
       sandboxes.push(root);
       const fakeLocalAppData = path.join(root, "fake-localappdata");
       const fakeProgramFiles = path.join(root, "fake-programfiles");
       const env = { LOCALAPPDATA: fakeLocalAppData, ProgramFiles: fakeProgramFiles };
 
+      await s.case("11a 纯函数层:两种构建口径各自的默认安装目录", () => {
       // 纯函数层:两种口径各自的落点(环境注入,不读真实系统变量)
       assert(
         defaultInstallDir({ productName: FIXTURE_PRODUCT, perMachine: false }, env) ===
@@ -1407,7 +1509,9 @@ export async function run() {
           path.join(fakeProgramFiles, FIXTURE_PRODUCT),
         "按机器安装应落在 %ProgramFiles%\\<productName>",
       );
+      });
 
+      await s.case("11b CLI 按用户口径(perMachine 未设):预演路径、范围声明与 --help 同口径", () => {
       // CLI 层:默认 package.json(perMachine 未设)→ 按用户路径
       const perUser = runScript(root, "check-install-smoke.mjs", [], env);
       assert(perUser.code === 0, `预演应零退出,实际 ${perUser.code}\n${perUser.output}`);
@@ -1424,7 +1528,9 @@ export async function run() {
         perUserHelp.output.includes("%LOCALAPPDATA%\\Programs\\<productName>"),
         `--help 应给出按用户口径的默认安装目录;实际:${perUserHelp.output}`,
       );
+      });
 
+      await s.case("11c CLI 按机器口径(perMachine: true):Program Files 路径、不落回按用户、--help 同口径", () => {
       // CLI 层:perMachine: true → Program Files 路径(ProgramFiles 无法被子进程覆盖,
       // 故按测试进程里的真值断言「落在 Program Files 下、且不是按用户路径」)
       const machineRoot = createSandbox({ perMachine: true });
@@ -1449,7 +1555,9 @@ export async function run() {
         machineHelp.output.includes("%ProgramFiles%\\<productName>"),
         `--help 应给出按机器口径的默认安装目录;实际:${machineHelp.output}`,
       );
+      });
 
+      await s.case("11d --install-dir 覆盖推导值,且预演仍不创建它", () => {
       // 显式覆盖优先于推导
       const custom = path.join(root, "custom-target");
       const overridden = runScript(root, "check-install-smoke.mjs", ["--install-dir", custom]);
@@ -1461,9 +1569,11 @@ export async function run() {
         !fs.existsSync(custom),
         "预演模式即使指定了安装目录也不得创建它(覆盖参数不改变零副作用契约)",
       );
+      });
 
       // --execute 警告文案:按用户不出现提权/UAC 字样(按用户安装根本不需要提权,
       // 无条件喊 UAC 会误导人去开管理员终端);按机器则必须点名 UAC
+      await s.case("11e execute 警告(按用户):说明无需提权,且不得出现 UAC 字样", async () => {
       const userWarn = await withCapturedOutput(() =>
         runInstallExecuteWithStubs({ installDir: path.join(root, "installed", FIXTURE_PRODUCT), scratchRoot: path.join(root, "scratch") }),
       );
@@ -1476,6 +1586,9 @@ export async function run() {
         !/UAC/.test(userWarn.output),
         `按用户安装的警告不得出现 UAC 字样(与事实矛盾);实际:${userWarn.output}`,
       );
+      });
+
+      await s.case("11f execute 警告(按机器):必须点名提权与 UAC", async () => {
       const machineWarn = await withCapturedOutput(() =>
         runInstallExecuteWithStubs({
           installDir: path.join(root, "installed-machine", FIXTURE_PRODUCT),
@@ -1487,23 +1600,30 @@ export async function run() {
         /需要管理员权限/.test(machineWarn.output) && /UAC/.test(machineWarn.output),
         `按机器安装的警告应点名提权与 UAC;实际:${machineWarn.output}`,
       );
+      });
       console.log("[ok] install-smoke:默认安装目录按 perMachine 推导(按用户/按机器各就各位,--install-dir 可覆盖),警告文案随口径生成");
-    }
+    });
 
     // ---------- 12. 安装部分完成:点名残留 + 尽力自愈 + 不误删 + 判定仍红 ----------
-    {
+    await suite.describe("12. 安装部分完成:点名残留 + 尽力自愈 + 不误删 + 判定仍红", async (s) => {
       const root = createSandbox();
       sandboxes.push(root);
       const scratch = path.join(root, "scratch");
       const installDir = path.join(root, "installed", FIXTURE_PRODUCT);
       const shortcut = startMenuTraces(FIXTURE_PRODUCT).find((trace) => trace.kind === "shortcut");
+      // 取数前置留在分组主体(同 15/16 组的取舍):缺它时下面每条 case 都会退化成
+      // 「路径 undefined」的连带失败,盖掉真因
       assert(shortcut !== undefined, "开始菜单痕迹清单应含 .lnk 快捷方式形态(实测安装器写的就是它)");
       const shortcutPath = shortcut.path;
-
+      // 场景 A 的那一轮备在 case 之外:场景 D 判的正是「A 被自愈之后主判定仍为红」,
+      // 它的判定对象就是这一轮的输出 —— 若 A 失败就跳过 D,那条断言就永远不响
+      // (留在 case 里则 A 失败后 D 会在 undefined 上炸出误导性的连带失败)
       // 场景 A:装到一半 —— 卸载注册表项与开始菜单快捷方式已写、安装文件未落
       const partial = await withCapturedOutput(() =>
         runInstallExecuteWithFakeSystem({ installDir, scratchRoot: scratch, writesFiles: false, writesResidue: true }),
       );
+
+      await s.case("12a 装到一半:判红并点名残留的键与快捷方式完整路径", () => {
       assert(partial.result.code === 1, `装到一半应判红,实际 ${partial.result.code}\n${partial.output}`);
       assert(
         partial.output.includes(FIXTURE_NEW_KEY),
@@ -1517,6 +1637,9 @@ export async function run() {
         /静默安装后安装目录不存在/.test(partial.output) && /跳过静默卸载/.test(partial.output),
         `应同时报出「文件没落」与「跳过卸载」两条根因;实际:${partial.output}`,
       );
+      });
+
+      await s.case("12a 装到一半:本次新增的残留被自愈清掉,删除清单只有本次新增项", () => {
       assert(/已自动清理/.test(partial.output), `能安全删的本次残留应主动清掉并如实报告;实际:${partial.output}`);
       assert(
         partial.result.registry.has(FIXTURE_NEW_KEY) === false,
@@ -1532,7 +1655,17 @@ export async function run() {
         `文件删除清单应只有本次新增的快捷方式;实际 ${JSON.stringify(partial.result.removedPaths)}`,
       );
       assert(partial.result.launchCalls === 0, "文件没落时不应启动 smoke(卸载器也不存在)");
+      });
 
+      // 场景 D:自愈不得把判定洗成绿 —— 残留即使被清干净,主判定仍为红
+      await s.case("12d 自愈不得把判定洗成绿(仍须报出「新增残留」这条根因)", () => {
+      assert(
+        partial.result.code === 1 && partial.output.includes("本次运行新增了安装残留"),
+        "自愈之后仍须报出「新增残留」这条根因(判红不能被自愈掩盖)",
+      );
+      });
+
+      await s.case("12b 既有安装(安装前就存在的同产品键与快捷方式)绝不删除", async () => {
       // 场景 B:既有安装(安装前就存在的同产品键与快捷方式)绝不删除
       const keep = await withCapturedOutput(() =>
         runInstallExecuteWithFakeSystem({
@@ -1561,7 +1694,9 @@ export async function run() {
         keep.result.registry.has(FIXTURE_PRE_EXISTING_KEY) && keep.result.traces.has(shortcutPath),
         "既有安装的键与快捷方式必须原样保留",
       );
+      });
 
+      await s.case("12c 删不掉时:仍判红、给出可照抄的人工清理命令、且不谎报已清理", async () => {
       // 场景 C:删不掉时点名并给出可照抄的人工清理命令
       const locked = await withCapturedOutput(() =>
         runInstallExecuteWithFakeSystem({
@@ -1585,22 +1720,18 @@ export async function run() {
         locked.result.registry.has(FIXTURE_NEW_KEY) && locked.result.traces.has(shortcutPath),
         "自愈失败时不得谎报已清理",
       );
-
-      // 场景 D:自愈不得把判定洗成绿 —— 残留即使被清干净,主判定仍为红
-      assert(
-        partial.result.code === 1 && partial.output.includes("本次运行新增了安装残留"),
-        "自愈之后仍须报出「新增残留」这条根因(判红不能被自愈掩盖)",
-      );
+      });
       console.log("[ok] install-smoke:装到一半时点名残留键与快捷方式路径、主动自愈、既有安装不误删、自愈不改判定");
-    }
+    });
 
     // ---------- 13. 转发器落位:存在性钉必须 fail-closed(两个漂移方向都判红) ----------
     //
     // 为什么这两条是本段最要紧的负向:其余门禁对转发器都是「漂移校验」(拿它与 clean dist
     // 清单逐字节比对,清单里没有它 ⇒ extraFiles 被删时 gen 与 check 一起空、全链仍绿)。
     // 这里要证的是反向的失败也红:声明空了、声明有而产物缺,都必须点名判红。
-    {
+    await suite.describe("13. 转发器落位:存在性钉必须 fail-closed(两个漂移方向都判红)", async (s) => {
       // 场景 A:声明有、产物缺(extraFiles 的 to 写错落点 / dist 链没把转发器打进去)
+      await s.case("13a 声明有而产物缺 → 判红并点名期望路径与解包目录实况", () => {
       const missing = createSandbox({ forwarderInUnpacked: false });
       sandboxes.push(missing);
       const missingResult = runScript(
@@ -1624,9 +1755,11 @@ export async function run() {
         `应把「解包目录里实际看到了什么」摆出来(夹具里没有任何 .cmd/.bat);实际:${missingResult.output}`,
       );
       assert(/预检未通过,未启动任何进程/.test(missingResult.output), `预检未过不应启动进程;实际:${missingResult.output}`);
+      });
 
-      // 场景 B:声明整个被删(extraFiles 键消失)—— 「没有期望」不得等于「没有问题」
-      const undeclared = createSandbox({ declareExtraFiles: false, forwarderInUnpacked: false });
+      await s.case("13b 声明整个被删 → 必须判红(没有期望不等于没有问题)", () => {
+        // 场景 B:声明整个被删(extraFiles 键消失)—— 「没有期望」不得等于「没有问题」
+        const undeclared = createSandbox({ declareExtraFiles: false, forwarderInUnpacked: false });
       sandboxes.push(undeclared);
       const undeclaredResult = runScript(
         undeclared,
@@ -1642,89 +1775,103 @@ export async function run() {
         undeclaredResult.output.includes("build.extraFiles 未声明任何条目"),
         `应点名「声明被删」这条根因;实际:${undeclaredResult.output}`,
       );
+      });
       console.log(
         "[ok] install-smoke:转发器落位为 fail-closed 存在性钉(声明有而产物缺 / 声明被删 均判红并点名期望与实际)",
       );
-    }
+    });
 
     // ---------- 14. PATH 两轮(默认支 + 勾选支):两段逻辑都被真跑 ----------
     //
     // 这一段存在的理由:此前勾选支一次都没被执行过 —— /S 下勾选页不跑,写入与
     // 还原只在注释与推理层面成立。这里用假 PATH 走**真实**判定分支(不碰注册表),
     // 把两轮各自该绿/该红的面都钉住。
-    {
+    await suite.describe("14. PATH 两轮(默认支 + 勾选支):两段逻辑都被真跑", async (s) => {
       // 纯函数层先钉住语义(比较器是判定的地基,塌了就什么都不用验了)
-      const unchangedCase = diffPathEntries({ before: FAKE_PATH_BEFORE, after: FAKE_PATH_BEFORE, phase: "after-install" });
-      assert(unchangedCase.unchanged === true, "PATH 无增删时 unchanged 应为真");
-      assert(unchangedCase.consented === false, "PATH 无增删时 consented 应为假(它要求恰好多出安装目录)");
-      assert(unchangedCase.ok === true, "after-install 阶段 unchanged 应放行");
+      await s.case("14a 比较器语义:无增删放行 / 恰好多出安装目录才算 consented", () => {
+        const unchangedCase = diffPathEntries({ before: FAKE_PATH_BEFORE, after: FAKE_PATH_BEFORE, phase: "after-install" });
+        assert(unchangedCase.unchanged === true, "PATH 无增删时 unchanged 应为真");
+        assert(unchangedCase.consented === false, "PATH 无增删时 consented 应为假(它要求恰好多出安装目录)");
+        assert(unchangedCase.ok === true, "after-install 阶段 unchanged 应放行");
 
-      const consentedCase = diffPathEntries({
-        before: FAKE_PATH_BEFORE,
-        after: `${FAKE_PATH_BEFORE};C:\\Program Files\\X`,
-        installDir: "C:\\Program Files\\X",
-        phase: "after-install",
+        const consentedCase = diffPathEntries({
+          before: FAKE_PATH_BEFORE,
+          after: `${FAKE_PATH_BEFORE};C:\\Program Files\\X`,
+          installDir: "C:\\Program Files\\X",
+          phase: "after-install",
+        });
+        assert(consentedCase.consented === true, "恰好多出安装目录这一项时应为 consented");
+        assert(consentedCase.unchanged === false, "多出一项时 unchanged 应为假");
       });
-      assert(consentedCase.consented === true, "恰好多出安装目录这一项时应为 consented");
-      assert(consentedCase.unchanged === false, "多出一项时 unchanged 应为假");
 
-      // 「多出两条」不是 consented —— 只加一条、且加的正是安装目录才算
-      const twoAdded = diffPathEntries({
-        before: FAKE_PATH_BEFORE,
-        after: `${FAKE_PATH_BEFORE};C:\\X;C:\\Y`,
-        installDir: "C:\\X",
-        phase: "after-install",
+      await s.case("14a consented 的两个否证面:多出两条 / 多出的不是安装目录", () => {
+        // 「多出两条」不是 consented —— 只加一条、且加的正是安装目录才算
+        const twoAdded = diffPathEntries({
+          before: FAKE_PATH_BEFORE,
+          after: `${FAKE_PATH_BEFORE};C:\\X;C:\\Y`,
+          installDir: "C:\\X",
+          phase: "after-install",
+        });
+        assert(twoAdded.consented === false, "多出两条时不得判 consented(否则「只准加一条」形同虚设)");
+        // 「加的不是安装目录」也不是 consented
+        const wrongDir = diffPathEntries({
+          before: FAKE_PATH_BEFORE,
+          after: `${FAKE_PATH_BEFORE};C:\\SomewhereElse`,
+          installDir: "C:\\X",
+          phase: "after-install",
+        });
+        assert(wrongDir.consented === false, "多出的不是安装目录时不得判 consented");
       });
-      assert(twoAdded.consented === false, "多出两条时不得判 consented(否则「只准加一条」形同虚设)");
-      // 「加的不是安装目录」也不是 consented
-      const wrongDir = diffPathEntries({
-        before: FAKE_PATH_BEFORE,
-        after: `${FAKE_PATH_BEFORE};C:\\SomewhereElse`,
-        installDir: "C:\\X",
-        phase: "after-install",
-      });
-      assert(wrongDir.consented === false, "多出的不是安装目录时不得判 consented");
-      // after-uninstall 阶段即便多出安装目录也必须判红(卸载摘不掉)
-      const leftover = diffPathEntries({
-        before: FAKE_PATH_BEFORE,
-        after: `${FAKE_PATH_BEFORE};C:\\X`,
-        installDir: "C:\\X",
-        phase: "after-uninstall",
-      });
-      assert(leftover.ok === false, "卸载后仍多出安装目录必须判红(那正是卸载摘不掉的残留)");
 
-      // samePathEntries:集合相等但顺序变了 —— 集合口径放过它,逐条同序不放过
-      const reordered = samePathEntries("C:\\a;C:\\b;C:\\c", "C:\\c;C:\\b;C:\\a");
-      assert(reordered.same === false, "条目集合相同但顺序不同时,逐条同序必须判为不一致");
-      assert(reordered.beforeEntries.length === reordered.afterEntries.length, "两侧条目数应相同");
-      assert(samePathEntries("C:\\a;C:\\b", "C:\\a;C:\\b").same === true, "完全同序应判为一致");
+      await s.case("14a after-uninstall 阶段仍多出安装目录必须判红", () => {
+        // after-uninstall 阶段即便多出安装目录也必须判红(卸载摘不掉)
+        const leftover = diffPathEntries({
+          before: FAKE_PATH_BEFORE,
+          after: `${FAKE_PATH_BEFORE};C:\\X`,
+          installDir: "C:\\X",
+          phase: "after-uninstall",
+        });
+        assert(leftover.ok === false, "卸载后仍多出安装目录必须判红(那正是卸载摘不掉的残留)");
+      });
 
+      await s.case("14a samePathEntries 逐条同序(顺序变了判不一致)", () => {
+        // samePathEntries:集合相等但顺序变了 —— 集合口径放过它,逐条同序不放过
+        const reordered = samePathEntries("C:\\a;C:\\b;C:\\c", "C:\\c;C:\\b;C:\\a");
+        assert(reordered.same === false, "条目集合相同但顺序不同时,逐条同序必须判为不一致");
+        assert(reordered.beforeEntries.length === reordered.afterEntries.length, "两侧条目数应相同");
+        assert(samePathEntries("C:\\a;C:\\b", "C:\\a;C:\\b").same === true, "完全同序应判为一致");
+      });
+
+      // 沙盒与六轮场景共用:各轮造各自的安装目录与临时根,但都落在同一棵夹具树上
       const root = createSandbox();
       sandboxes.push(root);
 
-      // 默认支:不带开关 → 装完一条都不变,卸完逐条同序回到基线
-      const plain = await withCapturedOutput(() =>
-        runInstallWithFakePath({
-          installDir: path.join(root, "installed", FIXTURE_PRODUCT),
-          scratchRoot: path.join(root, "scratch-plain"),
-        }),
-      );
-      assert(plain.result.code === 0, `默认支应通过,实际 ${plain.result.code}\n${plain.output}`);
-      assert(
-        plain.result.calls[0]?.includes("/M2W_ADD_PATH") === false,
-        `默认支不传 opt-in 开关,实际 ${JSON.stringify(plain.result.calls[0])}`,
-      );
-      // 装完那一刻的 PATH 必须是**基线本身**(证明「装完」取的是步骤 1 的快照,
-      // 而不是卸载完又读了一次 —— 那处早先写错了,两个数字会恒等)
-      assert(
-        plain.result.pathReads[1] === FAKE_PATH_BEFORE,
-        `默认支装完 PATH 应与基线逐字节相同,实际 ${JSON.stringify(plain.result.pathReads[1])}`,
-      );
-      assert(
-        /安装前 2 → 装完 2 → 卸完 2/.test(plain.output),
-        `默认支结论行应报三个阶段的条目数;实际:${plain.output}`,
-      );
+      await s.case("14b 默认支:不传开关,装完 PATH 与基线逐字节相同", async () => {
+        // 默认支:不带开关 → 装完一条都不变,卸完逐条同序回到基线
+        const plain = await withCapturedOutput(() =>
+          runInstallWithFakePath({
+            installDir: path.join(root, "installed", FIXTURE_PRODUCT),
+            scratchRoot: path.join(root, "scratch-plain"),
+          }),
+        );
+        assert(plain.result.code === 0, `默认支应通过,实际 ${plain.result.code}\n${plain.output}`);
+        assert(
+          plain.result.calls[0]?.includes("/M2W_ADD_PATH") === false,
+          `默认支不传 opt-in 开关,实际 ${JSON.stringify(plain.result.calls[0])}`,
+        );
+        // 装完那一刻的 PATH 必须是**基线本身**(证明「装完」取的是步骤 1 的快照,
+        // 而不是卸载完又读了一次 —— 那处早先写错了,两个数字会恒等)
+        assert(
+          plain.result.pathReads[1] === FAKE_PATH_BEFORE,
+          `默认支装完 PATH 应与基线逐字节相同,实际 ${JSON.stringify(plain.result.pathReads[1])}`,
+        );
+        assert(
+          /安装前 2 → 装完 2 → 卸完 2/.test(plain.output),
+          `默认支结论行应报三个阶段的条目数;实际:${plain.output}`,
+        );
+      });
 
+      await s.case("14b 勾选支:带开关后恰好多出安装目录这一项,卸完逐条同序回基线", async () => {
       // 勾选支:带开关 → 装完恰好多出安装目录这一项,卸完逐条同序回到基线
       const consentedDir = path.join(root, "installed2", FIXTURE_PRODUCT);
       const consented = await withCapturedOutput(() =>
@@ -1756,64 +1903,72 @@ export async function run() {
         consented.result.finalPath === FAKE_PATH_BEFORE,
         `勾选支卸完后应逐字节回到基线,实际 ${JSON.stringify(consented.result.finalPath)}`,
       );
+      });
 
-      // 负向 A:传了开关但安装器没反应(勾了却没生效)—— 必须判红。
-      // 这正是断「具名结论」而非断 ok 的意义:ok 在这里会放行。
-      const ignored = await withCapturedOutput(() =>
-        runInstallWithFakePath({
-          installDir: path.join(root, "installed3", FIXTURE_PRODUCT),
-          scratchRoot: path.join(root, "scratch-ignored"),
-          optInSwitch: OPT_IN_SWITCH,
-          honorsSwitch: false,
-        }),
-      );
-      assert(ignored.result.code === 1, `传了开关却没写入 PATH 应判红,实际 ${ignored.result.code}\n${ignored.output}`);
-      assert(
-        /静默安装后用户 PATH 不符合本轮期望/.test(ignored.output),
-        `应点名「装完 PATH 不符合本轮期望」;实际:${ignored.output}`,
-      );
-      assert(
-        /期望:恰好多出安装目录这一项/.test(ignored.output),
-        `应说清本轮期望是什么;实际:${ignored.output}`,
-      );
+      await s.case("14c 负向 A:传了开关但安装器没反应 → 判红", async () => {
+        // 负向 A:传了开关但安装器没反应(勾了却没生效)—— 必须判红。
+        // 这正是断「具名结论」而非断 ok 的意义:ok 在这里会放行。
+        const ignored = await withCapturedOutput(() =>
+          runInstallWithFakePath({
+            installDir: path.join(root, "installed3", FIXTURE_PRODUCT),
+            scratchRoot: path.join(root, "scratch-ignored"),
+            optInSwitch: OPT_IN_SWITCH,
+            honorsSwitch: false,
+          }),
+        );
+        assert(ignored.result.code === 1, `传了开关却没写入 PATH 应判红,实际 ${ignored.result.code}\n${ignored.output}`);
+        assert(
+          /静默安装后用户 PATH 不符合本轮期望/.test(ignored.output),
+          `应点名「装完 PATH 不符合本轮期望」;实际:${ignored.output}`,
+        );
+        assert(
+          /期望:恰好多出安装目录这一项/.test(ignored.output),
+          `应说清本轮期望是什么;实际:${ignored.output}`,
+        );
+      });
 
-      // 负向 B:卸载没还原 —— 必须判红(残留)
-      const notRestored = await withCapturedOutput(() =>
-        runInstallWithFakePath({
-          installDir: path.join(root, "installed4", FIXTURE_PRODUCT),
-          scratchRoot: path.join(root, "scratch-notrestored"),
-          optInSwitch: OPT_IN_SWITCH,
-          restoreOnUninstall: false,
-        }),
-      );
-      assert(
-        notRestored.result.code === 1,
-        `卸载未还原 PATH 应判红,实际 ${notRestored.result.code}\n${notRestored.output}`,
-      );
-      assert(
-        /卸载后用户 PATH 未回到「安装前」/.test(notRestored.output),
-        `应报出「卸载后未回到安装前」;实际:${notRestored.output}`,
-      );
+      await s.case("14c 负向 B:卸载没还原 PATH → 判红(残留)", async () => {
+        // 负向 B:卸载没还原 —— 必须判红(残留)
+        const notRestored = await withCapturedOutput(() =>
+          runInstallWithFakePath({
+            installDir: path.join(root, "installed4", FIXTURE_PRODUCT),
+            scratchRoot: path.join(root, "scratch-notrestored"),
+            optInSwitch: OPT_IN_SWITCH,
+            restoreOnUninstall: false,
+          }),
+        );
+        assert(
+          notRestored.result.code === 1,
+          `卸载未还原 PATH 应判红,实际 ${notRestored.result.code}\n${notRestored.output}`,
+        );
+        assert(
+          /卸载后用户 PATH 未回到「安装前」/.test(notRestored.output),
+          `应报出「卸载后未回到安装前」;实际:${notRestored.output}`,
+        );
+      });
 
-      // 负向 C:还原了但顺序被打乱 —— 集合口径看不见,逐条同序能抓住
-      const reorderedBack = await withCapturedOutput(() =>
-        runInstallWithFakePath({
-          installDir: path.join(root, "installed5", FIXTURE_PRODUCT),
-          scratchRoot: path.join(root, "scratch-reordered"),
-          optInSwitch: OPT_IN_SWITCH,
-          restoreReorders: true,
-        }),
-      );
-      assert(
-        reorderedBack.result.code === 1,
-        `卸载只还原集合但打乱顺序应判红,实际 ${reorderedBack.result.code}\n${reorderedBack.output}`,
-      );
-      assert(
-        /逐条同序.*没回到基线/.test(reorderedBack.output),
-        `应报出「集合没变但逐条同序没回到基线」;实际:${reorderedBack.output}`,
-      );
+      await s.case("14c 负向 C:只还原集合但打乱顺序 → 判红(逐条同序)", async () => {
+        // 负向 C:还原了但顺序被打乱 —— 集合口径看不见,逐条同序能抓住
+        const reorderedBack = await withCapturedOutput(() =>
+          runInstallWithFakePath({
+            installDir: path.join(root, "installed5", FIXTURE_PRODUCT),
+            scratchRoot: path.join(root, "scratch-reordered"),
+            optInSwitch: OPT_IN_SWITCH,
+            restoreReorders: true,
+          }),
+        );
+        assert(
+          reorderedBack.result.code === 1,
+          `卸载只还原集合但打乱顺序应判红,实际 ${reorderedBack.result.code}\n${reorderedBack.output}`,
+        );
+        assert(
+          /逐条同序.*没回到基线/.test(reorderedBack.output),
+          `应报出「集合没变但逐条同序没回到基线」;实际:${reorderedBack.output}`,
+        );
+      });
 
-      // 两轮驱动:两轮都跑完才汇总,且带轮次标签。
+      await s.case("14d 两轮驱动:两轮都跑、第二轮才带开关且开关排在 /D= 之前", async () => {
+        // 两轮驱动:两轮都跑完才汇总,且带轮次标签。
       // 这里只关心「驱动是否真的发起了两轮、且第二轮带上了开关」,故把文件存在性
       // 判据搭成最简(装完存在、卸完消失),不去模拟 PATH —— PATH 的语义由上面
       // 四个场景各自验。这里若把 exists 恒置 false,第一轮就会因「安装目录不存在」
@@ -1889,10 +2044,11 @@ export async function run() {
         switchArg !== -1 && dirArg !== -1 && switchArg < dirArg,
         `开关必须排在 /D= 之前(NSIS 把 /D= 到行尾当目录),实际 ${JSON.stringify(driverInstalls[1])}`,
       );
+      });
       console.log(
         "[ok] install-smoke:PATH 两轮(默认支一条不变 + 勾选支恰好多一条)判定正确,负向面(没写入/没还原/顺序乱)均判红",
       );
-    }
+    });
 
     // ---------- 15. 残留检查面缺口①:安装账本键,且判的是它指向的路径 ----------
     //
@@ -1904,62 +2060,70 @@ export async function run() {
     //      到同一目录会被 multiUser.nsh:26 当成既有安装);
     //   B. 键没了、但它装完时指向的目录留着 = 目录残留(靠「装完那一刻记下 InstallLocation」
     //      才判得到 —— 卸载后键已删,再读就无从知道它指向哪)。
-    {
+    await suite.describe("15. 残留检查面缺口①:安装账本键,且判的是它指向的路径", async (s) => {
       const root = createSandbox();
       sandboxes.push(root);
       const shortcut = startMenuTraces(FIXTURE_PRODUCT).find((trace) => trace.kind === "shortcut");
+      // 取数前置留在分组主体:下面六条 case 的判定对象都要用到快捷方式路径,
+      // 而它缺失时后续每条都会退化成「路径 undefined」的连带失败,盖掉真因
       assert(shortcut !== undefined, "开始菜单痕迹清单应含 .lnk 快捷方式形态");
       const shortcutPath = shortcut.path;
 
-      // A1 负向:卸载后账本键留着 —— 必须判红、点名键、并被自愈清掉。
-      //    注意账本残留是**永久**的(不随卸载收尾消失),故它不会被「等收尾」等掉 ——
-      //    这正是两处缺口不互相掩盖的原因之一。
-      const keyLeft = await withCapturedOutput(() =>
-        runInstallWithFakeResidue({
-          installDir: path.join(root, "installed", FIXTURE_PRODUCT),
-          scratchRoot: path.join(root, "scratch-keyleft"),
-          ledgerOutcome: "keyLeft",
-        }),
-      );
-      assert(keyLeft.result.code === 1, `账本键残留应判红,实际 ${keyLeft.result.code}\n${keyLeft.output}`);
-      assert(
-        keyLeft.output.includes(FIXTURE_LEDGER_KEY),
-        `失败输出应点名残留的账本键完整键名;实际:${keyLeft.output}`,
-      );
-      assert(
-        keyLeft.output.includes("本次运行新增了安装残留"),
-        `应报出「新增残留」这条根因;实际:${keyLeft.output}`,
-      );
-      assert(
-        keyLeft.result.deletedKeys.join("|") === FIXTURE_LEDGER_KEY,
-        `账本键应被自愈清掉(沙盒记账替身);实际 ${JSON.stringify(keyLeft.result.deletedKeys)}`,
-      );
-      // ⚠ 这一格刻意是**永久**残留(不随卸载收尾消失),而门禁此刻正在跑「等卸载器收尾」那个
-      // 预算 —— 若那个等待把它等掉了,本格就再也判不红,门禁对账本键重新失明(回到出事那天
-      // 的状态)。故本段三条负向夹具在结构上就是「熬过等待仍判红」的证据。
-      // 「等满预算」这个事实本身由第 16 段在缺口②自己的检查面上断言(放在这里会让两段
-      // 共用一张票,变异实验就分不出是哪处在起作用)。
+      await s.case("15A1 负向:卸载后账本键留着 → 判红、点名键、被自愈清掉", async () => {
+        // A1 负向:卸载后账本键留着 —— 必须判红、点名键、并被自愈清掉。
+        //    注意账本残留是**永久**的(不随卸载收尾消失),故它不会被「等收尾」等掉 ——
+        //    这正是两处缺口不互相掩盖的原因之一。
+        const keyLeft = await withCapturedOutput(() =>
+          runInstallWithFakeResidue({
+            installDir: path.join(root, "installed", FIXTURE_PRODUCT),
+            scratchRoot: path.join(root, "scratch-keyleft"),
+            ledgerOutcome: "keyLeft",
+          }),
+        );
+        assert(keyLeft.result.code === 1, `账本键残留应判红,实际 ${keyLeft.result.code}\n${keyLeft.output}`);
+        assert(
+          keyLeft.output.includes(FIXTURE_LEDGER_KEY),
+          `失败输出应点名残留的账本键完整键名;实际:${keyLeft.output}`,
+        );
+        assert(
+          keyLeft.output.includes("本次运行新增了安装残留"),
+          `应报出「新增残留」这条根因;实际:${keyLeft.output}`,
+        );
+        assert(
+          keyLeft.result.deletedKeys.join("|") === FIXTURE_LEDGER_KEY,
+          `账本键应被自愈清掉(沙盒记账替身);实际 ${JSON.stringify(keyLeft.result.deletedKeys)}`,
+        );
+        // ⚠ 这一格刻意是**永久**残留(不随卸载收尾消失),而门禁此刻正在跑「等卸载器收尾」那个
+        // 预算 —— 若那个等待把它等掉了,本格就再也判不红,门禁对账本键重新失明(回到出事那天
+        // 的状态)。故本段三条负向夹具在结构上就是「熬过等待仍判红」的证据。
+        // 「等满预算」这个事实本身由第 16 段在缺口②自己的检查面上断言(放在这里会让两段
+        // 共用一张票,变异实验就分不出是哪处在起作用)。
+      });
 
-      // A2 负向:键删了,但它装完时指向的目录留着 —— 方向 B。
-      //    InstallLocation 带上污染后缀,复现 `/D=` 吞掉 PATH 开关那次写出来的值。
-      const pollutedSuffix = " M2W_ADD_PATH=1";
-      const pathLeft = await withCapturedOutput(() =>
-        runInstallWithFakeResidue({
-          installDir: path.join(root, "installed2", FIXTURE_PRODUCT),
-          scratchRoot: path.join(root, "scratch-pathleft"),
-          ledgerOutcome: "pathLeft",
-          pollutedSuffix,
-        }),
-      );
-      assert(pathLeft.result.code === 1, `账本指向的目录残留应判红,实际 ${pathLeft.result.code}\n${pathLeft.output}`);
-      assert(
-        pathLeft.output.includes(`${path.join(root, "installed2", FIXTURE_PRODUCT)}${pollutedSuffix}`),
-        `应点名账本键装完时指向的那个目录(含污染后缀,原样可核对);实际:${pathLeft.output}`,
-      );
+      await s.case("15A2 负向:键删了但它指向的目录留着 → 判红并点名(含污染后缀)", async () => {
+        // A2 负向:键删了,但它装完时指向的目录留着 —— 方向 B。
+        //    InstallLocation 带上污染后缀,复现 `/D=` 吞掉 PATH 开关那次写出来的值。
+        const pollutedSuffix = " M2W_ADD_PATH=1";
+        const pathLeft = await withCapturedOutput(() =>
+          runInstallWithFakeResidue({
+            installDir: path.join(root, "installed2", FIXTURE_PRODUCT),
+            scratchRoot: path.join(root, "scratch-pathleft"),
+            ledgerOutcome: "pathLeft",
+            pollutedSuffix,
+          }),
+        );
+        assert(pathLeft.result.code === 1, `账本指向的目录残留应判红,实际 ${pathLeft.result.code}\n${pathLeft.output}`);
+        assert(
+          pathLeft.output.includes(`${path.join(root, "installed2", FIXTURE_PRODUCT)}${pollutedSuffix}`),
+          `应点名账本键装完时指向的那个目录(含污染后缀,原样可核对);实际:${pathLeft.output}`,
+        );
+      });
 
       // A3 负向:「污染值」这一条不能靠「精确等于安装目录」判 —— `/D=` 吞参数那次写出来的
       //    InstallLocation 正是多了后缀的值,精确相等会把它整个漏掉。
-      const pollutedKeyLeft = await withCapturedOutput(() =>
+      await s.case("15A3 负向:InstallLocation 被污染时账本键仍判红(不得因不等于安装目录而漏掉)", async () => {
+        const pollutedSuffix = " M2W_ADD_PATH=1";
+        const pollutedKeyLeft = await withCapturedOutput(() =>
         runInstallWithFakeResidue({
           installDir: path.join(root, "installed3", FIXTURE_PRODUCT),
           scratchRoot: path.join(root, "scratch-polluted"),
@@ -1975,67 +2139,74 @@ export async function run() {
         pollutedKeyLeft.output.includes(FIXTURE_LEDGER_KEY),
         `污染场景下也应点名账本键;实际:${pollutedKeyLeft.output}`,
       );
+      });
 
-      // A4 反向(防误伤):安装前就存在的账本键 = 既有安装,删它就是误删用户的东西。
-      const preExisting = await withCapturedOutput(() =>
-        runInstallWithFakeResidue({
-          installDir: path.join(root, "installed4", FIXTURE_PRODUCT),
-          scratchRoot: path.join(root, "scratch-preexisting"),
-          preExistingLedger: true,
-        }),
-      );
-      assert(
-        preExisting.result.code === 0,
-        `既有安装的账本键不属本次残留,不该判红;实际 ${preExisting.result.code}\n${preExisting.output}`,
-      );
-      assert(
-        preExisting.result.deletedKeys.length === 0,
-        `安装前就存在的账本键绝不删除;实际 ${JSON.stringify(preExisting.result.deletedKeys)}`,
-      );
+      await s.case("15A4 反向:安装前就存在的账本键不判红且绝不删除", async () => {
+        // A4 反向(防误伤):安装前就存在的账本键 = 既有安装,删它就是误删用户的东西。
+        const preExisting = await withCapturedOutput(() =>
+          runInstallWithFakeResidue({
+            installDir: path.join(root, "installed4", FIXTURE_PRODUCT),
+            scratchRoot: path.join(root, "scratch-preexisting"),
+            preExistingLedger: true,
+          }),
+        );
+        assert(
+          preExisting.result.code === 0,
+          `既有安装的账本键不属本次残留,不该判红;实际 ${preExisting.result.code}\n${preExisting.output}`,
+        );
+        assert(
+          preExisting.result.deletedKeys.length === 0,
+          `安装前就存在的账本键绝不删除;实际 ${JSON.stringify(preExisting.result.deletedKeys)}`,
+        );
+      });
 
-      // A5 反向(防误伤):同机器上别的 Electron 应用也各有一个带 InstallLocation 的键 ——
-      //    归属判据(该值含本产品名)必须把它排除,否则门禁会去删别人的安装键。
-      const otherApp = await withCapturedOutput(() =>
-        runInstallWithFakeResidue({
-          installDir: path.join(root, "installed5", FIXTURE_PRODUCT),
-          scratchRoot: path.join(root, "scratch-otherapp"),
-          otherAppLedger: true,
-        }),
-      );
-      assert(
-        otherApp.result.code === 0,
-        `别人的账本键不得算成本次残留;实际 ${otherApp.result.code}\n${otherApp.output}`,
-      );
-      assert(
-        !otherApp.output.includes(FIXTURE_OTHER_LEDGER_KEY),
-        `别人的键不该出现在残留/清理报告里;实际:${otherApp.output}`,
-      );
-      assert(
-        otherApp.result.deletedKeys.length === 0 && otherApp.result.removedPaths.length === 0,
-        `别人的账本键与快捷方式都不得动;实际 ${JSON.stringify(otherApp.result.deletedKeys)} / ${JSON.stringify(otherApp.result.removedPaths)}`,
-      );
+      await s.case("15A5 反向:别人的账本键不判红、不出现在报告里、也不被删", async () => {
+        // A5 反向(防误伤):同机器上别的 Electron 应用也各有一个带 InstallLocation 的键 ——
+        //    归属判据(该值含本产品名)必须把它排除,否则门禁会去删别人的安装键。
+        const otherApp = await withCapturedOutput(() =>
+          runInstallWithFakeResidue({
+            installDir: path.join(root, "installed5", FIXTURE_PRODUCT),
+            scratchRoot: path.join(root, "scratch-otherapp"),
+            otherAppLedger: true,
+          }),
+        );
+        assert(
+          otherApp.result.code === 0,
+          `别人的账本键不得算成本次残留;实际 ${otherApp.result.code}\n${otherApp.output}`,
+        );
+        assert(
+          !otherApp.output.includes(FIXTURE_OTHER_LEDGER_KEY),
+          `别人的键不该出现在残留/清理报告里;实际:${otherApp.output}`,
+        );
+        assert(
+          otherApp.result.deletedKeys.length === 0 && otherApp.result.removedPaths.length === 0,
+          `别人的账本键与快捷方式都不得动;实际 ${JSON.stringify(otherApp.result.deletedKeys)} / ${JSON.stringify(otherApp.result.removedPaths)}`,
+        );
+      });
 
-      // A6 正向:干净卸载 → 绿,且账本键确实被查过(不是「压根没查所以没红」)。
-      const clean = await withCapturedOutput(() =>
-        runInstallWithFakeResidue({
-          installDir: path.join(root, "installed6", FIXTURE_PRODUCT),
-          scratchRoot: path.join(root, "scratch-clean"),
-        }),
-      );
-      assert(clean.result.code === 0, `干净卸载应通过,实际 ${clean.result.code}\n${clean.output}`);
-      assert(
-        clean.result.ledgerProbes >= 2,
-        `账本键必须真被查过(安装前 + 卸载后各至少一次),实际查了 ${clean.result.ledgerProbes} 次`,
-      );
-      assert(
-        /安装目录\/开始菜单\/卸载注册表\/安装账本键/.test(clean.output),
-        `通过结论行应报出四处检查面;实际:${clean.output}`,
-      );
-      assert(!clean.result.removedPaths.includes(shortcutPath), "干净路径不应有删除动作");
+      await s.case("15A6 正向:干净卸载通过,且账本键确实被查过", async () => {
+        // A6 正向:干净卸载 → 绿,且账本键确实被查过(不是「压根没查所以没红」)。
+        const clean = await withCapturedOutput(() =>
+          runInstallWithFakeResidue({
+            installDir: path.join(root, "installed6", FIXTURE_PRODUCT),
+            scratchRoot: path.join(root, "scratch-clean"),
+          }),
+        );
+        assert(clean.result.code === 0, `干净卸载应通过,实际 ${clean.result.code}\n${clean.output}`);
+        assert(
+          clean.result.ledgerProbes >= 2,
+          `账本键必须真被查过(安装前 + 卸载后各至少一次),实际查了 ${clean.result.ledgerProbes} 次`,
+        );
+        assert(
+          /安装目录\/开始菜单\/卸载注册表\/安装账本键/.test(clean.output),
+          `通过结论行应报出四处检查面;实际:${clean.output}`,
+        );
+        assert(!clean.result.removedPaths.includes(shortcutPath), "干净路径不应有删除动作");
+      });
       console.log(
         "[ok] install-smoke:账本键纳入残留检查面(键留着/键没了目录留着 两个方向均判红并被自愈),既有安装与他人键不误伤",
       );
-    }
+    });
 
     // ---------- 16. 残留检查面缺口②:拍快照前要等卸载器收尾,而不是只等安装目录 ----------
     //
@@ -2046,113 +2217,123 @@ export async function run() {
     //
     // 收尾判据是**状态**:等本次新增的残留集合真的清空。固定 sleep 做不到这一点 ——
     // 阈值猜短了照样假阳性,猜长了白等,机器一慢就重新欠账。
-    {
+    await suite.describe("16. 残留检查面缺口②:拍快照前要等卸载器收尾", async (s) => {
       const root = createSandbox();
       sandboxes.push(root);
       const shortcut = startMenuTraces(FIXTURE_PRODUCT).find((trace) => trace.kind === "shortcut");
+      // 取数前置留在分组主体(同 15 组的取舍):缺它时下面四条 case 都会退化成
+      // 「路径 undefined」的连带失败,盖掉真因
       assert(shortcut !== undefined, "开始菜单痕迹清单应含 .lnk 快捷方式形态");
       const shortcutPath = shortcut.path;
 
-      // 负向夹具:卸载注册表项与快捷方式在头两次残留采样里仍在(临时副本还没删完),
-      // 第三次才消失 —— 模拟真机上那个「目录早没了、键还没删」的窗口。
-      // `leaveRegistry: false` = 滞后结束后它们真的被清掉(即这是**假阳性**那一侧:
-      // 独立复核时它们早已消失,门禁判红就是错的)。
-      const late = await withCapturedOutput(() =>
-        runInstallWithFakeResidue({
-          installDir: path.join(root, "installed", FIXTURE_PRODUCT),
-          scratchRoot: path.join(root, "scratch-late"),
-          latePolls: 2,
-          timeoutMs: 8000,
-        }),
-      );
-      assert(
-        late.result.code === 0,
-        `卸载器滞后清理不得判红(等收尾就是为消除这类假阳性),实际 ${late.result.code}\n${late.output}`,
-      );
-      assert(
-        !late.output.includes("本次运行新增了安装残留"),
-        `滞后清理收敛后不应报残留;实际:${late.output}`,
-      );
-      assert(
-        late.result.registryProbes >= 3,
-        `必须真的轮询等到收敛(至少 3 次采样),实际 ${late.result.registryProbes} 次 —— `
-          + `若只有 1 次,说明没等就拍了快照,这条断言就成了一张空票`,
-      );
-      assert(
-        late.result.deletedKeys.length === 0 && late.result.removedPaths.length === 0,
-        `最终收敛 ⇒ 无需自愈(实际删了 ${JSON.stringify(late.result.deletedKeys)} / ${JSON.stringify(late.result.removedPaths)})`,
-      );
+      await s.case("16a 卸载器滞后清理(注册表与快捷方式)不得判红,且必须真轮询到收敛", async () => {
+        // 负向夹具:卸载注册表项与快捷方式在头两次残留采样里仍在(临时副本还没删完),
+        // 第三次才消失 —— 模拟真机上那个「目录早没了、键还没删」的窗口。
+        // `leaveRegistry: false` = 滞后结束后它们真的被清掉(即这是**假阳性**那一侧:
+        // 独立复核时它们早已消失,门禁判红就是错的)。
+        const late = await withCapturedOutput(() =>
+          runInstallWithFakeResidue({
+            installDir: path.join(root, "installed", FIXTURE_PRODUCT),
+            scratchRoot: path.join(root, "scratch-late"),
+            latePolls: 2,
+            timeoutMs: 8000,
+          }),
+        );
+        assert(
+          late.result.code === 0,
+          `卸载器滞后清理不得判红(等收尾就是为消除这类假阳性),实际 ${late.result.code}\n${late.output}`,
+        );
+        assert(
+          !late.output.includes("本次运行新增了安装残留"),
+          `滞后清理收敛后不应报残留;实际:${late.output}`,
+        );
+        assert(
+          late.result.registryProbes >= 3,
+          `必须真的轮询等到收敛(至少 3 次采样),实际 ${late.result.registryProbes} 次 —— `
+            + `若只有 1 次,说明没等就拍了快照,这条断言就成了一张空票`,
+        );
+        assert(
+          late.result.deletedKeys.length === 0 && late.result.removedPaths.length === 0,
+          `最终收敛 ⇒ 无需自愈(实际删了 ${JSON.stringify(late.result.deletedKeys)} / ${JSON.stringify(late.result.removedPaths)})`,
+        );
+      });
 
-      // 同一次滞后的另一面:账本键也滞后。正向仍须是绿 —— 判据是状态,不是某个面的特例。
-      const lateLedger = await withCapturedOutput(() =>
-        runInstallWithFakeResidue({
-          installDir: path.join(root, "installed2", FIXTURE_PRODUCT),
-          scratchRoot: path.join(root, "scratch-lateledger"),
-          ledgerOutcome: "clean",
-          latePolls: 2,
-          timeoutMs: 8000,
-        }),
-      );
-      assert(
-        lateLedger.result.code === 0,
-        `账本键滞后清理同样应等到收敛,实际 ${lateLedger.result.code}\n${lateLedger.output}`,
-      );
-      assert(
-        lateLedger.result.ledgerProbes >= 3,
-        `账本键也必须被轮询等到(至少 3 次采样),实际 ${lateLedger.result.ledgerProbes} 次`,
-      );
+      await s.case("16a 同一次滞后的另一面:账本键也必须被轮询等到收敛", async () => {
+        // 同一次滞后的另一面:账本键也滞后。正向仍须是绿 —— 判据是状态,不是某个面的特例。
+        const lateLedger = await withCapturedOutput(() =>
+          runInstallWithFakeResidue({
+            installDir: path.join(root, "installed2", FIXTURE_PRODUCT),
+            scratchRoot: path.join(root, "scratch-lateledger"),
+            ledgerOutcome: "clean",
+            latePolls: 2,
+            timeoutMs: 8000,
+          }),
+        );
+        assert(
+          lateLedger.result.code === 0,
+          `账本键滞后清理同样应等到收敛,实际 ${lateLedger.result.code}\n${lateLedger.output}`,
+        );
+        assert(
+          lateLedger.result.ledgerProbes >= 3,
+          `账本键也必须被轮询等到(至少 3 次采样),实际 ${lateLedger.result.ledgerProbes} 次`,
+        );
+      });
 
-      // 反向:真残留(永久存在)不能被「等收尾」等掉 —— 烧完预算后必须照实判红。
-      // 残留刻意放在**卸载注册表项 + 快捷方式**上(账本键留干净):账本键那面归第 15 段,
-      // 这里用它当证据就变成两条缺口共用一张票,变异实验就分不出是哪处在起作用了。
-      const permanent = await withCapturedOutput(() =>
-        runInstallWithFakeResidue({
-          installDir: path.join(root, "installed3", FIXTURE_PRODUCT),
-          scratchRoot: path.join(root, "scratch-permanent"),
-          ledgerOutcome: "clean",
-          leaveRegistry: true,
-          timeoutMs: 1000,
-        }),
-      );
-      assert(
-        permanent.result.code === 1,
-        `永久残留必须判红(等收尾不得把真残留等掉),实际 ${permanent.result.code}\n${permanent.output}`,
-      );
-      assert(
-        permanent.output.includes(FIXTURE_NEW_KEY) && permanent.output.includes(shortcutPath),
-        `应逐项点名卸载注册表项与快捷方式;实际:${permanent.output}`,
-      );
-      assert(
-        /等待卸载器收尾 \d+ms\(上限 \d+ms\)后本次新增残留仍未清空/.test(permanent.output),
-        `等满预算这一事实本身应被报出来(它排除了「只是慢」这一解释);实际:${permanent.output}`,
-      );
+      await s.case("16b 反向:永久残留等不掉,烧满预算后照实判红并点名", async () => {
+        // 反向:真残留(永久存在)不能被「等收尾」等掉 —— 烧完预算后必须照实判红。
+        // 残留刻意放在**卸载注册表项 + 快捷方式**上(账本键留干净):账本键那面归第 15 段,
+        // 这里用它当证据就变成两条缺口共用一张票,变异实验就分不出是哪处在起作用了。
+        const permanent = await withCapturedOutput(() =>
+          runInstallWithFakeResidue({
+            installDir: path.join(root, "installed3", FIXTURE_PRODUCT),
+            scratchRoot: path.join(root, "scratch-permanent"),
+            ledgerOutcome: "clean",
+            leaveRegistry: true,
+            timeoutMs: 1000,
+          }),
+        );
+        assert(
+          permanent.result.code === 1,
+          `永久残留必须判红(等收尾不得把真残留等掉),实际 ${permanent.result.code}\n${permanent.output}`,
+        );
+        assert(
+          permanent.output.includes(FIXTURE_NEW_KEY) && permanent.output.includes(shortcutPath),
+          `应逐项点名卸载注册表项与快捷方式;实际:${permanent.output}`,
+        );
+        assert(
+          /等待卸载器收尾 \d+ms\(上限 \d+ms\)后本次新增残留仍未清空/.test(permanent.output),
+          `等满预算这一事实本身应被报出来(它排除了「只是慢」这一解释);实际:${permanent.output}`,
+        );
+      });
 
-      // 既有安装那一轮:「安装目录」这一项本来就判不了,不该为此白等整个收尾预算。
-      const preexistingDir = await withCapturedOutput(() =>
-        runInstallWithFakeResidue({
-          installDir: path.join(root, "installed4", FIXTURE_PRODUCT),
-          scratchRoot: path.join(root, "scratch-preexistingdir"),
-          leaveRegistry: true,
-          installDirExistedBefore: true,
-          timeoutMs: 8000,
-        }),
-      );
-      assert(
-        preexistingDir.result.code === 1,
-        `卸载注册表项残留仍须判红;实际 ${preexistingDir.result.code}\n${preexistingDir.output}`,
-      );
-      assert(
-        preexistingDir.output.includes(FIXTURE_NEW_KEY),
-        `既有目录那一轮同样要逐项点名(跳过等待 ≠ 跳过判定);实际:${preexistingDir.output}`,
-      );
-      assert(
-        !/等待卸载器收尾/.test(preexistingDir.output),
-        `安装目录安装前就存在那一轮不等收尾(那一项判不了,等它只是白等预算);实际:${preexistingDir.output}`,
-      );
+      await s.case("16b 既有安装那一轮:跳过等待 ≠ 跳过判定", async () => {
+        // 既有安装那一轮:「安装目录」这一项本来就判不了,不该为此白等整个收尾预算。
+        const preexistingDir = await withCapturedOutput(() =>
+          runInstallWithFakeResidue({
+            installDir: path.join(root, "installed4", FIXTURE_PRODUCT),
+            scratchRoot: path.join(root, "scratch-preexistingdir"),
+            leaveRegistry: true,
+            installDirExistedBefore: true,
+            timeoutMs: 8000,
+          }),
+        );
+        assert(
+          preexistingDir.result.code === 1,
+          `卸载注册表项残留仍须判红;实际 ${preexistingDir.result.code}\n${preexistingDir.output}`,
+        );
+        assert(
+          preexistingDir.output.includes(FIXTURE_NEW_KEY),
+          `既有目录那一轮同样要逐项点名(跳过等待 ≠ 跳过判定);实际:${preexistingDir.output}`,
+        );
+        assert(
+          !/等待卸载器收尾/.test(preexistingDir.output),
+          `安装目录安装前就存在那一轮不等收尾(那一项判不了,等它只是白等预算);实际:${preexistingDir.output}`,
+        );
+      });
       console.log(
         "[ok] install-smoke:卸载后残留快照等「卸载器收尾」(残留集合清空)再拍,滞后清理不判红(无假阳性),真残留仍判红",
       );
-    }
+    });
   } catch (error) {
     failure = /** @type {Error} */ (error);
   } finally {
@@ -2172,6 +2353,7 @@ export async function run() {
     }
   }
   if (failure !== null) throw failure;
+  return { cases: suite.results };
 }
 
 /**

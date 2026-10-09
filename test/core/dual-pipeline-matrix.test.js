@@ -78,6 +78,7 @@ import {
   watermarkDmlRotation,
 } from "../../dist/core/settings/settings-defaults.js";
 import { WATERMARK_GRAY } from "../../dist/core/style/colors.js";
+import { createCaseSuite } from "../harness/case.js";
 import { docxBookmarks, docxLinkBody, docxTocAnchors, pdfHeadingIds, pdfLinkBody, pdfTocItems } from "../harness/dual-extract.js";
 import { buildMatrixCtx } from "../harness/dual-sandbox.js";
 import { captionBeforeH1Md, captionLabelMd, deepHeadingsMd, katexBoundaryMd, mainMd } from "../harness/dual-samples.js";
@@ -1496,22 +1497,43 @@ async function docxXmlOf(buffer) {
 }
 
 export async function run() {
-  assertMatrixShape();
+  const suite = createCaseSuite();
+
+  // 形状守护独立成一个 case:它判的是「矩阵这张表本身」(行字段齐备 / 锚点真实存在 /
+  // 行集合与台账逐字相符 / 逐键覆盖交叉核对),不依赖任何双侧产物 —— 放进逐行实跑那组里
+  // 会让「表写坏了」和「产物不对」两种失败报在同一个位置上。
+  await suite.case("矩阵形状:行字段齐备 + 锚点在源文件中真实存在 + 行集合与台账逐字相符 + 逐键覆盖交叉核对", () => {
+    assertMatrixShape();
+  });
+
   // 双侧产物由沙箱装配(见 test/harness/dual-sandbox.js):逐维度真跑一次 convert,
   // 解包 / 提取后作为各行 verify 的入参 —— 禁止只列元数据不验证。
+  // ⚠ 取数刻意留在所有 case 之外:26 行共用同一份 ctx,搬进任一 case 都会让「产物没跑出来」
+  // 变成那一行单独的失败(实际是全部行的前提)。
   const ctx = await buildMatrixCtx();
   // 6-C2 新增四行的产物(排版 / h1 分页 / 页眉页脚 / 水印)在此并入同一 ctx,
   // 使 26 行走同一条「逐行实跑」通路,不另开一条只跑新行的旁路。
   const full = /** @type {MatrixCtxExtended} */ (Object.assign(ctx, await buildExtendedCtx()));
-  for (const row of MATRIX) {
-    await row.verify(full);
-    console.log(`[ok] dual-matrix:${row.id} (${row.mode}) ${row.dimension}`);
-  }
+
+  // 每行一个 case:case 名即行 id + 判定类别 + 语义维度(人读),失败定位与原先
+  // `[dual-matrix:<id>]` 前缀一一对应,不必再靠日志倒推是哪一行。
+  await suite.describe("逐行实跑(每行双侧产物判定)", async () => {
+    for (const row of MATRIX) {
+      await suite.case(`${row.id}(${row.mode}) ${row.dimension}`, async () => {
+        await row.verify(full);
+        console.log(`[ok] dual-matrix:${row.id} (${row.mode}) ${row.dimension}`);
+      });
+    }
+  });
+
   const mustCount = MATRIX.filter((r) => r.mode === "mustMatch").length;
   const diffCount = MATRIX.length - mustCount;
-  console.log(
-    `[ok] dual-pipeline-matrix:${MATRIX.length} 行全部实跑通过(必须一致 ${mustCount} / 允许不同 ${diffCount})`,
-  );
+  // 汇总行只在无失败 case 时打印:它陈述的是「全部行实跑通过」,有失败时照打会变成假话
+  if (!suite.hasFailures) {
+    console.log(
+      `[ok] dual-pipeline-matrix:${MATRIX.length} 行全部实跑通过(必须一致 ${mustCount} / 允许不同 ${diffCount})`,
+    );
+  }
   // 逐键覆盖行数(可判登记的人读回显;数字本身不是断言,断言在 assertMatrixShape 里)
   /** @type {Record<string, readonly string[]>} */
   const coversByRow = {};
@@ -1521,4 +1543,6 @@ export async function run() {
     `[ok] dual-pipeline-matrix:${Object.keys(perKey).length} 个双管线键逐键覆盖行数 `
     + Object.entries(perKey).map(([key, n]) => `${key}=${String(n)}`).join(" "),
   );
+
+  return { cases: suite.results };
 }

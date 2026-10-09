@@ -32,6 +32,7 @@ import { WATERMARK_GRAY, WATERMARK_INK } from "../../dist/core/style/colors.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const { assert } = createAsserter("watermark");
 
@@ -102,23 +103,27 @@ const md = "# 水印测试\n\n本文档用于人工实测文字水印。\n";
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   // ---- 0. 默认角度取值与换算(6-B1:单点可翻转) ----
   // 默认 315 = 逆时针 45° = 中文出版惯例的「左下 → 右上」;两侧同号,
   // 故 docx 侧的 rot 与 pdf 侧的 rotate 同向。翻转只需改
   // WATERMARK_DML_ROTATION_SIGN 一个常量(方向待人工渲染确认,见 settings-defaults)。
-  assert(DEFAULT_WATERMARK_ANGLE === 315, `水印默认角度应为 315(左下→右上),实际 ${DEFAULT_WATERMARK_ANGLE}`);
-  assert(DEFAULT_WATERMARK.angle === DEFAULT_WATERMARK_ANGLE, "DEFAULT_WATERMARK.angle 应取默认角度单点");
-  assert(
-    watermarkDmlRotation(DEFAULT_WATERMARK_ANGLE) === 315 * WATERMARK_DML_ROTATION_SIGN * 60_000,
-    "watermarkDmlRotation 应按「角度 × 符号系数 × 60000」换算",
-  );
-  assert(
-    WATERMARK_DML_ROTATION_SIGN === 1 || WATERMARK_DML_ROTATION_SIGN === -1,
-    "docx 侧符号系数只能是 ±1(单点翻转的契约)",
-  );
+  await suite.case("默认角度 315 且 DML 换算与符号系数契约成立", () => {
+    assert(DEFAULT_WATERMARK_ANGLE === 315, `水印默认角度应为 315(左下→右上),实际 ${DEFAULT_WATERMARK_ANGLE}`);
+    assert(DEFAULT_WATERMARK.angle === DEFAULT_WATERMARK_ANGLE, "DEFAULT_WATERMARK.angle 应取默认角度单点");
+    assert(
+      watermarkDmlRotation(DEFAULT_WATERMARK_ANGLE) === 315 * WATERMARK_DML_ROTATION_SIGN * 60_000,
+      "watermarkDmlRotation 应按「角度 × 符号系数 × 60000」换算",
+    );
+    assert(
+      WATERMARK_DML_ROTATION_SIGN === 1 || WATERMARK_DML_ROTATION_SIGN === -1,
+      "docx 侧符号系数只能是 ±1(单点翻转的契约)",
+    );
+  });
 
   // ---- 1. docx:水印文字进入 header XML(gray=true → #999999) ----
   const wmGray = { ...DEFAULT_WATERMARK, text: "机密文档", angle: DEFAULT_WATERMARK_ANGLE, opacity: 0.15, gray: true };
+  // 转换与解包是昂贵前置,放 case 外一次做完(下列多个 case 引用同一份 header XML)
   const grayDocx = await convertWithFs(md, "docx", {
     baseDir: FIXTURES_DIR,
     warnings: [],
@@ -128,24 +133,28 @@ export async function run() {
   });
   const grayHeaders = await headerXmls(docxBufferOf(grayDocx));
   const grayXml = grayHeaders.texts.join("\n");
-  assert(grayHeaders.names.length > 0, "水印应生成 header part");
-  assert(grayXml.includes("机密文档"), "水印文字应写入 header XML");
-  assert(grayXml.includes(WATERMARK_GRAY), `gray=true 应使用共享常量浅灰配色 ${WATERMARK_GRAY}`);
-  assert(grayXml.includes("wps:wsp"), "水印应使用 DML 文本框(wps:wsp)");
-  assert(
-    grayXml.includes(`rot="${watermarkDmlRotation(wmGray.angle)}"`),
-    `docx 水印 rot 应等于 watermarkDmlRotation(${wmGray.angle}) = ${watermarkDmlRotation(wmGray.angle)}`,
-  );
-  assert(grayXml.includes('anchor="ctr"'), "DML wps:bodyPr 应垂直居中(anchor=ctr)");
+  await suite.case("docx:水印文字进 header、gray 配色、DML 文本框、rot 换算、垂直居中", () => {
+    assert(grayHeaders.names.length > 0, "水印应生成 header part");
+    assert(grayXml.includes("机密文档"), "水印文字应写入 header XML");
+    assert(grayXml.includes(WATERMARK_GRAY), `gray=true 应使用共享常量浅灰配色 ${WATERMARK_GRAY}`);
+    assert(grayXml.includes("wps:wsp"), "水印应使用 DML 文本框(wps:wsp)");
+    assert(
+      grayXml.includes(`rot="${watermarkDmlRotation(wmGray.angle)}"`),
+      `docx 水印 rot 应等于 watermarkDmlRotation(${wmGray.angle}) = ${watermarkDmlRotation(wmGray.angle)}`,
+    );
+    assert(grayXml.includes('anchor="ctr"'), "DML wps:bodyPr 应垂直居中(anchor=ctr)");
+  });
   // ---- 1b. docx:不透明度真消费(6-B2 —— 此前靠浅灰配色近似,设置项静默失效) ----
-  assert(grayXml.includes("<w14:textFill>"), "docx 水印应产出 w14:textFill(文字透明度载体)");
-  // 方向:真实渲染器把 w14:alpha 当「透明度」消费(0=全不透明,100000=全透明),
-  // 故 alpha = (1 − opacity) × 100000,不是字面读法的 opacity × 100000。
-  // 依据与维护须知见 src/core/docx/chrome.ts 的 WatermarkTextRun 注释。
-  assert(
-    alphaOf(grayXml) === 85_000,
-    `docx 水印 alpha 应等于 (1 − opacity 0.15) × 100000 = 85000(近不透明),实际 ${alphaOf(grayXml)}`,
-  );
+  await suite.case("docx:不透明度经 w14:textFill 真消费(取反语义)", () => {
+    assert(grayXml.includes("<w14:textFill>"), "docx 水印应产出 w14:textFill(文字透明度载体)");
+    // 方向:真实渲染器把 w14:alpha 当「透明度」消费(0=全不透明,100000=全透明),
+    // 故 alpha = (1 − opacity) × 100000,不是字面读法的 opacity × 100000。
+    // 依据与维护须知见 src/core/docx/chrome.ts 的 WatermarkTextRun 注释。
+    assert(
+      alphaOf(grayXml) === 85_000,
+      `docx 水印 alpha 应等于 (1 − opacity 0.15) × 100000 = 85000(近不透明),实际 ${alphaOf(grayXml)}`,
+    );
+  });
 
   // ---- 1c. docx:形状显式「无填充 + 无描边」(不带就是继承渲染器默认形状格式) ----
   // 背景:水印形状本来就不该有填充与描边,靠「省略即无」是继承渲染器的默认形状格式,
@@ -157,15 +166,17 @@ export async function run() {
   // (解包核实 <a:noFill/> 与 <a:ln><a:noFill/></a:ln> 都在),而红线**依旧**,
   // 即「红线来自形状默认描边」这个归因已被证伪(见 1d)。两条断言守的是
   // 「不依赖渲染器默认值」这一条不变式,与红线的成因无关。
-  const graySpPr = spPrOf(grayXml);
-  assert(
-    /<a:noFill\s*\/>/.test(graySpPr),
-    `形状 spPr 应显式声明无填充 <a:noFill/>(不依赖渲染器默认形状格式),实际: ${graySpPr}`,
-  );
-  assert(
-    /<a:ln\b[^>]*>\s*<a:noFill\s*\/>\s*<\/a:ln>/.test(graySpPr),
-    `形状 spPr 应显式声明无描边 <a:ln><a:noFill/></a:ln>(不依赖渲染器默认形状格式),实际: ${graySpPr}`,
-  );
+  await suite.case("docx:形状 spPr 显式声明无填充 + 无描边", () => {
+    const graySpPr = spPrOf(grayXml);
+    assert(
+      /<a:noFill\s*\/>/.test(graySpPr),
+      `形状 spPr 应显式声明无填充 <a:noFill/>(不依赖渲染器默认形状格式),实际: ${graySpPr}`,
+    );
+    assert(
+      /<a:ln\b[^>]*>\s*<a:noFill\s*\/>\s*<\/a:ln>/.test(graySpPr),
+      `形状 spPr 应显式声明无描边 <a:ln><a:noFill/></a:ln>(不依赖渲染器默认形状格式),实际: ${graySpPr}`,
+    );
+  });
 
   // ---- 1d. docx:水印 run 标记为「不参与拼写/语法校对」(<w:noProof/>) ----
   // 水印是**装饰内容,不是正文**,本就不该被校对 —— 这一条独立成立,与外观/透明度/
@@ -181,34 +192,42 @@ export async function run() {
   // 水印 run 上还是别处。正则要求**裸** <w:noProof/> —— 库对 noProof:false 产出的是
   // <w:noProof w:val="false"/>,带上 w:val 形态会被下面的断言判红(那正是「标记被显式关掉」
   // 的失败形态)。
-  const grayRunRPr = watermarkRunRPrOf(grayXml);
-  assert(
-    /<w:noProof\s*\/>/.test(grayRunRPr),
-    `水印是装饰内容,不该被拼写/语法校对标记 —— 缺了 <w:noProof/> 会被渲染器标记;水印 run 的 rPr 应含裸 <w:noProof/>(带 w:val 形态即 noProof 被显式关掉),实际: ${grayRunRPr}`,
-  );
+  await suite.case("docx:水印 run 的 rPr 带裸 <w:noProof/>", () => {
+    const grayRunRPr = watermarkRunRPrOf(grayXml);
+    assert(
+      /<w:noProof\s*\/>/.test(grayRunRPr),
+      `水印是装饰内容,不该被拼写/语法校对标记 —— 缺了 <w:noProof/> 会被渲染器标记;水印 run 的 rPr 应含裸 <w:noProof/>(带 w:val 形态即 noProof 被显式关掉),实际: ${grayRunRPr}`,
+    );
+  });
 
   // ---- 2. docx:gray=false → 正文字色 #1F2328 ----
-  const wmColor = { ...DEFAULT_WATERMARK, text: "彩色水印", gray: false };
-  const colorDocx = await convertWithFs(md, "docx", {
-    baseDir: FIXTURES_DIR,
-    warnings: [],
-    headerFooter: { ...DEFAULT_HEADER_FOOTER, headerMode: "none" },
-    watermark: wmColor,
+  await suite.case("docx:gray=false 取共享常量正文字色", async () => {
+    const wmColor = { ...DEFAULT_WATERMARK, text: "彩色水印", gray: false };
+    const colorDocx = await convertWithFs(md, "docx", {
+      baseDir: FIXTURES_DIR,
+      warnings: [],
+      headerFooter: { ...DEFAULT_HEADER_FOOTER, headerMode: "none" },
+      watermark: wmColor,
+    });
+    const colorXml = (await headerXmls(docxBufferOf(colorDocx))).texts.join("\n");
+    assert(colorXml.includes(WATERMARK_INK), `gray=false 应使用共享常量正文字色 ${WATERMARK_INK}`);
   });
-  const colorXml = (await headerXmls(docxBufferOf(colorDocx))).texts.join("\n");
-  assert(colorXml.includes(WATERMARK_INK), `gray=false 应使用共享常量正文字色 ${WATERMARK_INK}`);
 
   // ---- 3. docx:空 text 不生成水印头(none 模式 + 空 text = 无任何 header) ----
-  const emptyDocx = await convertWithFs(md, "docx", {
-    baseDir: FIXTURES_DIR,
-    warnings: [],
-    headerFooter: { ...DEFAULT_HEADER_FOOTER, headerMode: "none" },
-    watermark: { ...DEFAULT_WATERMARK, text: "" },
+  await suite.case("docx:空 text 不生成任何 header part", async () => {
+    const emptyDocx = await convertWithFs(md, "docx", {
+      baseDir: FIXTURES_DIR,
+      warnings: [],
+      headerFooter: { ...DEFAULT_HEADER_FOOTER, headerMode: "none" },
+      watermark: { ...DEFAULT_WATERMARK, text: "" },
+    });
+    assert((await headerXmls(docxBufferOf(emptyDocx))).names.length === 0, "空 text 不应生成任何 header part");
   });
-  assert((await headerXmls(docxBufferOf(emptyDocx))).names.length === 0, "空 text 不应生成任何 header part");
 
   // ---- 4. docx:默认配置 text 为空(零渲染) ----
-  assert(DEFAULT_WATERMARK.text === "", "默认 wateromark.text 应为空(关闭)");
+  await suite.case("默认配置 watermark.text 为空(零渲染)", () => {
+    assert(DEFAULT_WATERMARK.text === "", "默认 wateromark.text 应为空(关闭)");
+  });
 
   // ---- 5. pdf:html 含 .wm 覆盖层 + 旋转/不透明度 CSS ----
   const pdfDoc = asPdfArtifact(
@@ -218,15 +237,17 @@ export async function run() {
       watermark: wmGray,
     }),
   );
-  assert(pdfDoc.kind === "pdf", "pdf 分支产物类型");
-  assert(pdfDoc.html.includes('class="wm"'), "PDF html 应含水印覆盖层元素");
-  assert(pdfDoc.html.includes(">机密文档</div>"), "PDF 水印元素应含文字");
-  assert(
-    pdfDoc.html.includes(`rotate(${wmGray.angle}deg)`),
-    `PDF 水印 CSS 应含与 docx 同号的旋转角 ${wmGray.angle}deg`,
-  );
-  assert(pdfDoc.html.includes(`color: #${WATERMARK_GRAY}`), `PDF 水印 CSS 应与 docx 同源取色(#${WATERMARK_GRAY})`);
-  assert(pdfDoc.html.includes("opacity: 0.15"), "PDF 水印 CSS 应含不透明度");
+  await suite.case("pdf:含 .wm 覆盖层元素、文字、同号旋转角、同源取色、不透明度", () => {
+    assert(pdfDoc.kind === "pdf", "pdf 分支产物类型");
+    assert(pdfDoc.html.includes('class="wm"'), "PDF html 应含水印覆盖层元素");
+    assert(pdfDoc.html.includes(">机密文档</div>"), "PDF 水印元素应含文字");
+    assert(
+      pdfDoc.html.includes(`rotate(${wmGray.angle}deg)`),
+      `PDF 水印 CSS 应含与 docx 同号的旋转角 ${wmGray.angle}deg`,
+    );
+    assert(pdfDoc.html.includes(`color: #${WATERMARK_GRAY}`), `PDF 水印 CSS 应与 docx 同源取色(#${WATERMARK_GRAY})`);
+    assert(pdfDoc.html.includes("opacity: 0.15"), "PDF 水印 CSS 应含不透明度");
+  });
 
   // ---- 5b. 两侧不透明度同值可执行对齐(6-B2 的核心断言) ----
   // 取一个非默认 opacity,证明两侧都消费同一个设置值:docx 走 w14:alpha
@@ -244,12 +265,14 @@ export async function run() {
     watermark: wmHalf,
   });
   const halfXml = (await headerXmls(docxBufferOf(halfDocx))).texts.join("\n");
-  assert(
-    alphaOf(halfXml) === 50_000,
-    `docx opacity=0.5 应写 w14:alpha=50000(半透明;注意该值取反与否相同,不是方向证据),实际 ${alphaOf(halfXml)}`,
-  );
   const halfPdf = asPdfArtifact(await convertWithFs(md, "pdf", { baseDir: FIXTURES_DIR, warnings: [], watermark: wmHalf }));
-  assert(halfPdf.html.includes("opacity: 0.5"), "PDF opacity=0.5 应写 CSS opacity: 0.5");
+  await suite.case("两侧同值对齐:opacity=0.5 在 docx 与 pdf 都落地", () => {
+    assert(
+      alphaOf(halfXml) === 50_000,
+      `docx opacity=0.5 应写 w14:alpha=50000(半透明;注意该值取反与否相同,不是方向证据),实际 ${alphaOf(halfXml)}`,
+    );
+    assert(halfPdf.html.includes("opacity: 0.5"), "PDF opacity=0.5 应写 CSS opacity: 0.5");
+  });
 
   // ---- 5c. 不透明度端点:方向锁(反转回归的唯一守护点) ----
   // 真实渲染器把 w14:alpha 当「透明度」消费(0 = 全不透明,100000 = 全透明),
@@ -275,27 +298,34 @@ export async function run() {
   };
 
   const zeroXml = await headerXmlFor("全透", 0);
-  assert(
-    alphaOf(zeroXml) === 100_000,
-    `docx opacity=0 应写 w14:alpha=100000(全透明=看不见);若得 0 即映射被改回字面读法,实际 ${alphaOf(zeroXml)}`,
-  );
   const opaqueXml = await headerXmlFor("全实", 1);
-  assert(
-    alphaOf(opaqueXml) === 0,
-    `docx opacity=1 应写 w14:alpha=0(全不透明=最实);若得 100000 即映射被改回字面读法,实际 ${alphaOf(opaqueXml)}`,
-  );
+  // 两个端点各自锁一侧方向,合在一个 case:反转回归会让两者互换,
+  // 只报一个就看不出「互换」这一形态
+  await suite.case("不透明度端点锁方向:opacity 0→alpha 100000 / opacity 1→alpha 0", () => {
+    assert(
+      alphaOf(zeroXml) === 100_000,
+      `docx opacity=0 应写 w14:alpha=100000(全透明=看不见);若得 0 即映射被改回字面读法,实际 ${alphaOf(zeroXml)}`,
+    );
+    assert(
+      alphaOf(opaqueXml) === 0,
+      `docx opacity=1 应写 w14:alpha=0(全不透明=最实);若得 100000 即映射被改回字面读法,实际 ${alphaOf(opaqueXml)}`,
+    );
+  });
 
   // ---- 6. pdf:空 text 无水印元素 ----
-  const pdfEmpty = asPdfArtifact(
-    await convertWithFs(md, "pdf", {
-      baseDir: FIXTURES_DIR,
-      warnings: [],
-      watermark: { ...DEFAULT_WATERMARK, text: "" },
-    }),
-  );
-  assert(!pdfEmpty.html.includes('class="wm"'), "空 text 的 PDF 不应含水印元素");
+  await suite.case("pdf:空 text 无水印元素", async () => {
+    const pdfEmpty = asPdfArtifact(
+      await convertWithFs(md, "pdf", {
+        baseDir: FIXTURES_DIR,
+        warnings: [],
+        watermark: { ...DEFAULT_WATERMARK, text: "" },
+      }),
+    );
+    assert(!pdfEmpty.html.includes('class="wm"'), "空 text 的 PDF 不应含水印元素");
+  });
 
   console.log(
     "[ok] watermark:角度单点(315/同号) + docx 文字/配色/rot 换算/w14:alpha 不透明度(取反语义,端点锁方向)/形状显式无填充无描边(不继承默认形状格式)/水印 run 带 <w:noProof/>(装饰内容不参与校对)/空 text 零渲染 + pdf 覆盖层/旋转/不透明度 断言通过",
   );
+  return { cases: suite.results };
 }

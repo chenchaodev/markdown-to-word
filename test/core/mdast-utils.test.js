@@ -11,6 +11,7 @@
  */
 import { collectPlainText } from "../../dist/core/text/mdast-utils.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const { assert } = createAsserter("mdast-utils");
 
@@ -19,55 +20,65 @@ export const fixtures = null;
 
 /** 纯 Node 段(零 Electron API) */
 export async function run() {
+  const suite = createCaseSuite();
   // ---- 1. 叶子节点:value 直取 ----
   // 夹具直接用裸字面量:产物声明的入参是 mdast `Node`(type + 可选 value/children),
   // 这几份节点本身就落在该形状内,无需测试侧再标一次。
-  const textNode = { type: "text", value: "Hello" };
-  const inlineCodeNode = { type: "inlineCode", value: "x=1" };
-  assert(collectPlainText(textNode) === "Hello", "text 节点应返回 value");
-  assert(collectPlainText(inlineCodeNode) === "x=1", "inlineCode value 应计入纯文本");
+  await suite.case("叶子节点 value 直取", () => {
+    const textNode = { type: "text", value: "Hello" };
+    const inlineCodeNode = { type: "inlineCode", value: "x=1" };
+    assert(collectPlainText(textNode) === "Hello", "text 节点应返回 value");
+    assert(collectPlainText(inlineCodeNode) === "x=1", "inlineCode value 应计入纯文本");
+  });
 
   // ---- 2. 容器节点:children 递归拼接(保序) ----
-  const para = {
-    type: "paragraph",
-    children: [
-      { type: "text", value: "见" },
-      { type: "emphasis", children: [{ type: "text", value: "第" }] },
-      { type: "strong", children: [{ type: "text", value: "三章" }] },
-    ],
-  };
-  assert(collectPlainText(para) === "见第三章", "嵌套 children 应保序拼接(样式标志剥除)");
+  await suite.case("容器节点 children 保序递归拼接", () => {
+    const para = {
+      type: "paragraph",
+      children: [
+        { type: "text", value: "见" },
+        { type: "emphasis", children: [{ type: "text", value: "第" }] },
+        { type: "strong", children: [{ type: "text", value: "三章" }] },
+      ],
+    };
+    assert(collectPlainText(para) === "见第三章", "嵌套 children 应保序拼接(样式标志剥除)");
+  });
 
   // ---- 3. comment 节点:只计 anchor,content(批注内容)不入纯文本 ----
-  const comment = {
-    type: "comment",
-    anchor: [{ type: "text", value: "结果" }],
-    content: [{ type: "text", value: "此处批注:数据待核对" }],
-  };
-  assert(
-    collectPlainText(comment) === "结果",
-    `comment 节点应只累加 anchor 文本,实际 ${JSON.stringify(collectPlainText(comment))}`,
-  );
-  // 混合场景:anchor 内含样式节点,与前后文本节点共存于段落
-  const mixed = {
-    type: "paragraph",
-    children: [
-      { type: "text", value: "前" },
-      {
-        type: "comment",
-        anchor: [{ type: "emphasis", children: [{ type: "text", value: "锚" }] }],
-        content: [{ type: "text", value: "机密内容" }],
-      },
-      { type: "text", value: "后" },
-    ],
-  };
-  assert(collectPlainText(mixed) === "前锚后", "comment 混排应保留锚文本、剔除批注内容");
+  await suite.case("comment 只计 anchor 不计批注内容", () => {
+    const comment = {
+      type: "comment",
+      anchor: [{ type: "text", value: "结果" }],
+      content: [{ type: "text", value: "此处批注:数据待核对" }],
+    };
+    assert(
+      collectPlainText(comment) === "结果",
+      `comment 节点应只累加 anchor 文本,实际 ${JSON.stringify(collectPlainText(comment))}`,
+    );
+    // 混合场景:anchor 内含样式节点,与前后文本节点共存于段落
+    const mixed = {
+      type: "paragraph",
+      children: [
+        { type: "text", value: "前" },
+        {
+          type: "comment",
+          anchor: [{ type: "emphasis", children: [{ type: "text", value: "锚" }] }],
+          content: [{ type: "text", value: "机密内容" }],
+        },
+        { type: "text", value: "后" },
+      ],
+    };
+    assert(collectPlainText(mixed) === "前锚后", "comment 混排应保留锚文本、剔除批注内容");
+  });
 
   // ---- 4. 边界:空节点 / 空 children ----
-  const breakNode = { type: "break" };
-  const emptyPara = { type: "paragraph", children: [] };
-  assert(collectPlainText(breakNode) === "", "无 value 无 children 的节点应返回空串");
-  assert(collectPlainText(emptyPara) === "", "空 children 应返回空串");
+  await suite.case("无 value 无 children 的边界返回空串", () => {
+    const breakNode = { type: "break" };
+    const emptyPara = { type: "paragraph", children: [] };
+    assert(collectPlainText(breakNode) === "", "无 value 无 children 的节点应返回空串");
+    assert(collectPlainText(emptyPara) === "", "空 children 应返回空串");
+  });
 
   console.log("[ok] mdast-utils:collectPlainText value 直取/递归拼接/comment 只计 anchor/空边界 断言通过");
+  return { cases: suite.results };
 }

@@ -13,6 +13,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { globalSlot, setGlobalSlot } from "./dom-stub.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const { assert: harnessAssert } = createAsserter("session-persist-feedback");
 
@@ -209,6 +210,7 @@ function hardenElementShape(/** @type {unknown} */ value, /** @type {Set<unknown
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const originalDocument = globalSlot("document");
   const originalWindow = globalSlot("window");
   const originalMutationObserver = globalSlot("MutationObserver");
@@ -327,6 +329,7 @@ export async function run() {
 
     // ---- 1. renderSelection:一次变更 = 一次 uiStateSet(单一写入点,无重复 mutation) ----
     state.selectedFiles = ["C:\\session-persist\\case-1.md"];
+    await suite.case("renderSelection 一次变更只写一次会话文件", async () => {
     fileList.renderSelection();
     await flush(); // 去重键在写成功后回填,须等 then 分支落地
     assert(countCalls() === 1, `renderSelection 应只写一次会话文件,实际 ${countCalls()} 次`);
@@ -334,10 +337,16 @@ export async function run() {
       JSON.stringify(recordAt(calls, 0).lastSessionFiles) === JSON.stringify(["C:\\session-persist\\case-1.md"]),
       `写入内容应等于当前选择,实际 ${JSON.stringify(recordAt(calls, 0))}`,
     );
+    });
+
+    await suite.case("内容未变的纯重渲染不重复写", async () => {
     // 内容未变的纯重渲染(语言切换等)不重复写
     fileList.renderSelection();
     await flush();
     assert(countCalls() === 1, `内容未变的重渲染不应重复写,实际 ${countCalls()} 次`);
+    });
+
+    await suite.case("清空选择经同一写入点落一次空数组", async () => {
     // 清空选择同样经同一写入点落一次
     state.selectedFiles = [];
     fileList.renderSelection();
@@ -347,12 +356,14 @@ export async function run() {
       JSON.stringify(recordAt(calls, 1).lastSessionFiles) === JSON.stringify([]),
       "清空选择应写入空数组",
     );
+    });
 
     // ---- 2. 排序路径(moveItem → renderMultiList)也只写一次,内容为重排后顺序 ----
     const pair = ["C:\\session-persist\\sort-a.md", "C:\\session-persist\\sort-b.md"];
     state.selectedFiles = [...pair];
     fileList.moveItem(0, 1);
     await flush();
+    await suite.case("排序重排只写一次且内容为重排后顺序", () => {
     assert(countCalls() === 3, `排序重排应写一次,实际 ${countCalls()} 次`);
     assert(
       JSON.stringify(recordAt(calls, 2).lastSessionFiles) === JSON.stringify([...pair].reverse()),
@@ -362,6 +373,7 @@ export async function run() {
       JSON.stringify(state.selectedFiles) === JSON.stringify([...pair].reverse()),
       "编辑内容(内存选择)应与写入内容一致",
     );
+    });
 
     // ---- 3. 写失败:不静默,状态区给统一失败文案 + 保留编辑内容 ----
     rejectWrites = true;
@@ -369,6 +381,7 @@ export async function run() {
     state.selectedFiles = ["C:\\session-persist\\case-3.md"];
     fileList.renderSelection();
     await flush();
+    await suite.case("会话文件写失败在状态区可见并保留编辑内容", () => {
     assert(
       statusEl.textContent === saveFailed,
       `会话文件写失败应在状态区可见(期望 ${JSON.stringify(saveFailed)},实际 ${JSON.stringify(statusEl.textContent)})`,
@@ -378,22 +391,26 @@ export async function run() {
       JSON.stringify(state.selectedFiles) === JSON.stringify(["C:\\session-persist\\case-3.md"]),
       "写失败必须保留编辑内容(不清空/不回滚列表)",
     );
+    });
 
     // ---- 4. 失败后可恢复:同内容下一次保存仍真正重试(失败不记入去重键) ----
     const beforeRetry = countCalls();
     rejectWrites = false;
     fileList.renderSelection();
     await flush();
+    await suite.case("失败后同内容再次保存真正重试一次", () => {
     assert(
       countCalls() === beforeRetry + 1,
       `失败后同内容再次保存应重试一次,实际新增 ${countCalls() - beforeRetry} 次`,
     );
+    });
 
     // ---- 5. 设置面板「不再提示」写失败同一反馈口径,勾选态保留 ----
     rejectWrites = true;
     statusEl.textContent = "";
     settingsPanel.setSuppressCompleteDialog(false);
     await flush();
+    await suite.case("完成弹窗偏好写失败给出同一文案且保留勾选态", () => {
     assert(
       statusEl.textContent === saveFailed,
       `完成弹窗偏好写失败应给出同一失败文案,实际 ${JSON.stringify(statusEl.textContent)}`,
@@ -402,6 +419,7 @@ export async function run() {
       state.suppressCompleteDialog === false,
       "写失败必须保留用户勾选态(编辑内容不丢)",
     );
+    });
 
     // ---- 6. 抽屉开合记忆(settings-drawer):写失败同一反馈口径,开合态保留 ----
     rejectWrites = true;
@@ -409,6 +427,7 @@ export async function run() {
     settingsDrawer.openSettingsDrawer();
     settingsDrawer.closeSettingsDrawer();
     await flush();
+    await suite.case("抽屉开合记忆写失败给出同一文案且开合态保留", () => {
     assert(
       statusEl.textContent === saveFailed,
       `抽屉开合记忆写失败应给出同一失败文案,实际 ${JSON.stringify(statusEl.textContent)}`,
@@ -417,6 +436,7 @@ export async function run() {
       !settingsDrawer.isSettingsDrawerOpen(),
       "抽屉开合是本次会话的真实状态:写失败不应强制改变开合",
     );
+    });
 
     // ---- 7. 清空最近记录(recent-files):写失败保留列表,不静默显示为空 ----
     /** @type {Array<Record<string, unknown>>} */
@@ -432,11 +452,15 @@ export async function run() {
     ]);
     statusEl.textContent = "";
     await recentFiles.clearRecentFiles();
+    await suite.case("清空最近只发一次写且提交空数组", () => {
     assert(recentCalls.length === 1, `清空最近应只发一次 ui-state 写,实际 ${recentCalls.length} 次`);
     assert(
       JSON.stringify(recordAt(recentCalls, 0)) === JSON.stringify({ recentFiles: [] }),
       `清空最近应提交空数组,实际 ${JSON.stringify(recordAt(recentCalls, 0))}`,
     );
+    });
+
+    await suite.case("清空最近写失败保留历史列表且不隐藏历史条", () => {
     assert(
       statusEl.textContent === saveFailed,
       `清空最近写失败应给出同一失败文案,实际 ${JSON.stringify(statusEl.textContent)}`,
@@ -449,6 +473,7 @@ export async function run() {
       !historyBar.classList.contains("hidden"),
       "写失败不应把历史条隐藏成已清空的样子",
     );
+    });
 
     // ---- 8. 首启引导(first-run-guide):写失败同一反馈口径,收起态保留 ----
     // 直接构造"空态 + firstRun"后离开空态:引导收起并写回 firstRun=false
@@ -458,6 +483,7 @@ export async function run() {
     dropZone.dataset.stage = "single"; // 离开空态 → 视为已引导 → 写回 firstRun=false
     firstRunGuide.syncFirstRunGuide();
     await flush();
+    await suite.case("首启引导离开空态写回 firstRun=false 并保留收起态", () => {
     assert(
       lastRecord(recentCalls).firstRun === false,
       `离开空态应写回 firstRun=false,实际 ${JSON.stringify(lastRecord(recentCalls))}`,
@@ -468,6 +494,7 @@ export async function run() {
       `首启引导状态写失败应给出同一失败文案,实际 ${JSON.stringify(statusEl.textContent)}`,
     );
     console.log("[ok] ui-state-failure-feedback:完成弹窗/抽屉开合/清空最近/首启引导 四处静默点统一反馈 断言通过");
+    });
 
     // ---- 9. 设置保存失败(persistSettings):保留编辑内容与控件,不回滚到 main cache ----
     state.settings = { ...DEFAULT_SETTINGS, toc: false };
@@ -480,6 +507,7 @@ export async function run() {
     settingsPanel.persistSettings({ toc: true });
     await flush();
     await flush();
+    await suite.case("设置保存失败保留编辑内容与控件值且不回滚到 main cache", () => {
     assert(
       state.settings.toc === true && tocInput.checked === true,
       "设置保存失败必须保留用户当前编辑内容与控件值(不得回滚到 main cache)",
@@ -497,6 +525,7 @@ export async function run() {
       `保存失败必须留痕(console.error),实际 ${JSON.stringify(loggedErrors)}`,
     );
     console.log("[ok] settings-save-failure:失败保留草稿与控件/状态区可见提示 断言通过");
+    });
 
     // ---- 10. 失败后的下一次保存:并入待重试草稿并真正落盘(main 权威值回填) ----
     rejectSettings = false;
@@ -504,6 +533,7 @@ export async function run() {
     settingsPanel.persistSettings({ format: "pdf" });
     await flush();
     await flush();
+    await suite.case("重试保存同时提交失败草稿与新编辑且 state 为 main 权威合并值", () => {
     assert(
       lastRecord(settingsCalls).toc === true && lastRecord(settingsCalls).format === "pdf",
       `重试保存应同时提交失败草稿与新编辑,实际 ${JSON.stringify(lastRecord(settingsCalls))}`,
@@ -516,10 +546,13 @@ export async function run() {
       statusEl.textContent === "",
       `成功后未保存提示应被清除,实际 ${JSON.stringify(statusEl.textContent)} / errors=${JSON.stringify(loggedErrors)}`,
     );
+    });
+
     // 草稿已清空:再保存只带新编辑(不重复携带已落盘字段的 patch)
     settingsPanel.persistSettings({ theme: "dark" });
     await flush();
     await flush();
+    await suite.case("成功后待重试草稿清空且权威回填不丢用户编辑", () => {
     assert(
       lastRecord(settingsCalls).toc === undefined,
       `成功后待重试草稿应清空,实际 ${JSON.stringify(lastRecord(settingsCalls))}`,
@@ -529,6 +562,7 @@ export async function run() {
       "草稿清空后仍应保留 main 已落盘值(权威回填不丢用户编辑)",
     );
     console.log("[ok] settings-save-retry:草稿并入重试/成功后清除未保存提示/权威回填不丢编辑 断言通过");
+    });
 
     // ---- 11. 成功保存的既有副作用不受影响(语言/主题/格式回填链路) ----
     mainSettings = null;
@@ -536,6 +570,7 @@ export async function run() {
     settingsPanel.persistSettings({ language: "en", theme: "dark" });
     await flush();
     await flush();
+    await suite.case("成功保存仍回填语言/主题并同步转换格式且无未捕获 rejection", () => {
     assert(
       state.settings.language === "en" && state.settings.theme === "dark" &&
         state.selectedFormat === state.settings.format,
@@ -546,6 +581,7 @@ export async function run() {
       `持久化链路不应产生未捕获 rejection,实际 ${JSON.stringify(unhandled)}`,
     );
     console.log("[ok] settings-save-success:成功权威回填与副作用保持 断言通过");
+    });
   } finally {
     console.error = originalError;
     process.removeAllListeners("unhandledRejection");
@@ -556,4 +592,5 @@ export async function run() {
     setGlobalSlot("window", originalWindow);
     setGlobalSlot("MutationObserver", originalMutationObserver);
   }
+  return { cases: suite.results };
 }

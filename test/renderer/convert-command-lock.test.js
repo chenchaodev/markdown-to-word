@@ -12,6 +12,7 @@ import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
 import { globalSlot, setGlobalSlot } from "./dom-stub.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const { assert: harnessAssert } = createAsserter("convert-command-lock");
 
@@ -196,6 +197,7 @@ function handlerOf(el, type) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const originalDocument = globalSlot("document");
   const originalWindow = globalSlot("window");
   let modalVisible = false;
@@ -265,78 +267,114 @@ export async function run() {
 
     let actionCalls = 0;
     const action = () => { actionCalls++; };
-    const first = flow.withPrecheck(["a.md"], action);
-    const duplicate = flow.withPrecheck(["b.md"], () => { actionCalls += 100; });
-    assert(first === duplicate, "重复 withPrecheck 应复用同一活动 Promise");
-    assert(precheckCount() === 1, "活动预检期间重复命令不应再次调用 main");
-    assert(flow.isConvertCommandBlocked(), "预检期间 command lock 应为 true");
-    resolvePrecheck([]);
-    await first;
-    assert(actionCalls === 1, "唯一活动预检完成后只执行首个 action");
-    assert(!flow.isConvertCommandBlocked(), "预检 Promise 结算后应释放 command lock");
 
-    modalVisible = true;
-    assert(flow.isConvertCommandBlocked(), "模态/向导可见时应阻止背景命令");
-    const beforeBlockedCalls = precheckCount();
-    await flow.withPrecheck(["blocked.md"], action);
-    assert(precheckCount() === beforeBlockedCalls, "模态期间不得启动新预检");
-    modalVisible = false;
+    // ---- 1. single-flight:同一活动命令复用同一 Promise,预检只调一次 ----
+    await suite.case("withPrecheck 单飞:复用同一 Promise 且结算后释放锁", async () => {
+      // 这一串必须整条跑完:结算(resolvePrecheck)是后面几条断言的前置,
+      // 中途失败会让 await first 悬挂,故合成一个 case。
+      const first = flow.withPrecheck(["a.md"], action);
+      const duplicate = flow.withPrecheck(["b.md"], () => { actionCalls += 100; });
+      assert(first === duplicate, "重复 withPrecheck 应复用同一活动 Promise");
+      assert(precheckCount() === 1, "活动预检期间重复命令不应再次调用 main");
+      assert(flow.isConvertCommandBlocked(), "预检期间 command lock 应为 true");
+      resolvePrecheck([]);
+      await first;
+      assert(actionCalls === 1, "唯一活动预检完成后只执行首个 action");
+      assert(!flow.isConvertCommandBlocked(), "预检 Promise 结算后应释放 command lock");
+    });
+
+    // ---- 2. 模态/向导可见时拒绝背景命令 ----
+    await suite.case("模态可见时阻止背景命令", async () => {
+      modalVisible = true;
+      assert(flow.isConvertCommandBlocked(), "模态/向导可见时应阻止背景命令");
+      const beforeBlockedCalls = precheckCount();
+      await flow.withPrecheck(["blocked.md"], action);
+      assert(precheckCount() === beforeBlockedCalls, "模态期间不得启动新预检");
+      modalVisible = false;
+    });
 
     const eventsUrl = pathToFileURL(
       path.join(ROOT, "dist/renderer/convert/events/convert-actions.js"),
     );
     await import(eventsUrl.href);
-    state.mode = "single";
-    assert(flow.isConvertCommandBlocked(), "转换 mode 期间 command lock 应为 true");
-    state.mode = null;
 
-    const dialogPromise1 = dialogs.showPrecheckDialog([]);
-    const dialogPromise2 = dialogs.showPrecheckDialog([]);
-    assert(dialogPromise1 === dialogPromise2, "同一预检报告 Promise 应为单实例");
-    dialogs.closePrecheckDialog(true);
-    assert((await dialogPromise1) === true, "显式关闭必须结算预检 Promise(true)");
+    // ---- 3. 转换 mode 也计入锁 ----
+    await suite.case("转换 mode 期间 command lock 生效", () => {
+      state.mode = "single";
+      assert(flow.isConvertCommandBlocked(), "转换 mode 期间 command lock 应为 true");
+      state.mode = null;
+    });
 
-    const dialogPromise3 = dialogs.showPrecheckDialog([]);
-    dialogs.closePrecheckDialog(false);
-    assert((await dialogPromise3) === false, "取消关闭必须结算预检 Promise(false)");
+    // ---- 4. 预检报告 Promise 单实例 + 显式关闭结算 ----
+    await suite.case("预检报告 Promise 单实例且显式关闭结算", async () => {
+      const dialogPromise1 = dialogs.showPrecheckDialog([]);
+      const dialogPromise2 = dialogs.showPrecheckDialog([]);
+      assert(dialogPromise1 === dialogPromise2, "同一预检报告 Promise 应为单实例");
+      dialogs.closePrecheckDialog(true);
+      assert((await dialogPromise1) === true, "显式关闭必须结算预检 Promise(true)");
+    });
 
-    const dialogPromise4 = dialogs.showPrecheckDialog([]);
-    dialogs.closePrecheckDialog(false);
-    assert((await dialogPromise4) === false, "Esc 统一关闭函数必须结算另一条预检 Promise");
+    // ---- 5. 取消关闭结算 ----
+    await suite.case("取消关闭结算预检 Promise", async () => {
+      const dialogPromise3 = dialogs.showPrecheckDialog([]);
+      dialogs.closePrecheckDialog(false);
+      assert((await dialogPromise3) === false, "取消关闭必须结算预检 Promise(false)");
+    });
 
-    // 遮罩点击路径:点遮罩本身按取消结算(点卡片内部不关闭)
-    const dialogPromise5 = dialogs.showPrecheckDialog([]);
-    const precheckDialogEl = elementFor("precheckDialog");
-    const overlayClick = handlerOf(precheckDialogEl, "click");
-    assert(typeof overlayClick === "function", "预检弹窗应绑定遮罩点击处理器");
-    overlayClick({ target: makeElement() });
-    assert(precheckDialogEl.classList.contains("hidden") === false, "点卡片内部不应关闭预检弹窗");
-    overlayClick({ target: precheckDialogEl });
-    assert((await dialogPromise5) === false, "遮罩点击必须结算预检 Promise(false)");
+    // ---- 6. Esc 统一关闭函数结算另一条 ----
+    await suite.case("Esc 统一关闭函数结算预检 Promise", async () => {
+      const dialogPromise4 = dialogs.showPrecheckDialog([]);
+      dialogs.closePrecheckDialog(false);
+      assert((await dialogPromise4) === false, "Esc 统一关闭函数必须结算另一条预检 Promise");
+    });
 
-    // 窗口关闭路径:unload 结算(不归还焦点),否则预检链与命令锁永久悬挂
-    const dialogPromise6 = dialogs.showPrecheckDialog([]);
-    assert(
-      (windowListeners.get("unload") ?? []).length >= 1,
-      "预检弹窗应注册 unload 结算路径",
-    );
-    fireWindow(windowListeners, "unload");
-    assert((await dialogPromise6) === false, "窗口关闭必须结算预检 Promise(false)");
-    const dialogPromise7 = dialogs.showPrecheckDialog([]);
-    assert(dialogPromise7 !== dialogPromise6, "结算后应可开启下一次预检(单实例不残留)");
-    dialogs.closePrecheckDialog(true);
-    assert((await dialogPromise7) === true, "结算后的下一次预检同样可正常放行");
+    // ---- 7. 遮罩点击路径:点遮罩本身按取消结算(点卡片内部不关闭) ----
+    await suite.case("遮罩点击结算且点卡片内部不关闭", async () => {
+      const dialogPromise5 = dialogs.showPrecheckDialog([]);
+      const precheckDialogEl = elementFor("precheckDialog");
+      const overlayClick = handlerOf(precheckDialogEl, "click");
+      assert(typeof overlayClick === "function", "预检弹窗应绑定遮罩点击处理器");
+      overlayClick({ target: makeElement() });
+      assert(precheckDialogEl.classList.contains("hidden") === false, "点卡片内部不应关闭预检弹窗");
+      overlayClick({ target: precheckDialogEl });
+      assert((await dialogPromise5) === false, "遮罩点击必须结算预检 Promise(false)");
+    });
 
-    const eventsSource = fs.readFileSync(
-      path.join(ROOT, "src/renderer/convert/events/dialogs-events.ts"),
-      "utf8",
-    );
-    assert(
-      eventsSource.includes("closePrecheckDialog(false)") &&
-      eventsSource.includes("isConvertCommandBlocked()"),
-      "Esc 关闭链与菜单命令必须分别走 Promise 结算和 command lock",
-    );
+    // 窗口关闭路径:unload 结算(不归还焦点),否则预检链与命令锁永久悬挂。
+// 该 Promise 由下一条 case 拿来比「结算后单实例不残留」,故在 run() 层建一次。
+const dialogPromise6 = dialogs.showPrecheckDialog([]);
+    await suite.case("窗口 unload 路径结算预检 Promise", async () => {
+      assert(
+        (windowListeners.get("unload") ?? []).length >= 1,
+        "预检弹窗应注册 unload 结算路径",
+      );
+      fireWindow(windowListeners, "unload");
+      assert((await dialogPromise6) === false, "窗口关闭必须结算预检 Promise(false)");
+    });
+
+    // ---- 9. 结算后单实例不残留,下一次预检照常放行 ----
+    await suite.case("结算后单实例不残留且下一次预检可放行", async () => {
+      const dialogPromise7 = dialogs.showPrecheckDialog([]);
+      assert(dialogPromise7 !== dialogPromise6, "结算后应可开启下一次预检(单实例不残留)");
+      dialogs.closePrecheckDialog(true);
+      assert((await dialogPromise7) === true, "结算后的下一次预检同样可正常放行");
+    });
+
+    // ---- 10. Esc 关闭链与菜单命令各走各自路径(源文本契约) ----
+    await suite.case("Esc 关闭链与菜单命令各走各自路径", () => {
+      const eventsSource = fs.readFileSync(
+        path.join(ROOT, "src/renderer/convert/events/dialogs-events.ts"),
+        "utf8",
+      );
+      assert(
+        eventsSource.includes("closePrecheckDialog(false)") &&
+        eventsSource.includes("isConvertCommandBlocked()"),
+        "Esc 关闭链与菜单命令必须分别走 Promise 结算和 command lock",
+      );
+    });
+
     console.log("[ok] convert-command-lock:withPrecheck/command guard/precheck Promise 单实例与结算断言通过");
+    return { cases: suite.results };
   } finally {
     setGlobalSlot("document", originalDocument);
     setGlobalSlot("window", originalWindow);

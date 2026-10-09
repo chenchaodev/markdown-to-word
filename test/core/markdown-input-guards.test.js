@@ -30,6 +30,7 @@ import { htmlToPdf } from "../harness/pdf-utils.js";
 import { saveArtifact } from "../harness/artifacts.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf } from "../harness/convert-helpers.js";
 import { FIXTURES_DIR, KATEX_DIR } from "../harness/paths.js";
+import { createCaseSuite } from "../harness/case.js";
 
 // 本段只断言输入守卫的产物形态,不产出人工实测样例(公式常规渲染由
 // segments/formula.test.js、segments/eq-numbering.test.js,常规批注由
@@ -101,53 +102,70 @@ function expectAbsent(text, needles, label) {
 }
 
 export async function run() {
+  const suite = createCaseSuite();
   // ================= 一、pdf 不可信 TeX 闸门 =================
 
   // ---------- 行内不可信 TeX → katex-error 降级容器,URL 不变成链接 ----------
+  // 所有取数备在 case 之前:每个分支判的是「同一份 HTML 上的不同 needle」,
+  // 搬进 case 就得逐条重转一次,而转换失败与判定失败是两回事
   const inlineUntrusted = await renderPdf("行内 $\\href{http://example.com/a}{y}$ 与正常 $a^b$。\n", "输入守卫");
-  expectPresent(
-    inlineUntrusted.html,
-    [UNTRUSTED_SPAN_OPEN + "\\href{http://example.com/a}{y}</span>", 'class="katex"'],
-    "行内不可信 TeX 降级 + 同段正常公式照常渲染",
-  );
+  await suite.case("行内不可信 TeX 降级 + 同段正常公式照常渲染", () => {
+    expectPresent(
+      inlineUntrusted.html,
+      [UNTRUSTED_SPAN_OPEN + "\\href{http://example.com/a}{y}</span>", 'class="katex"'],
+      "行内不可信 TeX 降级 + 同段正常公式照常渲染",
+    );
+  });
   // 外部引用只作为源码文本出现:不得产出可点击链接(否则等于放行外链),
   // 也不得留下 KaTeX「红色 mstyle」痕迹(说明闸门没拦住,降级走了另一条通道)
-  expectAbsent(
-    inlineUntrusted.html,
-    ['href="http://example.com/a"', "<m:mstyle"],
-    "行内不可信 TeX 不得产出链接 / KaTeX 红色 mstyle 痕迹",
-  );
-  if (inlineUntrusted.warns.length > 0) {
-    throw new Error(
-      `解析层输入守卫断言失败:不可信 TeX 是既定降级形态,不应追加警告,实际 ${JSON.stringify(inlineUntrusted.warns)}`,
+  await suite.case("行内不可信 TeX 不得产出链接 / KaTeX 红色 mstyle 痕迹", () => {
+    expectAbsent(
+      inlineUntrusted.html,
+      ['href="http://example.com/a"', "<m:mstyle"],
+      "行内不可信 TeX 不得产出链接 / KaTeX 红色 mstyle 痕迹",
     );
-  }
+  });
+  await suite.case("不可信 TeX 是既定降级形态,零警告", () => {
+    if (inlineUntrusted.warns.length > 0) {
+      throw new Error(
+        `解析层输入守卫断言失败:不可信 TeX 是既定降级形态,不应追加警告,实际 ${JSON.stringify(inlineUntrusted.warns)}`,
+      );
+    }
+  });
   console.log("[ok] PDF 行内不可信 TeX(\\href)→ katex-error 降级容器 + 源码文本,零警告、无外链");
 
   // ---------- display 不可信 TeX → 同样降级,且仍占公式编号 ----------
   // 闸门只改渲染形态,不改变编号语义(公式仍是一个编号位),与 docx 侧一致。
   const blockUntrusted = await renderPdf("$$\n\\includegraphics{logo.png}\n$$\n", "输入守卫");
-  expectPresent(
-    blockUntrusted.html,
-    [
-      'class="eq-block"',
-      UNTRUSTED_SPAN_OPEN + "\\includegraphics{logo.png}",
-      '<span class="eq-num">(1)</span>',
-    ],
-    "display 不可信 TeX 降级",
-  );
-  expectAbsent(blockUntrusted.html, ['src="logo.png"'], "不可信 TeX 不得让外部图片进入产物");
+  await suite.case("display 不可信 TeX 降级(仍占编号位)", () => {
+    expectPresent(
+      blockUntrusted.html,
+      [
+        'class="eq-block"',
+        UNTRUSTED_SPAN_OPEN + "\\includegraphics{logo.png}",
+        '<span class="eq-num">(1)</span>',
+      ],
+      "display 不可信 TeX 降级",
+    );
+  });
+  await suite.case("不可信 TeX 不让外部图片进入产物", () => {
+    expectAbsent(blockUntrusted.html, ['src="logo.png"'], "不可信 TeX 不得让外部图片进入产物");
+  });
   console.log("[ok] PDF display 不可信 TeX(\\includegraphics)→ 同样降级,仍占编号 (1),不引入外部图片");
 
   // ---------- 正常 display 公式 → eq-block 包装 + eq-num 编号 ----------
   // 锁住 pdf 侧对 @mdit/plugin-katex 原 math_block 规则的包装(编号容器 + 编号文本)。
   const numbered = await renderPdf("$$\nE = mc^2\n$$\n\n行内 $a+b$。\n", "输入守卫");
-  expectPresent(
-    numbered.html,
-    ['<div class="eq-block">', '<span class="eq-num">(1)</span>', 'class="katex-display"', '<span class="katex">'],
-    "正常公式编号包装",
-  );
-  expectAbsent(numbered.html, ["katex-error"], "正常公式不应命中 katex-error 降级");
+  await suite.case("正常公式编号包装", () => {
+    expectPresent(
+      numbered.html,
+      ['<div class="eq-block">', '<span class="eq-num">(1)</span>', 'class="katex-display"', '<span class="katex">'],
+      "正常公式编号包装",
+    );
+  });
+  await suite.case("正常公式不命中 katex-error 降级", () => {
+    expectAbsent(numbered.html, ["katex-error"], "正常公式不应命中 katex-error 降级");
+  });
   console.log("[ok] PDF 正常 display 公式 → <div class=\"eq-block\"> + <span class=\"eq-num\">(1)</span>");
 
   // ================= 二、批注语法放弃 / 转义分支 =================
@@ -158,58 +176,87 @@ export async function run() {
   // 期望:反斜杠被扫描器吃掉,锚定文本按字面成文「锚定]文本」,批注结构完整
   // (commentRangeStart/End + Reference + comments.xml 里的批注内容)。
   const escaped = await renderDocxParts("正文[锚定\\]文本]{批注=内容A}与[另一\\[锚]{批注=内容B}后续。\n");
+  // comments.xml 缺部件是后面内容断言的判定前提,留在 case 外:
+  // 归不进去的话,内容那条会报成「缺少 内容A」,与「部件没产出」不是一回事
   if (escaped.comments === null) {
     throw new Error("解析层输入守卫断言失败:转义锚定的批注未产出 comments.xml 部件");
   }
-  expectPresent(
-    escaped.document,
-    [
-      '<w:commentRangeStart w:id="1"/>',
-      '<w:commentRangeEnd w:id="1"/>',
-      '<w:commentReference w:id="1"/>',
-      // 反斜杠不落文(扫描器在 scanAnchorEscaped 消费掉)
-      '<w:t xml:space="preserve">锚定]文本</w:t>',
-      '<w:t xml:space="preserve">另一[锚</w:t>',
-      '<w:commentRangeStart w:id="2"/>',
-    ],
-    "转义锚定的批注结构与锚定文本",
-  );
-  expectAbsent(escaped.document, ["\\]文本", "\\[锚"], "锚定文本里的反斜杠不应落文");
-  expectPresent(escaped.comments, ["内容A", "内容B"], "转义锚定的批注内容");
+  const escapedComments = escaped.comments;
+  await suite.case("转义锚定的批注结构与锚定文本", () => {
+    expectPresent(
+      escaped.document,
+      [
+        '<w:commentRangeStart w:id="1"/>',
+        '<w:commentRangeEnd w:id="1"/>',
+        '<w:commentReference w:id="1"/>',
+        // 反斜杠不落文(扫描器在 scanAnchorEscaped 消费掉)
+        '<w:t xml:space="preserve">锚定]文本</w:t>',
+        '<w:t xml:space="preserve">另一[锚</w:t>',
+        '<w:commentRangeStart w:id="2"/>',
+      ],
+      "转义锚定的批注结构与锚定文本",
+    );
+  });
+  await suite.case("锚定文本里的反斜杠不落文", () => {
+    expectAbsent(escaped.document, ["\\]文本", "\\[锚"], "锚定文本里的反斜杠不应落文");
+  });
+  await suite.case("转义锚定的批注内容", () => {
+    expectPresent(escapedComments, ["内容A", "内容B"], "转义锚定的批注内容");
+  });
   console.log("[ok] docx 批注转义锚定(锚定文本内 \\] / \\[):反斜杠被消费 + 锚定文本按字面成文 + 批注内容齐全");
 
   // ---------- 放弃分支:批注内容含行尾 ----------
   // scanContent 遇行尾放弃 → 整段按普通文本落文,**不得**产生任何批注结构
   // (静默吞掉内容是最坏的失败形态,故此处正向断言「回退为普通文本」)。
   const contentBreak = await renderDocxParts("正文[锚定]{批注=跨行\n内容B}后续。\n");
-  expectAbsent(
-    contentBreak.document,
-    ["<w:commentRangeStart", "<w:commentReference"],
-    "批注内容含行尾应整段回退普通文本",
-  );
-  expectPresent(contentBreak.document, ["正文[锚定]{批注=跨行", "内容B}后续。"], "回退后原文按字面落文");
+  await suite.case("批注内容含行尾应整段回退普通文本", () => {
+    expectAbsent(
+      contentBreak.document,
+      ["<w:commentRangeStart", "<w:commentReference"],
+      "批注内容含行尾应整段回退普通文本",
+    );
+  });
+  await suite.case("内容跨行回退后原文按字面落文", () => {
+    expectPresent(contentBreak.document, ["正文[锚定]{批注=跨行", "内容B}后续。"], "回退后原文按字面落文");
+  });
 
   // ---------- 放弃分支:锚定文本跨行 ----------
   // scanAnchor 遇行尾放弃(与内容跨行同理),回退普通文本。
   const anchorBreak = await renderDocxParts("正文[锚定\n续行]{批注=内容C}后续。\n");
-  expectAbsent(anchorBreak.document, ["<w:commentRangeStart", "<w:commentReference"], "锚定跨行应整段回退普通文本");
-  expectPresent(anchorBreak.document, ["正文[锚定"], "回退后原文按字面落文");
+  await suite.case("锚定跨行应整段回退普通文本", () => {
+    expectAbsent(anchorBreak.document, ["<w:commentRangeStart", "<w:commentReference"], "锚定跨行应整段回退普通文本");
+  });
+  await suite.case("锚定跨行回退后原文按字面落文", () => {
+    expectPresent(anchorBreak.document, ["正文[锚定"], "回退后原文按字面落文");
+  });
 
   // ---------- 放弃分支:关键字不匹配 → 交回既有解析(链接等) ----------
   // `[锚定]{批注文x=x}`:scanKeyword 在第二个字符失配 → nok,按普通文本;
   // `[锚定](https://example.com)`:关键字分支不命中 → 链接照常解析。
   const keywordMiss = await renderDocxParts("正文[锚定]{批注文x=内容D}与[链接](https://example.com)后续。\n");
-  expectAbsent(keywordMiss.document, ["<w:commentRangeStart", "<w:commentReference"], "关键字失配不应产生批注");
-  expectPresent(keywordMiss.document, ["{批注文x=内容D}"], "关键字失配后原文按字面落文");
   const link = await renderDocxParts("正文[锚定](https://example.com)后续。\n");
-  expectAbsent(link.document, ["<w:commentRangeStart"], "链接不应被误判为批注");
-  expectPresent(link.document, ["<w:hyperlink", "锚定"], "链接照常解析为超链接");
+  await suite.case("关键字失配不应产生批注", () => {
+    expectAbsent(keywordMiss.document, ["<w:commentRangeStart", "<w:commentReference"], "关键字失配不应产生批注");
+  });
+  await suite.case("关键字失配后原文按字面落文", () => {
+    expectPresent(keywordMiss.document, ["{批注文x=内容D}"], "关键字失配后原文按字面落文");
+  });
+  await suite.case("链接不被误判为批注", () => {
+    expectAbsent(link.document, ["<w:commentRangeStart"], "链接不应被误判为批注");
+  });
+  await suite.case("链接照常解析为超链接", () => {
+    expectPresent(link.document, ["<w:hyperlink", "锚定"], "链接照常解析为超链接");
+  });
   console.log("[ok] docx 批注内容/锚定跨行与关键字失配 → 放弃批注解析,原文与链接解析不受影响");
 
   // ---------- pdf 路线:批注语法不解析,原样输出 ----------
   const commentPdfHtml = (await renderPdf("正文[锚定]{批注=内容E}后续。\n", "输入守卫")).html;
-  expectPresent(commentPdfHtml, ["[锚定]{批注=内容E}"], "pdf 路线原样输出批注语法");
-  expectAbsent(commentPdfHtml, ["katex-error"], "pdf 路线不应因批注语法报错");
+  await suite.case("pdf 路线原样输出批注语法", () => {
+    expectPresent(commentPdfHtml, ["[锚定]{批注=内容E}"], "pdf 路线原样输出批注语法");
+  });
+  await suite.case("pdf 路线不因批注语法报错", () => {
+    expectAbsent(commentPdfHtml, ["katex-error"], "pdf 路线不应因批注语法报错");
+  });
   console.log("[ok] PDF 路线:批注语法原样输出(不解析)");
 
   // ================= 落盘产物(供人工核对) =================
@@ -223,4 +270,5 @@ export async function run() {
   );
   const pdfBinary = await htmlToPdf(pdfHtmlOf(pdfArtifact), asPdfArtifact(pdfArtifact).footerTemplate);
   await saveArtifact("markdown-input-guards", { docx: escaped.buffer, pdf: pdfBinary });
+  return { cases: suite.results };
 }

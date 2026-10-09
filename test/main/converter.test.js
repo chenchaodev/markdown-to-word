@@ -28,6 +28,7 @@ import { renderPdf } from "../../dist/main/converter/single.js";
 import { DEFAULT_SETTINGS } from "../../dist/core/settings/settings-defaults.js";
 import { backupSettings, backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../harness/settings.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { asPdfArtifact, convertWithFs } from "../harness/convert-helpers.js";
 import {
@@ -170,6 +171,7 @@ async function outlineTitles(pdfBytes) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const dir = path.join(os.tmpdir(), `m2w-converter-${process.pid}`);
   const sampleMd = path.join(dir, "sample.md");
   const sampleMdContent = await fs.readFile(SAMPLE_MD_PATH, "utf8");
@@ -417,366 +419,363 @@ export async function run() {
     );
     console.log("[ok] converter:跨目录 Obsidian 图片/frontmatter/page-break + warning 顺序");
 
-    // ---- 4. 批量取消:首个进度事件取消 → 在途项检查点取消 + 未开始项标记 ----
+    // 批量取消与批量复位两个 case 共用这份文件清单(复位 case 要对同一批再跑一次),
+    // 故声明在两个 case 之外 —— 否则复位 case 看不到取消 case 的局部绑定。
     const cancelFiles = ["batch-cancel-1.md", "batch-cancel-2.md", "batch-cancel-3.md"].map((n) =>
       path.join(dir, n),
     );
-    const [, cancelSecond, cancelThird] = cancelFiles;
-    assert(cancelSecond !== undefined && cancelThird !== undefined, "取消夹具应备齐三份");
-    await fs.writeFile(cancelSecond, "# 取消测试 2\n\n正文\n");
-    await fs.writeFile(cancelThird, "# 取消测试 3\n\n正文\n");
-    const cancelBatchCtx = createConvertContext(); // 每次调用新建 context,取消经 ctx.cancel() 置位
-    const cancelBatch = await batchConvertImpl(
-      cancelFiles,
-      "docx",
-      () => {
-        cancelBatchCtx.cancel(); // 首个进度事件即取消
-      },
-      cancelBatchCtx,
-    );
-    assert(
-      cancelBatch.okCount === 0 &&
-        cancelBatch.failCount === 1 &&
-        cancelBatch.canceledCount === 2 &&
-        !!cancelBatch.items[0] &&
-        !cancelBatch.items[0].ok &&
-        !!cancelBatch.items[0].error &&
-        !!cancelBatch.items[1]?.canceled &&
-        !!cancelBatch.items[2]?.canceled,
-      `批量取消断言失败: ok=${cancelBatch.okCount} fail=${cancelBatch.failCount} canceled=${cancelBatch.canceledCount}` +
-        ` items=${JSON.stringify(cancelBatch.items.map((i) => i && { ok: i.ok, canceled: i.canceled, error: !!i.error }))}`,
-    );
-    console.log("[ok] converter:批量取消(在途项检查点取消 + 未开始项标记 canceledCount=2)");
 
-    // ---- 5. 批量复位:取消后再次批量转换必须成功(未传 ctx → 新建 context,取消标志不复用) ----
-    const retryBatch = await batchConvertImpl(cancelFiles, "docx");
-    assert(
-      retryBatch.okCount === 2 && retryBatch.failCount === 1 && retryBatch.canceledCount === 0,
-      `批量复位断言失败: ok=${retryBatch.okCount} fail=${retryBatch.failCount} canceled=${retryBatch.canceledCount}`,
-    );
-    console.log("[ok] converter:批量复位(取消后再次转换 2 成功 1 缺失失败,无取消残留)");
-
-    // ---- 6. pdf 预取消:取消置位后 convertImpl(pdf) 抛 ConvertCanceledError 且不产出文件 ----
-    // (检查点位于落盘前;outputDir 已置 "" → 候选输出目录 = 源文件目录)
-    const cancelPdfMd = path.join(dir, "cancel-pdf.md");
-    await fs.writeFile(cancelPdfMd, "# PDF 取消\n\n正文\n");
-    const pdfCancelCtx = createConvertContext();
-    pdfCancelCtx.cancel();
-    let pdfCanceled = false;
-    try {
-      await convertImpl(cancelPdfMd, "pdf", undefined, pdfCancelCtx);
-    } catch (err) {
-      pdfCanceled = err instanceof ConvertCanceledError;
-    }
-    assert(pdfCanceled, "PDF 取消:未抛 ConvertCanceledError");
-    const pdfTarget = path.join(dir, "cancel-pdf.pdf");
-    const pdfTargetExists = await fs.access(pdfTarget).then(() => true, () => false);
-    assert(!pdfTargetExists, "PDF 取消:取消后仍产出文件");
-    console.log("[ok] converter:pdf 预取消(ConvertCanceledError 且不产出文件)");
-
-    // ---- 7. merge 取消复位:取消后再次合并必须成功(未传 ctx → 新建 context,取消标志不复用) ----
-    const mergeCancelCtx = createConvertContext();
-    let mergeCanceled = false;
-    try {
-      await mergeFiles([mergeA, mergeB], "docx", () => mergeCancelCtx.cancel(), mergeCancelCtx);
-    } catch (err) {
-      mergeCanceled = err instanceof ConvertCanceledError;
-    }
-    assert(mergeCanceled, "merge 取消:未抛 ConvertCanceledError");
-    const mergeRetry = await mergeFiles([mergeA, mergeB], "docx");
-    assert(mergeRetry.ok, `merge 复位断言失败: ${mergeRetry.error}`);
-    console.log("[ok] converter:merge 取消复位(取消后再次合并成功)");
-
-    // ---- 8. 设置注入端到端:持久化往返 + landscape + breakBeforeH1 + 分页符(docx) ----
-    await updateSettings({ breakBeforeH1: true });
-    assert(loadSettings().breakBeforeH1 === true, "设置持久化失败: breakBeforeH1 未生效");
-    await updateSettings({ pageSetup: { ...restoreSettings.orig.pageSetup, orientation: "landscape" } });
-    const landResult = await convertImpl(sampleMd, "docx");
-    const landZip = await JSZip.loadAsync(await fs.readFile(landResult.outputPath));
-    const landEntry = landZip.file("word/document.xml");
-    assert(!!landEntry, "docx 缺少 document.xml");
-    const landXml = await landEntry.async("string");
-    assert(landXml.includes('w:orient="landscape"'), "页面设置 landscape 未生效");
-    // breakBeforeH1 产物效果:设置开启 → document.xml 断言 H1 前分页
-    const h1Result = await convertImpl(sampleMd, "docx");
-    const h1Xml = await entryText(await JSZip.loadAsync(await fs.readFile(h1Result.outputPath)), "word/document.xml");
-    assert(h1Xml.includes("<w:pageBreakBefore/>"), "breakBeforeH1:document.xml 缺少 <w:pageBreakBefore/>");
-    // 分页符:关闭 toc,保证 w:br w:type="page" 仅来自显式 <!-- page-break -->
-    // (目录页自带分页符会污染计数)
-    await updateSettings({ toc: false });
-    const pbResult = await convertImpl(sampleMd, "docx");
-    const pbXml = await entryText(await JSZip.loadAsync(await fs.readFile(pbResult.outputPath)), "word/document.xml");
-    assert(pbXml.includes('<w:br w:type="page"/>'), '分页符:document.xml 缺少 <w:br w:type="page"/>');
-    console.log("[ok] converter:设置注入(持久化/landscape/breakBeforeH1/分页符 docx)");
-
-    // ---- 8b. pdfCss 透传:buildConvertContext 应把 settings.pdfCss 映射到 core 上下文 ----
-    // (IPC 导入对话框无法自动化,标注 GUI 实测;此处断言 main 侧设置 → 上下文映射链路)
-    // buildConvertContext 改 async(页眉 logo 读文件),调用点 await
-    const pdfCssCtx = await buildConvertContext({
-      baseDir: dir,
-      title: "t",
-      settings: { ...loadSettings(), pdfCss: "body { color: red; }" },
-      imageResolver: getImageResolver(dir),
-    });
-    assert(pdfCssCtx.pdfCss === "body { color: red; }", "buildConvertContext 应透传 settings.pdfCss");
-    const pdfCssEmptyCtx = await buildConvertContext({
-      baseDir: dir,
-      title: "t",
-      settings: { ...loadSettings(), pdfCss: "" },
-      imageResolver: getImageResolver(dir),
-    });
-    assert(pdfCssEmptyCtx.pdfCss === "", "buildConvertContext 空串 pdfCss 应原样透传");
-    console.log("[ok] converter:buildConvertContext pdfCss 透传(设置 → core 上下文)");
-
-    // ---- 9. pdf 渲染失败:printToPDF 抛错 → convertImpl 抛非 ConvertCanceledError + finally 清理 ----
-    // 方案:webContents 是 BrowserWindow.prototype 上的 getter → 临时替换为「取原实例后把实例的
-    // printToPDF 换成必抛 mock」;若该 getter 不存在(版本差异),回退 patch loadFile 抛错,同样覆盖
-    // 「渲染/打印阶段失败 → finally 销毁窗口 + cleanup 删临时文件」路径。descriptor 一律 try/finally
-    // 恢复(本段跑在独立子进程内,污染不外溢;try/finally 仍是段内卫生)。
-    const pdfFailMd = path.join(dir, "pdf-fail.md");
-    await fs.writeFile(pdfFailMd, "# PDF 渲染失败\n\n正文\n");
-    const wcDescriptor = Object.getOwnPropertyDescriptor(BrowserWindow.prototype, "webContents");
-    const origLoadFile = BrowserWindow.prototype.loadFile;
-    let patched = false;
-    try {
-      const wcGetter = wcDescriptor?.get;
-      if (wcGetter) {
-        Object.defineProperty(BrowserWindow.prototype, "webContents", {
-          configurable: true,
-          get() {
-            const wc = wcGetter.call(this);
-            wc.printToPDF = async () => {
-              throw new Error("mock printToPDF 失败");
-            };
-            return wc;
-          },
-        });
-      } else {
-        BrowserWindow.prototype.loadFile = async () => {
-          throw new Error("mock loadFile 失败");
-        };
-      }
-      patched = true;
-      let pdfFailError = null;
-      try {
-        await convertImpl(pdfFailMd, "pdf");
-      } catch (err) {
-        pdfFailError = err;
-      }
-      assert(
-        !!pdfFailError && !(pdfFailError instanceof ConvertCanceledError),
-        `PDF 渲染失败:应抛非 ConvertCanceledError 错误,实际 ${pdfFailError}`,
+    await suite.case("4. 批量取消:首个进度事件取消 → 在途项检查点取消 + 未开始项标记", async () => {
+      const [, cancelSecond, cancelThird] = cancelFiles;
+      assert(cancelSecond !== undefined && cancelThird !== undefined, "取消夹具应备齐三份");
+      await fs.writeFile(cancelSecond, "# 取消测试 2\n\n正文\n");
+      await fs.writeFile(cancelThird, "# 取消测试 3\n\n正文\n");
+      const cancelBatchCtx = createConvertContext(); // 每次调用新建 context,取消经 ctx.cancel() 置位
+      const cancelBatch = await batchConvertImpl(
+        cancelFiles,
+        "docx",
+        () => {
+          cancelBatchCtx.cancel(); // 首个进度事件即取消
+        },
+        cancelBatchCtx,
       );
-      // 临时文件命名 m2w-{pid}-{time}-{rand}.html(writeTempHtml);finally cleanup 应已删净
-      const tmpHtmlLeft = (await fs.readdir(os.tmpdir())).filter((n) => n.startsWith(`m2w-${process.pid}-`));
-      assert(tmpHtmlLeft.length === 0, `PDF 渲染失败:临时目录残留 ${tmpHtmlLeft.join(", ")}`);
-      console.log("[ok] converter:pdf 渲染失败(抛非取消错误 + 窗口销毁/临时文件清理)");
-    } finally {
-      if (patched) {
-        if (wcDescriptor?.get) {
-          Object.defineProperty(BrowserWindow.prototype, "webContents", wcDescriptor);
+      assert(
+        cancelBatch.okCount === 0 &&
+          cancelBatch.failCount === 1 &&
+          cancelBatch.canceledCount === 2 &&
+          !!cancelBatch.items[0] &&
+          !cancelBatch.items[0].ok &&
+          !!cancelBatch.items[0].error &&
+          !!cancelBatch.items[1]?.canceled &&
+          !!cancelBatch.items[2]?.canceled,
+        `批量取消断言失败: ok=${cancelBatch.okCount} fail=${cancelBatch.failCount} canceled=${cancelBatch.canceledCount}` +
+          ` items=${JSON.stringify(cancelBatch.items.map((i) => i && { ok: i.ok, canceled: i.canceled, error: !!i.error }))}`,
+      );
+      console.log("[ok] converter:批量取消(在途项检查点取消 + 未开始项标记 canceledCount=2)");
+    });
+
+    await suite.case("5. 批量复位:取消后再次批量转换必须成功(未传 ctx → 新建 context,取消标志不复用)", async () => {
+      const retryBatch = await batchConvertImpl(cancelFiles, "docx");
+      assert(
+        retryBatch.okCount === 2 && retryBatch.failCount === 1 && retryBatch.canceledCount === 0,
+        `批量复位断言失败: ok=${retryBatch.okCount} fail=${retryBatch.failCount} canceled=${retryBatch.canceledCount}`,
+      );
+      console.log("[ok] converter:批量复位(取消后再次转换 2 成功 1 缺失失败,无取消残留)");
+    });
+
+    await suite.case("6. pdf 预取消:取消置位后 convertImpl(pdf) 抛 ConvertCanceledError 且不产出文件(检查点位于落盘前;outputDir 已置空 → 候选输出目录 = 源文件目录)", async () => {
+      const cancelPdfMd = path.join(dir, "cancel-pdf.md");
+      await fs.writeFile(cancelPdfMd, "# PDF 取消\n\n正文\n");
+      const pdfCancelCtx = createConvertContext();
+      pdfCancelCtx.cancel();
+      let pdfCanceled = false;
+      try {
+        await convertImpl(cancelPdfMd, "pdf", undefined, pdfCancelCtx);
+      } catch (err) {
+        pdfCanceled = err instanceof ConvertCanceledError;
+      }
+      assert(pdfCanceled, "PDF 取消:未抛 ConvertCanceledError");
+      const pdfTarget = path.join(dir, "cancel-pdf.pdf");
+      const pdfTargetExists = await fs.access(pdfTarget).then(() => true, () => false);
+      assert(!pdfTargetExists, "PDF 取消:取消后仍产出文件");
+      console.log("[ok] converter:pdf 预取消(ConvertCanceledError 且不产出文件)");
+    });
+
+    await suite.case("7. merge 取消复位:取消后再次合并必须成功(未传 ctx → 新建 context,取消标志不复用)", async () => {
+      const mergeCancelCtx = createConvertContext();
+      let mergeCanceled = false;
+      try {
+        await mergeFiles([mergeA, mergeB], "docx", () => mergeCancelCtx.cancel(), mergeCancelCtx);
+      } catch (err) {
+        mergeCanceled = err instanceof ConvertCanceledError;
+      }
+      assert(mergeCanceled, "merge 取消:未抛 ConvertCanceledError");
+      const mergeRetry = await mergeFiles([mergeA, mergeB], "docx");
+      assert(mergeRetry.ok, `merge 复位断言失败: ${mergeRetry.error}`);
+      console.log("[ok] converter:merge 取消复位(取消后再次合并成功)");
+    });
+
+    await suite.case("8. 设置注入端到端:持久化往返 + landscape + breakBeforeH1 + 分页符(docx)", async () => {
+      await updateSettings({ breakBeforeH1: true });
+      assert(loadSettings().breakBeforeH1 === true, "设置持久化失败: breakBeforeH1 未生效");
+      await updateSettings({ pageSetup: { ...restoreSettings.orig.pageSetup, orientation: "landscape" } });
+      const landResult = await convertImpl(sampleMd, "docx");
+      const landZip = await JSZip.loadAsync(await fs.readFile(landResult.outputPath));
+      const landEntry = landZip.file("word/document.xml");
+      assert(!!landEntry, "docx 缺少 document.xml");
+      const landXml = await landEntry.async("string");
+      assert(landXml.includes('w:orient="landscape"'), "页面设置 landscape 未生效");
+      // breakBeforeH1 产物效果:设置开启 → document.xml 断言 H1 前分页
+      const h1Result = await convertImpl(sampleMd, "docx");
+      const h1Xml = await entryText(await JSZip.loadAsync(await fs.readFile(h1Result.outputPath)), "word/document.xml");
+      assert(h1Xml.includes("<w:pageBreakBefore/>"), "breakBeforeH1:document.xml 缺少 <w:pageBreakBefore/>");
+      // 分页符:关闭 toc,保证 w:br w:type="page" 仅来自显式 <!-- page-break -->
+      // (目录页自带分页符会污染计数)
+      await updateSettings({ toc: false });
+      const pbResult = await convertImpl(sampleMd, "docx");
+      const pbXml = await entryText(await JSZip.loadAsync(await fs.readFile(pbResult.outputPath)), "word/document.xml");
+      assert(pbXml.includes('<w:br w:type="page"/>'), '分页符:document.xml 缺少 <w:br w:type="page"/>');
+      console.log("[ok] converter:设置注入(持久化/landscape/breakBeforeH1/分页符 docx)");
+    });
+
+    await suite.case("8b. pdfCss 透传:buildConvertContext 应把 settings.pdfCss 映射到 core 上下文 (IPC 导入对话框无法自动化,标注 GUI 实测;此处断言 main 侧设置 → 上下文映射链路) buildConvertContext 改 async(页眉 logo 读文件),调用点 await", async () => {
+      const pdfCssCtx = await buildConvertContext({
+        baseDir: dir,
+        title: "t",
+        settings: { ...loadSettings(), pdfCss: "body { color: red; }" },
+        imageResolver: getImageResolver(dir),
+      });
+      assert(pdfCssCtx.pdfCss === "body { color: red; }", "buildConvertContext 应透传 settings.pdfCss");
+      const pdfCssEmptyCtx = await buildConvertContext({
+        baseDir: dir,
+        title: "t",
+        settings: { ...loadSettings(), pdfCss: "" },
+        imageResolver: getImageResolver(dir),
+      });
+      assert(pdfCssEmptyCtx.pdfCss === "", "buildConvertContext 空串 pdfCss 应原样透传");
+      console.log("[ok] converter:buildConvertContext pdfCss 透传(设置 → core 上下文)");
+    });
+
+    await suite.case("9. pdf 渲染失败:printToPDF 抛错 → convertImpl 抛非 ConvertCanceledError + finally 清理 方案:webContents 是 BrowserWindow.prototype 上的 getter → 临时替换为「取原实例后把实例的 printToPDF 换成必抛 mock」;若该 getter 不存在(版本差异),回退 patch loadFile 抛错,同样覆盖 「渲染/打印阶段失败 → finally 销毁窗口 + cleanup 删临时文件」路径。descriptor 一律 try/finally 恢复(本段跑在独立子进程内,污染不外溢;try/finally 仍是段内卫生)。", async () => {
+      const pdfFailMd = path.join(dir, "pdf-fail.md");
+      await fs.writeFile(pdfFailMd, "# PDF 渲染失败\n\n正文\n");
+      const wcDescriptor = Object.getOwnPropertyDescriptor(BrowserWindow.prototype, "webContents");
+      const origLoadFile = BrowserWindow.prototype.loadFile;
+      let patched = false;
+      try {
+        const wcGetter = wcDescriptor?.get;
+        if (wcGetter) {
+          Object.defineProperty(BrowserWindow.prototype, "webContents", {
+            configurable: true,
+            get() {
+              const wc = wcGetter.call(this);
+              wc.printToPDF = async () => {
+                throw new Error("mock printToPDF 失败");
+              };
+              return wc;
+            },
+          });
         } else {
-          BrowserWindow.prototype.loadFile = origLoadFile;
+          BrowserWindow.prototype.loadFile = async () => {
+            throw new Error("mock loadFile 失败");
+          };
+        }
+        patched = true;
+        let pdfFailError = null;
+        try {
+          await convertImpl(pdfFailMd, "pdf");
+        } catch (err) {
+          pdfFailError = err;
+        }
+        assert(
+          !!pdfFailError && !(pdfFailError instanceof ConvertCanceledError),
+          `PDF 渲染失败:应抛非 ConvertCanceledError 错误,实际 ${pdfFailError}`,
+        );
+        // 临时文件命名 m2w-{pid}-{time}-{rand}.html(writeTempHtml);finally cleanup 应已删净
+        const tmpHtmlLeft = (await fs.readdir(os.tmpdir())).filter((n) => n.startsWith(`m2w-${process.pid}-`));
+        assert(tmpHtmlLeft.length === 0, `PDF 渲染失败:临时目录残留 ${tmpHtmlLeft.join(", ")}`);
+        console.log("[ok] converter:pdf 渲染失败(抛非取消错误 + 窗口销毁/临时文件清理)");
+      } finally {
+        if (patched) {
+          if (wcDescriptor?.get) {
+            Object.defineProperty(BrowserWindow.prototype, "webContents", wcDescriptor);
+          } else {
+            BrowserWindow.prototype.loadFile = origLoadFile;
+          }
         }
       }
-    }
+    });
 
-    // ---- 9b. 批量/合并副作用所有权:批量只执行一次 after-convert,合并只执行一次;
-    //      批次开始使用 immutable settings snapshot(批次中修改缓存不改变本批次配置) ----
-    await updateSettings({ afterConvert: "open", breakBeforeH1: true });
-    const snapshotOpenCalls = /** @type {string[]} */ ([]);
-    const snapshotOpenOriginal = shell.openPath;
-    let snapshotOpenViaDefine = false;
-    try {
+    await suite.case("9b. 批量/合并副作用所有权:批量只执行一次 after-convert,合并只执行一次; 批次开始使用 immutable settings snapshot(批次中修改缓存不改变本批次配置)", async () => {
+      await updateSettings({ afterConvert: "open", breakBeforeH1: true });
+      const snapshotOpenCalls = /** @type {string[]} */ ([]);
+      const snapshotOpenOriginal = shell.openPath;
+      let snapshotOpenViaDefine = false;
       try {
-        shell.openPath = async (opened) => {
-          snapshotOpenCalls.push(opened);
-          return "";
-        };
-      } catch {
-        snapshotOpenViaDefine = true;
-        Object.defineProperty(shell, "openPath", {
-          configurable: true,
-          writable: true,
-          value: async (/** @type {string} */ opened) => {
+        try {
+          shell.openPath = async (opened) => {
             snapshotOpenCalls.push(opened);
             return "";
+          };
+        } catch {
+          snapshotOpenViaDefine = true;
+          Object.defineProperty(shell, "openPath", {
+            configurable: true,
+            writable: true,
+            value: async (/** @type {string} */ opened) => {
+              snapshotOpenCalls.push(opened);
+              return "";
+            },
+          });
+        }
+        // 直接改缓存对象模拟批次运行期间设置更新;实现应先深拷贝快照,
+        // 旧实现会让后续文件读到 false,新实现两项断言都应保持。
+        const liveSettings = loadSettings();
+        const snapshotBatch = await batchConvertImpl(
+          batchFiles.slice(0, 2),
+          "docx",
+          (/** @type {BatchProgressInfo} */ info) => {
+            if (info.stage === "read") liveSettings.breakBeforeH1 = false;
           },
-        });
+        );
+        assert(snapshotBatch.okCount === 2, "快照批量转换应完成两项");
+        assert(sizeOf(snapshotOpenCalls) === 1, `批量 after-convert 只应执行一次,实际 ${snapshotOpenCalls.length} 次`);
+        for (const item of snapshotBatch.items) {
+          assert(!!item.ok, "快照批量应全部成功");
+          assert(item.outputPath !== undefined, "快照批量成功项应带 outputPath");
+          const zip = await JSZip.loadAsync(await fs.readFile(item.outputPath));
+          const xml = await entryText(zip, "word/document.xml");
+          assert(xml.includes("<w:pageBreakBefore/>"), "批次中途修改设置不得混合本批次配置");
+        }
+        const snapshotMerge = await mergeFiles([mergeA, mergeB], "docx");
+        assert(snapshotMerge.ok, "快照合并转换应成功");
+        assert(sizeOf(snapshotOpenCalls) === 2, `合并 after-convert 只应执行一次(总计两次),实际 ${snapshotOpenCalls.length} 次`);
+      } finally {
+        if (snapshotOpenViaDefine) {
+          Object.defineProperty(shell, "openPath", {
+            configurable: true,
+            writable: true,
+            value: snapshotOpenOriginal,
+          });
+        } else {
+          shell.openPath = snapshotOpenOriginal;
+        }
+        await updateSettings({ afterConvert: "none", breakBeforeH1: false });
       }
-      // 直接改缓存对象模拟批次运行期间设置更新;实现应先深拷贝快照,
-      // 旧实现会让后续文件读到 false,新实现两项断言都应保持。
-      const liveSettings = loadSettings();
-      const snapshotBatch = await batchConvertImpl(
-        batchFiles.slice(0, 2),
-        "docx",
-        (/** @type {BatchProgressInfo} */ info) => {
-          if (info.stage === "read") liveSettings.breakBeforeH1 = false;
-        },
-      );
-      assert(snapshotBatch.okCount === 2, "快照批量转换应完成两项");
-      assert(sizeOf(snapshotOpenCalls) === 1, `批量 after-convert 只应执行一次,实际 ${snapshotOpenCalls.length} 次`);
-      for (const item of snapshotBatch.items) {
-        assert(!!item.ok, "快照批量应全部成功");
-        assert(item.outputPath !== undefined, "快照批量成功项应带 outputPath");
-        const zip = await JSZip.loadAsync(await fs.readFile(item.outputPath));
-        const xml = await entryText(zip, "word/document.xml");
-        assert(xml.includes("<w:pageBreakBefore/>"), "批次中途修改设置不得混合本批次配置");
-      }
-      const snapshotMerge = await mergeFiles([mergeA, mergeB], "docx");
-      assert(snapshotMerge.ok, "快照合并转换应成功");
-      assert(sizeOf(snapshotOpenCalls) === 2, `合并 after-convert 只应执行一次(总计两次),实际 ${snapshotOpenCalls.length} 次`);
-    } finally {
-      if (snapshotOpenViaDefine) {
+      console.log("[ok] converter:批量/合并 after-convert 单次执行 + 批次 settings snapshot");
+    });
+
+    await suite.case("10. runAfterConvert open 失败(326-329 行):openPath 返回错误 → 降级不抛,日志留痕 模拟:shell.openPath 临时替换为必失败 mock(直接赋值,不可写则 defineProperty 兜底); console.log 临时捕获断言「[afterConvert] 打开失败」文案;afterConvert 恢复 none", async () => {
+      const origOpenPath = shell.openPath;
+      let openPathViaDefine = false;
+      try {
+        shell.openPath = async () => "mock open error";
+      } catch {
+        openPathViaDefine = true;
         Object.defineProperty(shell, "openPath", {
           configurable: true,
           writable: true,
-          value: snapshotOpenOriginal,
+          value: async () => "mock open error",
         });
-      } else {
-        shell.openPath = snapshotOpenOriginal;
       }
-      await updateSettings({ afterConvert: "none", breakBeforeH1: false });
-    }
-    console.log("[ok] converter:批量/合并 after-convert 单次执行 + 批次 settings snapshot");
-
-    // ---- 10. runAfterConvert open 失败(326-329 行):openPath 返回错误 → 降级不抛,日志留痕 ----
-    // 模拟:shell.openPath 临时替换为必失败 mock(直接赋值,不可写则 defineProperty 兜底);
-    // console.log 临时捕获断言「[afterConvert] 打开失败」文案;afterConvert 恢复 none
-    const origOpenPath = shell.openPath;
-    let openPathViaDefine = false;
-    try {
-      shell.openPath = async () => "mock open error";
-    } catch {
-      openPathViaDefine = true;
-      Object.defineProperty(shell, "openPath", {
-        configurable: true,
-        writable: true,
-        value: async () => "mock open error",
-      });
-    }
-    const openLogs = /** @type {string[]} */ ([]);
-    const origLog = console.log;
-    console.log = (...args) => {
-      openLogs.push(args.join(" "));
-    };
-    try {
-      await updateSettings({ afterConvert: "open" });
-      const openFail = await convertImpl(sampleMd, "docx");
-      assert(!!openFail.outputPath, "open 失败不应影响转换成功");
-      await fs.stat(openFail.outputPath);
-    } finally {
-      console.log = origLog;
-      if (openPathViaDefine) {
-        Object.defineProperty(shell, "openPath", { configurable: true, writable: true, value: origOpenPath });
-      } else {
-        shell.openPath = origOpenPath;
-      }
-      await updateSettings({ afterConvert: "none" });
-    }
-    assert(
-      openLogs.some((l) => l.includes("[afterConvert] 打开失败") && l.includes("mock open error")),
-      `open 失败应记录「[afterConvert] 打开失败」日志,实际 ${JSON.stringify(openLogs)}`,
-    );
-    console.log("[ok] converter:runAfterConvert open 失败(降级不抛 + 日志留痕)");
-
-    // ---- 11. merge pdf 分支(451-453 行):合并 → renderPdf → 落盘 %PDF + 进度分阶段上报 ----
-    // pdf 链路细分:read → parse → inline → mermaid → katex → print(printToPDF 前)→ done
-    const mergeStages = /** @type {string[]} */ ([]);
-    const mergePdf = await mergeFiles([mergeA, mergeB], "pdf", (stage) => mergeStages.push(stage));
-    assert(mergePdf.ok && !!mergePdf.outputPath, `merge pdf 失败: ${mergePdf.error}`);
-    const mergePdfBase = mergePdf.outputPath.replace(/\s\(\d+\)(?=\.pdf$)/, "");
-    assert(mergePdfBase.endsWith("-合并.pdf"), `merge pdf 输出命名异常: ${mergePdf.outputPath}`);
-    const pdfHead = Buffer.from(await fs.readFile(mergePdf.outputPath)).subarray(0, 4).toString("ascii");
-    assert(pdfHead === "%PDF", `merge pdf 产物非 PDF 魔数: ${pdfHead}`);
-    assert(
-      JSON.stringify(mergeStages) ===
-        JSON.stringify(["read", "parse", "inline", "mermaid", "katex", "print", "done"]),
-      `merge pdf 进度阶段异常: ${JSON.stringify(mergeStages)}`,
-    );
-    console.log("[ok] converter:merge pdf 分支(renderPdf 落盘 %PDF + 进度 read/parse/inline/mermaid/katex/print/done)");
-
-    // ---- 12. filterExistingPaths(506-517 行,审计 507-517):存在保留/缺失剔除/保序 ----
-    // (collectMarkdownPaths 的 stat 失败/非 md 直接路径已由 paths.test.js 104-112 行覆盖)
-    const existA = path.join(dir, "exist-a.md");
-    const existB = path.join(dir, "exist-b.md");
-    await fs.writeFile(existA, "# a\n", "utf8");
-    await fs.writeFile(existB, "# b\n", "utf8");
-    const ghost1 = path.join(dir, "ghost-1.md");
-    const ghost2 = path.join(dir, "ghost-2.md");
-    const filtered = await filterExistingPaths([existA, ghost1, existB, ghost2, existA]);
-    assert(
-      JSON.stringify(filtered) === JSON.stringify([existA, existB, existA]),
-      `filterExistingPaths 应保序保留存在项并剔除缺失,实际 ${JSON.stringify(filtered)}`,
-    );
-    console.log("[ok] converter:filterExistingPaths(存在保留/缺失剔除/保序)");
-
-    // ---- 13. PDF field 模式两遍法(目录页码回填)端到端:真实打印两遍 + 书签大纲注入 ----
-    // 编排层回归:renderPdf 的标题来源(结构化数据优先、缺失回退兼容层)与两遍法
-    // 目录项定位(id 集合)共同决定产物;断言落在可观察事实——两遍打印成功、
-    // 大纲标题序列 = h1-h3(h4 不进目录/书签)。
-    // 注:pdf-lib save 默认打包对象流,产物字节里 grep 不到 "/Outlines",须经
-    // PDFDocument 回读 catalog(与 pdf-bookmarks 段同款做法)。
-    await updateSettings({ obsidian: { compat: false, attachmentFolder: "Attachments" }, aiCleanup: { enabled: true, tidy: true, rewrite: true }, toc: true, tocMode: "field" });
-    const fieldMd = path.join(dir, "field-toc.md");
-    await fs.writeFile(
-      fieldMd,
-      "# 目录甲\n\n正文一。\n\n## 目录甲之一\n\n正文二。\n\n### 目录甲之一之一\n\n正文三。\n\n" +
-        "#### 目录甲之末级(不进目录)\n\n正文四。\n",
-      "utf8",
-    );
-    const fieldResult = await convertImpl(fieldMd, "pdf");
-    const fieldBytes = await fs.readFile(fieldResult.outputPath);
-    assert(fieldBytes.subarray(0, 4).toString("ascii") === "%PDF", "field 模式产物非 PDF 魔数");
-    const bookmarkTitles = await outlineTitles(fieldBytes);
-    assert(
-      JSON.stringify(bookmarkTitles) === JSON.stringify(["目录甲", "目录甲之一", "目录甲之一之一"]),
-      `field 模式书签标题序列应取 h1-h3(h4 不进目录),实际 ${JSON.stringify(bookmarkTitles)}`,
-    );
-    console.log("[ok] converter:PDF field 模式两遍法(目录页码回填 + 书签大纲 h1-h3)");
-
-    // ---- 13b. renderPdf 优先消费产物透传的结构化标题(不从 HTML 反解析) ----
-    // 编排层 seam 守护:pdf 产物可携带 headings(同一次渲染管线产出,见
-    // core/pdf/render.ts renderPdfDocument)。此处刻意传入与 HTML 不同的结构化标题,
-    // 大纲标题若随之变化即证明编排层取的是结构化数据(缺失时才回退兼容层)。
-    {
-      const structuredMd = "# 结构化甲\n\n正文一。\n\n## 结构化乙\n\n正文二。\n";
-      const artifact = await convertWithFs(structuredMd, "pdf", {
-        baseDir: dir,
-        title: "结构化标题",
-        warnings: [],
-        toc: true,
-        tocMode: "static",
-      });
-      // 先按判别式收窄到 pdf 支,再叠加结构化标题 —— renderPdf 的入参就是 PdfArtifact,
-      // 收窄让「本用例确在处理 pdf 产物」这条前提显式化(而非整块 cast 掉判别式)。
-      const structuredArtifact = {
-        ...expectPdfArtifact(artifact),
-        headings: [{ level: 1, id: "结构化甲", text: "结构化甲(取自结构化数据)" }],
+      const openLogs = /** @type {string[]} */ ([]);
+      const origLog = console.log;
+      console.log = (...args) => {
+        openLogs.push(args.join(" "));
       };
-      const structuredOut = await renderPdf(
-        structuredArtifact,
-        path.join(dir, "structured-headings.pdf"),
-        createConvertContext(),
-      );
-      const structuredTitles = await outlineTitles(await fs.readFile(structuredOut));
+      try {
+        await updateSettings({ afterConvert: "open" });
+        const openFail = await convertImpl(sampleMd, "docx");
+        assert(!!openFail.outputPath, "open 失败不应影响转换成功");
+        await fs.stat(openFail.outputPath);
+      } finally {
+        console.log = origLog;
+        if (openPathViaDefine) {
+          Object.defineProperty(shell, "openPath", { configurable: true, writable: true, value: origOpenPath });
+        } else {
+          shell.openPath = origOpenPath;
+        }
+        await updateSettings({ afterConvert: "none" });
+      }
       assert(
-        JSON.stringify(structuredTitles) === JSON.stringify(["结构化甲(取自结构化数据)"]),
-        `renderPdf 应优先用产物透传的结构化标题,实际 ${JSON.stringify(structuredTitles)}`,
+        openLogs.some((l) => l.includes("[afterConvert] 打开失败") && l.includes("mock open error")),
+        `open 失败应记录「[afterConvert] 打开失败」日志,实际 ${JSON.stringify(openLogs)}`,
       );
-      // 兼容层回退:同一 HTML 不带 headings 时,标题回退自 HTML 反解析(行为等价)
-      const fallbackOut = await renderPdf(expectPdfArtifact(artifact), path.join(dir, "fallback-headings.pdf"), createConvertContext());
-      const fallbackTitles = await outlineTitles(await fs.readFile(fallbackOut));
+      console.log("[ok] converter:runAfterConvert open 失败(降级不抛 + 日志留痕)");
+    });
+
+    await suite.case("11. merge pdf 分支(451-453 行):合并 → renderPdf → 落盘 %PDF + 进度分阶段上报 pdf 链路细分:read → parse → inline → mermaid → katex → print(printToPDF 前)→ done", async () => {
+      const mergeStages = /** @type {string[]} */ ([]);
+      const mergePdf = await mergeFiles([mergeA, mergeB], "pdf", (stage) => mergeStages.push(stage));
+      assert(mergePdf.ok && !!mergePdf.outputPath, `merge pdf 失败: ${mergePdf.error}`);
+      const mergePdfBase = mergePdf.outputPath.replace(/\s\(\d+\)(?=\.pdf$)/, "");
+      assert(mergePdfBase.endsWith("-合并.pdf"), `merge pdf 输出命名异常: ${mergePdf.outputPath}`);
+      const pdfHead = Buffer.from(await fs.readFile(mergePdf.outputPath)).subarray(0, 4).toString("ascii");
+      assert(pdfHead === "%PDF", `merge pdf 产物非 PDF 魔数: ${pdfHead}`);
       assert(
-        JSON.stringify(fallbackTitles) === JSON.stringify(["结构化甲", "结构化乙"]),
-        `未透传 headings 时应回退兼容层提取,实际 ${JSON.stringify(fallbackTitles)}`,
+        JSON.stringify(mergeStages) ===
+          JSON.stringify(["read", "parse", "inline", "mermaid", "katex", "print", "done"]),
+        `merge pdf 进度阶段异常: ${JSON.stringify(mergeStages)}`,
       );
-      console.log("[ok] converter:renderPdf 标题来源(结构化数据优先 / 缺失回退兼容层)");
-    }
+      console.log("[ok] converter:merge pdf 分支(renderPdf 落盘 %PDF + 进度 read/parse/inline/mermaid/katex/print/done)");
+    });
+
+    await suite.case("12. filterExistingPaths(506-517 行,审计 507-517):存在保留/缺失剔除/保序 (collectMarkdownPaths 的 stat 失败/非 md 直接路径已由 paths.test.js 104-112 行覆盖)", async () => {
+      const existA = path.join(dir, "exist-a.md");
+      const existB = path.join(dir, "exist-b.md");
+      await fs.writeFile(existA, "# a\n", "utf8");
+      await fs.writeFile(existB, "# b\n", "utf8");
+      const ghost1 = path.join(dir, "ghost-1.md");
+      const ghost2 = path.join(dir, "ghost-2.md");
+      const filtered = await filterExistingPaths([existA, ghost1, existB, ghost2, existA]);
+      assert(
+        JSON.stringify(filtered) === JSON.stringify([existA, existB, existA]),
+        `filterExistingPaths 应保序保留存在项并剔除缺失,实际 ${JSON.stringify(filtered)}`,
+      );
+      console.log("[ok] converter:filterExistingPaths(存在保留/缺失剔除/保序)");
+    });
+
+    await suite.case("13. PDF field 模式两遍法(目录页码回填)端到端:真实打印两遍 + 书签大纲注入;编排层回归:renderPdf 的标题来源(结构化数据优先、缺失回退到兼容层)与两遍法目录项定位(id 集合)共同决定产物;断言落在可观察事实 —— 两遍打印成功、大纲标题序列 = h1-h3(h4 不进目录/书签)。注:pdf-lib save 默认打包对象流,产物字节里 grep 不到 /Outlines,须经 PDFDocument 回读 catalog(与 pdf-bookmarks 段同款做法)。", async () => {
+      await updateSettings({ obsidian: { compat: false, attachmentFolder: "Attachments" }, aiCleanup: { enabled: true, tidy: true, rewrite: true }, toc: true, tocMode: "field" });
+      const fieldMd = path.join(dir, "field-toc.md");
+      await fs.writeFile(
+        fieldMd,
+        "# 目录甲\n\n正文一。\n\n## 目录甲之一\n\n正文二。\n\n### 目录甲之一之一\n\n正文三。\n\n" +
+          "#### 目录甲之末级(不进目录)\n\n正文四。\n",
+        "utf8",
+      );
+      const fieldResult = await convertImpl(fieldMd, "pdf");
+      const fieldBytes = await fs.readFile(fieldResult.outputPath);
+      assert(fieldBytes.subarray(0, 4).toString("ascii") === "%PDF", "field 模式产物非 PDF 魔数");
+      const bookmarkTitles = await outlineTitles(fieldBytes);
+      assert(
+        JSON.stringify(bookmarkTitles) === JSON.stringify(["目录甲", "目录甲之一", "目录甲之一之一"]),
+        `field 模式书签标题序列应取 h1-h3(h4 不进目录),实际 ${JSON.stringify(bookmarkTitles)}`,
+      );
+      console.log("[ok] converter:PDF field 模式两遍法(目录页码回填 + 书签大纲 h1-h3)");
+    });
+
+    await suite.case("13b. renderPdf 优先消费产物透传的结构化标题(不从 HTML 反解析) 编排层 seam 守护:pdf 产物可携带 headings(同一次渲染管线产出,见 core/pdf/render.ts renderPdfDocument)。此处刻意传入与 HTML 不同的结构化标题, 大纲标题若随之变化即证明编排层取的是结构化数据(缺失时才回退兼容层)。", async () => {
+      {
+        const structuredMd = "# 结构化甲\n\n正文一。\n\n## 结构化乙\n\n正文二。\n";
+        const artifact = await convertWithFs(structuredMd, "pdf", {
+          baseDir: dir,
+          title: "结构化标题",
+          warnings: [],
+          toc: true,
+          tocMode: "static",
+        });
+        // 先按判别式收窄到 pdf 支,再叠加结构化标题 —— renderPdf 的入参就是 PdfArtifact,
+        // 收窄让「本用例确在处理 pdf 产物」这条前提显式化(而非整块 cast 掉判别式)。
+        const structuredArtifact = {
+          ...expectPdfArtifact(artifact),
+          headings: [{ level: 1, id: "结构化甲", text: "结构化甲(取自结构化数据)" }],
+        };
+        const structuredOut = await renderPdf(
+          structuredArtifact,
+          path.join(dir, "structured-headings.pdf"),
+          createConvertContext(),
+        );
+        const structuredTitles = await outlineTitles(await fs.readFile(structuredOut));
+        assert(
+          JSON.stringify(structuredTitles) === JSON.stringify(["结构化甲(取自结构化数据)"]),
+          `renderPdf 应优先用产物透传的结构化标题,实际 ${JSON.stringify(structuredTitles)}`,
+        );
+        // 兼容层回退:同一 HTML 不带 headings 时,标题回退自 HTML 反解析(行为等价)
+        const fallbackOut = await renderPdf(expectPdfArtifact(artifact), path.join(dir, "fallback-headings.pdf"), createConvertContext());
+        const fallbackTitles = await outlineTitles(await fs.readFile(fallbackOut));
+        assert(
+          JSON.stringify(fallbackTitles) === JSON.stringify(["结构化甲", "结构化乙"]),
+          `未透传 headings 时应回退兼容层提取,实际 ${JSON.stringify(fallbackTitles)}`,
+        );
+        console.log("[ok] converter:renderPdf 标题来源(结构化数据优先 / 缺失回退兼容层)");
+      }
+    });
   } finally {
     // 恢复设置文件 + 模块级缓存(updateSettings 双写);原本无文件则删除,不污染用户设置
     await restoreSettings.restore();
     // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
     removeTree(dir);
   }
+  return { cases: suite.results };
 }

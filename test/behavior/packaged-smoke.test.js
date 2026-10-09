@@ -40,6 +40,7 @@ import {
 import { ROOT } from "../harness/paths.js";
 import { removeTree } from "../harness/temp-resource.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /**
  * 本段横跨的层(ADR-062 L6 判据要求 behavior 段显式声明):判据只校验「非空 ＋ 每个元素
@@ -101,8 +102,9 @@ function collectSpecifiers(code) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   // ================= 1. 诊断标记恒等 + 判定口径(退出码 0/1) =================
-  {
+  await suite.case("诊断标记 5 条与发布侧清单逐条恒等", async () => {
     assert(SMOKE_MARKERS.length === 5, `发布侧判定清单应为 5 条,实际 ${SMOKE_MARKERS.length}`);
     // Object.freeze 让 TS 把取值推成字面量联合,显式放宽为 string[] 以便与外部清单比对
     const implemented = /** @type {string[]} */ (Object.values(SMOKE_MARKER));
@@ -121,6 +123,9 @@ export async function run() {
         `编译产物 dist/main/smoke.js 内应含标记字面量「${marker.token}」(发布侧按此串判定产物输出)`,
       );
     }
+  });
+
+  await suite.case("判定口径:标记齐 + 退出码 0 通过,非零退出判红", () => {
     // 判定口径:五条标记 + 退出码 0 = 通过;任一缺失或非零退出 = 判红
     const okOutput = SMOKE_MARKERS.map((marker) => `${marker.token} fixture`).join("\n");
     const passed = collectSmokeProblems({ code: 0, signal: null, timedOut: false, output: okOutput }, { label: "契约" });
@@ -136,6 +141,9 @@ export async function run() {
       failed.some((problem) => problem.includes("退出码为 1,期望 0")),
       `冒烟失败路径应以退出码 1 判红,实际:${failed.join("; ")}`,
     );
+  });
+
+  await suite.case("漏标记必须被逐条点名", () => {
     // 反向:漏一条标记必须被指名道姓(不是笼统「失败」)
     const partial = collectSmokeProblems(
       { code: 0, signal: null, timedOut: false, output: SMOKE_MARKERS.slice(0, 3).map((m) => `${m.token} x`).join("\n") },
@@ -149,10 +157,10 @@ export async function run() {
     console.log(
       `[ok] packaged-smoke:1 诊断标记 5 条与发布侧清单逐条恒等(判定口径:标记齐 + 退出码 0 通过,非零/缺标记判红)`,
     );
-  }
+  });
 
   // ================= 2. 单一实现(主进程直连 + 实现唯一出处) =================
-  {
+  await suite.case("主进程 --smoke 分支直连 dist 且跳过单实例锁、失败即 exit(1)", async () => {
     // 主进程 --smoke 分支:直连 dist/main/smoke.js,不经任何 test/ 路径(dev-only 路径进不了包)
     const indexCode = stripJsComments(await fs.readFile(path.join(ROOT, "src", "main", "index.ts"), "utf8"));
     assert(
@@ -171,6 +179,9 @@ export async function run() {
       indexCode.includes("app.exit(1)"),
       "冒烟失败路径须以 app.exit(1) 结束(确定性退出码)",
     );
+  });
+
+  await suite.case("冒烟实现唯一出处为 src/main/smoke.ts 的 runSmoke", async () => {
     // 单一实现的另一面:src 侧不得残留第二份实现
     const smokeSource = await fs.readFile(SMOKE_TS, "utf8");
     assert(
@@ -178,10 +189,10 @@ export async function run() {
       "冒烟实现的唯一出处应为 src/main/smoke.ts 的 runSmoke",
     );
     console.log("[ok] packaged-smoke:2 冒烟实现单一(主进程直连 dist/main/smoke.js,实现唯一出处 src/main/smoke.ts)");
-  }
+  });
 
   // ================= 3. 打包面纪律(产物不含 test/ 路径与仓库相对定位) =================
-  {
+  await suite.case("编译产物无 test/ 路径引用且不用 import.meta.url 定位资源", async () => {
     const compiled = await fs.readFile(SMOKE_JS, "utf8");
     const code = stripJsComments(compiled);
     assert(
@@ -193,6 +204,11 @@ export async function run() {
       !code.includes("import.meta.url"),
       "编译产物不得用 import.meta.url 定位资源(编译产物在 app.asar 内,位置与仓库无关)",
     );
+  });
+
+  await suite.case("编译产物的相对 import 全部落在 dist 内", async () => {
+    const compiled = await fs.readFile(SMOKE_JS, "utf8");
+    const code = stripJsComments(compiled);
     // 相对 import 只能落在 dist 内(dist/main ↔ dist/core 是合法层间引用),
     // 一旦解析到 dist 之外(asar 内不存在),运行期即 ERR_MODULE_NOT_FOUND
     const relativeSpecs = collectSpecifiers(code).filter((spec) => spec.startsWith("."));
@@ -207,6 +223,9 @@ export async function run() {
     console.log(
       `[ok] packaged-smoke:3a 编译产物 ${relativeSpecs.length} 条相对 import 全部落在 dist 内(${relativeSpecs.join(" ")})`,
     );
+  });
+
+  await suite.case("package.json build.files 含 dist/** 且不夹带 test/**", async () => {
     const pkg = JSON.parse(await fs.readFile(path.join(ROOT, "package.json"), "utf8"));
     const files = Array.isArray(pkg.build?.files) ? pkg.build.files : [];
     assert(
@@ -218,29 +237,32 @@ export async function run() {
       devFiles.length === 0,
       `package.json build.files 不得夹带 test/**(绝不给用户塞 dev-only 代码),实际:${JSON.stringify(devFiles)}`,
     );
+  });
+
+  await suite.case("产物目录按应用形态解析且打包形态不依赖 appPath", () => {
     // 产物目录按应用形态解析:dev 落应用根 output/smoke,打包落系统临时目录一次性子目录
-    const devDir = resolveSmokeOutDir({ isPackaged: false, appPath: "C:\\repo", tempDir: "C:\\tmp" });
+    const devDir = resolveSmokeOutDir({ isPackaged: false, appPath: "C:\repo", tempDir: "C:\tmp" });
     assert(
-      devDir.dir === path.join("C:\\repo", "output", "smoke") && devDir.ephemeral === false,
+      devDir.dir === path.join("C:\repo", "output", "smoke") && devDir.ephemeral === false,
       `dev 形态产物目录应为 <应用根>/output/smoke 且非一次性,实际:${JSON.stringify(devDir)}`,
     );
-    const packagedDir = resolveSmokeOutDir({ isPackaged: true, appPath: "C:\\Program Files\\app\\resources", tempDir: "C:\\tmp" });
+    const packagedDir = resolveSmokeOutDir({ isPackaged: true, appPath: "C:\Program Files\app\resources", tempDir: "C:\tmp" });
     assert(
-      packagedDir.ephemeral === true && path.dirname(packagedDir.dir) === "C:\\tmp",
+      packagedDir.ephemeral === true && path.dirname(packagedDir.dir) === "C:\tmp",
       `打包形态产物目录应落系统临时目录的一次性子目录(退出前删除),实际:${JSON.stringify(packagedDir)}`,
     );
     // 打包形态的目录不得依赖 appPath:否则会写进安装/解包目录(发布产物被污染,asar 内也不可写)
     const packagedAlt = resolveSmokeOutDir({
       isPackaged: true,
-      appPath: "C:\\另一个安装目录\\resources\\app.asar",
-      tempDir: "C:\\tmp",
+      appPath: "C:\另一个安装目录\resources\app.asar",
+      tempDir: "C:\tmp",
     });
     assert(
       packagedAlt.dir === packagedDir.dir,
       `打包形态产物目录不得依赖 appPath(不得写进安装/解包目录),appPath 变化后得:${packagedAlt.dir}`,
     );
     console.log("[ok] packaged-smoke:3 打包面纪律成立(产物无 test/ 路径与仓库相对定位,build.files 不夹带 test/**,产物目录按形态解析)");
-  }
+  });
 
   // ================= 4. 降级契约:缺 katex 资源 = 非致命降级(产物仍出、留痕、退出码语义不变) =================
   {
@@ -251,33 +273,12 @@ export async function run() {
       const missingKatexDir = path.join(dir, "no-such-katex-dist");
       // 场景 A:公式样式资源缺失(打包漏收 katex 资源时的真实形态)
       const degraded = await convertImpl(sampleMd, "pdf", undefined, undefined, missingKatexDir);
-      const degradedBytes = await fs.readFile(degraded.outputPath);
-      assert(
-        degradedBytes.subarray(0, 5).toString("latin1") === "%PDF-",
-        `缺 katex 资源时 pdf 产物仍应落盘且魔数正确,实际:${degradedBytes.subarray(0, 8).toString("latin1")}`,
-      );
       // 参数标 unknown 而非 any:来源是 dist 产物(无 .d.ts),类型本就未知,而这里
       // 紧跟着 typeof 收窄 + 显式 cast,用 unknown 能让 tsc 继续帮我盯住误用。
       const katexWarnings = (degraded.warnings ?? []).filter(
         (/** @type {unknown} */ w) => typeof w !== "string" && /** @type {{ key?: string }} */ (w).key === KATEX_WARNING_KEY,
       );
-      assert(
-        katexWarnings.length === 1,
-        `缺 katex 资源应恰好上报 1 条 ${KATEX_WARNING_KEY} 警告(非致命),实际:${JSON.stringify(degraded.warnings)}`,
-      );
       const degradationLine = describePdfDegradation(degraded.warnings);
-      assert(
-        degradationLine.startsWith(SMOKE_MARKER.pdfDegraded) && degradationLine.includes(KATEX_WARNING_KEY),
-        `降级留痕行应以「${SMOKE_MARKER.pdfDegraded}」打头并点名警告键,实际:${degradationLine}`,
-      );
-      assert(
-        !degradationLine.includes("[smoke] convert FAILED") && !/[Tt]hrow/.test(degradationLine),
-        "降级留痕行不得表现为失败(失败路径是 throw → 主进程 app.exit(1))",
-      );
-      assert(
-        describePdfDegradation(undefined) === "" && describePdfDegradation([]) === "",
-        "无警告通道时不应打降级行(否则正常运行的输出恒多一行噪声)",
-      );
       // 场景 B:资源在位 → 同一输入不产生该警告(证明 A 的告警确实由缺资源触发)
       const okKatexDir = path.join(ROOT, "node_modules", "katex", "dist");
       assert(
@@ -288,17 +289,53 @@ export async function run() {
       const healthyKatexWarnings = (healthy.warnings ?? []).filter(
         (/** @type {unknown} */ w) => typeof w !== "string" && /** @type {{ key?: string }} */ (w).key === KATEX_WARNING_KEY,
       );
-      assert(
-        healthyKatexWarnings.length === 0,
-        `资源在位时不应上报 ${KATEX_WARNING_KEY}(否则降级行退化为噪声,失去回归可见性),实际:${JSON.stringify(healthy.warnings)}`,
-      );
-      assert(
-        describePdfDegradation(healthy.warnings) === "",
-        "资源在位时不应打降级留痕行",
-      );
-      console.log(
-        `[ok] packaged-smoke:4 降级契约成立(缺 katex 资源:产物仍出 + ${KATEX_WARNING_KEY} 警告 + 降级留痕行,非致命;资源在位无警告无留痕)`,
-      );
+
+      await suite.case("缺 katex 资源时 pdf 产物仍落盘且魔数正确", async () => {
+        const degradedBytes = await fs.readFile(degraded.outputPath);
+        assert(
+          degradedBytes.subarray(0, 5).toString("latin1") === "%PDF-",
+          `缺 katex 资源时 pdf 产物仍应落盘且魔数正确,实际:${degradedBytes.subarray(0, 8).toString("latin1")}`,
+        );
+      });
+
+      await suite.case("缺 katex 资源恰好上报 1 条非致命警告", () => {
+        assert(
+          katexWarnings.length === 1,
+          `缺 katex 资源应恰好上报 1 条 ${KATEX_WARNING_KEY} 警告(非致命),实际:${JSON.stringify(degraded.warnings)}`,
+        );
+      });
+
+      await suite.case("降级留痕行以标记打头、点名警告键且不表现为失败", () => {
+        assert(
+          degradationLine.startsWith(SMOKE_MARKER.pdfDegraded) && degradationLine.includes(KATEX_WARNING_KEY),
+          `降级留痕行应以「${SMOKE_MARKER.pdfDegraded}」打头并点名警告键,实际:${degradationLine}`,
+        );
+        assert(
+          !degradationLine.includes("[smoke] convert FAILED") && !/[Tt]hrow/.test(degradationLine),
+          "降级留痕行不得表现为失败(失败路径是 throw → 主进程 app.exit(1))",
+        );
+      });
+
+      await suite.case("无警告通道时不打降级行", () => {
+        assert(
+          describePdfDegradation(undefined) === "" && describePdfDegradation([]) === "",
+          "无警告通道时不应打降级行(否则正常运行的输出恒多一行噪声)",
+        );
+      });
+
+      await suite.case("资源在位时无该警告也无降级留痕行", () => {
+        assert(
+          healthyKatexWarnings.length === 0,
+          `资源在位时不应上报 ${KATEX_WARNING_KEY}(否则降级行退化为噪声,失去回归可见性),实际:${JSON.stringify(healthy.warnings)}`,
+        );
+        assert(
+          describePdfDegradation(healthy.warnings) === "",
+          "资源在位时不应打降级留痕行",
+        );
+        console.log(
+          `[ok] packaged-smoke:4 降级契约成立(缺 katex 资源:产物仍出 + ${KATEX_WARNING_KEY} 警告 + 降级留痕行,非致命;资源在位无警告无留痕)`,
+        );
+      });
     } finally {
       // Electron fs 层同样管着 os.tmpdir 下的目录,失败即判红:残留不该静默。
       // 本段原先本地重复实现了一份 removeDir,现统一到 removeTree(退避重试 + 删后复查)
@@ -306,6 +343,8 @@ export async function run() {
       if (!outcome.ok) throw new Error(`临时目录清理失败:${dir}:${outcome.error?.message ?? "删除后目录仍存在"}`);
     }
   }
+
+  return { cases: suite.results };
 }
 
 /**

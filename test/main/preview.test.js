@@ -19,6 +19,7 @@ import iconv from "iconv-lite";
 import { openPreviewWindow, previews, requestPreviewRefresh } from "../../dist/main/windows/preview.js";
 import { removeFile, removeTree } from "../harness/temp-resource.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const { assert: harnessAssert } = createAsserter("preview");
 
@@ -146,10 +147,13 @@ async function waitNoTempHtml(baseline, label) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "m2w-preview-"));
   const baseline = new Set(await tempHtmlFiles());
   const originalWarn = console.warn;
   const warnings = /** @type {string[]} */ ([]);
+  // ⚠ 段末 finally 留在 run() 顶层:窗口 destroy 与临时文件回收若进了 case,
+  // case 判红时会遮掉段级清理(下一个场景会读到上一轮残留的窗口与文件)
   try {
     // ---- 1. 打开:GBK 编码 warning 必须进入主进程 warning sink ----
     const mdPath = path.join(dir, "gbk-preview.md");
@@ -157,74 +161,97 @@ export async function run() {
     console.warn = (...args) => warnings.push(args.join(" "));
     const result = await openPreviewWindow(mdPath);
     console.warn = originalWarn;
-    assert(result.ok, `GBK 预览打开失败:${result.error ?? ""}`);
-    assert(
-      warnings.some((message) => message.includes("[preview]") && message.includes("GBK")),
-      `预览编码 warning 未进入主进程 warning sink:${JSON.stringify(warnings)}`,
-    );
-    const entry = [...previews].find((e) => e.mdPath === mdPath);
-    assert(entry, "预览窗口应已登记到 previews");
-    assert(previews.size === 1, `本段同一时刻只应有一个预览窗口,实际 ${previews.size}`);
+    const entry0 = [...previews].find((e) => e.mdPath === mdPath);
     const openedHtml = await previewTempFiles(baseline);
-    assert(openedHtml.length === 1, `打开后应恰好一个临时 HTML,实际 ${openedHtml.join(",")}`);
+    // 下方六个场景是同一条窗口生命周期的先后步骤(打开 → 刷新 → 失败刷新 → 关闭
+    // → 挂起关闭 → 竞态),每步的判定对象都由前几步建立 ⇒ 每步合成一个 case,
+    // 跨步拆开会让前一步判红时报出下一步的连带失败而非真因
+    await suite.case("1. 打开:GBK warning 进 sink 且窗口登记/临时文件就位", () => {
+      assert(result.ok, `GBK 预览打开失败:${result.error ?? ""}`);
+      assert(
+        warnings.some((message) => message.includes("[preview]") && message.includes("GBK")),
+        `预览编码 warning 未进入主进程 warning sink:${JSON.stringify(warnings)}`,
+      );
+      assert(entry0, "预览窗口应已登记到 previews");
+      assert(previews.size === 1, `本段同一时刻只应有一个预览窗口,实际 ${previews.size}`);
+      assert(openedHtml.length === 1, `打开后应恰好一个临时 HTML,实际 ${openedHtml.join(",")}`);
+    });
+    // 登记缺失会让后续所有场景失去判定对象(取数前提),留在 case 外收窄
+    if (!entry0) throw new Error("preview 断言失败:预览窗口未登记到 previews,后续场景无判定对象");
+    const entry = entry0;
 
     // ---- 2. 并发刷新:两次请求只留最新一代(旧代回收、当前页不被删) ----
     const first = requestPreviewRefresh(entry);
     const second = requestPreviewRefresh(entry);
     await Promise.all([first, second]);
-    assert(entry.generation === 2, `两次请求后代号应为 2,实际 ${entry.generation}`);
     const afterRefresh = await previewTempFiles(baseline);
-    assert(
-      afterRefresh.length === 1,
-      `两次刷新后应只剩当前页一个临时 HTML(旧代须回收),实际 ${afterRefresh.join(",")}`,
-    );
     const [currentHtml] = afterRefresh;
-    assert(currentHtml !== undefined, "两次刷新后应恰好剩一个当前页临时 HTML");
+    // 「恰好剩一个」是下面算路径的前提,留在 case 外做一次收窄:
+    // 归进 case 就没法在算 expectedFile 之前拿到非 undefined 的文件名
+    if (currentHtml === undefined) {
+      throw new Error("preview 断言失败:两次刷新后未剩当前页临时 HTML,无法比对展示页");
+    }
     // 等导航真正提交再比对(而非刷新 Promise 结算即读):慢机上 getURL 可能仍停在
     // 上一代,那会把「旧代已回收」误判成「展示页不是最新一代」
     const expectedFile = path.join(os.tmpdir(), currentHtml);
     const shownUrl = await waitForShownFile(entry.win, expectedFile, "并发刷新后");
-    assert(
-      shownFilePath(shownUrl) === expectedFile,
-      `展示页应为最新一代临时文件(${expectedFile}),实际 ${shownUrl}`,
-    );
+    await suite.case("2. 并发刷新:仅最新一代落地(旧代回收 + 展示页为最新)", async () => {
+      assert(entry.generation === 2, `两次请求后代号应为 2,实际 ${entry.generation}`);
+      assert(
+        afterRefresh.length === 1,
+        `两次刷新后应只剩当前页一个临时 HTML(旧代须回收),实际 ${afterRefresh.join(",")}`,
+      );
+      assert(currentHtml !== undefined, "两次刷新后应恰好剩一个当前页临时 HTML");
+      assert(
+        shownFilePath(shownUrl) === expectedFile,
+        `展示页应为最新一代临时文件(${expectedFile}),实际 ${shownUrl}`,
+      );
     // 旧页不得后到覆盖新页:代号只前进不回退,当前页句柄与展示文件一致
-    assert(
-      (await fs.readFile(path.join(os.tmpdir(), currentHtml), "utf8")).includes("你好世界"),
-      "当前页内容应来自最新一次渲染",
-    );
+      assert(
+        (await fs.readFile(path.join(os.tmpdir(), currentHtml), "utf8")).includes("你好世界"),
+        "当前页内容应来自最新一次渲染",
+      );
+    });
     console.log("[ok] preview:并发刷新仅最新一代落地(旧代回收 + 展示页为最新)");
 
     // ---- 3. 失败刷新不影响既有页面(错误页不吞掉当前临时文件) ----
     removeFile(mdPath);
     await requestPreviewRefresh(entry);
-    assert(
-      (await previewTempFiles(baseline)).length === 1,
-      "源文件缺失刷新失败后,当前页临时文件仍应由注册表持有",
-    );
-    assert(entry.cleanup !== null, "刷新失败不应清空当前页的清理句柄");
+    const afterFailedRefresh = await previewTempFiles(baseline);
     await fs.writeFile(mdPath, "# 恢复\n", "utf8");
     await requestPreviewRefresh(entry);
-    assert((await previewTempFiles(baseline)).length === 1, "恢复后刷新应仍只保留一个临时 HTML");
+    const afterRecover = await previewTempFiles(baseline);
+    await suite.case("3. 失败刷新保留当前页句柄 / 恢复后可继续刷新", () => {
+      assert(
+        afterFailedRefresh.length === 1,
+        "源文件缺失刷新失败后,当前页临时文件仍应由注册表持有",
+      );
+      assert(entry.cleanup !== null, "刷新失败不应清空当前页的清理句柄");
+      assert(afterRecover.length === 1, "恢复后刷新应仍只保留一个临时 HTML");
+    });
     console.log("[ok] preview:刷新失败保留当前页句柄/恢复后可继续刷新");
 
     // ---- 4. 窗口关闭后在途刷新安全退出(不 loadFile/不写注册表/不留文件) ----
     const closingEntry = entry;
     const generationBeforeClose = closingEntry.generation;
     const pending = requestPreviewRefresh(closingEntry); // 刷新在途(渲染尚未完成)
-    assert(
-      closingEntry.generation === generationBeforeClose + 1,
-      "刷新请求应同步推进代号(旧代立即失效)",
-    );
+    const generationAfterRequest = closingEntry.generation;
     closingEntry.win.destroy();
     await pending; // 关闭后本次刷新必须安全结算(不抛、不复活)
-    assert(closingEntry.closed, "窗口关闭后 entry 应标记 closed");
-    assert(closingEntry.cleanup === null, "窗口关闭应释放并清空当前页清理句柄");
-    assert(registrySize(previews) === 0, `窗口关闭后应从 previews 注销,实际 ${previews.size}`);
     await waitNoTempHtml(baseline, "窗口关闭后");
     // 关闭后再请求刷新:立即安全返回,不新建窗口/临时文件
     await requestPreviewRefresh(closingEntry);
-    assert((await previewTempFiles(baseline)).length === 0, "已关闭窗口的刷新请求不得产生临时文件");
+    const afterClosedRefresh = await previewTempFiles(baseline);
+    await suite.case("4. 窗口关闭后刷新安全退出(不 loadFile/不写注册表/无残留)", () => {
+      assert(
+        generationAfterRequest === generationBeforeClose + 1,
+        "刷新请求应同步推进代号(旧代立即失效)",
+      );
+      assert(closingEntry.closed, "窗口关闭后 entry 应标记 closed");
+      assert(closingEntry.cleanup === null, "窗口关闭应释放并清空当前页清理句柄");
+      assert(registrySize(previews) === 0, `窗口关闭后应从 previews 注销,实际 ${previews.size}`);
+      assert(afterClosedRefresh.length === 0, "已关闭窗口的刷新请求不得产生临时文件");
+    });
     console.log("[ok] preview:窗口关闭后刷新安全退出(不 loadFile/不写注册表/无残留)");
 
     // ---- 5. loadFile 未 settle 时关闭窗口:该次刷新结算后无孤儿窗口与残留 ----
@@ -254,11 +281,17 @@ export async function run() {
     try {
       const hanging = requestPreviewRefresh(entry2);
       await waitFor(() => Promise.resolve(releaseLoad !== undefined), "loadFile 进入挂起态");
-      assert(releaseLoad !== undefined, "loadFile 应已进入挂起态并交出释放句柄");
+      const releaseReady = releaseLoad;
       entry2.win.destroy(); // loadFile 未 settle 即关闭
-      releaseLoad(); // 释放挂起:随后必须走「窗口已关」分支而非复活
+      if (releaseReady === undefined) {
+        throw new Error("preview 断言失败:loadFile 未进入挂起态,无法验证关闭后的收尾");
+      }
+      releaseReady(); // 释放挂起:随后必须走「窗口已关」分支而非复活
       await hanging;
-      assert(entry2.closed && registrySize(previews) === 0, "关闭后应注销且不复活窗口");
+      await suite.case("5. loadFile 未 settle 即关闭:刷新安全收尾、窗口注销、无残留", () => {
+        assert(releaseReady !== undefined, "loadFile 应已进入挂起态并交出释放句柄");
+        assert(entry2.closed && registrySize(previews) === 0, "关闭后应注销且不复活窗口");
+      });
       await waitNoTempHtml(baseline, "挂起刷新收尾后");
     } finally {
       Object.getPrototypeOf(entry2.win).loadFile = origLoadFile;
@@ -291,21 +324,29 @@ export async function run() {
       const opening = openPreviewWindow(md3);
       await waitFor(() => Promise.resolve(calls === 1), "初次 loadFile 进入延迟");
       const entry3 = [...previews].find((e) => e.mdPath === md3);
-      assert(entry3, "打开中的预览应已登记(刷新可排队到初载之后)");
+      const registeredEarly = entry3 !== undefined;
+      if (entry3 === undefined) throw new Error("preview 断言失败:打开中的预览未登记");
       const refreshing = requestPreviewRefresh(entry3);
       await opening;
       await refreshing;
       const left = await previewTempFiles(baseline);
-      assert(left.length === 1, `竞态刷新后应只剩刷新页一个临时 HTML,实际 ${left.join(",")}`);
       const [raceHtml] = left;
-      assert(raceHtml !== undefined, "竞态刷新后应恰好剩一个刷新页临时 HTML");
+      // 同 case 2:算路径前先收窄文件名(前提,不是被断言的行为)
+      if (raceHtml === undefined) {
+        throw new Error("preview 断言失败:竞态刷新后未剩刷新页临时 HTML,无法比对展示页");
+      }
       // 同上:等刷新页的导航真正提交再比对,否则慢机上读到的是初载页
       const raceExpectedFile = path.join(os.tmpdir(), raceHtml);
       const raceShownUrl = await waitForShownFile(entry3.win, raceExpectedFile, "竞态刷新后");
-      assert(
-        shownFilePath(raceShownUrl) === raceExpectedFile,
-        `展示页应为刷新后的页面(初载不得后到覆盖),实际 ${raceShownUrl}`,
-      );
+      await suite.case("6. 打开后立刻刷新:初载后到不覆盖刷新页", () => {
+        assert(registeredEarly, "打开中的预览应已登记(刷新可排队到初载之后)");
+        assert(left.length === 1, `竞态刷新后应只剩刷新页一个临时 HTML,实际 ${left.join(",")}`);
+        assert(raceHtml !== undefined, "竞态刷新后应恰好剩一个刷新页临时 HTML");
+        assert(
+          shownFilePath(raceShownUrl) === raceExpectedFile,
+          `展示页应为刷新后的页面(初载不得后到覆盖),实际 ${raceShownUrl}`,
+        );
+      });
       entry3.win.destroy();
       await waitNoTempHtml(baseline, "竞态刷新后");
     } finally {
@@ -320,4 +361,5 @@ export async function run() {
     // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
     removeTree(dir);
   }
+  return { cases: suite.results };
 }

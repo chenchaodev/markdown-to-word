@@ -48,6 +48,7 @@ import path from "node:path";
 import { ARTIFACTS_DIR, ROOT, repoRelative, segmentFailureDir } from "../harness/paths.js";
 import { removeFile, removeTree } from "../harness/temp-resource.js";
 import { CONCURRENCY_ENV, ONLY_ENV, describeChildExitCode, discoverSegments, formatCaseReport, resolveConcurrency, resolveIsolation, runAll, summarizeCases } from "../harness/runner.js";
+import { createCaseSuite } from "./case.js";
 
 /**
  * 本段测哪一层(ADR-062 L4 声明通道):**harness** ——「本层主体根就是 `test/harness/`
@@ -424,12 +425,29 @@ function fail(message) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const artifactsBefore = readDirSafe(ARTIFACTS_DIR);
   // 隔离自检(崩溃/悬挂/段间状态)只有逐段子进程模型能安全夹具;同进程回退模型下
   // 崩溃夹具的 process.exit 会带走整轮验收、悬挂夹具无法被终止,故按模型裁剪断言面
   const isolating = resolveIsolation();
   setupSandbox(isolating);
   try {
+    /* ---------- 0. 自指风险的归属:不在本段自检,由门禁守住 ----------
+     * 本段是被测件(case 契约的执行模型)自身的测试,族二却要它「接入」自己测的东西;
+     * 而 setupSandbox 合成的那几段源码串里同样写着 `suite.case(` —— 若把「文件里
+     * 出现过 case 调用」当接入,删掉本段真实的 case 而留夹具串也照样绿。
+     *
+     * 这条风险**已由门禁守住,本段不复刻判据**:① 族二对本段的读数即是权威证据 ——
+     * 门禁若真被夹具串骗过,会把本段报成「未接入」;读数为 0 就说明它已在字符串之外
+     * 找到了真实调用点。② inString 守卫本身由 `gates/repo/check-test-layout.selftest.mjs`
+     * 的一条合成段钉住,那条合成段就放在 harness 层(与本段同层),不是外来构造。
+     *
+     * ⚠ 本段曾内嵌一份 `countRealCaseCalls` 复刻门禁的计数口径,已删:那份副本自认
+     * 精度低于判据本体(模板插值内的嵌套字符串不处理),是一份会随门禁演进而漂移的判定
+     * 副本 —— 与本仓拒绝「在夹具里复制判定逻辑」的立场冲突,且完全冗余于上面两条。
+     * ⚠ 同理本段也不能 import 判据本体来做这件事:harness 层的段 import 门禁树模块会被
+     * test-layer-gate-subject 判红,而开豁免要改门禁树的表、不在本段职责内。 */
+
     /* ---------- 1. 隔离模型(默认):崩溃/悬挂只终结自身,其余段照常 ---------- */
     // only: null = 本段显式声明「段内自跑不筛选」:顶层筛选词(外层 harness 的 M2W_ONLY)
     // 属选择面,不得渗进本段的发见面,否则本段在 M2W_ONLY 单段调试下必然滤空沙盒段
@@ -441,175 +459,228 @@ export async function run() {
     const expected = isolating ? ALL_SEGS : BASE_SEGS;
     const shouldFail = isolating ? [FAIL_SEG, CRASH_SEG, HANG_SEG, LEGACY_SEG] : [FAIL_SEG, LEGACY_SEG];
     const shouldPass = isolating ? [PASS_SEG, ENV_SEG, STATE_A_SEG, STATE_B_SEG] : [PASS_SEG, ENV_SEG];
-    if (isolating && hung) {
-      fail("隔离模型下超时段已被硬杀,不应报 hung(否则父进程仍需硬退出释放悬挂资源)");
-    }
-    if (results.length !== expected.length) {
-      fail(`应执行 ${expected.length} 个沙盒段,实际 ${results.length}`);
-    }
-    for (const name of expected) {
-      if (!byFile.has(name)) fail(`未执行沙盒段 ${name}`);
-    }
-    for (const name of shouldFail) {
-      if (resultOf(byFile, name).ok) fail(`${name} 应失败但判通过`);
-    }
-    for (const name of shouldPass) {
-      const passed = resultOf(byFile, name);
-      if (!passed.ok) {
-        fail(`${name} 应通过,实际 ${errorStack(passed.error) || String(passed.error)}`);
+    await suite.case("隔离模型下超时段被硬杀,不再报 hung", () => {
+      if (isolating && hung) {
+        fail("隔离模型下超时段已被硬杀,不应报 hung(否则父进程仍需硬退出释放悬挂资源)");
       }
-    }
+    });
+    await suite.case("沙盒段执行数与清单一一对应", () => {
+      if (results.length !== expected.length) {
+        fail(`应执行 ${expected.length} 个沙盒段,实际 ${results.length}`);
+      }
+      for (const name of expected) {
+        if (!byFile.has(name)) fail(`未执行沙盒段 ${name}`);
+      }
+    });
+    await suite.case("应失败的沙盒段确实判失败", () => {
+      for (const name of shouldFail) {
+        if (resultOf(byFile, name).ok) fail(`${name} 应失败但判通过`);
+      }
+    });
+    await suite.case("应通过的沙盒段确实判通过", () => {
+      for (const name of shouldPass) {
+        const passed = resultOf(byFile, name);
+        if (!passed.ok) {
+          fail(`${name} 应通过,实际 ${errorStack(passed.error) || String(passed.error)}`);
+        }
+      }
+    });
 
     // ---- 1.1 崩溃/悬挂段之后的段确实跑完了(隔离的核心收益) ----
     if (isolating) {
-      if (!resultOf(byFile, STATE_B_SEG).ok) {
-        fail("崩溃段与悬挂段之后的段未跑完(隔离失效)");
-      }
-      const crashResult = resultOf(byFile, CRASH_SEG);
-      if (!/异常退出/.test(errorMessage(crashResult.error)) || !/退出码 7/.test(errorMessage(crashResult.error))) {
-        fail(`崩溃段应记为异常退出(退出码 7),实际 ${errorMessage(crashResult.error)}`);
-      }
-      const crashLog = fs.readFileSync(path.join(segmentFailureDir(CRASH_SEG), "failure.log"), "utf8");
-      if (!crashLog.includes("异常退出")) {
-        fail("崩溃段失败日志应含段级错误(异常退出)");
-      }
-      const hangResult = resultOf(byFile, HANG_SEG);
-      if (hangResult.timedOut !== true) {
-        fail(`悬挂段应标 timedOut,实际 ${JSON.stringify(hangResult.timedOut)}`);
-      }
-      if (!/测试段超时/.test(errorMessage(hangResult.error))) {
-        fail(`悬挂段应记超时失败,实际 ${errorMessage(hangResult.error)}`);
-      }
-      if (!Array.isArray(hangResult.cases) || hangResult.cases.length !== 2) {
-        fail(`悬挂段应回传超时前已完成的 2 条 case,实际 ${JSON.stringify(hangResult.cases)}`);
-      }
-      const hangLog = fs.readFileSync(path.join(segmentFailureDir(HANG_SEG), "failure.log"), "utf8");
-      for (const needle of ["超时终止", "超时前的 case 1", "超时前的 case 2"]) {
-        if (!hangLog.includes(needle)) fail(`悬挂段失败日志缺少「${needle}」`);
-      }
+      await suite.case("崩溃段与悬挂段之后的段仍跑完(隔离失效则红)", () => {
+        if (!resultOf(byFile, STATE_B_SEG).ok) {
+          fail("崩溃段与悬挂段之后的段未跑完(隔离失效)");
+        }
+      });
+      await suite.case("崩溃段记为异常退出(退出码 7)并写入失败日志", () => {
+        const crashResult = resultOf(byFile, CRASH_SEG);
+        if (!/异常退出/.test(errorMessage(crashResult.error)) || !/退出码 7/.test(errorMessage(crashResult.error))) {
+          fail(`崩溃段应记为异常退出(退出码 7),实际 ${errorMessage(crashResult.error)}`);
+        }
+        const crashLog = fs.readFileSync(path.join(segmentFailureDir(CRASH_SEG), "failure.log"), "utf8");
+        if (!crashLog.includes("异常退出")) {
+          fail("崩溃段失败日志应含段级错误(异常退出)");
+        }
+      });
+      await suite.case("悬挂段标 timedOut、记超时失败并回传超时前已完成的 2 条 case", () => {
+        const hangResult = resultOf(byFile, HANG_SEG);
+        if (hangResult.timedOut !== true) {
+          fail(`悬挂段应标 timedOut,实际 ${JSON.stringify(hangResult.timedOut)}`);
+        }
+        if (!/测试段超时/.test(errorMessage(hangResult.error))) {
+          fail(`悬挂段应记超时失败,实际 ${errorMessage(hangResult.error)}`);
+        }
+        if (!Array.isArray(hangResult.cases) || hangResult.cases.length !== 2) {
+          fail(`悬挂段应回传超时前已完成的 2 条 case,实际 ${JSON.stringify(hangResult.cases)}`);
+        }
+      });
+      await suite.case("悬挂段失败日志含超时终止与两条已完成 case 名", () => {
+        const hangLog = fs.readFileSync(path.join(segmentFailureDir(HANG_SEG), "failure.log"), "utf8");
+        for (const needle of ["超时终止", "超时前的 case 1", "超时前的 case 2"]) {
+          if (!hangLog.includes(needle)) fail(`悬挂段失败日志缺少「${needle}」`);
+        }
+      });
     } else {
       console.log("[selftest] 同进程回退模型:跳过崩溃/悬挂/段间隔离夹具(只有隔离模型能安全夹具崩溃与悬挂)");
     }
 
     // ---- 1.2 case 级结果跨进程回传(失败段) ----
     const failResult = resultOf(byFile, FAIL_SEG);
-    if (!Array.isArray(failResult.cases) || failResult.cases.length !== 2) {
-      fail(`失败段应回传 2 条 case 结果,实际 ${failResult.cases?.length}`);
-    }
-    const failCases = failResult.cases;
+    await suite.case("失败段回传 2 条 case 结果(组/失败面取数在 case 外)", () => {
+      if (!Array.isArray(failResult.cases) || failResult.cases.length !== 2) {
+        fail(`失败段应回传 2 条 case 结果,实际 ${failResult.cases?.length}`);
+      }
+    });
+    // 取下标的两条放在 case 外:case 之间共享同一份 case 结果,声明留在体内会踩 TDZ
+    const failCases = failResult.cases ?? [];
     const first = at(failCases, 0);
     const second = at(failCases, 1);
-    if (first.ok !== true || second.ok !== false) {
-      fail("case 通过/失败标记不符(第一个应通过、第二个应失败)");
-    }
-    if (second.group !== "自测分组" || first.group !== "自测分组") {
-      fail("case 结果应带 describe 分组名");
-    }
-    if (typeof first.ms !== "number" || first.ms < 0 || typeof second.ms !== "number") {
-      fail("case 结果应带耗时(ms)");
-    }
-    if (second.message !== "故意失败") {
-      fail(`失败 case 消息应原样上送,实际 ${second.message}`);
-    }
-    if (errorStack(failResult.error).includes("1/2 个 case 失败") !== true) {
-      fail(`case 失败应聚合为段级错误,实际 ${errorStack(failResult.error)}`);
-    }
+    await suite.case("失败段的 case 结果带正确的通过/失败标记", () => {
+      if (first.ok !== true || second.ok !== false) {
+        fail("case 通过/失败标记不符(第一个应通过、第二个应失败)");
+      }
+    });
+    await suite.case("失败段的 case 结果带 describe 分组名", () => {
+      if (second.group !== "自测分组" || first.group !== "自测分组") {
+        fail("case 结果应带 describe 分组名");
+      }
+    });
+    await suite.case("失败段的 case 结果带耗时(ms)", () => {
+      if (typeof first.ms !== "number" || first.ms < 0 || typeof second.ms !== "number") {
+        fail("case 结果应带耗时(ms)");
+      }
+    });
+    await suite.case("失败 case 的消息原样上送并聚合为段级错误", () => {
+      if (second.message !== "故意失败") {
+        fail(`失败 case 消息应原样上送,实际 ${second.message}`);
+      }
+      if (errorStack(failResult.error).includes("1/2 个 case 失败") !== true) {
+        fail(`case 失败应聚合为段级错误,实际 ${errorStack(failResult.error)}`);
+      }
+    });
 
     // ---- 1.3 失败产物落盘(失败日志 + buffer 快照,经子进程回传的 buffer) ----
     const failDir = segmentFailureDir(FAIL_SEG);
     const expectedFailDir = repoRelative(failDir);
-    if (failResult.failureDir !== expectedFailDir) {
-      fail(`失败段产物目录应为 ${expectedFailDir},实际 ${failResult.failureDir}`);
-    }
-    if (!fs.existsSync(path.join(failDir, "failure.log"))) {
-      fail("失败段未落下 failure.log");
-    }
-    const log = fs.readFileSync(path.join(failDir, "failure.log"), "utf8");
-    for (const needle of [FAIL_SEG, "第二个 case", "故意失败", "snapshot.docx"]) {
-      if (!log.includes(needle)) {
-        fail(`failure.log 缺少「${needle}」`);
+    await suite.case("失败段带 failureDir 且目录下有 failure.log", () => {
+      if (failResult.failureDir !== expectedFailDir) {
+        fail(`失败段产物目录应为 ${expectedFailDir},实际 ${failResult.failureDir}`);
       }
-    }
-    const snapshotFile = path.join(failDir, "snapshot.docx");
-    if (fs.readFileSync(snapshotFile, "utf8") !== SNAPSHOT_BYTES) {
-      fail("失败段 buffer 快照内容与 attach 登记的不一致(跨进程 base64 回传须无损)");
-    }
-    if (!first.attachments.includes("snapshot.docx")) {
-      fail(`case 结果应带附件引用,实际 ${first.attachments}`);
-    }
+      if (!fs.existsSync(path.join(failDir, "failure.log"))) {
+        fail("失败段未落下 failure.log");
+      }
+    });
+    await suite.case("failure.log 含段名/失败 case 名/消息/附件名", () => {
+      const log = fs.readFileSync(path.join(failDir, "failure.log"), "utf8");
+      for (const needle of [FAIL_SEG, "第二个 case", "故意失败", "snapshot.docx"]) {
+        if (!log.includes(needle)) {
+          fail(`failure.log 缺少「${needle}」`);
+        }
+      }
+    });
+    await suite.case("buffer 快照内容无损且 case 结果带附件引用", () => {
+      const snapshotFile = path.join(failDir, "snapshot.docx");
+      if (fs.readFileSync(snapshotFile, "utf8") !== SNAPSHOT_BYTES) {
+        fail("失败段 buffer 快照内容与 attach 登记的不一致(跨进程 base64 回传须无损)");
+      }
+      if (!first.attachments.includes("snapshot.docx")) {
+        fail(`case 结果应带附件引用,实际 ${first.attachments}`);
+      }
+    });
 
     // ---- 1.4 成功段不产失败目录 ----
     const passResult = resultOf(byFile, PASS_SEG);
-    const passCases = passResult.cases;
-    if (!Array.isArray(passCases) || passCases.length !== 1 || at(passCases, 0).ok !== true) {
-      fail("成功段应回传 1 条通过 case");
-    }
-    if (passResult.failureDir !== undefined) {
-      fail("成功段不应带 failureDir");
-    }
-    if (fs.existsSync(segmentFailureDir(PASS_SEG))) {
-      fail("成功段不应产失败产物目录");
-    }
+    await suite.case("成功段回传 1 条通过 case", () => {
+      const passCases = passResult.cases;
+      if (!Array.isArray(passCases) || passCases.length !== 1 || at(passCases, 0).ok !== true) {
+        fail("成功段应回传 1 条通过 case");
+      }
+    });
+    await suite.case("成功段不带 failureDir 且不产失败产物目录", () => {
+      if (passResult.failureDir !== undefined) {
+        fail("成功段不应带 failureDir");
+      }
+      if (fs.existsSync(segmentFailureDir(PASS_SEG))) {
+        fail("成功段不应产失败产物目录");
+      }
+    });
 
     // ---- 1.5 旧段兼容(无 case 契约,抛错即段失败) ----
     const legacyResult = resultOf(byFile, LEGACY_SEG);
-    if ("cases" in legacyResult) {
-      fail("未接入 case 契约的旧段结果不应带 cases 键");
-    }
-    if (!errorStack(legacyResult.error).includes("legacy 段故意抛错")) {
-      fail(`旧段错误应原样上送,实际 ${errorStack(legacyResult.error)}`);
-    }
-    const legacyLog = fs.readFileSync(path.join(segmentFailureDir(LEGACY_SEG), "failure.log"), "utf8");
-    if (!legacyLog.includes("legacy 段故意抛错")) {
-      fail("旧段失败日志应含段级错误");
-    }
+    await suite.case("旧段结果不带 cases 键且段级错误原样上送", () => {
+      if ("cases" in legacyResult) {
+        fail("未接入 case 契约的旧段结果不应带 cases 键");
+      }
+      if (!errorStack(legacyResult.error).includes("legacy 段故意抛错")) {
+        fail(`旧段错误应原样上送,实际 ${errorStack(legacyResult.error)}`);
+      }
+    });
+    await suite.case("旧段失败日志含段级错误", () => {
+      const legacyLog = fs.readFileSync(path.join(segmentFailureDir(LEGACY_SEG), "failure.log"), "utf8");
+      if (!legacyLog.includes("legacy 段故意抛错")) {
+        fail("旧段失败日志应含段级错误");
+      }
+    });
 
     // ---- 1.6 段间状态隔离 + userData 目录独立且退出即清理 ----
     if (isolating) {
       const aUserData = fs.readFileSync(path.join(SANDBOX, A_USERDATA_FILE), "utf8");
       const bUserData = fs.readFileSync(path.join(SANDBOX, B_USERDATA_FILE), "utf8");
-      if (aUserData === bUserData) {
-        fail("两段应拿到不同的 userData 目录");
-      }
-      for (const dir of [aUserData, bUserData]) {
-        if (fs.existsSync(dir)) {
-          fail(`段退出后其 userData 目录应被清理,仍存在: ${dir}`);
+      await suite.case("两段拿到不同的 userData 目录", () => {
+        if (aUserData === bUserData) {
+          fail("两段应拿到不同的 userData 目录");
         }
-      }
+      });
+      await suite.case("段退出后其 userData 目录即被清理", () => {
+        for (const dir of [aUserData, bUserData]) {
+          if (fs.existsSync(dir)) {
+            fail(`段退出后其 userData 目录应被清理,仍存在: ${dir}`);
+          }
+        }
+      });
     }
 
     // ---- 1.7 报告正文与汇总 ----
     const report = formatCaseReport(results);
-    for (const needle of [FAIL_SEG, "自测分组 › 第二个 case", "故意失败", expectedFailDir, "通过 / 1 失败", "1 通过 / 1 失败"]) {
-      if (!report.includes(needle)) {
-        fail(`case 报告缺少「${needle}」\n实际报告:\n${report}`);
+    await suite.case("case 报告正文含失败段名/分组 › case 名/消息/产物目录/通过失败计数", () => {
+      for (const needle of [FAIL_SEG, "自测分组 › 第二个 case", "故意失败", expectedFailDir, "通过 / 1 失败", "1 通过 / 1 失败"]) {
+        if (!report.includes(needle)) {
+          fail(`case 报告缺少「${needle}」\n实际报告:\n${report}`);
+        }
       }
-    }
-    if (report.includes(LEGACY_SEG)) {
-      fail("无 case 契约的段不应出现在 case 报告里");
-    }
-    if (formatCaseReport([resultOf(byFile, LEGACY_SEG)]) !== "") {
-      fail("全部为旧段时 case 报告应为空串(旧段输出不变)");
-    }
+    });
+    await suite.case("无 case 契约的旧段不进 case 报告,且全旧段时报告为空串", () => {
+      if (report.includes(LEGACY_SEG)) {
+        fail("无 case 契约的段不应出现在 case 报告里");
+      }
+      if (formatCaseReport([resultOf(byFile, LEGACY_SEG)]) !== "") {
+        fail("全部为旧段时 case 报告应为空串(旧段输出不变)");
+      }
+    });
     const summary = summarizeCases(results);
     // 失败段 2 case(1 成 1 败)+ 成功段 1 case;隔离模型另有悬挂段的 2 条超时前进度
     const expectedSummary = isolating
       ? { segments: 3, passed: 4, failed: 1 }
       : { segments: 2, passed: 2, failed: 1 };
-    if (
-      summary.segments !== expectedSummary.segments ||
-      summary.passed !== expectedSummary.passed ||
-      summary.failed !== expectedSummary.failed
-    ) {
-      fail(`汇总应为 ${JSON.stringify(expectedSummary)},实际 ${JSON.stringify(summary)}`);
-    }
+    await suite.case("case 汇总的段数/通过数/失败数与沙盒实况一致", () => {
+      if (
+        summary.segments !== expectedSummary.segments ||
+        summary.passed !== expectedSummary.passed ||
+        summary.failed !== expectedSummary.failed
+      ) {
+        fail(`汇总应为 ${JSON.stringify(expectedSummary)},实际 ${JSON.stringify(summary)}`);
+      }
+    });
 
     // ---- 1.8 失败轮次不写成功路径产物目录 ----
     const added = readDirSafe(ARTIFACTS_DIR).filter((e) => !artifactsBefore.includes(e));
     // 标记用沙盒名前缀(不是固定全名):成功路径产物若以本段名义落盘,必然带此前缀
-    if (added.some((e) => e !== "failures" && e.startsWith(SANDBOX_PREFIX))) {
-      fail(`失败轮次在成功路径产物目录写入了 ${added.join(", ")}`);
-    }
+    await suite.case("失败轮次不在成功路径产物目录留下本段名义的产物", () => {
+      if (added.some((e) => e !== "failures" && e.startsWith(SANDBOX_PREFIX))) {
+        fail(`失败轮次在成功路径产物目录写入了 ${added.join(", ")}`);
+      }
+    });
 
     /* ---------- 2. M2W_ONLY 生效(筛选在父进程;隔离模型下子进程只跑选中的段) ---------- */
     const onlyNeedle = isolating ? "state-b" : "cases-pass";
@@ -617,65 +688,79 @@ export async function run() {
     const filtered = await withOnly(onlyNeedle, () =>
       runAll([SANDBOX], { segmentTimeoutMs: isolating ? ISOLATED_TIMEOUT_MS : INPROC_TIMEOUT_MS }),
     );
-    if (filtered.results.length !== 1 || at(filtered.results, 0).file !== onlyExpected) {
-      fail(
-        `M2W_ONLY=${onlyNeedle} 应只跑 ${onlyExpected},实际 ${filtered.results.map((r) => r.file).join(", ")}`,
-      );
-    }
+    await suite.case(`M2W_ONLY 生效:只跑命中的那一个沙盒段`, () => {
+      if (filtered.results.length !== 1 || at(filtered.results, 0).file !== onlyExpected) {
+        fail(
+          `M2W_ONLY=${onlyNeedle} 应只跑 ${onlyExpected},实际 ${filtered.results.map((r) => r.file).join(", ")}`,
+        );
+      }
+    });
     const onlyResult = at(filtered.results, 0);
-    if (!onlyResult.ok) {
-      fail(`M2W_ONLY 选中的段应正常执行,实际 ${errorStack(onlyResult.error)}`);
-    }
+    await suite.case("M2W_ONLY 选中的段正常执行", () => {
+      if (!onlyResult.ok) {
+        fail(`M2W_ONLY 选中的段应正常执行,实际 ${errorStack(onlyResult.error)}`);
+      }
+    });
 
     /* ---------- 3. 回退开关:同进程模型判定与产物不变(仅二分定位用) ---------- */
     const inproc = await withOnly("cases-,legacy-", () =>
       runAll([SANDBOX], { segmentTimeoutMs: INPROC_TIMEOUT_MS, isolate: false }),
     );
     const inprocByFile = new Map(inproc.results.map((r) => [r.file, r]));
-    if (inproc.results.length !== 3) {
-      fail(`同进程回退模型应执行 3 个沙盒段,实际 ${inproc.results.length}`);
-    }
-    for (const name of [FAIL_SEG, PASS_SEG, LEGACY_SEG]) {
-      if (!inprocByFile.has(name)) fail(`同进程回退模型未执行 ${name}`);
-    }
-    if (resultOf(inprocByFile, PASS_SEG).ok !== true) {
-      fail(`同进程回退模型 ${PASS_SEG} 应通过,实际 ${errorStack(resultOf(inprocByFile, PASS_SEG).error)}`);
-    }
-    if (resultOf(inprocByFile, FAIL_SEG).ok !== false || resultOf(inprocByFile, FAIL_SEG).cases?.length !== 2) {
-      fail("同进程回退模型下 case 失败聚合与回传结果应不变");
-    }
-    if (errorStack(resultOf(inprocByFile, LEGACY_SEG).error).includes("legacy 段故意抛错") !== true) {
-      fail("同进程回退模型下旧段错误应原样上送");
-    }
+    await suite.case("同进程回退模型执行 3 个沙盒段且清单齐", () => {
+      if (inproc.results.length !== 3) {
+        fail(`同进程回退模型应执行 3 个沙盒段,实际 ${inproc.results.length}`);
+      }
+      for (const name of [FAIL_SEG, PASS_SEG, LEGACY_SEG]) {
+        if (!inprocByFile.has(name)) fail(`同进程回退模型未执行 ${name}`);
+      }
+    });
+    await suite.case("同进程回退模型:成功段通过、失败段 case 聚合不变、旧段错误原样上送", () => {
+      if (resultOf(inprocByFile, PASS_SEG).ok !== true) {
+        fail(`同进程回退模型 ${PASS_SEG} 应通过,实际 ${errorStack(resultOf(inprocByFile, PASS_SEG).error)}`);
+      }
+      if (resultOf(inprocByFile, FAIL_SEG).ok !== false || resultOf(inprocByFile, FAIL_SEG).cases?.length !== 2) {
+        fail("同进程回退模型下 case 失败聚合与回传结果应不变");
+      }
+      if (errorStack(resultOf(inprocByFile, LEGACY_SEG).error).includes("legacy 段故意抛错") !== true) {
+        fail("同进程回退模型下旧段错误应原样上送");
+      }
+    });
 
     /* ---------- 4. 选择面与发现面互不渗透(本段被 M2W_ONLY 单段筛选跑时仍能自跑) ---------- */
     // 外层真实会出现的筛选词:它命中零个沙盒段(段名前缀是沙盒目录名 `runner-report-selftest-…/`),
     // 正是「本段在 M2W_ONLY=segments 下把沙盒段全滤空」那次的形态
     const outerNeedle = "segments";
     const baseline = await discoverSegments([SANDBOX], { only: null });
-    if (baseline.length !== expected.length) {
-      fail(`未设筛选词时发现面应含全部 ${expected.length} 个沙盒段,实际 ${baseline.length}`);
-    }
+    await suite.case("未设筛选词时发现面含全部沙盒段", () => {
+      if (baseline.length !== expected.length) {
+        fail(`未设筛选词时发现面应含全部 ${expected.length} 个沙盒段,实际 ${baseline.length}`);
+      }
+    });
     const underOuterFilter = await withOnly(outerNeedle, () => discoverSegments([SANDBOX], { only: null }));
     const underOuterNames = underOuterFilter.map((s) => s.name);
-    if (underOuterNames.length !== expected.length || expected.some((name) => !underOuterNames.includes(name))) {
-      fail(
-        `外层设 M2W_ONLY=${outerNeedle} 时,段内显式 only:null 仍须发现全部 ${expected.length} 个沙盒段` +
-          `(实际 ${underOuterNames.join(", ") || "无"}):顶层选择面不得渗进段内发现面`,
-      );
-    }
+    await suite.case("外层设筛选词时段内显式 only:null 仍发现全部沙盒段(顶层选择面不渗进发见面)", () => {
+      if (underOuterNames.length !== expected.length || expected.some((name) => !underOuterNames.includes(name))) {
+        fail(
+          `外层设 M2W_ONLY=${outerNeedle} 时,段内显式 only:null 仍须发现全部 ${expected.length} 个沙盒段` +
+            `(实际 ${underOuterNames.join(", ") || "无"}):顶层选择面不得渗进段内发现面`,
+        );
+      }
+    });
     // 反向:显式 only 仍须精确生效(不能因「不读环境变量」把筛选能力一并丢掉)
     const explicitNeedle = isolating ? "state-b" : "cases-pass";
     const explicitExpected = isolating ? STATE_B_SEG : PASS_SEG;
     const explicitNames = await withOnly(outerNeedle, () =>
       discoverSegments([SANDBOX], { only: explicitNeedle }),
     );
-    if (explicitNames.length !== 1 || explicitNames[0]?.name !== explicitExpected) {
-      fail(
-        `段内显式 only=${explicitNeedle} 应只发现 ${explicitExpected},` +
-          `实际 ${explicitNames.map((s) => s.name).join(", ") || "无"}`,
-      );
-    }
+    await suite.case("段内显式 only 仍精确筛选(未因不读环境变量而丢掉筛选能力)", () => {
+      if (explicitNames.length !== 1 || explicitNames[0]?.name !== explicitExpected) {
+        fail(
+          `段内显式 only=${explicitNeedle} 应只发现 ${explicitExpected},` +
+            `实际 ${explicitNames.map((s) => s.name).join(", ") || "无"}`,
+        );
+      }
+    });
     // 执行面:外层有筛选词时,段内显式选择仍照常执行(只跑命中的那一段,不为覆盖面加时长)
     const scoped = await withOnly(outerNeedle, () =>
       runAll([SANDBOX], {
@@ -684,35 +769,44 @@ export async function run() {
       }),
     );
     const scopedResult = scoped.results.length === 1 ? at(scoped.results, 0) : null;
-    if (scopedResult === null || scopedResult.file !== explicitExpected || !scopedResult.ok) {
-      fail(
-        `段内显式 only=${explicitNeedle} 应正常执行 ${explicitExpected},实际 ` +
-          `${scoped.results.map((r) => r.file).join(", ") || "无"}:` +
-          `${scopedResult === null ? "未执行" : errorStack(scopedResult.error)}`,
-      );
-    }
+    await suite.case("外层有筛选词时段内显式选择仍照常执行命中的那一段", () => {
+      if (scopedResult === null || scopedResult.file !== explicitExpected || !scopedResult.ok) {
+        fail(
+          `段内显式 only=${explicitNeedle} 应正常执行 ${explicitExpected},实际 ` +
+            `${scoped.results.map((r) => r.file).join(", ") || "无"}:` +
+            `${scopedResult === null ? "未执行" : errorStack(scopedResult.error)}`,
+        );
+      }
+    });
     // 边界:隔离模型下本段跑在自己的子进程里,env 不得再带顶层筛选词(结构上防同类漏筛;
     // 同进程回退模型下本段与 harness 同进程,本就该看得到,故不判)
-    if (isolating && process.env[ONLY_ENV] !== undefined) {
-      fail(
-        `段子进程不应继承顶层筛选词(实际 ${String(process.env[ONLY_ENV])}):` +
-          "顶层选择面只属顶层,否则段内自跑会被外层筛选词误伤",
-      );
-    }
+    await suite.case("隔离模型下段子进程不继承顶层筛选词", () => {
+      if (isolating && process.env[ONLY_ENV] !== undefined) {
+        fail(
+          `段子进程不应继承顶层筛选词(实际 ${String(process.env[ONLY_ENV])}):` +
+            "顶层选择面只属顶层,否则段内自跑会被外层筛选词误伤",
+        );
+      }
+    });
 
     /* ---------- 5. 并发面(与选择面同纪律:只属顶层编排) ---------- */
     // 5.1 未设变量 → 1:默认路径与旧的逐字串行执行等价(段输出继承父进程,无段名前缀)
     const unset = await withEnv(CONCURRENCY_ENV, undefined, () => resolveConcurrency());
-    if (unset !== 1) {
-      fail(`未设 ${CONCURRENCY_ENV} 时并发应解析为 1,实际 ${unset}(默认必须仍是串行)`);
-    }
+    await suite.case(`未设 ${CONCURRENCY_ENV} 时并发解析为 1(默认仍是串行)`, () => {
+      if (unset !== 1) {
+        fail(`未设 ${CONCURRENCY_ENV} 时并发应解析为 1,实际 ${unset}(默认必须仍是串行)`);
+      }
+    });
     // 5.2 非法值不得变成「无限并发」或 NaN 个 worker;超段数夹取到段数
     const illegalEnv = ["0", "-3", "2.5", "abc", "", "   ", "Infinity"];
     for (const raw of illegalEnv) {
+      // 每次取值都在 case 外:case 体内置变量会让本轮断言读到下一次迭代的值
       const got = await withEnv(CONCURRENCY_ENV, raw, () => resolveConcurrency({ total: 4 }));
-      if (got !== 1) {
-        fail(`${CONCURRENCY_ENV}="${raw}" 是非法值,应回落到 1,实际 ${got}(不得变成无限并发)`);
-      }
+      await suite.case(`并发变量非法值回落 1:${raw}`, () => {
+        if (got !== 1) {
+          fail(`${CONCURRENCY_ENV}="${raw}" 是非法值,应回落到 1,实际 ${got}(不得变成无限并发)`);
+        }
+      });
     }
     /** @type {[string, number][]} */
     const legalEnv = [
@@ -723,9 +817,11 @@ export async function run() {
     ];
     for (const [raw, expected] of legalEnv) {
       const got = await withEnv(CONCURRENCY_ENV, raw, () => resolveConcurrency({ total: 4 }));
-      if (got !== expected) {
-        fail(`${CONCURRENCY_ENV}="${raw}" 在 4 个段上应解析为 ${expected},实际 ${got}`);
-      }
+      await suite.case(`并发变量合法值按段数夹取:${raw}`, () => {
+        if (got !== expected) {
+          fail(`${CONCURRENCY_ENV}="${raw}" 在 4 个段上应解析为 ${expected},实际 ${got}`);
+        }
+      });
     }
     // 显式入参走同一套规则(嵌套编排/测试注入不得绕过回落纪律)
     /** @type {[number, number][]} */
@@ -739,40 +835,48 @@ export async function run() {
     ];
     for (const [given, expected] of explicitCases) {
       const got = resolveConcurrency({ concurrency: given, total: 4 });
-      if (got !== expected) {
-        fail(`concurrency=${String(given)} 在 4 个段上应解析为 ${expected},实际 ${got}`);
-      }
+      await suite.case(`显式 concurrency 入参走同一套回落规则:${String(given)}`, () => {
+        if (got !== expected) {
+          fail(`concurrency=${String(given)} 在 4 个段上应解析为 ${expected},实际 ${got}`);
+        }
+      });
     }
     // 5.3 段内嵌套 runAll 不消费外层并发变量(两道边界):
     // (a) 本段自身(外层的段宿主)就查不到该变量;
     // (b) 显式设上之后跑嵌套编排,派生的段宿主子进程 env 里同样查不到 —— 段内自跑派生的是
     //     夹具进程(本段自己就会派生十余个二层 Electron 子进程),叠上外层池会与之抢核。
-    if (isolating && process.env[CONCURRENCY_ENV] !== undefined) {
-      fail(
-        `段宿主进程不应继承外层并发变量(实际 ${String(process.env[CONCURRENCY_ENV])}):` +
-          "并发面只属顶层编排",
-      );
-    }
+    await suite.case("隔离模型下段宿主进程不继承外层并发变量", () => {
+      if (isolating && process.env[CONCURRENCY_ENV] !== undefined) {
+        fail(
+          `段宿主进程不应继承外层并发变量(实际 ${String(process.env[CONCURRENCY_ENV])}):` +
+            "并发面只属顶层编排",
+        );
+      }
+    });
     // 同进程回退模型没有子进程 env 可剥(夹具与编排器同进程,本就共享 env),故不判这一条
     if (isolating) {
       const nestedEnv = await withEnv(CONCURRENCY_ENV, "4", () =>
         runAll([SANDBOX], { segmentTimeoutMs: ISOLATED_TIMEOUT_MS, only: "env-report" }),
       );
       const nestedResult = nestedEnv.results.length === 1 ? at(nestedEnv.results, 0) : null;
-      if (nestedResult === null || nestedResult.file !== ENV_SEG || !nestedResult.ok) {
-        fail(
-          `显式设上 ${CONCURRENCY_ENV}=4 后跑嵌套编排,${ENV_SEG} 应仍正常执行,实际 ` +
-            `${nestedEnv.results.map((r) => r.file).join(", ") || "无"}:` +
-            `${nestedResult === null ? "未执行" : errorStack(nestedResult.error)}`,
-        );
-      }
-      const reported = fs.readFileSync(path.join(SANDBOX, CONCURRENCY_FILE), "utf8");
-      if (reported !== "unset") {
-        fail(
-          `段宿主子进程 env 里不该带外层并发变量(实际 ${CONCURRENCY_ENV}=${reported}):` +
-            "并发面只属顶层编排,否则段内夹具进程与外层并发池抢核",
-        );
-      }
+      await suite.case(`显式设上 ${CONCURRENCY_ENV}=4 后嵌套编排仍正常执行 ${ENV_SEG}`, () => {
+        if (nestedResult === null || nestedResult.file !== ENV_SEG || !nestedResult.ok) {
+          fail(
+            `显式设上 ${CONCURRENCY_ENV}=4 后跑嵌套编排,${ENV_SEG} 应仍正常执行,实际 ` +
+              `${nestedEnv.results.map((r) => r.file).join(", ") || "无"}:` +
+              `${nestedResult === null ? "未执行" : errorStack(nestedResult.error)}`,
+          );
+        }
+      });
+      await suite.case("段宿主子进程 env 里不带外层并发变量", () => {
+        const reported = fs.readFileSync(path.join(SANDBOX, CONCURRENCY_FILE), "utf8");
+        if (reported !== "unset") {
+          fail(
+            `段宿主子进程 env 里不该带外层并发变量(实际 ${CONCURRENCY_ENV}=${reported}):` +
+              "并发面只属顶层编排,否则段内夹具进程与外层并发池抢核",
+          );
+        }
+      });
     } else {
       console.log("[selftest] 同进程回退模型:跳过段宿主 env 边界断言(该模型无子进程 env,夹具与编排器同进程)");
     }
@@ -791,21 +895,27 @@ export async function run() {
     ]);
     for (const [given, needles] of exitCodeCases) {
       const text = describeChildExitCode(given);
-      for (const needle of needles) {
-        if (!text.includes(needle)) {
-          fail(`describeChildExitCode(${String(given)}) 应含「${needle}」,实际「${text}」`);
+      await suite.case(`子进程退出码标注可读:${String(given)}`, () => {
+        for (const needle of needles) {
+          if (!text.includes(needle)) {
+            fail(`describeChildExitCode(${String(given)}) 应含「${needle}」,实际「${text}」`);
+          }
         }
-      }
+      });
     }
     // 高位判读的边界:0x7fffffff 及以下仍是普通退出码,不得被当成异常终止
-    if (!describeChildExitCode(0x7fffffff).startsWith("退出码 ")) {
-      fail(`0x7fffffff 应仍按普通退出码标注,实际「${describeChildExitCode(0x7fffffff)}」`);
-    }
+    await suite.case("高位判读边界:0x7fffffff 及以下仍按普通退出码标注", () => {
+      if (!describeChildExitCode(0x7fffffff).startsWith("退出码 ")) {
+        fail(`0x7fffffff 应仍按普通退出码标注,实际「${describeChildExitCode(0x7fffffff)}」`);
+      }
+    });
     console.log("[selftest] win32 异常退出码标注:已覆盖普通码/无码/已收录异常码/未收录高位值/判读边界");
   } finally {
+    // 沙盒清理留在 run() 顶层 finally:搬进 case 会让 case 失败遮掉段级清理
     removeSandboxFile(A_USERDATA_FILE);
     removeSandboxFile(B_USERDATA_FILE);
     removeSandboxFile(CONCURRENCY_FILE);
     cleanupSandbox();
   }
+  return { cases: suite.results };
 }

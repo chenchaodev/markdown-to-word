@@ -12,6 +12,7 @@ import path from "node:path";
 import { app } from "electron";
 import { removeFile, removeTree } from "../harness/temp-resource.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /**
  * 本段测哪一层(ADR-062 L4 声明通道):**main**,判据静态看不见本段的主体 ——
@@ -62,6 +63,7 @@ export async function run() {
   }
   let seq = 0;
   const freshModule = () => import(`../../dist/main/persist/ui-state.js?case=${seq++}`);
+  const suite = createCaseSuite();
   try {
     await fs.mkdir(app.getPath("userData"), { recursive: true });
     const mod = await freshModule();
@@ -82,55 +84,62 @@ export async function run() {
       panelOpen: { page: false, typography: true },
     };
     const saved = await mod.saveUiState(patch);
-    assert(
-      saved.recentFiles.length === 2 && saved.lastOpenDir === "C:\\docs",
-      `saveUiState 返回值异常:${JSON.stringify(saved)}`,
-    );
-    assert(saved.windowBounds?.width === 900 && saved.panelOpen.page === false, "saveUiState 返回值异常(嵌套字段)");
     const m2 = await freshModule();
     const loaded = m2.loadUiState();
     const expected = { ...mod.DEFAULT_UI_STATE, ...patch };
-    assert(
-      JSON.stringify(loaded) === JSON.stringify(expected),
-      `往返不一致:实际 ${JSON.stringify(loaded)} 期望 ${JSON.stringify(expected)}`,
-    );
-    let tmpLeft = true;
-    try {
-      await fs.access(uiFile + ".tmp");
-    } catch {
-      tmpLeft = false;
-    }
-    assert(!tmpLeft, "原子写完成后不应残留 .tmp 临时文件");
-    console.log("[ok] ui-state:原子写往返(逐字段一致 + 无 .tmp 残留)");
+    await suite.case("原子写往返(saveUiState 落盘 → 全新实例 loadUiState 逐字段一致)", () => {
+      assert(
+        saved.recentFiles.length === 2 && saved.lastOpenDir === "C:\\docs",
+        `saveUiState 返回值异常:${JSON.stringify(saved)}`,
+      );
+      assert(saved.windowBounds?.width === 900 && saved.panelOpen.page === false, "saveUiState 返回值异常(嵌套字段)");
+      assert(
+        JSON.stringify(loaded) === JSON.stringify(expected),
+        `往返不一致:实际 ${JSON.stringify(loaded)} 期望 ${JSON.stringify(expected)}`,
+      );
+    });
+    await suite.case("原子写完成后不应残留 .tmp 临时文件", async () => {
+      let tmpLeft = true;
+      try {
+        await fs.access(uiFile + ".tmp");
+      } catch {
+        tmpLeft = false;
+      }
+      assert(!tmpLeft, "原子写完成后不应残留 .tmp 临时文件");
+    });
 
     // ---- 2. 损坏 JSON(parse 失败)→ 全字段默认,不写盘 ----
     await fs.writeFile(uiFile, "{broken json!!", "utf8");
     const m3 = await freshModule();
     const s3 = m3.loadUiState();
-    assert(
-      JSON.stringify(s3) === JSON.stringify(m3.DEFAULT_UI_STATE),
-      `损坏 JSON 应回退全默认,实际 ${JSON.stringify(s3)}`,
-    );
-    assert(
-      (await fs.readFile(uiFile, "utf8")) === "{broken json!!",
-      "损坏文件不应被重写(静默不写盘)",
-    );
-    console.log("[ok] ui-state:损坏 JSON 回退全默认(静默不写盘)");
+    await suite.case("损坏 JSON 回退全默认且静默不写盘", async () => {
+      assert(
+        JSON.stringify(s3) === JSON.stringify(m3.DEFAULT_UI_STATE),
+        `损坏 JSON 应回退全默认,实际 ${JSON.stringify(s3)}`,
+      );
+      assert(
+        (await fs.readFile(uiFile, "utf8")) === "{broken json!!",
+        "损坏文件不应被重写(静默不写盘)",
+      );
+    });
 
     // ---- 2b. 合法 JSON 但非对象(167-168 行)→ 全字段默认 ----
     await fs.writeFile(uiFile, JSON.stringify("hello"), "utf8");
     const m3b = await freshModule();
-    assert(
-      JSON.stringify(m3b.loadUiState()) === JSON.stringify(m3b.DEFAULT_UI_STATE),
-      `非对象 JSON(字符串)应回退全默认,实际 ${JSON.stringify(m3b.loadUiState())}`,
-    );
+    await suite.case("非对象 JSON(字符串)回退全默认", () => {
+      assert(
+        JSON.stringify(m3b.loadUiState()) === JSON.stringify(m3b.DEFAULT_UI_STATE),
+        `非对象 JSON(字符串)应回退全默认,实际 ${JSON.stringify(m3b.loadUiState())}`,
+      );
+    });
     await fs.writeFile(uiFile, JSON.stringify(null), "utf8");
     const m3c = await freshModule();
-    assert(
-      JSON.stringify(m3c.loadUiState()) === JSON.stringify(m3c.DEFAULT_UI_STATE),
-      `非对象 JSON(null)应回退全默认,实际 ${JSON.stringify(m3c.loadUiState())}`,
-    );
-    console.log("[ok] ui-state:非对象 JSON(字符串/null)回退全默认");
+    await suite.case("非对象 JSON(null)回退全默认", () => {
+      assert(
+        JSON.stringify(m3c.loadUiState()) === JSON.stringify(m3c.DEFAULT_UI_STATE),
+        `非对象 JSON(null)应回退全默认,实际 ${JSON.stringify(m3c.loadUiState())}`,
+      );
+    });
 
     // ---- 3. 字段类型非法 → 该字段默认(其它字段不受影响) ----
     await fs.writeFile(
@@ -153,21 +162,22 @@ export async function run() {
     );
     const m4 = await freshModule();
     const s4 = m4.loadUiState();
-    assert(
-      s4.recentFiles.length === 1 && s4.recentFiles[0].path === "C:\\ok.md",
-      `recentFiles 非法条目应被过滤,实际 ${JSON.stringify(s4.recentFiles)}`,
-    );
-    assert(
-      JSON.stringify(s4.lastSessionFiles) === JSON.stringify(["C:\\keep.md", "C:\\keep2.md"]),
-      `lastSessionFiles 非字符串/空串应过滤,实际 ${JSON.stringify(s4.lastSessionFiles)}`,
-    );
-    assert(s4.lastOpenDir === "", `lastOpenDir 非字符串应回退空串,实际 ${JSON.stringify(s4.lastOpenDir)}`);
-    assert(s4.windowBounds === null, `windowBounds 字段非法应回退 null,实际 ${JSON.stringify(s4.windowBounds)}`);
-    assert(
-      s4.panelOpen.page === false && s4.panelOpen.typography === false,
-      `panelOpen 非布尔应回退默认 false(另一字段保留),实际 ${JSON.stringify(s4.panelOpen)}`,
-    );
-    console.log("[ok] ui-state:字段类型非法逐字段回退(recentFiles 过滤/lastSessionFiles 过滤/lastOpenDir/windowBounds/panelOpen)");
+    await suite.case("字段类型非法逐字段回退(其它字段不受影响)", () => {
+      assert(
+        s4.recentFiles.length === 1 && s4.recentFiles[0].path === "C:\\ok.md",
+        `recentFiles 非法条目应被过滤,实际 ${JSON.stringify(s4.recentFiles)}`,
+      );
+      assert(
+        JSON.stringify(s4.lastSessionFiles) === JSON.stringify(["C:\\keep.md", "C:\\keep2.md"]),
+        `lastSessionFiles 非字符串/空串应过滤,实际 ${JSON.stringify(s4.lastSessionFiles)}`,
+      );
+      assert(s4.lastOpenDir === "", `lastOpenDir 非字符串应回退空串,实际 ${JSON.stringify(s4.lastOpenDir)}`);
+      assert(s4.windowBounds === null, `windowBounds 字段非法应回退 null,实际 ${JSON.stringify(s4.windowBounds)}`);
+      assert(
+        s4.panelOpen.page === false && s4.panelOpen.typography === false,
+        `panelOpen 非布尔应回退默认 false(另一字段保留),实际 ${JSON.stringify(s4.panelOpen)}`,
+      );
+    });
 
     // ---- 4. recentFiles 去重 + 上限 10 + ts 降序 ----
     const entries = [];
@@ -178,17 +188,18 @@ export async function run() {
     await fs.writeFile(uiFile, JSON.stringify({ recentFiles: entries }), "utf8");
     const m5 = await freshModule();
     const s5 = m5.loadUiState();
-    assert(s5.recentFiles.length === 10, `recentFiles 应截断到 10,实际 ${s5.recentFiles.length}`);
-    assert(
-      new Set(s5.recentFiles.map((/** @type {RecentFile} */ e) => e.path)).size === 10,
-      "recentFiles 应按 path 去重",
-    );
-    const f5 = s5.recentFiles.find((/** @type {RecentFile} */ e) => e.path === "C:\\f5.md");
-    assert(f5 && f5.ts === 1000 && f5.format === "pdf", "重复 path 应保留 ts 最大条目");
-    for (let i = 1; i < s5.recentFiles.length; i++) {
-      assert(s5.recentFiles[i - 1].ts >= s5.recentFiles[i].ts, "recentFiles 应按 ts 降序");
-    }
-    console.log("[ok] ui-state:recentFiles 去重(保留 ts 最大)+ 上限 10 + ts 降序");
+    await suite.case("recentFiles 去重(保留 ts 最大)+ 上限 10 + ts 降序", () => {
+      assert(s5.recentFiles.length === 10, `recentFiles 应截断到 10,实际 ${s5.recentFiles.length}`);
+      assert(
+        new Set(s5.recentFiles.map((/** @type {RecentFile} */ e) => e.path)).size === 10,
+        "recentFiles 应按 path 去重",
+      );
+      const f5 = s5.recentFiles.find((/** @type {RecentFile} */ e) => e.path === "C:\\f5.md");
+      assert(f5 && f5.ts === 1000 && f5.format === "pdf", "重复 path 应保留 ts 最大条目");
+      for (let i = 1; i < s5.recentFiles.length; i++) {
+        assert(s5.recentFiles[i - 1].ts >= s5.recentFiles[i].ts, "recentFiles 应按 ts 降序");
+      }
+    });
 
     // ---- 5. saveUiState 追加合并语义:重复转换自然置顶,不重复累积 ----
     await fs.writeFile(uiFile, JSON.stringify({ recentFiles: [] }), "utf8"); // 复位文件,隔离场景 4 数据
@@ -204,34 +215,41 @@ export async function run() {
     });
     const m7 = await freshModule();
     const s7 = m7.loadUiState();
-    assert(s7.recentFiles.length === 2, `追加合并后应 2 条,实际 ${JSON.stringify(s7.recentFiles)}`);
-    const x = s7.recentFiles.find((/** @type {RecentFile} */ e) => e.path === "C:\\x.md");
-    assert(x && x.ts === 2 && x.format === "pdf", "追加合并:x 应只留 ts 最大条目且置顶");
-    assert(s7.recentFiles[0].path === "C:\\x.md", "追加合并:ts 最大应排最前");
-    console.log("[ok] ui-state:saveUiState 追加合并(重复 path 去重置顶)");
+    await suite.case("saveUiState 追加合并(重复 path 去重置顶)", () => {
+      assert(s7.recentFiles.length === 2, `追加合并后应 2 条,实际 ${JSON.stringify(s7.recentFiles)}`);
+      const x = s7.recentFiles.find((/** @type {RecentFile} */ e) => e.path === "C:\\x.md");
+      assert(x && x.ts === 2 && x.format === "pdf", "追加合并:x 应只留 ts 最大条目且置顶");
+      assert(s7.recentFiles[0].path === "C:\\x.md", "追加合并:ts 最大应排最前");
+    });
 
     // ---- 5b. saveUiState({ recentFiles: [] }) = 清空(renderer「清空最近」传空数组) ----
     await m7.saveUiState({ recentFiles: [] });
     const m7b = await freshModule();
     const s7b = m7b.loadUiState();
-    assert(s7b.recentFiles.length === 0, `空数组应清空 recentFiles,实际 ${JSON.stringify(s7b.recentFiles)}`);
+    await suite.case("saveUiState 空数组清空 recentFiles(清空最近)", () => {
+      assert(s7b.recentFiles.length === 0, `空数组应清空 recentFiles,实际 ${JSON.stringify(s7b.recentFiles)}`);
+    });
     // 清空后追加合并语义不变(转换成功后追加新条目,index.ts:280 调用不受影响)
     await m7b.saveUiState({ recentFiles: [{ path: "C:\\z.md", name: "z.md", format: "docx", ts: 5 }] });
     const m7c = await freshModule();
     const s7c = m7c.loadUiState();
-    assert(
-      s7c.recentFiles.length === 1 && s7c.recentFiles[0].path === "C:\\z.md",
-      `清空后追加合并应正常,实际 ${JSON.stringify(s7c.recentFiles)}`,
-    );
-    console.log("[ok] ui-state:saveUiState 空数组清空(清空最近)+ 清空后追加合并不变");
+    await suite.case("清空后追加合并语义不变", () => {
+      assert(
+        s7c.recentFiles.length === 1 && s7c.recentFiles[0].path === "C:\\z.md",
+        `清空后追加合并应正常,实际 ${JSON.stringify(s7c.recentFiles)}`,
+      );
+    });
 
     // ---- 6. lastOpenDir 缺失 / 空串 → 默认空串 ----
     await fs.writeFile(uiFile, JSON.stringify({ lastOpenDir: "" }), "utf8");
     const m8 = await freshModule();
-    assert(m8.loadUiState().lastOpenDir === "", "lastOpenDir 空串应保留默认");
+    await suite.case("lastOpenDir 空串应保留默认", () => {
+      assert(m8.loadUiState().lastOpenDir === "", "lastOpenDir 空串应保留默认");
+    });
     const m9 = await freshModule();
-    assert(m9.loadUiState().lastOpenDir === "", "lastOpenDir 缺失应回退默认空串");
-    console.log("[ok] ui-state:lastOpenDir 空串/缺失回退默认");
+    await suite.case("lastOpenDir 缺失应回退默认空串", () => {
+      assert(m9.loadUiState().lastOpenDir === "", "lastOpenDir 缺失应回退默认空串");
+    });
 
     // ---- 7. pickWindowBounds:工作区内保留 / 全工作区外丢弃 / 尺寸非法丢弃 ----
     const areas = [
@@ -239,64 +257,85 @@ export async function run() {
       { x: 1920, y: 0, width: 1920, height: 1040 },
     ];
     const valid = { x: 100, y: 100, width: 900, height: 600 };
-    assert(
-      JSON.stringify(mod.pickWindowBounds(valid, areas)) === JSON.stringify(valid),
-      "pickWindowBounds:工作区内应原样保留",
-    );
-    assert(
-      JSON.stringify(mod.pickWindowBounds({ x: 2000, y: 300, width: 800, height: 600 }, areas)) ===
-        JSON.stringify({ x: 2000, y: 300, width: 800, height: 600 }),
-      "pickWindowBounds:第二显示器工作区内应保留",
-    );
-    assert(mod.pickWindowBounds({ x: 5000, y: 500, width: 800, height: 600 }, areas) === null, "pickWindowBounds:全工作区外(x 越界)应丢弃");
-    assert(mod.pickWindowBounds({ x: -100, y: 500, width: 800, height: 600 }, areas) === null, "pickWindowBounds:全工作区外(负坐标)应丢弃");
-    assert(mod.pickWindowBounds({ x: 0, y: 0, width: 0, height: 600 }, areas) === null, "pickWindowBounds:宽 ≤0 应丢弃");
-    assert(mod.pickWindowBounds({ x: 0, y: 0, width: 800, height: -1 }, areas) === null, "pickWindowBounds:高 ≤0 应丢弃");
-    assert(mod.pickWindowBounds({ x: NaN, y: 0, width: 800, height: 600 }, areas) === null, "pickWindowBounds:非数坐标应丢弃");
-    assert(mod.pickWindowBounds(null, areas) === null, "pickWindowBounds:null 应丢弃");
-    console.log("[ok] ui-state:pickWindowBounds 工作区钳制(区内保留/区外与非法丢弃)");
+    await suite.case("pickWindowBounds:工作区内(含第二显示器)原样保留", () => {
+      assert(
+        JSON.stringify(mod.pickWindowBounds(valid, areas)) === JSON.stringify(valid),
+        "pickWindowBounds:工作区内应原样保留",
+      );
+      assert(
+        JSON.stringify(mod.pickWindowBounds({ x: 2000, y: 300, width: 800, height: 600 }, areas)) ===
+          JSON.stringify({ x: 2000, y: 300, width: 800, height: 600 }),
+        "pickWindowBounds:第二显示器工作区内应保留",
+      );
+    });
+    await suite.case("pickWindowBounds:全工作区外(x 越界/负坐标)丢弃", () => {
+      assert(mod.pickWindowBounds({ x: 5000, y: 500, width: 800, height: 600 }, areas) === null, "pickWindowBounds:全工作区外(x 越界)应丢弃");
+      assert(mod.pickWindowBounds({ x: -100, y: 500, width: 800, height: 600 }, areas) === null, "pickWindowBounds:全工作区外(负坐标)应丢弃");
+    });
+    await suite.case("pickWindowBounds:尺寸非法(宽/高 ≤0)与非数/null 丢弃", () => {
+      assert(mod.pickWindowBounds({ x: 0, y: 0, width: 0, height: 600 }, areas) === null, "pickWindowBounds:宽 ≤0 应丢弃");
+      assert(mod.pickWindowBounds({ x: 0, y: 0, width: 800, height: -1 }, areas) === null, "pickWindowBounds:高 ≤0 应丢弃");
+      assert(mod.pickWindowBounds({ x: NaN, y: 0, width: 800, height: 600 }, areas) === null, "pickWindowBounds:非数坐标应丢弃");
+      assert(mod.pickWindowBounds(null, areas) === null, "pickWindowBounds:null 应丢弃");
+    });
 
     // ---- 8. suppressCompleteDialog(默认 true=不弹):布尔往返持久化;缺失/非 boolean → 默认 true ----
     await fs.writeFile(uiFile, JSON.stringify({ suppressCompleteDialog: true }), "utf8");
     const m10 = await freshModule();
-    assert(m10.loadUiState().suppressCompleteDialog === true, "suppressCompleteDialog:true 应原样读回");
+    await suite.case("suppressCompleteDialog:true 应原样读回", () => {
+      assert(m10.loadUiState().suppressCompleteDialog === true, "suppressCompleteDialog:true 应原样读回");
+    });
     await m10.saveUiState({ suppressCompleteDialog: false });
     const m11 = await freshModule();
-    assert(m11.loadUiState().suppressCompleteDialog === false, "suppressCompleteDialog:saveUiState(false) 应持久化(用户显式选弹窗的既有偏好被尊重)");
+    await suite.case("suppressCompleteDialog:saveUiState(false) 应持久化", () => {
+      assert(m11.loadUiState().suppressCompleteDialog === false, "suppressCompleteDialog:saveUiState(false) 应持久化(用户显式选弹窗的既有偏好被尊重)");
+    });
     await fs.writeFile(uiFile, JSON.stringify({ suppressCompleteDialog: "yes" }), "utf8");
     const m12 = await freshModule();
-    assert(m12.loadUiState().suppressCompleteDialog === true, "suppressCompleteDialog:非 boolean 应回退默认 true");
+    await suite.case("suppressCompleteDialog:非 boolean 应回退默认 true", () => {
+      assert(m12.loadUiState().suppressCompleteDialog === true, "suppressCompleteDialog:非 boolean 应回退默认 true");
+    });
     await fs.writeFile(uiFile, JSON.stringify({}), "utf8");
     const m13 = await freshModule();
-    assert(m13.loadUiState().suppressCompleteDialog === true, "suppressCompleteDialog:缺失应回退默认 true");
-    assert(m13.DEFAULT_UI_STATE.suppressCompleteDialog === true, "DEFAULT_UI_STATE.suppressCompleteDialog 应为 true");
-    console.log("[ok] ui-state:suppressCompleteDialog 往返/宽松校验(布尔持久化,缺失与非 boolean 回退默认 true 不弹)");
+    await suite.case("suppressCompleteDialog:缺失应回退默认 true(含 DEFAULT_UI_STATE 契约)", () => {
+      assert(m13.loadUiState().suppressCompleteDialog === true, "suppressCompleteDialog:缺失应回退默认 true");
+      assert(m13.DEFAULT_UI_STATE.suppressCompleteDialog === true, "DEFAULT_UI_STATE.suppressCompleteDialog 应为 true");
+    });
 
     // ---- 9. isMaximized(窗口最大化状态记忆):true 往返持久化;缺失/非 boolean → false ----
     await fs.writeFile(uiFile, JSON.stringify({ isMaximized: true }), "utf8");
     const m14 = await freshModule();
-    assert(m14.loadUiState().isMaximized === true, "isMaximized:true 应原样读回");
+    await suite.case("isMaximized:true 应原样读回", () => {
+      assert(m14.loadUiState().isMaximized === true, "isMaximized:true 应原样读回");
+    });
     await m14.saveUiState({ isMaximized: true, windowBounds: { x: 0, y: 0, width: 800, height: 600 } });
     const m15 = await freshModule();
     const s15 = m15.loadUiState();
-    assert(s15.isMaximized === true, "isMaximized:saveUiState(true) 应持久化");
-    assert(
-      s15.windowBounds && s15.windowBounds.width === 800,
-      "isMaximized 同批写入的 windowBounds(还原态尺寸)应一并持久化",
-    );
+    await suite.case("isMaximized 持久化且同批 windowBounds 一并落盘", () => {
+      assert(s15.isMaximized === true, "isMaximized:saveUiState(true) 应持久化");
+      assert(
+        s15.windowBounds && s15.windowBounds.width === 800,
+        "isMaximized 同批写入的 windowBounds(还原态尺寸)应一并持久化",
+      );
+    });
     await fs.writeFile(uiFile, JSON.stringify({ isMaximized: "yes" }), "utf8");
     const m16 = await freshModule();
-    assert(m16.loadUiState().isMaximized === false, "isMaximized:非 boolean 应回退 false");
+    await suite.case("isMaximized:非 boolean 应回退 false", () => {
+      assert(m16.loadUiState().isMaximized === false, "isMaximized:非 boolean 应回退 false");
+    });
     await fs.writeFile(uiFile, JSON.stringify({}), "utf8");
     const m17 = await freshModule();
-    assert(m17.loadUiState().isMaximized === false, "isMaximized:缺失应回退默认 false");
-    assert(m17.DEFAULT_UI_STATE.isMaximized === false, "DEFAULT_UI_STATE.isMaximized 应为 false");
+    await suite.case("isMaximized:缺失应回退默认 false(含 DEFAULT_UI_STATE 契约)", () => {
+      assert(m17.loadUiState().isMaximized === false, "isMaximized:缺失应回退默认 false");
+      assert(m17.DEFAULT_UI_STATE.isMaximized === false, "DEFAULT_UI_STATE.isMaximized 应为 false");
+    });
     // patch 未携带时保留现值(saveUiState 合并语义)
     await m17.saveUiState({ isMaximized: true });
     await m17.saveUiState({ lastOpenDir: "C:\\tmp" });
     const m18 = await freshModule();
-    assert(m18.loadUiState().isMaximized === true, "patch 未携带 isMaximized 时应保留现值");
-    console.log("[ok] ui-state:isMaximized 往返/宽松校验(true 持久化,缺失与非 boolean 回退 false,patch 合并保留)");
+    await suite.case("patch 未携带 isMaximized 时应保留现值", () => {
+      assert(m18.loadUiState().isMaximized === true, "patch 未携带 isMaximized 时应保留现值");
+    });
 
     // ---- 10. mutation queue:不同顶层字段并发 patch 不丢,最终缓存与落盘一致 ----
     const m19 = await freshModule();
@@ -305,16 +344,19 @@ export async function run() {
       m19.saveUiState({ windowBounds: { x: 1, y: 2, width: 640, height: 480 } }),
       m19.saveUiState({ isMaximized: false }),
     ]);
-    assert(dirResult.lastOpenDir === "C:\\queue-a", "ui-state mutation 第一个结果应含自身字段");
-    assert(boundsResult.lastOpenDir === "C:\\queue-a" && boundsResult.windowBounds?.width === 640, "ui-state mutation 第二个结果应保留前序字段");
-    assert(maximizedResult.lastOpenDir === "C:\\queue-a" && maximizedResult.windowBounds?.width === 640, "ui-state mutation 第三个结果应保留前序字段");
+    await suite.case("mutation queue:各次返回值依次含自身与前序字段", () => {
+      assert(dirResult.lastOpenDir === "C:\\queue-a", "ui-state mutation 第一个结果应含自身字段");
+      assert(boundsResult.lastOpenDir === "C:\\queue-a" && boundsResult.windowBounds?.width === 640, "ui-state mutation 第二个结果应保留前序字段");
+      assert(maximizedResult.lastOpenDir === "C:\\queue-a" && maximizedResult.windowBounds?.width === 640, "ui-state mutation 第三个结果应保留前序字段");
+    });
     const m20 = await freshModule();
     const queued = m20.loadUiState();
-    assert(
-      queued.lastOpenDir === "C:\\queue-a" && queued.windowBounds?.width === 640 && queued.isMaximized === false,
-      `ui-state 并发不同顶层字段不得丢更新,实际 ${JSON.stringify(queued)}`,
-    );
-    console.log("[ok] ui-state:mutation queue(不同顶层字段并发 patch 不丢)");
+    await suite.case("mutation queue:并发不同顶层字段不丢更新(落盘一致)", () => {
+      assert(
+        queued.lastOpenDir === "C:\\queue-a" && queued.windowBounds?.width === 640 && queued.isMaximized === false,
+        `ui-state 并发不同顶层字段不得丢更新,实际 ${JSON.stringify(queued)}`,
+      );
+    });
 
     // ---- 10b. 重启后并发字段全部保留:最近文件 / 会话文件 / 窗口状态同批并发 ----
     // 模拟重启 = 全新模块实例读 ui-state.json;renderer 的「转换成功追加最近文件」
@@ -328,23 +370,24 @@ export async function run() {
     ]);
     const m22 = await freshModule();
     const restarted = m22.loadUiState();
-    assert(
-      restarted.recentFiles.length === 1 && restarted.recentFiles[0].path === "C:\\work\\a.md",
-      `重启后最近文件应保留,实际 ${JSON.stringify(restarted.recentFiles)}`,
-    );
-    assert(
-      JSON.stringify(restarted.lastSessionFiles) === JSON.stringify(sessionA),
-      `重启后会话文件应保留,实际 ${JSON.stringify(restarted.lastSessionFiles)}`,
-    );
-    assert(
-      restarted.windowBounds?.width === 1024 && restarted.windowBounds?.x === 20 && restarted.isMaximized === true,
-      `重启后窗口状态应保留,实际 ${JSON.stringify(restarted.windowBounds)} maximized=${restarted.isMaximized}`,
-    );
-    assert(
-      restarted.lastOpenDir === "C:\\queue-a",
-      `重启后前序 mutation 的字段仍应保留,实际 ${restarted.lastOpenDir}`,
-    );
-    console.log("[ok] ui-state:重启读盘(最近文件/会话文件/窗口状态并发字段全部保留)");
+    await suite.case("重启读盘:最近文件/会话文件/窗口状态并发字段全部保留", () => {
+      assert(
+        restarted.recentFiles.length === 1 && restarted.recentFiles[0].path === "C:\\work\\a.md",
+        `重启后最近文件应保留,实际 ${JSON.stringify(restarted.recentFiles)}`,
+      );
+      assert(
+        JSON.stringify(restarted.lastSessionFiles) === JSON.stringify(sessionA),
+        `重启后会话文件应保留,实际 ${JSON.stringify(restarted.lastSessionFiles)}`,
+      );
+      assert(
+        restarted.windowBounds?.width === 1024 && restarted.windowBounds?.x === 20 && restarted.isMaximized === true,
+        `重启后窗口状态应保留,实际 ${JSON.stringify(restarted.windowBounds)} maximized=${restarted.isMaximized}`,
+      );
+      assert(
+        restarted.lastOpenDir === "C:\\queue-a",
+        `重启后前序 mutation 的字段仍应保留,实际 ${restarted.lastOpenDir}`,
+      );
+    });
 
     // ---- 11. 写失败可观察:不更新缓存、不吞错误,且后续 mutation 仍可恢复 ----
     // 目标路径暂替换为目录,避免依赖 Windows 权限/文件锁的非确定性。
@@ -357,22 +400,27 @@ export async function run() {
     } catch {
       failureObserved = true;
     }
-    assert(failureObserved, "ui-state 写失败必须向调用方抛出,不得静默成功");
-    assert(mFail.loadUiState().lastOpenDir !== "C:\\should-not-commit", "ui-state 写失败不得更新缓存");
+    await suite.case("写失败向调用方抛出且不更新缓存", () => {
+      assert(failureObserved, "ui-state 写失败必须向调用方抛出,不得静默成功");
+      assert(mFail.loadUiState().lastOpenDir !== "C:\\should-not-commit", "ui-state 写失败不得更新缓存");
+    });
     const outcome340 = removeTree(uiFile); // 此处已是**目录**,走 removeTree
     if (!outcome340.ok) throw new Error(`ui-state 目录替换还原失败:${uiFile}:${outcome340.error?.message ?? ""}`);
     await mFail.saveUiState({ lastOpenDir: "C:\\recovered" });
-    assert(mFail.loadUiState().lastOpenDir === "C:\\recovered", "ui-state 写失败后队列应继续处理下一次 mutation");
+    await suite.case("写失败后队列应继续处理下一次 mutation", () => {
+      assert(mFail.loadUiState().lastOpenDir === "C:\\recovered", "ui-state 写失败后队列应继续处理下一次 mutation");
+    });
     // 恢复后重启读盘:拿到恢复成功的那次写(失败尝试未污染磁盘)
     // 注:本段把目标路径临时替换为目录,该实例的缓存基线因此退化为默认态,
     // 故此处只断言恢复值本身落盘,不要求保留失败前字段(见 10b 的重启覆盖)。
     const mFailRestart = await freshModule();
     const recovered = mFailRestart.loadUiState();
-    assert(
-      recovered.lastOpenDir === "C:\\recovered",
-      `失败恢复后重启读盘应拿到恢复写入的值,实际 ${JSON.stringify(recovered.lastOpenDir)}`,
-    );
-    console.log("[ok] ui-state:写失败可观察(不吞错/不更新缓存/队列可恢复/重启读盘一致)");
+    await suite.case("失败恢复后重启读盘应拿到恢复写入的值", () => {
+      assert(
+        recovered.lastOpenDir === "C:\\recovered",
+        `失败恢复后重启读盘应拿到恢复写入的值,实际 ${JSON.stringify(recovered.lastOpenDir)}`,
+      );
+    });
   } finally {
     // 恢复真实 ui-state.json(原有内容或删除),避免污染用户状态
     if (hadFile) {
@@ -386,4 +434,5 @@ export async function run() {
       if (!restored.ok) throw new Error(`ui-state.json 恢复删除失败:${uiFile}:${restored.error?.message ?? "删除后文件仍存在"}`);
     }
   }
+  return { cases: suite.results };
 }

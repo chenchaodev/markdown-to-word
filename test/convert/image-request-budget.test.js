@@ -26,6 +26,7 @@ import {
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { closeTestServer, listenFetchablePort } from "../harness/http-server.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const PNG_PATH = path.join(FIXTURES_DIR, "input", "g1-tiny.png");
 
@@ -102,19 +103,25 @@ function requestOf({ maxBytes = MAX_RESPONSE_BYTES, timeoutMs = 5000, signal } =
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const fixtureBytes = await fs.readFile(PNG_PATH);
 
   // ================= 1. 本地路径:maxBytes 超出即中止(不返回内容) =================
   {
     const resolver = createImageResolver(FIXTURES_DIR);
-    const ok = await resolver("./input/g1-tiny.png", requestOf({ maxBytes: fixtureBytes.length }));
-    assert(ok && ok.equals(fixtureBytes), "maxBytes 恰等于文件大小时应正常读取");
-    // 上限比文件小 1 字节 → 归 null(统一「图片加载失败」通道,不是「文件不存在」)
-    const rejected = await resolver("./input/g1-tiny.png", requestOf({ maxBytes: fixtureBytes.length - 1 }));
-    assert(rejected === null, `超单图预算的本地图片应返回 null,实际 ${rejected?.length ?? rejected}`);
+    // 上限取恰等于/恰小于文件大小两个档,是一次「同一边界两侧」的判定,合成一个 case
+    await suite.case("本地图片 maxBytes 生效(stat 预检 + 读后复核)", async () => {
+      const ok = await resolver("./input/g1-tiny.png", requestOf({ maxBytes: fixtureBytes.length }));
+      assert(ok && ok.equals(fixtureBytes), "maxBytes 恰等于文件大小时应正常读取");
+      // 上限比文件小 1 字节 → 归 null(统一「图片加载失败」通道,不是「文件不存在」)
+      const rejected = await resolver("./input/g1-tiny.png", requestOf({ maxBytes: fixtureBytes.length - 1 }));
+      assert(rejected === null, `超单图预算的本地图片应返回 null,实际 ${rejected?.length ?? rejected}`);
+    });
     // 缺省 request 时行为不变(用实例级默认上限)
-    const noRequest = await resolver("./input/g1-tiny.png");
-    assert(noRequest && noRequest.equals(fixtureBytes), "未传 request 时本地读取应保持原行为");
+    await suite.case("未传 request 时本地读取保持原行为", async () => {
+      const noRequest = await resolver("./input/g1-tiny.png");
+      assert(noRequest && noRequest.equals(fixtureBytes), "未传 request 时本地读取应保持原行为");
+    });
     console.log("[ok] image-request-budget:本地图片 maxBytes 生效(stat 预检 + 读后复核)");
   }
 
@@ -122,29 +129,35 @@ export async function run() {
   let srv = null;
   try {
     srv = await startServer(200, fixtureBytes);
-    const url = `http://127.0.0.1:${srv.port}/img.png`;
+    // 收进 const:case 体是闭包,`let` 的非空收窄进不去(TS18047),srv 保留给 finally 判空用
+    const server = srv;
+    const url = `http://127.0.0.1:${server.port}/img.png`;
 
     // ================= 2. 外链:maxBytes / timeoutMs 生效 =================
     {
       const resolver = localResolver();
-      const ok = await resolver(url, requestOf({ maxBytes: fixtureBytes.length }));
-      assert(ok && ok.equals(fixtureBytes), "外链 maxBytes 恰等于响应大小时应正常下载");
-      // 换 URL 避开成功缓存(同实例同 URL 命中缓存不再发请求)
-      const smallLimitUrl = `http://127.0.0.1:${srv.port}/small-limit.png`;
-      const rejected = await resolver(smallLimitUrl, requestOf({ maxBytes: fixtureBytes.length - 1 }));
-      assert(rejected === null, `超单图预算的外链图片应返回 null,实际 ${rejected?.length ?? rejected}`);
+      await suite.case("外链 maxBytes 恰等于响应大小时正常下载、超出即中止", async () => {
+        const ok = await resolver(url, requestOf({ maxBytes: fixtureBytes.length }));
+        assert(ok && ok.equals(fixtureBytes), "外链 maxBytes 恰等于响应大小时应正常下载");
+        // 换 URL 避开成功缓存(同实例同 URL 命中缓存不再发请求)
+        const smallLimitUrl = `http://127.0.0.1:${server.port}/small-limit.png`;
+        const rejected = await resolver(smallLimitUrl, requestOf({ maxBytes: fixtureBytes.length - 1 }));
+        assert(rejected === null, `超单图预算的外链图片应返回 null,实际 ${rejected?.length ?? rejected}`);
+      });
       // 请求时限:慢响应 + 极短 request.timeoutMs → 中止返回 null
       // 响应延迟必须明显长于请求级时限,否则时限不会触发、这段测不到东西。
       // 时限不能定在 30ms 那一档:断言「请求已发出」靠的是服务端收到请求（计数在到达时增）,
       // 而 TCP 连接 + 写请求 + accept 必须在时限前完成 —— CI 容器一乱就可能为 0。给派发留 1s、响应放到 3s。
-      const slow = await startServer(200, fixtureBytes, 3000);
-      try {
-        const timedOut = await localResolver()(slow.port ? `http://127.0.0.1:${slow.port}/slow.png` : "", requestOf({ timeoutMs: 1000 }));
-        assert(timedOut === null, "request.timeoutMs 应中止慢响应并返回 null");
-        assert(slow.getCount() === 1, `超时场景应已发出 1 次请求,实际 ${slow.getCount()}`);
-      } finally {
-        await closeTestServer(slow.server);
-      }
+      await suite.case("request.timeoutMs 中止慢响应且请求确已发出", async () => {
+        const slow = await startServer(200, fixtureBytes, 3000);
+        try {
+          const timedOut = await localResolver()(slow.port ? `http://127.0.0.1:${slow.port}/slow.png` : "", requestOf({ timeoutMs: 1000 }));
+          assert(timedOut === null, "request.timeoutMs 应中止慢响应并返回 null");
+          assert(slow.getCount() === 1, `超时场景应已发出 1 次请求,实际 ${slow.getCount()}`);
+        } finally {
+          await closeTestServer(slow.server);
+        }
+      });
       console.log("[ok] image-request-budget:外链 maxBytes 与 request.timeoutMs 生效");
     }
 
@@ -152,17 +165,21 @@ export async function run() {
     {
       const controller = new AbortController();
       controller.abort(new Error("pre-aborted"));
-      const before = srv.getCount();
+      const before = server.getCount();
       const resolver = localResolver();
-      const cancelled = await resolver(`http://127.0.0.1:${srv.port}/cancelled.png`, requestOf({ signal: controller.signal }));
-      assert(cancelled === null, "已取消的请求应直接返回 null");
-      assert(srv.getCount() === before, `已取消的请求不应发出网络请求,计数 ${before} → ${srv.getCount()}`);
-      // exists 通道同样短路。exists 是可选注入成员(ImageResolver.exists?):
-      // 本实现必提供(缺省则这条断言整段无意义),故先判空再收进局部常量。
-      const exists = resolver.exists;
-      assert(exists !== undefined, "createImageResolver 应注入 exists 轻量存在性通道");
-      assert((await exists(`http://127.0.0.1:${srv.port}/cancelled2.png`, requestOf({ signal: controller.signal }))) === false,
-        "已取消的 exists 请求应返回 false");
+      await suite.case("已取消的请求返回 null 且不发出网络请求", async () => {
+        const cancelled = await resolver(`http://127.0.0.1:${server.port}/cancelled.png`, requestOf({ signal: controller.signal }));
+        assert(cancelled === null, "已取消的请求应直接返回 null");
+        assert(server.getCount() === before, `已取消的请求不应发出网络请求,计数 ${before} → ${server.getCount()}`);
+      });
+      await suite.case("已取消的 exists 请求返回 false", async () => {
+        // exists 通道同样短路。exists 是可选注入成员(ImageResolver.exists?):
+        // 本实现必提供(缺省则这条断言无意义),故先判存在再收进局部常量。
+        const exists = resolver.exists;
+        assert(exists !== undefined, "createImageResolver 应注入 exists 轻量存在性通道");
+        assert((await exists(`http://127.0.0.1:${server.port}/cancelled2.png`, requestOf({ signal: controller.signal }))) === false,
+          "已取消的 exists 请求应返回 false");
+      });
       console.log("[ok] image-request-budget:已取消的请求不发起 IO(计数保持不变)");
     }
 
@@ -172,26 +189,28 @@ export async function run() {
     {
       const resolver = localResolver();
       // 端口取常量供下方闭包使用(let 的非空收窄在闭包内不成立)
-      const srvPort = srv.port;
+      const srvPort = server.port;
       const urls = Array.from({ length: 70 }, (_, i) => `http://127.0.0.1:${srvPort}/cache-${i}.png`);
       for (const u of urls) {
         const buf = await resolver(u, requestOf());
         assert(buf !== null, `缓存预算准备阶段下载失败:${u}`);
       }
-      const afterWarmup = srv.getCount();
+      const afterWarmup = server.getCount();
       // 最早的 URL(已被淘汰)与最后的 URL(仍在缓存内)各再请求一次。
       // 两端点都取数组下标(可能 undefined):显式判空并给出可读失败信息 ——
       // 用端点值才是这条断言的判据,取中点等于没测。
       const evictedUrl = urls[0];
       const cachedUrl = urls[urls.length - 1];
-      assert(
-        typeof evictedUrl === "string" && typeof cachedUrl === "string",
-        `缓存预算场景的 URL 列表应非空(实际 ${urls.length} 条)`,
-      );
-      const evicted = await resolver(evictedUrl, requestOf());
-      const cached = await resolver(cachedUrl, requestOf());
-      assert(evicted !== null && cached !== null, "缓存预算场景两次请求都应成功");
-      assert(srv.getCount() === afterWarmup + 1, `被淘汰的 URL 应重新下载(计数 +1),实际 +${srv.getCount() - afterWarmup}`);
+      await suite.case("被淘汰的 URL 重新下载、仍在预算内的 URL 命中缓存", async () => {
+        assert(
+          typeof evictedUrl === "string" && typeof cachedUrl === "string",
+          `缓存预算场景的 URL 列表应非空(实际 ${urls.length} 条)`,
+        );
+        const evicted = await resolver(evictedUrl, requestOf());
+        const cached = await resolver(cachedUrl, requestOf());
+        assert(evicted !== null && cached !== null, "缓存预算场景两次请求都应成功");
+        assert(server.getCount() === afterWarmup + 1, `被淘汰的 URL 应重新下载(计数 +1),实际 +${server.getCount() - afterWarmup}`);
+      });
       console.log(`[ok] image-request-budget:成功缓存按条目上限淘汰(70 个 URL 后最早条目重新下载)`);
     }
   } finally {
@@ -200,12 +219,15 @@ export async function run() {
 
   // ================= 5. 预算常量口径(默认上限与缓存预算钉死) =================
   {
-    assert(MAX_RESPONSE_BYTES === 20 * 1024 * 1024, `默认单图上限口径漂移:${MAX_RESPONSE_BYTES}`);
-    assert(MAX_CACHE_ENTRIES === 64 && MAX_CACHE_BYTES === 32 * 1024 * 1024,
-      `缓存预算口径漂移:entries=${MAX_CACHE_ENTRIES} bytes=${MAX_CACHE_BYTES}`);
-    assert(MAX_CACHE_BYTES > MAX_RESPONSE_BYTES, "缓存字节预算应大于单图上限(至少容纳一张最大图)");
+    await suite.case("预算常量口径钉死(单图上限 / 缓存条目 / 缓存字节)", () => {
+      assert(MAX_RESPONSE_BYTES === 20 * 1024 * 1024, `默认单图上限口径漂移:${MAX_RESPONSE_BYTES}`);
+      assert(MAX_CACHE_ENTRIES === 64 && MAX_CACHE_BYTES === 32 * 1024 * 1024,
+        `缓存预算口径漂移:entries=${MAX_CACHE_ENTRIES} bytes=${MAX_CACHE_BYTES}`);
+      assert(MAX_CACHE_BYTES > MAX_RESPONSE_BYTES, "缓存字节预算应大于单图上限(至少容纳一张最大图)");
+    });
     console.log(
       `[ok] image-request-budget:预算常量口径(单图 ${MAX_RESPONSE_BYTES} / 缓存 ${MAX_CACHE_ENTRIES} 条 ${MAX_CACHE_BYTES} 字节)`,
     );
   }
+  return { cases: suite.results };
 }

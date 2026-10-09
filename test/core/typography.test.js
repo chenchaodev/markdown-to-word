@@ -9,6 +9,7 @@ import { unzipPart } from "../harness/docx-utils.js";
 import { htmlToPdf } from "../harness/pdf-utils.js";
 import { saveArtifact } from "../harness/artifacts.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /**
  * 本段测哪一层(ADR-062 L4 声明通道):**core**,判据静态看不见本段的主体 —— 全链路经
@@ -53,34 +54,49 @@ export async function run() {
   // docx:styles.default 字号(14pt×2=28 half-points)+ eastAsia 宋体;
   // 正文段落两端对齐;headingNumbering=false → 全文无编号引用
   // (md 无列表,故 w:numPr 全缺即可稳定断言标题编号已关闭)
+  const suite = createCaseSuite();
   const typoDocx = docxBufferOf(
     await convertWithFs(typoMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], typography }),
   );
   const typoStyles = await unzipPart(typoDocx, "word/styles.xml");
   const typoDocument = await unzipPart(typoDocx, "word/document.xml");
-  if (!typoStyles.includes('<w:sz w:val="28"/>')) {
-    throw new Error('排版断言失败:styles.xml 缺少 w:sz w:val="28"(14pt×2 half-points)');
-  }
-  if (!typoStyles.includes("宋体")) {
-    throw new Error("排版断言失败:styles.xml 缺少 eastAsia 字体 宋体");
-  }
-  if (!typoDocument.includes('w:jc w:val="both"')) {
-    throw new Error('排版断言失败:document.xml 缺少 w:jc both(docx 库 JUSTIFIED 序列化值,正文两端对齐)');
-  }
-  if (typoDocument.includes("w:numPr")) {
-    throw new Error("排版断言失败:headingNumbering=false 但 document.xml 仍有编号引用");
-  }
+  // docx 侧逐项一个 case:各查的是彼此独立的 OOXML 标记,
+  // 合成一个只会让首处不符掩盖其余同类漂移
+  await suite.case("docx styles.xml 正文 字号 14pt(= w:sz 28 half-points)", () => {
+    if (!typoStyles.includes('<w:sz w:val="28"/>')) {
+      throw new Error('排版断言失败:styles.xml 缺少 w:sz w:val="28"(14pt×2 half-points)');
+    }
+  });
+  await suite.case("docx styles.xml eastAsia 字体为宋体", () => {
+    if (!typoStyles.includes("宋体")) {
+      throw new Error("排版断言失败:styles.xml 缺少 eastAsia 字体 宋体");
+    }
+  });
+  await suite.case("docx document.xml 正文两端对齐(w:jc both)", () => {
+    if (!typoDocument.includes('w:jc w:val="both"')) {
+      throw new Error('排版断言失败:document.xml 缺少 w:jc both(docx 库 JUSTIFIED 序列化值,正文两端对齐)');
+    }
+  });
+  await suite.case("docx headingNumbering=false 时无编号引用", () => {
+    if (typoDocument.includes("w:numPr")) {
+      throw new Error("排版断言失败:headingNumbering=false 但 document.xml 仍有编号引用");
+    }
+  });
   // 行距 1.5 → w:spacing w:line="360" w:lineRule="auto"(实现:renderBodyParagraph
   // spacing.line = Math.round(1.5×240)=360 twips + LineRuleType.AUTO;docx 库
   // createSpacing 序列化 w:line/w:lineRule,未设 before/after 不输出)
-  if (!typoDocument.includes('<w:spacing w:line="360" w:lineRule="auto"')) {
-    throw new Error('排版断言失败:document.xml 缺少 w:line="360" w:lineRule="auto"(行距 1.5×240 twips)');
-  }
+  await suite.case("docx document.xml 行距 1.5(w:line 360 twips + auto)", () => {
+    if (!typoDocument.includes('<w:spacing w:line="360" w:lineRule="auto"')) {
+      throw new Error('排版断言失败:document.xml 缺少 w:line="360" w:lineRule="auto"(行距 1.5×240 twips)');
+    }
+  });
   // 首行缩进 2 字符 → w:ind w:firstLineChars="200"(实现:renderBodyParagraph
   // indent.firstLineChars = 200(2 字符×100);docx 库 createIndent 序列化)
-  if (!typoDocument.includes('w:firstLineChars="200"')) {
-    throw new Error('排版断言失败:document.xml 缺少 w:firstLineChars="200"(首行缩进 2 字符)');
-  }
+  await suite.case("docx document.xml 首行缩进 2 字符(w:firstLineChars 200)", () => {
+    if (!typoDocument.includes('w:firstLineChars="200"')) {
+      throw new Error('排版断言失败:document.xml 缺少 w:firstLineChars="200"(首行缩进 2 字符)');
+    }
+  });
   console.log("[ok] docx 排版设置:字号28/宋体/两端对齐/标题编号关闭/行距360/首行缩进200 全部生效");
 
   // pdf:模板 CSS 参数化断言(renderPdfHtml 产物字符串,不依赖 printToPDF)
@@ -94,13 +110,19 @@ export async function run() {
     ["text-align: justify", "两端对齐 text-align"],
     ["宋体", "font-family 宋体"],
   ];
+  // CSS 片段矩阵逐行一个 case:label 是该片段的稳定标识
   for (const [needle, label] of typoChecks) {
-    if (!typoPdf.html.includes(needle)) throw new Error(`排版断言失败:PDF 模板缺少 ${label}`);
+    await suite.case(`PDF 模板 CSS 含 ${label}`, () => {
+      if (!typoPdf.html.includes(needle)) throw new Error(`排版断言失败:PDF 模板缺少 ${label}`);
+    });
   }
-  if (typoPdf.html.includes("counter(h1c)")) {
-    throw new Error("排版断言失败:headingNumbering=false 但 PDF 模板仍有章节编号 CSS");
-  }
+  await suite.case("PDF 模板 headingNumbering=false 时无章节编号 CSS", () => {
+    if (typoPdf.html.includes("counter(h1c)")) {
+      throw new Error("排版断言失败:headingNumbering=false 但 PDF 模板仍有章节编号 CSS");
+    }
+  });
   console.log("[ok] PDF 排版设置:14pt/2em 缩进/两端对齐/宋体/编号关闭 全部生效");
   const typoPdfBin = await htmlToPdf(typoPdf.html, typoPdf.footerTemplate);
   await saveArtifact("typography", { docx: typoDocx, pdf: typoPdfBin });
+  return { cases: suite.results };
 }

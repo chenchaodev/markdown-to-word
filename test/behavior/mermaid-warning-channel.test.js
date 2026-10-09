@@ -42,6 +42,7 @@ import { unzipPart } from "../harness/docx-utils.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { removeTree } from "../harness/temp-resource.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /**
  * 本段横跨的层(ADR-062 L6 判据要求 behavior 段显式声明):判据只校验「非空 ＋ 每个元素
@@ -87,6 +88,7 @@ export const meta = { description: "Mermaid 渲染失败原因经既有 warning 
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const dir = path.join(os.tmpdir(), `m2w-mermaid-warning-${process.pid}`);
   await fs.mkdir(dir, { recursive: true });
   const backup = await backupSettings();
@@ -94,16 +96,20 @@ export async function run() {
     // ---- 1. 严格模式:真实语法错误 → 抛 MermaidRenderError 且带非空 reason ----
     /** @type {string} */
     let reason = "";
-    try {
-      await renderMermaidStrict("graph TD;\nA[unclosed");
-    } catch (err) {
-      assert(err instanceof MermaidRenderError, `失败应抛 MermaidRenderError,实际 ${String(err)}`);
-      reason = err.reason;
-    }
-    assert(reason.length > 0, "严格模式失败必须带非空 reason(否则 UI 拿不到真因)");
-    console.log(`[ok] mermaid-warning-channel:严格模式失败抛 MermaidRenderError(reason=${JSON.stringify(reason)})`);
+    await suite.case("严格模式失败抛 MermaidRenderError 且带非空 reason", async () => {
+      try {
+        await renderMermaidStrict("graph TD;\nA[unclosed");
+      } catch (err) {
+        assert(err instanceof MermaidRenderError, `失败应抛 MermaidRenderError,实际 ${String(err)}`);
+        reason = err.reason;
+      }
+      assert(reason.length > 0, "严格模式失败必须带非空 reason(否则 UI 拿不到真因)");
+      console.log(`[ok] mermaid-warning-channel:严格模式失败抛 MermaidRenderError(reason=${JSON.stringify(reason)})`);
+    });
 
     // ---- 2+3+4. core 既有 warning 通道:严格模式带原因,只降级模式不带;降级不回归 ----
+    // 两次 convert 是多 case 共享的昂贵前置(各自走完整渲染管线),故在 case 之前跑完,
+    // case 内只回读 warnings 与产物下判定。
     /** @type {import("../../dist/core/i18n/warning.js").KeyedWarning[]} */
     const strictWarnings = [];
     const strictDocx = asDocxArtifact(
@@ -113,23 +119,6 @@ export async function run() {
         mermaidResolver: renderMermaidStrict,
       }),
     );
-    const strictWarn = pickKeyed(strictWarnings, "warn.mermaidFailed");
-    assert(strictWarn !== null, `严格模式应产生 warn.mermaidFailed,实际 ${JSON.stringify(strictWarnings)}`);
-    assert(
-      strictWarn.params?.reason === reason,
-      `警告应携带服务给出的真实原因,实际 ${JSON.stringify(strictWarn.params)}`,
-    );
-    const rendered = formatWarning(strictWarn);
-    assert(
-      rendered.includes(reason),
-      `formatWarning 渲染出的文案(展示层拿到的文本)应含原因,实际 ${JSON.stringify(rendered)}`,
-    );
-    assert(
-      pickKeyed(strictWarnings, "warn.mermaidEmpty") === null,
-      "严格模式失败不应再产生「返回空结果」这条无原因警告",
-    );
-
-    // ---- 3. 对照组:同一份文档走只降级模式 → 同一通道,但只有无原因的 warn.mermaidEmpty ----
     /** @type {import("../../dist/core/i18n/warning.js").KeyedWarning[]} */
     const looseWarnings = [];
     await convert(prepareForConvert(MD_BAD_MERMAID), "docx", {
@@ -137,20 +126,44 @@ export async function run() {
       warnings: looseWarnings,
       mermaidResolver: renderMermaid,
     });
-    const looseWarn = pickKeyed(looseWarnings, "warn.mermaidEmpty");
-    assert(looseWarn !== null, `对照组:只降级模式应产生 warn.mermaidEmpty,实际 ${JSON.stringify(looseWarnings)}`);
-    assert(
-      pickKeyed(looseWarnings, "warn.mermaidFailed") === null,
-      "对照组:只降级模式不产生带原因的警告(差异确实来自接线)",
-    );
+
+    await suite.case("严格模式经既有通道产生带原因的 warn.mermaidFailed", () => {
+      const strictWarn = pickKeyed(strictWarnings, "warn.mermaidFailed");
+      assert(strictWarn !== null, `严格模式应产生 warn.mermaidFailed,实际 ${JSON.stringify(strictWarnings)}`);
+      assert(
+        strictWarn.params?.reason === reason,
+        `警告应携带服务给出的真实原因,实际 ${JSON.stringify(strictWarn.params)}`,
+      );
+      const rendered = formatWarning(strictWarn);
+      assert(
+        rendered.includes(reason),
+        `formatWarning 渲染出的文案(展示层拿到的文本)应含原因,实际 ${JSON.stringify(rendered)}`,
+      );
+      assert(
+        pickKeyed(strictWarnings, "warn.mermaidEmpty") === null,
+        "严格模式失败不应再产生「返回空结果」这条无原因警告",
+      );
+    });
+
+    // ---- 3. 对照组:同一份文档走只降级模式 → 同一通道,但只有无原因的 warn.mermaidEmpty ----
+    await suite.case("对照组只降级模式仅产生无原因的 warn.mermaidEmpty", () => {
+      const looseWarn = pickKeyed(looseWarnings, "warn.mermaidEmpty");
+      assert(looseWarn !== null, `对照组:只降级模式应产生 warn.mermaidEmpty,实际 ${JSON.stringify(looseWarnings)}`);
+      assert(
+        pickKeyed(looseWarnings, "warn.mermaidFailed") === null,
+        "对照组:只降级模式不产生带原因的警告(差异确实来自接线)",
+      );
+    });
 
     // ---- 4. 降级不回归:无内嵌图片、代码原文保留、转换未失败 ----
-    const documentXml = await unzipPart(strictDocx.buffer, "word/document.xml");
-    assert(!documentXml.includes("a:blip"), "渲染失败的 mermaid 不应内嵌图片");
-    assert(documentXml.includes("A[unclosed"), "降级后代码原文应保留在产物里");
-    console.log(
-      `[ok] mermaid-warning-channel:既有通道带原因上屏(warn.mermaidFailed,文案含 reason);对照组仅 warn.mermaidEmpty`,
-    );
+    await suite.case("降级不回归:无内嵌图片且代码原文保留", async () => {
+      const documentXml = await unzipPart(strictDocx.buffer, "word/document.xml");
+      assert(!documentXml.includes("a:blip"), "渲染失败的 mermaid 不应内嵌图片");
+      assert(documentXml.includes("A[unclosed"), "降级后代码原文应保留在产物里");
+      console.log(
+        `[ok] mermaid-warning-channel:既有通道带原因上屏(warn.mermaidFailed,文案含 reason);对照组仅 warn.mermaidEmpty`,
+      );
+    });
 
     // ---- 5. main 转换链路端到端:convertImpl 的 warnings 就是这条带原因的警告 ----
     // 输出目录置空(落源文件同目录)+ afterConvert none(不触发打开产物),保证断言确定
@@ -158,33 +171,40 @@ export async function run() {
     const mdPath = path.join(dir, "bad-mermaid.md");
     await fs.writeFile(mdPath, MD_BAD_MERMAID, "utf8");
     const result = await convertImpl(mdPath, "docx", undefined, createConvertContext(), getKatexDir());
-    const mainWarn = pickKeyed(result.warnings, "warn.mermaidFailed");
-    assert(
-      mainWarn !== null,
-      `main 转换链路应注入严格模式 resolver,warnings=${JSON.stringify(result.warnings)}`,
-    );
-    assert(
-      formatWarning(mainWarn).includes("Mermaid"),
-      `main 链路警告应走既有 Mermaid 措辞,实际 ${JSON.stringify(formatWarning(mainWarn))}`,
-    );
-    assert(
-      path.basename(result.outputPath).startsWith("bad-mermaid"),
-      `产物应落盘成功,实际 ${result.outputPath}`,
-    );
-    console.log(
-      `[ok] mermaid-warning-channel:main convertImpl 端到端 warnings 含 warn.mermaidFailed(严格模式已在链路生效)`,
-    );
+
+    await suite.case("main 转换链路端到端 warnings 含 warn.mermaidFailed", () => {
+      const mainWarn = pickKeyed(result.warnings, "warn.mermaidFailed");
+      assert(
+        mainWarn !== null,
+        `main 转换链路应注入严格模式 resolver,warnings=${JSON.stringify(result.warnings)}`,
+      );
+      assert(
+        formatWarning(mainWarn).includes("Mermaid"),
+        `main 链路警告应走既有 Mermaid 措辞,实际 ${JSON.stringify(formatWarning(mainWarn))}`,
+      );
+      assert(
+        path.basename(result.outputPath).startsWith("bad-mermaid"),
+        `产物应落盘成功,实际 ${result.outputPath}`,
+      );
+      console.log(
+        `[ok] mermaid-warning-channel:main convertImpl 端到端 warnings 含 warn.mermaidFailed(严格模式已在链路生效)`,
+      );
+    });
 
     // ---- 6. 会话换代导致的主动放弃:返回 null 而非抛错(退出路径不制造假警告) ----
-    const inflight = renderMermaidStrict("DISPOSE_INFLIGHT_SENTINEL", 5000);
-    disposeMermaidService(); // 换代:提交时记下的代号失效
-    const skipped = await inflight;
-    assert(skipped === null, "换代期间放弃的渲染应返回 null(不得抛错生成假警告)");
-    assert(
-      (await renderMermaidStrict("graph TD; A-->B")) !== null,
-      "换代后应能重建会话并恢复渲染(放弃不等于服务不可用)",
-    );
-    console.log("[ok] mermaid-warning-channel:换代放弃返回 null 不抛错,之后可重建恢复");
+    await suite.case("换代放弃返回 null 不抛错且之后可重建恢复", async () => {
+      const inflight = renderMermaidStrict("DISPOSE_INFLIGHT_SENTINEL", 5000);
+      disposeMermaidService(); // 换代:提交时记下的代号失效
+      const skipped = await inflight;
+      assert(skipped === null, "换代期间放弃的渲染应返回 null(不得抛错生成假警告)");
+      assert(
+        (await renderMermaidStrict("graph TD; A-->B")) !== null,
+        "换代后应能重建会话并恢复渲染(放弃不等于服务不可用)",
+      );
+      console.log("[ok] mermaid-warning-channel:换代放弃返回 null 不抛错,之后可重建恢复");
+    });
+
+    return { cases: suite.results };
   } finally {
     await backup.restore().catch(() => undefined);
     disposeMermaidService();

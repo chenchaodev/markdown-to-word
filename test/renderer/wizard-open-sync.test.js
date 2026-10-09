@@ -18,6 +18,7 @@ import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
 import { fireListener, installDomStub } from "./dom-stub.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const { assert: harnessAssert } = createAsserter("wizard-open-sync");
 
@@ -60,6 +61,7 @@ const distUrl = (rel) => pathToFileURL(path.join(ROOT, "dist", rel)).href;
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const dom = installDomStub({
     api: {
       // 本段只断言控件显隐,不关心落盘:settingsSet 永不落定,写回流水线停在
@@ -117,27 +119,34 @@ export async function run() {
     };
 
     // ---- 中文首开:步骤名取当前语言 ----
+    // 各 case 依赖的向导开闭与 DOM 取件是跨 case 的串行流程(同一段内 dist 模块
+    // 只装一次、每次 open 重建外壳),故流程留在 run() 层,case 内只下判定。
     setLanguage("zh");
     let mark = dom.created.length;
     bookWizard.openBookWizard();
     let nodes = openedSince(mark);
-    let overlay = findById(nodes, "bookWizard");
-    assert(overlay, "首开应构建向导模态容器");
-    let label = firstLabel(nodes);
-    assert(
-      label && label.textContent === i18n.DICT.zh["wizard.stepTemplate"],
-      `中文首开首步名应取 zh 文案,实际 ${label?.textContent}`,
-    );
+    const overlay = findById(nodes, "bookWizard");
+
+    await suite.case("中文首开步骤名取当前语言文案", () => {
+      assert(overlay, "首开应构建向导模态容器");
+      const label = firstLabel(nodes);
+      assert(
+        label && label.textContent === i18n.DICT.zh["wizard.stepTemplate"],
+        `中文首开首步名应取 zh 文案,实际 ${label?.textContent}`,
+      );
+    });
 
     // ---- 初始回填:自动目录默认为开,目录下拉应当可见 ----
-    // 这条与下方「关掉后应隐藏」构成非空洞的一对:stub 元素 classList 初值自带
-    // hidden,只断言「隐藏」会恒真(门控整个删掉也不红),必须先有一条要求它可见的。
-    const modeFieldOn = findModeField(nodes);
-    assert(modeFieldOn, "首开应构建目录模式下拉所在的字段块");
-    assert(
-      !modeFieldOn.classList.contains("hidden"),
-      "自动目录默认为开时,目录下拉字段块不应被收起(回填路径已接线)",
-    );
+    await suite.case("自动目录默认为开时目录下拉字段块可见", () => {
+      // 这条与下方「关掉后应隐藏」构成非空洞的一对:stub 元素 classList 初值自带
+      // hidden,只断言「隐藏」会恒真(门控整个删掉也不红),必须先有一条要求它可见的。
+      const modeFieldOn = findModeField(nodes);
+      assert(modeFieldOn, "首开应构建目录模式下拉所在的字段块");
+      assert(
+        !modeFieldOn.classList.contains("hidden"),
+        "自动目录默认为开时,目录下拉字段块不应被收起(回填路径已接线)",
+      );
+    });
 
     // ---- 向导外改设置 → 关闭后复开必须同步(且外壳为重建) ----
     bookWizard.closeBookWizard(); // 复开的前置:向导处于关闭态
@@ -148,31 +157,10 @@ export async function run() {
     bookWizard.openBookWizard();
     nodes = openedSince(mark);
     const overlay2 = findById(nodes, "bookWizard");
-    assert(overlay2, "复开应重新构建外壳");
-    assert(overlay2 !== overlay, "复开必须是新容器(重建),不是复用旧 DOM");
-    assert(overlay.isConnected === false, "复开应摘除旧容器(不残留两个模态)");
-
     const wmInput = findById(nodes, "wizardWmText");
-    assert(
-      wmInput && wmInput.value === "机密",
-      `复开应显示最新水印文字,实际 ${wmInput?.value}`,
-    );
     const headerInput = findById(nodes, "wizardHeaderText");
-    assert(
-      headerInput && headerInput.value === "青崖大学文学院",
-      `复开应显示最新页眉文字,实际 ${headerInput?.value}`,
-    );
     const tocSwitch = findById(nodes, "wizardToc");
-    assert(
-      tocSwitch && tocSwitch.checked === false,
-      "复开应同步最新自动目录开关(与向导外设置一致)",
-    );
-
-    // ---- 目录模式下拉门控:关掉自动目录后整块移除(回填路径 + change 路径双向) ----
-    // 与设置抽屉 04 组同源(settings-ia §3 规则 1):模式不满足就摆一个可点的下拉,
-    // 用户能选一个不生效的模式,故整块 .hidden 收起而非灰禁。
     const tocModeSelect = findById(nodes, "wizardTocMode");
-    assert(tocModeSelect, "复开应构建目录模式下拉控件");
     // 开关的 change 会走真实写回流水线,其同步段经 hooks 刷抽屉副标题,那里读
     // templatePreset.selectedOptions —— dom stub 未提供该成员(段内最小补齐,
     // 不改共享 stub,免得影响其它段)
@@ -180,35 +168,76 @@ export async function run() {
       { textContent: "学术论文" },
     ];
     const modeField = findModeField(nodes);
-    assert(modeField, "复开应能定位到目录下拉所在的字段块");
-    assert(
-      modeField.classList.contains("hidden"),
-      "回填路径:复开时自动目录为关,目录下拉字段块应已整块移除",
-    );
-    tocModeSelect.value = "field";
-    tocSwitch.checked = true;
-    fireListener(tocSwitch, "change");
-    assert(
-      !modeField.classList.contains("hidden"),
-      "打开自动目录后目录下拉应重新出现(change 路径已接线)",
-    );
-    assert(
-      tocModeSelect.value === "field",
-      `展开后应仍是收起前那次选择(收起不得丢值),实际 ${tocModeSelect.value}`,
-    );
-    tocSwitch.checked = false;
-    fireListener(tocSwitch, "change");
-    assert(
-      modeField.classList.contains("hidden"),
-      "再次关掉自动目录后目录下拉应重新整块移除",
-    );
-    assert(
-      tocModeSelect.value === "field",
-      "收起不得丢掉上次选的目录模式(重新打开即恢复)",
-    );
+
+    await suite.case("复开重建外壳并摘除旧容器", () => {
+      assert(overlay2, "复开应重新构建外壳");
+      assert(overlay2 !== overlay, "复开必须是新容器(重建),不是复用旧 DOM");
+      assert(overlay?.isConnected === false, "复开应摘除旧容器(不残留两个模态)");
+    });
+
+    await suite.case("复开同步向导外的最新设置值", () => {
+      assert(
+        wmInput && wmInput.value === "机密",
+        `复开应显示最新水印文字,实际 ${wmInput?.value}`,
+      );
+      assert(
+        headerInput && headerInput.value === "青崖大学文学院",
+        `复开应显示最新页眉文字,实际 ${headerInput?.value}`,
+      );
+      assert(
+        tocSwitch && tocSwitch.checked === false,
+        "复开应同步最新自动目录开关(与向导外设置一致)",
+      );
+    });
+
+    // ---- 目录模式下拉门控:关掉自动目录后整块移除(回填路径 + change 路径双向) ----
+    // 与设置抽屉 04 组同源(settings-ia §3 规则 1):模式不满足就摆一个可点的下拉,
+    // 用户能选一个不生效的模式,故整块 .hidden 收起而非灰禁。
+    await suite.case("自动目录为关时目录下拉字段块整块移除", () => {
+      assert(tocModeSelect, "复开应构建目录模式下拉控件");
+      assert(modeField, "复开应能定位到目录下拉所在的字段块");
+      assert(
+        modeField.classList.contains("hidden"),
+        "回填路径:复开时自动目录为关,目录下拉字段块应已整块移除",
+      );
+    });
+
+    // 三者的存在性由上一条 case 兜住;这里只做类型窄化,好让下面两条 change 路径
+    // 的 case 能直接改值(不改判定:窄化不是新增断言)。
+    const tocSwitchEl = /** @type {import("./dom-stub.js").StubElement} */ (tocSwitch);
+    const tocModeEl = /** @type {import("./dom-stub.js").StubElement} */ (tocModeSelect);
+    const modeFieldEl = /** @type {import("./dom-stub.js").StubElement} */ (modeField);
+
+    await suite.case("打开自动目录后目录下拉重新出现且不丢上次选择", () => {
+      tocModeEl.value = "field";
+      tocSwitchEl.checked = true;
+      fireListener(tocSwitchEl, "change");
+      assert(
+        !modeFieldEl.classList.contains("hidden"),
+        "打开自动目录后目录下拉应重新出现(change 路径已接线)",
+      );
+      assert(
+        tocModeEl.value === "field",
+        `展开后应仍是收起前那次选择(收起不得丢值),实际 ${tocModeEl.value}`,
+      );
+    });
+
+    await suite.case("再次关掉自动目录后重新收起且不丢上次选择", () => {
+      tocSwitchEl.checked = false;
+      fireListener(tocSwitchEl, "change");
+      assert(
+        modeFieldEl.classList.contains("hidden"),
+        "再次关掉自动目录后目录下拉应重新整块移除",
+      );
+      assert(
+        tocModeEl.value === "field",
+        "收起不得丢掉上次选的目录模式(重新打开即恢复)",
+      );
+    });
+
     // 复原:后续语言切换用例不依赖该态
-    tocSwitch.checked = true;
-    fireListener(tocSwitch, "change");
+    tocSwitchEl.checked = true;
+    fireListener(tocSwitchEl, "change");
     state.settings.tocMode = "static";
 
     // ---- 语言切换后复开:步骤名随语言刷新 ----
@@ -217,17 +246,23 @@ export async function run() {
     mark = dom.created.length;
     bookWizard.openBookWizard();
     nodes = openedSince(mark);
-    label = firstLabel(nodes);
-    assert(
-      label && label.textContent === i18n.DICT.en["wizard.stepTemplate"],
-      `英文复开首步名应取 en 文案,实际 ${label?.textContent}`,
-    );
+    const enLabel = firstLabel(nodes);
     setLanguage("zh");
 
+    await suite.case("语言切换后复开步骤名随语言刷新", () => {
+      assert(
+        enLabel && enLabel.textContent === i18n.DICT.en["wizard.stepTemplate"],
+        `英文复开首步名应取 en 文案,实际 ${enLabel?.textContent}`,
+      );
+    });
+
     // ---- 关闭:焦点兜底路径不抛错 ----
-    bookWizard.closeBookWizard();
+    await suite.case("关闭时焦点兜底路径不抛错", () => {
+      bookWizard.closeBookWizard();
+    });
 
     console.log("[ok] wizard-open-sync:复开重建外壳 / 设置快照同步 / 目录模式下拉门控 / 步骤名随语言刷新 / 关闭焦点兜底 断言通过");
+    return { cases: suite.results };
   } finally {
     dom.restore();
   }

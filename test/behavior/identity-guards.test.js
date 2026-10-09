@@ -29,6 +29,7 @@ import { normalizeInlineHtml, parseInlineHtml } from "../../dist/core/docx/handl
 import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../harness/settings.js";
 import { ROOT } from "../harness/paths.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /**
  * 本段横跨的层(ADR-062 L6 判据要求 behavior 段显式声明):判据只校验「非空 ＋ 每个元素
@@ -108,16 +109,10 @@ function docxScannerAccepts(expr) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   // ================= (a) zh 文案恒等:STAGE_TEXT / formatRecentTime ↔ i18n 字典 zh =================
   // 字典键在本段按 convert.stage.* / recent.time.* 动态拼接,故取 Record 视图
   const DICT_ZH = /** @type {Record<string, string>} */ (DICT.zh);
-  for (const [stage, text] of Object.entries(STAGE_TEXT)) {
-    const key = `convert.stage.${stage}`;
-    assert(
-      DICT_ZH[key] === text,
-      `STAGE_TEXT.${stage}("${text}") 应与字典 ${key}("${DICT_ZH[key]}")逐字相等`,
-    );
-  }
   // stageText:默认输出 = 字典 zh 值;translate 注入时键名契约 convert.stage.*
   /**
    * 测试注入的翻译函数:键名契约同 i18n 字典 zh。
@@ -130,14 +125,27 @@ export async function run() {
   function fakeT(key, params) {
     return interpolate(DICT_ZH[key] ?? `<<missing:${key}>>`, params);
   }
-  for (const stage of Object.keys(STAGE_TEXT)) {
-    assert(stageText(stage) === DICT_ZH[`convert.stage.${stage}`], `stageText(${stage}) 默认输出应等于字典 zh 值`);
-    assert(
-      stageText(stage, fakeT) === DICT_ZH[`convert.stage.${stage}`],
-      `stageText(${stage}) 注入翻译后应等于字典值`,
-    );
-  }
-  assert(stageText("no-such-stage") === "no-such-stage", "未知阶段键应原样兜底");
+
+  await suite.case("STAGE_TEXT 逐阶段与 i18n 字典 zh 逐字相等", () => {
+    for (const [stage, text] of Object.entries(STAGE_TEXT)) {
+      const key = `convert.stage.${stage}`;
+      assert(
+        DICT_ZH[key] === text,
+        `STAGE_TEXT.${stage}("${text}") 应与字典 ${key}("${DICT_ZH[key]}")逐字相等`,
+      );
+    }
+  });
+
+  await suite.case("stageText 默认输出与注入翻译后均等于字典值", () => {
+    for (const stage of Object.keys(STAGE_TEXT)) {
+      assert(stageText(stage) === DICT_ZH[`convert.stage.${stage}`], `stageText(${stage}) 默认输出应等于字典 zh 值`);
+      assert(
+        stageText(stage, fakeT) === DICT_ZH[`convert.stage.${stage}`],
+        `stageText(${stage}) 注入翻译后应等于字典值`,
+      );
+    }
+    assert(stageText("no-such-stage") === "no-such-stage", "未知阶段键应原样兜底");
+  });
 
   // ---------- (a-2) 阶段键集三向恒等:STAGE_TEXT ↔ STAGE_PERCENT ↔ 契约字面量 ----------
   // 既有断言只查了单向(STAGE_TEXT ⊆ STAGE_PERCENT,见 test/renderer/renderer-pure.test.js),
@@ -150,18 +158,6 @@ export async function run() {
   const CONTRACT_STAGES = /** @type {const} */ ([
     "read", "render", "done", "parse", "inline", "mermaid", "katex", "print",
   ]);
-  for (const key of Object.keys(STAGE_TEXT)) {
-    assert(
-      key in STAGE_PERCENT,
-      `STAGE_PERCENT 缺 ${key} 键(STAGE_TEXT 与 STAGE_PERCENT 键集应双向相等)`,
-    );
-  }
-  for (const key of Object.keys(STAGE_PERCENT)) {
-    assert(
-      key in STAGE_TEXT,
-      `STAGE_TEXT 缺 ${key} 键(STAGE_TEXT 与 STAGE_PERCENT 键集应双向相等)`,
-    );
-  }
   // 两表键集恰好等于契约字面量(既不缺也不多);排序后逐字比对,不用逐元素 find 嵌套
   const expectedStageKeys = [...CONTRACT_STAGES].sort().join(",");
   /**
@@ -170,34 +166,55 @@ export async function run() {
    * @returns {string} 排序后的键名串
    */
   const sortedKeys = (obj) => Object.keys(obj).sort().join(",");
-  assert(
-    sortedKeys(STAGE_TEXT) === expectedStageKeys,
-    `STAGE_TEXT 键集应恰好等于契约阶段字面量,实际 ${sortedKeys(STAGE_TEXT)}`,
-  );
-  assert(
-    sortedKeys(STAGE_PERCENT) === expectedStageKeys,
-    `STAGE_PERCENT 键集应恰好等于契约阶段字面量,实际 ${sortedKeys(STAGE_PERCENT)}`,
-  );
-  // STAGE_INTERRUPTIBLE 纳入同一条等式:它是第三张受联合约束的表,同样不得多/缺键。
-  // 漏键在编译期已红(Record<ConvertStage, boolean>),但「改回 Record<string, boolean>」
-  // 放宽的那档只有运行期这条断言还响 —— 与上方两表同一处境,故同批守。
-  assert(
-    sortedKeys(STAGE_INTERRUPTIBLE) === expectedStageKeys,
-    `STAGE_INTERRUPTIBLE 键集应恰好等于契约阶段字面量,实际 ${sortedKeys(STAGE_INTERRUPTIBLE)}`,
-  );
-  // 语义锚:键集相等只证明「每个阶段都有决策」,不证明「决策内容对」——
-  // 把 print 的值写反(标成可中断)时上面的键集断言照样绿。这里逐阶段钉死取值。
-  // 不可中断者取自 printToPDF 本身是原子调用(electron-side.ts 调用前上报 print,
-  // 期间无取消检查点),是阶段物理属性,不随交付面变(CLI 的 pdf 同样走 print)。
-  // 遍历用 Object.entries(同本段上方 STAGE_TEXT 那处):键类型随表走,
-  // 用裸 string 索引 Record<ConvertStage, boolean> 在 @ts-check 下会被判无索引签名。
-  for (const [key, interruptible] of Object.entries(STAGE_INTERRUPTIBLE)) {
+
+  await suite.case("STAGE_TEXT 与 STAGE_PERCENT 键集双向相等", () => {
+    for (const key of Object.keys(STAGE_TEXT)) {
+      assert(
+        key in STAGE_PERCENT,
+        `STAGE_PERCENT 缺 ${key} 键(STAGE_TEXT 与 STAGE_PERCENT 键集应双向相等)`,
+      );
+    }
+    for (const key of Object.keys(STAGE_PERCENT)) {
+      assert(
+        key in STAGE_TEXT,
+        `STAGE_TEXT 缺 ${key} 键(STAGE_TEXT 与 STAGE_PERCENT 键集应双向相等)`,
+      );
+    }
+  });
+
+  await suite.case("三张阶段表键集恰好等于契约阶段字面量", () => {
     assert(
-      interruptible === (key !== "print"),
-      `STAGE_INTERRUPTIBLE.${key} 应为 ${key !== "print"}(仅 print(printToPDF 原子调用)不可中断)`,
+      sortedKeys(STAGE_TEXT) === expectedStageKeys,
+      `STAGE_TEXT 键集应恰好等于契约阶段字面量,实际 ${sortedKeys(STAGE_TEXT)}`,
     );
-  }
-  console.log("[ok] identity-guards:(a-2) STAGE_TEXT ↔ STAGE_PERCENT ↔ STAGE_INTERRUPTIBLE 键集双向相等且恰好等于契约阶段字面量;仅 print 不可中断 断言通过");
+    assert(
+      sortedKeys(STAGE_PERCENT) === expectedStageKeys,
+      `STAGE_PERCENT 键集应恰好等于契约阶段字面量,实际 ${sortedKeys(STAGE_PERCENT)}`,
+    );
+    // STAGE_INTERRUPTIBLE 纳入同一条等式:它是第三张受联合约束的表,同样不得多/缺键。
+    // 漏键在编译期已红(Record<ConvertStage, boolean>),但「改回 Record<string, boolean>」
+    // 放宽的那档只有运行期这条断言还响 —— 与上方两表同一处境,故同批守。
+    assert(
+      sortedKeys(STAGE_INTERRUPTIBLE) === expectedStageKeys,
+      `STAGE_INTERRUPTIBLE 键集应恰好等于契约阶段字面量,实际 ${sortedKeys(STAGE_INTERRUPTIBLE)}`,
+    );
+  });
+
+  await suite.case("STAGE_INTERRUPTIBLE 仅 print 不可中断", () => {
+    // 语义锚:键集相等只证明「每个阶段都有决策」,不证明「决策内容对」——
+    // 把 print 的值写反(标成可中断)时上面的键集断言照样绿。这里逐阶段钉死取值。
+    // 不可中断者取自 printToPDF 本身是原子调用(electron-side.ts 调用前上报 print,
+    // 期间无取消检查点),是阶段物理属性,不随交付面变(CLI 的 pdf 同样走 print)。
+    // 遍历用 Object.entries(同本段上方 STAGE_TEXT 那处):键类型随表走,
+    // 用裸 string 索引 Record<ConvertStage, boolean> 在 @ts-check 下会被判无索引签名。
+    for (const [key, interruptible] of Object.entries(STAGE_INTERRUPTIBLE)) {
+      assert(
+        interruptible === (key !== "print"),
+        `STAGE_INTERRUPTIBLE.${key} 应为 ${key !== "print"}(仅 print(printToPDF 原子调用)不可中断)`,
+      );
+    }
+    console.log("[ok] identity-guards:(a-2) STAGE_TEXT ↔ STAGE_PERCENT ↔ STAGE_INTERRUPTIBLE 键集双向相等且恰好等于契约阶段字面量;仅 print 不可中断 断言通过");
+  });
 
   // formatRecentTime 四分支:默认输出 ↔ recent.time.* 模板插值结果逐字相等
   const now = new Date(2026, 7, 24, 12, 0).getTime(); // 本地 2026-08-24 12:00
@@ -208,18 +225,20 @@ export async function run() {
     { ts: new Date(2024, 0, 2, 23, 59).getTime(), key: "recent.time.fullDate" },
   ];
   for (const { ts, key } of cases) {
-    const def = formatRecentTime(ts, now);
-    const d = new Date(ts);
-    const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-    // 字典键缺失时原实现会在此抛错(模板非字符串),此处只做非空收窄,行为不变
-    const expected = interpolate(/** @type {string} */ (DICT_ZH[key]), {
-      time,
-      year: d.getFullYear(),
-      month: d.getMonth() + 1,
-      day: d.getDate(),
+    await suite.case(`formatRecentTime(${key}) 与字典插值逐字相等`, () => {
+      const def = formatRecentTime(ts, now);
+      const d = new Date(ts);
+      const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+      // 字典键缺失时原实现会在此抛错(模板非字符串),此处只做非空收窄,行为不变
+      const expected = interpolate(/** @type {string} */ (DICT_ZH[key]), {
+        time,
+        year: d.getFullYear(),
+        month: d.getMonth() + 1,
+        day: d.getDate(),
+      });
+      assert(def === expected, `formatRecentTime(${key}) 默认输出"${def}"应与字典插值"${expected}"逐字相等`);
+      assert(formatRecentTime(ts, now, fakeT) === expected, `formatRecentTime(${key}) 注入翻译后应与字典插值一致`);
     });
-    assert(def === expected, `formatRecentTime(${key}) 默认输出"${def}"应与字典插值"${expected}"逐字相等`);
-    assert(formatRecentTime(ts, now, fakeT) === expected, `formatRecentTime(${key}) 注入翻译后应与字典插值一致`);
   }
   console.log("[ok] identity-guards:(a) STAGE_TEXT/stageText/formatRecentTime ↔ i18n 字典 zh 逐字恒等 断言通过");
 
@@ -227,14 +246,17 @@ export async function run() {
   // renderer 侧未导出:源码文本提取断言,重命名/改值未同步即失败
   const recentFilesSrc = await fs.readFile(path.join(ROOT, "src/renderer/ui/recent-files.ts"), "utf8");
   const m = /const MAX_RECENT_FILES = (\d+);/.exec(recentFilesSrc);
-  assert(m !== null, "recent-files.ts 应存在 MAX_RECENT_FILES 常量声明(声明形态变更须同步本守护段)");
-  // 正则第 1 组必然参与匹配(上面已断言命中),此处按非空收窄
-  const rendererMaxRecent = Number(/** @type {RegExpExecArray} */ (m)[1]);
-  assert(
-    rendererMaxRecent === MAIN_MAX_RECENT_FILES,
-    `renderer MAX_RECENT_FILES(${rendererMaxRecent}) 应与 main ui-state.ts(${MAIN_MAX_RECENT_FILES})恒等`,
-  );
-  console.log(`[ok] identity-guards:(b) MAX_RECENT_FILES 双侧恒等(${MAIN_MAX_RECENT_FILES}) 断言通过`);
+
+  await suite.case("MAX_RECENT_FILES 双侧恒等", () => {
+    assert(m !== null, "recent-files.ts 应存在 MAX_RECENT_FILES 常量声明(声明形态变更须同步本守护段)");
+    // 正则第 1 组必然参与匹配(上面已断言命中),此处按非空收窄
+    const rendererMaxRecent = Number(/** @type {RegExpExecArray} */ (m)[1]);
+    assert(
+      rendererMaxRecent === MAIN_MAX_RECENT_FILES,
+      `renderer MAX_RECENT_FILES(${rendererMaxRecent}) 应与 main ui-state.ts(${MAIN_MAX_RECENT_FILES})恒等`,
+    );
+    console.log(`[ok] identity-guards:(b) MAX_RECENT_FILES 双侧恒等(${MAIN_MAX_RECENT_FILES}) 断言通过`);
+  });
 
   // ================= (c) 设置防御性合并双侧抽样一致:loadSettings ↔ mergeSettingsWithDefaults =================
   const { restore } = await backupSettingsFile();
@@ -261,14 +283,16 @@ export async function run() {
       "outputDir", "pdfCss", "language", "theme", "pageSetup", "typography", "customPresets", "headerFooter",
       "aiCleanup", "obsidian",
     ]);
-    for (const k of sampledKeys) {
-      assert(
-        stable(mainLoaded[k]) === stable(merged1[k]),
-        `旧文件场景字段 ${k} 双侧应一致:main=${stable(mainLoaded[k])} renderer=${stable(merged1[k])}`,
-      );
-    }
-    assert(mainLoaded.theme === "system" && mainLoaded.language === "zh" && mainLoaded.pdfCss === "",
-      "旧文件缺失 theme/language/pdfCss 兜底值抽查(system/zh/\"\")");
+    await suite.case("旧版合法文件场景双侧关键字段抽样一致", () => {
+      for (const k of sampledKeys) {
+        assert(
+          stable(mainLoaded[k]) === stable(merged1[k]),
+          `旧文件场景字段 ${k} 双侧应一致:main=${stable(mainLoaded[k])} renderer=${stable(merged1[k])}`,
+        );
+      }
+      assert(mainLoaded.theme === "system" && mainLoaded.language === "zh" && mainLoaded.pdfCss === "",
+        "旧文件缺失 theme/language/pdfCss 兜底值抽查(system/zh/\"\")");
+    });
 
     // 场景 2:完整合法文件 → 双侧均原样保留,全字段一致。
     // 注意 customPresets 条目须字段齐全:main 侧逐条 sanitize 会补默认值,而
@@ -297,8 +321,10 @@ export async function run() {
     const mod2 = await freshSettingsModule("identity-full");
     const mainLoaded2 = mod2.loadSettings();
     const merged2 = mergeSettingsWithDefaults(fullRaw);
-    assert(stable(mainLoaded2) === stable(merged2), "完整合法文件场景双侧产出应整体一致");
-    console.log("[ok] identity-guards:(c) 设置防御性合并双侧关键字段抽样一致(旧文件兜底/完整保留)断言通过");
+    await suite.case("完整合法文件场景双侧产出整体一致", () => {
+      assert(stable(mainLoaded2) === stable(merged2), "完整合法文件场景双侧产出应整体一致");
+      console.log("[ok] identity-guards:(c) 设置防御性合并双侧关键字段抽样一致(旧文件兜底/完整保留)断言通过");
+    });
   } finally {
     await restore();
   }
@@ -330,42 +356,58 @@ export async function run() {
     "<em>a</em></em>", // 多余闭标签(错配)
     "a < b", // 文本段裸 <
   ];
-  for (const expr of validSamples) {
-    assert(isAllowedInlineHtml(expr) === true, `白名单侧应接受:${expr}`);
-    assert(docxScannerAccepts(expr) === true, `docx 扫描器应接受(合并出原串):${expr}`);
-  }
-  for (const expr of invalidSamples) {
-    assert(isAllowedInlineHtml(expr) === false, `白名单侧应拒绝:${expr}`);
-    assert(docxScannerAccepts(expr) === false, `docx 扫描器应拒绝(不合并出原串):${expr}`);
-  }
-  // 相邻两组表达式专项:白名单侧整串接受(栈清空即合法);docx 侧按「各自构成
-  // 完整表达式」分别合并为两个 html 节点——两侧对每个子表达式的接受性一致,
-  // 且内容均不丢失(结构差异记录:docx 合并粒度 = 单个完整表达式)。
-  const adjacentExpr = "<code>x</code><kbd>y</kbd>";
-  assert(isAllowedInlineHtml(adjacentExpr) === true, "相邻两组表达式整串应被白名单接受");
-  const adjacentNodes = normalizeInlineHtml(splitHtmlNodes(adjacentExpr)).filter(
-    (n) => n.type === "html",
-  );
-  // 判据逐字比对两个合并出的原串;noUncheckedIndexedAccess 下按下标取可能为 undefined,
-  // 故先解构并判空 —— 不靠 `!` 或默认值糊掉(判据要能因「只合并出一个节点」而红)。
-  const [firstExpr, secondExpr] = adjacentNodes;
-  assert(
-    adjacentNodes.length === 2 &&
-      firstExpr !== undefined && firstExpr.value === "<code>x</code>" &&
-      secondExpr !== undefined && secondExpr.value === "<kbd>y</kbd>",
-    `docx 扫描器应将相邻表达式合并为两个独立 html 节点,实际 ${JSON.stringify(adjacentNodes.map((n) => n.value))}`,
-  );
-  // parseInlineHtml 对合法表达式的内容重建:文本项拼接 = 剥除全部标签后的纯文本
-  for (const expr of validSamples) {
-    const items = parseInlineHtml(expr);
-    const rebuilt = items.map((it) => ("break" in it ? "" : /** @type {{ text: string }} */ (it).text)).join("");
-    assert(
-      rebuilt === expr.replace(/<[^<>]*>/g, ""),
-      `parseInlineHtml 文本重建应等于剥标签纯文本:${expr} → "${rebuilt}"`,
+  await suite.case("合法样本双份扫描算法一致接受", () => {
+    for (const expr of validSamples) {
+      assert(isAllowedInlineHtml(expr) === true, `白名单侧应接受:${expr}`);
+      assert(docxScannerAccepts(expr) === true, `docx 扫描器应接受(合并出原串):${expr}`);
+    }
+  });
+
+  await suite.case("非法样本双份扫描算法一致拒绝", () => {
+    for (const expr of invalidSamples) {
+      assert(isAllowedInlineHtml(expr) === false, `白名单侧应拒绝:${expr}`);
+      assert(docxScannerAccepts(expr) === false, `docx 扫描器应拒绝(不合并出原串):${expr}`);
+    }
+  });
+
+  await suite.case("相邻两组表达式被合并为两个独立 html 节点", () => {
+    // 相邻两组表达式专项:白名单侧整串接受(栈清空即合法);docx 侧按「各自构成
+    // 完整表达式」分别合并为两个 html 节点——两侧对每个子表达式的接受性一致,
+    // 且内容均不丢失(结构差异记录:docx 合并粒度 = 单个完整表达式)。
+    const adjacentExpr = "<code>x</code><kbd>y</kbd>";
+    assert(isAllowedInlineHtml(adjacentExpr) === true, "相邻两组表达式整串应被白名单接受");
+    const adjacentNodes = normalizeInlineHtml(splitHtmlNodes(adjacentExpr)).filter(
+      (n) => n.type === "html",
     );
-  }
-  // br 专项:每个 br 标签(含自闭合)恰产出一个 break 项
-  const brItems = parseInlineHtml("a<br>b<br/>c<br />d");
-  assert(brItems.filter((it) => "break" in it).length === 3, "3 个 br 变体应各产出一个 break 项");
-  console.log("[ok] identity-guards:(d) 行内 HTML 白名单双份扫描算法样本产出一致 + 相邻表达式 + parseInlineHtml 重建 断言通过");
+    // 判据逐字比对两个合并出的原串;noUncheckedIndexedAccess 下按下标取可能为 undefined,
+    // 故先解构并判空 —— 不靠 `!` 或默认值糊掉(判据要能因「只合并出一个节点」而红)。
+    const [firstExpr, secondExpr] = adjacentNodes;
+    assert(
+      adjacentNodes.length === 2 &&
+        firstExpr !== undefined && firstExpr.value === "<code>x</code>" &&
+        secondExpr !== undefined && secondExpr.value === "<kbd>y</kbd>",
+      `docx 扫描器应将相邻表达式合并为两个独立 html 节点,实际 ${JSON.stringify(adjacentNodes.map((n) => n.value))}`,
+    );
+  });
+
+  await suite.case("parseInlineHtml 对合法样本重建出剥标签纯文本", () => {
+    // parseInlineHtml 对合法表达式的内容重建:文本项拼接 = 剥除全部标签后的纯文本
+    for (const expr of validSamples) {
+      const items = parseInlineHtml(expr);
+      const rebuilt = items.map((it) => ("break" in it ? "" : /** @type {{ text: string }} */ (it).text)).join("");
+      assert(
+        rebuilt === expr.replace(/<[^<>]*>/g, ""),
+        `parseInlineHtml 文本重建应等于剥标签纯文本:${expr} → "${rebuilt}"`,
+      );
+    }
+  });
+
+  await suite.case("三个 br 变体各产出一个 break 项", () => {
+    // br 专项:每个 br 标签(含自闭合)恰产出一个 break 项
+    const brItems = parseInlineHtml("a<br>b<br/>c<br />d");
+    assert(brItems.filter((it) => "break" in it).length === 3, "3 个 br 变体应各产出一个 break 项");
+    console.log("[ok] identity-guards:(d) 行内 HTML 白名单双份扫描算法样本产出一致 + 相邻表达式 + parseInlineHtml 重建 断言通过");
+  });
+
+  return { cases: suite.results };
 }

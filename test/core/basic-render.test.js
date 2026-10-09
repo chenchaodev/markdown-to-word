@@ -21,6 +21,7 @@ import { FIXTURES_DIR } from "../harness/paths.js";
 import { unzipPart } from "../harness/docx-utils.js";
 import { saveArtifact } from "../harness/artifacts.js";
 import { asDocxArtifact, asPdfArtifact, convertWithFs } from "../harness/convert-helpers.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /** @typedef {import("../../dist/core/i18n/index.js").ConvertWarning} Warning */
 
@@ -105,6 +106,7 @@ function paragraphProps(xml, text) {
 }
 
 export async function run() {
+  const suite = createCaseSuite();
   const ast = parseMarkdown(markdown);
   const buffer = await renderDocx(ast, {
     imageResolver: async (/** @type {string} */ src) => {
@@ -119,18 +121,24 @@ export async function run() {
   });
 
   // 断言 1:docx buffer 非空
-  if (buffer.length === 0) {
-    throw new Error("basic-render 断言失败:docx buffer 为空");
-  }
+  await suite.case("主样例 docx buffer 非空", () => {
+    if (buffer.length === 0) {
+      throw new Error("basic-render 断言失败:docx buffer 为空");
+    }
+  });
   const documentXml = await unzipPart(buffer, "word/document.xml");
   // 断言 2:document.xml 含表格
-  if (!documentXml.includes("<w:tbl")) {
-    throw new Error("basic-render 断言失败:document.xml 缺少表格(<w:tbl)");
-  }
+  await suite.case("主样例 document.xml 含表格", () => {
+    if (!documentXml.includes("<w:tbl")) {
+      throw new Error("basic-render 断言失败:document.xml 缺少表格(<w:tbl)");
+    }
+  });
   // 断言 3:document.xml 含粗体文本
-  if (!documentXml.includes("粗体内容")) {
-    throw new Error("basic-render 断言失败:document.xml 缺少粗体文本(粗体内容)");
-  }
+  await suite.case("主样例 document.xml 含粗体文本", () => {
+    if (!documentXml.includes("粗体内容")) {
+      throw new Error("basic-render 断言失败:document.xml 缺少粗体文本(粗体内容)");
+    }
+  });
   console.log("[ok] basic-render:全要素样例渲染成功,表格与粗体文本断言通过");
 
   // ---------- 补充断言:代码块 / 引用块 / 列表 / 表格表头(实现 src/core/docx/render.ts) ----------
@@ -138,24 +146,28 @@ export async function run() {
   // 色板),每个 token 一个 TextRun(字体 CODE_FONT=Consolas、字号随正文字号推导,
   // 见下方断言),行间 <w:br/> run;无语言/未知语言
   // 降级为等宽文本原样输出。function 关键字 → keyword 类 → CF222E。
-  if (!documentXml.includes('<w:color w:val="CF222E"/>')) {
-    throw new Error('basic-render 断言失败:代码块 function 关键字未着色(<w:color w:val="CF222E"/>)');
-  }
+  await suite.case("代码块 function 关键字着色(CF222E)", () => {
+    if (!documentXml.includes('<w:color w:val="CF222E"/>')) {
+      throw new Error('basic-render 断言失败:代码块 function 关键字未着色(<w:color w:val="CF222E"/>)');
+    }
+  });
   // 高亮 run 结构:Consolas + 随正文推导的 w:sz(每个代码 run 均带)。
   // 代码「字号」不再是 theme 的固定常量 —— 它随正文字号变化,单源在
   // core/settings/typography.ts 的 codeBlockFontSizePt,故此处比对推导值而非写死数字;
   // 比例本身的正确性由 dual-pipeline-matrix 的 derived-font-sizes 行在两个字号档锁定。
   const codeBlockHalfPoints = ptToHalfPoints(codeBlockFontSizePt(DEFAULT_TYPOGRAPHY.bodySizePt));
-  if (
-    !documentXml.includes(
-      '<w:rFonts w:ascii="Consolas" w:cs="Consolas" w:eastAsia="Consolas" w:hAnsi="Consolas"/>' +
-        `<w:sz w:val="${codeBlockHalfPoints}"/><w:szCs w:val="${codeBlockHalfPoints}"/>`,
-    )
-  ) {
-    throw new Error(
-      `basic-render 断言失败:代码块 run 缺少 Consolas + w:sz val=${codeBlockHalfPoints}(代码块字号未按正文推导落地)`,
-    );
-  }
+  await suite.case("代码块 run 带 Consolas + 按正文推导的 w:sz", () => {
+    if (
+      !documentXml.includes(
+        '<w:rFonts w:ascii="Consolas" w:cs="Consolas" w:eastAsia="Consolas" w:hAnsi="Consolas"/>' +
+          `<w:sz w:val="${codeBlockHalfPoints}"/><w:szCs w:val="${codeBlockHalfPoints}"/>`,
+      )
+    ) {
+      throw new Error(
+        `basic-render 断言失败:代码块 run 缺少 Consolas + w:sz val=${codeBlockHalfPoints}(代码块字号未按正文推导落地)`,
+      );
+    }
+  });
   // 高亮拆分后文本片段仍完整(模板字符串被拆为 string 段 `Hello, / subst 段 ${name} /
   // 默认段,不再整行单 run):逐片段断言,保证文本内容不丢失
   const codeFragments = [
@@ -169,28 +181,38 @@ export async function run() {
     '<w:t xml:space="preserve">}</w:t>',
   ];
   for (const frag of codeFragments) {
-    if (!documentXml.includes(frag)) {
-      throw new Error(`basic-render 断言失败:代码块高亮拆分后缺少片段 ${frag}`);
-    }
+    await suite.case(`代码块高亮拆分后片段保留:${frag}`, () => {
+      if (!documentXml.includes(frag)) {
+        throw new Error(`basic-render 断言失败:代码块高亮拆分后缺少片段 ${frag}`);
+      }
+    });
   }
   // 3 行代码 → 2 个行间换行 run(renderCode 每非末行追加 break run)
-  if ((documentXml.match(/<w:br\/>/g) || []).length !== 2) {
-    throw new Error("basic-render 断言失败:代码块换行 run(<w:br/>)数量 != 2(3 行 2 断)");
-  }
+  await suite.case("代码块 3 行产出 2 个行间换行 run", () => {
+    if ((documentXml.match(/<w:br\/>/g) || []).length !== 2) {
+      throw new Error("basic-render 断言失败:代码块换行 run(<w:br/>)数量 != 2(3 行 2 断)");
+    }
+  });
   // 代码块段落左缩进 360 twips(renderCode indent: { left: 360 };末行 } 为默认色单 run)
-  if (!paragraphProps(documentXml, "}").includes('<w:ind w:left="360"/>')) {
-    throw new Error('basic-render 断言失败:代码块段落缺少 w:ind w:left="360"');
-  }
+  await suite.case("代码块段落左缩进 360", () => {
+    if (!paragraphProps(documentXml, "}").includes('<w:ind w:left="360"/>')) {
+      throw new Error('basic-render 断言失败:代码块段落缺少 w:ind w:left="360"');
+    }
+  });
   console.log("[ok] basic-render:代码块 docx 序列化(hljs 高亮/Consolas/10pt/逐行 w:br)断言通过");
 
   // 引用块(renderBlockquote):indent left 720 + shading fill F2F2F2(type clear)
   const quotePPr = paragraphProps(documentXml, "这是引用块内容,Quote with mixed 中文。");
-  if (!quotePPr.includes('<w:shd w:fill="F2F2F2" w:val="clear"/>')) {
-    throw new Error('basic-render 断言失败:引用块段落缺少灰底(<w:shd w:fill="F2F2F2" w:val="clear"/>)');
-  }
-  if (!quotePPr.includes('<w:ind w:left="720"/>')) {
-    throw new Error('basic-render 断言失败:引用块段落缺少左缩进(<w:ind w:left="720"/>)');
-  }
+  await suite.case("引用块段落带灰底 F2F2F2", () => {
+    if (!quotePPr.includes('<w:shd w:fill="F2F2F2" w:val="clear"/>')) {
+      throw new Error('basic-render 断言失败:引用块段落缺少灰底(<w:shd w:fill="F2F2F2" w:val="clear"/>)');
+    }
+  });
+  await suite.case("引用块段落左缩进 720", () => {
+    if (!quotePPr.includes('<w:ind w:left="720"/>')) {
+      throw new Error('basic-render 断言失败:引用块段落缺少左缩进(<w:ind w:left="720"/>)');
+    }
+  });
   console.log("[ok] basic-render:引用块 docx 序列化(左缩进 720 + 灰底 F2F2F2)断言通过");
 
   // 列表(renderList):无序/有序分别挂 numbering(reference md-list-bullet/md-list-number,
@@ -205,33 +227,43 @@ export async function run() {
     ["有序嵌套 a", 1], // 有序二级
   ];
   for (const [text, level] of listCases) {
-    const pPr = paragraphProps(documentXml, text);
-    if (!pPr.includes("<w:numPr>")) throw new Error(`basic-render 断言失败:列表项「${text}」缺少 w:numPr`);
-    if (!pPr.includes(`<w:ilvl w:val="${level}"/>`)) {
-      throw new Error(`basic-render 断言失败:列表项「${text}」期望 w:ilvl val="${level}"`);
-    }
+    await suite.case(`列表项「${text}」挂 w:numPr 且 ilvl 为 ${level}`, () => {
+      const pPr = paragraphProps(documentXml, text);
+      if (!pPr.includes("<w:numPr>")) throw new Error(`basic-render 断言失败:列表项「${text}」缺少 w:numPr`);
+      if (!pPr.includes(`<w:ilvl w:val="${level}"/>`)) {
+        throw new Error(`basic-render 断言失败:列表项「${text}」期望 w:ilvl val="${level}"`);
+      }
+    });
   }
   const numberingXml = await unzipPart(buffer, "word/numbering.xml");
   // 无序列表:bullet 项目符号 •(numberingOptions bulletText[0],序列化 w:lvlText w:val="•")
-  if (!numberingXml.includes('<w:numFmt w:val="bullet"/>') || !numberingXml.includes('<w:lvlText w:val="•"/>')) {
-    throw new Error('basic-render 断言失败:numbering.xml 缺少无序列表(bullet + lvlText "•")');
-  }
+  await suite.case("numbering.xml 含无序列表定义(bullet + lvlText)", () => {
+    if (!numberingXml.includes('<w:numFmt w:val="bullet"/>') || !numberingXml.includes('<w:lvlText w:val="•"/>')) {
+      throw new Error('basic-render 断言失败:numbering.xml 缺少无序列表(bullet + lvlText "•")');
+    }
+  });
   // 有序列表:decimal 序号 %1.(numberingOptions text: `%${level+1}.` → w:lvlText w:val="%1.")
-  if (!numberingXml.includes('<w:numFmt w:val="decimal"/>') || !numberingXml.includes('<w:lvlText w:val="%1."/>')) {
-    throw new Error('basic-render 断言失败:numbering.xml 缺少有序列表(decimal + lvlText "%1.")');
-  }
+  await suite.case("numbering.xml 含有序列表定义(decimal + lvlText)", () => {
+    if (!numberingXml.includes('<w:numFmt w:val="decimal"/>') || !numberingXml.includes('<w:lvlText w:val="%1."/>')) {
+      throw new Error('basic-render 断言失败:numbering.xml 缺少有序列表(decimal + lvlText "%1.")');
+    }
+  });
   console.log("[ok] basic-render:列表 docx 序列化(w:numPr/ilvl 层级 + numbering.xml bullet/decimal)断言通过");
 
   // 表格表头(renderTable rowIndex===0 传 style { bold: true } → run 级 <w:b/><w:bCs/>;
   // 数据行无样式,run 无 rPr)
   for (const head of ["功能", "状态", "说明"]) {
-    if (!documentXml.includes(`<w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">${head}</w:t>`)) {
-      throw new Error(`basic-render 断言失败:表格表头「${head}」run 缺少加粗(<w:b/><w:bCs/>)`);
+    await suite.case(`表格表头「${head}」run 加粗`, () => {
+      if (!documentXml.includes(`<w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">${head}</w:t>`)) {
+        throw new Error(`basic-render 断言失败:表格表头「${head}」run 缺少加粗(<w:b/><w:bCs/>)`);
+      }
+    });
+  }
+  await suite.case("表格数据行不加粗(仅首行加粗)", () => {
+    if (documentXml.includes('<w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">标题渲染</w:t>')) {
+      throw new Error("basic-render 断言失败:表格数据行「标题渲染」不应加粗(仅表头行加粗)");
     }
-  }
-  if (documentXml.includes('<w:rPr><w:b/><w:bCs/></w:rPr><w:t xml:space="preserve">标题渲染</w:t>')) {
-    throw new Error("basic-render 断言失败:表格数据行「标题渲染」不应加粗(仅表头行加粗)");
-  }
+  });
   console.log("[ok] basic-render:表格表头加粗(w:b/w:bCs,仅首行)断言通过");
 
   // ---------- 补充断言:图片尺寸与 webp 降级(实现 src/core/docx/render.ts imageToDocx) ----------
@@ -239,13 +271,17 @@ export async function run() {
   // 无法解析尺寸 → 400×300 兜底。docx 库按像素转 EMU(1px = 9525 EMU),
   // 序列化为 <wp:extent cx="…" cy="…"/>。
   // g1-tiny.png(1×1):宽 ≤ 400 不放大 → 1×1(期望 cx=9525 cy=9525)
-  if (!documentXml.includes('<wp:extent cx="9525" cy="9525"/>')) {
-    throw new Error("basic-render 断言失败:1×1 小图被放大(期望 cx=9525 cy=9525 原尺寸)");
-  }
+  await suite.case("1×1 小图不放大(原尺寸 extent)", () => {
+    if (!documentXml.includes('<wp:extent cx="9525" cy="9525"/>')) {
+      throw new Error("basic-render 断言失败:1×1 小图被放大(期望 cx=9525 cy=9525 原尺寸)");
+    }
+  });
   // img-800x400.png(2:1):宽 > 400 等比缩到 400 → 400×200(期望 cx=3810000 cy=1905000)
-  if (!documentXml.includes('<wp:extent cx="3810000" cy="1905000"/>')) {
-    throw new Error("basic-render 断言失败:800×400 大图未等比缩放(期望 cx=3810000 cy=1905000)");
-  }
+  await suite.case("800×400 大图等比缩到 400 宽", () => {
+    if (!documentXml.includes('<wp:extent cx="3810000" cy="1905000"/>')) {
+      throw new Error("basic-render 断言失败:800×400 大图未等比缩放(期望 cx=3810000 cy=1905000)");
+    }
+  });
   console.log("[ok] basic-render:图片尺寸(docx 小图不放大 + 大图等比缩放)断言通过");
 
   // webp 降级:docx 库不支持 webp 内嵌 → 占位文本 + 警告。
@@ -264,16 +300,20 @@ export async function run() {
     const text = typeof w === "string" ? w : formatWarning(w);
     return text.includes("webp") && text.includes("已跳过");
   });
-  if (!webpWarnOk) {
-    throw new Error("basic-render 断言失败:webp 图片未产生降级警告(期望含 webp 与 已跳过)");
-  }
+  await suite.case("webp 图片产生降级警告", () => {
+    if (!webpWarnOk) {
+      throw new Error("basic-render 断言失败:webp 图片未产生降级警告(期望含 webp 与 已跳过)");
+    }
+  });
   const webpXml = await unzipPart(webpBuffer, "word/document.xml");
-  if (!webpXml.includes("[图片: webp]")) {
-    throw new Error("basic-render 断言失败:webp 图片未降级为占位文本([图片: webp])");
-  }
-  if (webpXml.includes("<w:drawing>")) {
-    throw new Error("basic-render 断言失败:webp 图片不应生成 drawing(未降级)");
-  }
+  await suite.case("webp 图片降级为占位文本且不产 drawing", () => {
+    if (!webpXml.includes("[图片: webp]")) {
+      throw new Error("basic-render 断言失败:webp 图片未降级为占位文本([图片: webp])");
+    }
+    if (webpXml.includes("<w:drawing>")) {
+      throw new Error("basic-render 断言失败:webp 图片不应生成 drawing(未降级)");
+    }
+  });
   console.log("[ok] basic-render:webp 图片降级(warning + 占位文本,主样例不受影响)断言通过");
 
   // ---------- 未知魔数图片跳过嵌入(sniffImageType null 化,imageToDocx 调用方处理) ----------
@@ -285,16 +325,20 @@ export async function run() {
     imageResolver: async () => Buffer.from("not-an-image"),
     warnings: unknownWarnings,
   });
-  if (!unknownWarnings.some((w) => formatWarning(w).includes("图片格式无法识别") && formatWarning(w).includes("junk.bin"))) {
-    throw new Error(`basic-render 断言失败:未知魔数图片未产生跳过警告,warnings=${JSON.stringify(unknownWarnings)}`);
-  }
+  await suite.case("未知魔数图片产生跳过警告", () => {
+    if (!unknownWarnings.some((w) => formatWarning(w).includes("图片格式无法识别") && formatWarning(w).includes("junk.bin"))) {
+      throw new Error(`basic-render 断言失败:未知魔数图片未产生跳过警告,warnings=${JSON.stringify(unknownWarnings)}`);
+    }
+  });
   const unknownXml = await unzipPart(unknownBuffer, "word/document.xml");
-  if (!unknownXml.includes("[图片: 坏图]")) {
-    throw new Error("basic-render 断言失败:未知魔数图片未降级为占位文本");
-  }
-  if (unknownXml.includes("<w:drawing>")) {
-    throw new Error("basic-render 断言失败:未知魔数图片不应生成 drawing");
-  }
+  await suite.case("未知魔数图片降级为占位文本且不产 drawing", () => {
+    if (!unknownXml.includes("[图片: 坏图]")) {
+      throw new Error("basic-render 断言失败:未知魔数图片未降级为占位文本");
+    }
+    if (unknownXml.includes("<w:drawing>")) {
+      throw new Error("basic-render 断言失败:未知魔数图片不应生成 drawing");
+    }
+  });
   console.log("[ok] basic-render:未知魔数图片跳过嵌入(警告 + 占位文本)断言通过");
 
   // ---------- GFM 表格对齐(renderTable node.align → 段落 w:jc center/right) ----------
@@ -308,12 +352,14 @@ export async function run() {
     ),
   );
   const alignXml = await unzipPart(alignDocx.buffer, "word/document.xml");
-  if (!alignXml.includes('<w:jc w:val="center"/>')) {
-    throw new Error("basic-render 断言失败:表格居中列缺少 w:jc center");
-  }
-  if (!alignXml.includes('<w:jc w:val="right"/>')) {
-    throw new Error("basic-render 断言失败:表格右对齐列缺少 w:jc right");
-  }
+  await suite.case("表格对齐样式产出 center 与 right 两列的 w:jc", () => {
+    if (!alignXml.includes('<w:jc w:val="center"/>')) {
+      throw new Error("basic-render 断言失败:表格居中列缺少 w:jc center");
+    }
+    if (!alignXml.includes('<w:jc w:val="right"/>')) {
+      throw new Error("basic-render 断言失败:表格右对齐列缺少 w:jc right");
+    }
+  });
   // 居中列单元格文本 b 的段落属性含 center(列对齐落到单元格内段落)
   const bProps = (() => {
     const idx = alignXml.indexOf(`<w:t xml:space="preserve">b</w:t>`);
@@ -322,9 +368,11 @@ export async function run() {
     const end = alignXml.indexOf("</w:pPr>", start);
     return start === -1 || end === -1 ? "" : alignXml.slice(start, end);
   })();
-  if (!bProps.includes('w:val="center"')) {
-    throw new Error(`basic-render 断言失败:居中列单元格段落属性缺 center:${bProps}`);
-  }
+  await suite.case("居中列单元格段落属性含 center", () => {
+    if (!bProps.includes('w:val="center"')) {
+      throw new Error(`basic-render 断言失败:居中列单元格段落属性缺 center:${bProps}`);
+    }
+  });
   console.log("[ok] basic-render:表格列对齐(:--/:-:/--: → 缺省/center/right)断言通过");
 
   // ---------- 自闭合 <br/> 白名单放行(html-whitelist 三处扫描器同步) ----------
@@ -333,18 +381,22 @@ export async function run() {
     await convertTyped("<strong>粗</strong><br/>换行后", "docx", { baseDir: FIXTURES_DIR, warnings: [] }),
   );
   const brXml = await unzipPart(brDocx.buffer, "word/document.xml");
-  if (!brXml.includes("<w:br/>")) throw new Error("basic-render 断言失败:<br/> 未产出换行 run(<w:br/>)");
-  if (!brXml.includes("换行后")) throw new Error("basic-render 断言失败:<br/> 后文本被危险段丢弃");
-  if (!brXml.includes(">粗<")) throw new Error("basic-render 断言失败:<strong> 内容丢失");
+  await suite.case("docx 侧 <br/> 产出换行 run 且后续文本与 <strong> 内容不丢", () => {
+    if (!brXml.includes("<w:br/>")) throw new Error("basic-render 断言失败:<br/> 未产出换行 run(<w:br/>)");
+    if (!brXml.includes("换行后")) throw new Error("basic-render 断言失败:<br/> 后文本被危险段丢弃");
+    if (!brXml.includes(">粗<")) throw new Error("basic-render 断言失败:<strong> 内容丢失");
+  });
   const brPdf = asPdfArtifact(
     await convertTyped("<strong>粗</strong><br/>换行后", "pdf", { baseDir: FIXTURES_DIR, warnings: [] }),
   );
-  if (brPdf.html.includes("&lt;strong&gt;")) {
-    throw new Error(`basic-render 断言失败:pdf 侧合法表达式仍被转义:\n${brPdf.html}`);
-  }
-  if (!brPdf.html.includes("<br/>") || !brPdf.html.includes("<strong>粗</strong>")) {
-    throw new Error(`basic-render 断言失败:pdf 侧 <br/>/<strong> 未按白名单原样输出:\n${brPdf.html}`);
-  }
+  await suite.case("pdf 侧 <br/>/<strong> 按白名单原样输出(不转义)", () => {
+    if (brPdf.html.includes("&lt;strong&gt;")) {
+      throw new Error(`basic-render 断言失败:pdf 侧合法表达式仍被转义:\n${brPdf.html}`);
+    }
+    if (!brPdf.html.includes("<br/>") || !brPdf.html.includes("<strong>粗</strong>")) {
+      throw new Error(`basic-render 断言失败:pdf 侧 <br/>/<strong> 未按白名单原样输出:\n${brPdf.html}`);
+    }
+  });
   console.log("[ok] basic-render:自闭合 <br/> 白名单放行(docx 渲染 + pdf 不转义)断言通过");
 
   // 缺失图片警告(检查并入 imageResolver 失败路径,dist/core/convert.ts 已移除
@@ -361,9 +413,11 @@ export async function run() {
   const missingWarnOk = missingWarnings.some(
     (w) => formatWarning(w).includes("图片加载失败:") && formatWarning(w).includes("missing-img.png"),
   );
-  if (!missingWarnOk) {
-    throw new Error("basic-render 断言失败:warnings 缺少「图片加载失败: missing-img.png」");
-  }
+  await suite.case("docx 侧缺失图片产生统一加载失败警告", () => {
+    if (!missingWarnOk) {
+      throw new Error("basic-render 断言失败:warnings 缺少「图片加载失败: missing-img.png」");
+    }
+  });
   console.log("[ok] basic-render:缺失图片警告(warnings 含「图片加载失败:」与文件名)断言通过");
 
   // pdf 侧同文案:checkLocalImages 经 resolver 失败路径(替代 convert 层 stat 预扫)
@@ -374,9 +428,11 @@ export async function run() {
     imageResolver: async () => null,
     warnings: pdfMissingWarnings,
   });
-  if (!pdfMissingWarnings.some((w) => formatWarning(w).includes("图片加载失败:") && formatWarning(w).includes("missing-img.png"))) {
-    throw new Error("basic-render 断言失败:pdf 缺失图片应产生统一「图片加载失败:」警告");
-  }
+  await suite.case("pdf 侧缺失图片产生统一加载失败警告", () => {
+    if (!pdfMissingWarnings.some((w) => formatWarning(w).includes("图片加载失败:") && formatWarning(w).includes("missing-img.png"))) {
+      throw new Error("basic-render 断言失败:pdf 缺失图片应产生统一「图片加载失败:」警告");
+    }
+  });
   console.log("[ok] basic-render:pdf 缺失图片警告(统一文案经 resolver 失败路径)断言通过");
 
   // ---------- PDF 本地图片边界:拒绝 src 改写为越界 file:// ----------
@@ -390,12 +446,14 @@ export async function run() {
       warnings: [],
     }),
   );
-  if (absoluteBoundaryPdf.html.includes(pathToFileURL(path.join(FIXTURES_DIR, "input", "g1-tiny.png")).href)) {
-    throw new Error("basic-render 断言失败:PDF 绝对本地图片路径被改写为 file URL");
-  }
-  if (absoluteBoundaryPdf.html.includes("g1-tiny.png")) {
-    throw new Error("basic-render 断言失败:PDF 越界图片原始路径仍交给 Chromium");
-  }
+  await suite.case("PDF 绝对本地图片路径不改写为 file URL、原始路径不交给 Chromium", () => {
+    if (absoluteBoundaryPdf.html.includes(pathToFileURL(path.join(FIXTURES_DIR, "input", "g1-tiny.png")).href)) {
+      throw new Error("basic-render 断言失败:PDF 绝对本地图片路径被改写为 file URL");
+    }
+    if (absoluteBoundaryPdf.html.includes("g1-tiny.png")) {
+      throw new Error("basic-render 断言失败:PDF 越界图片原始路径仍交给 Chromium");
+    }
+  });
   const nestedBaseDir = path.join(FIXTURES_DIR, "nested-source");
   const traversalBoundaryPdf = asPdfArtifact(
     await convertTyped("![越界](../input/g1-tiny.png)", "pdf", {
@@ -404,12 +462,14 @@ export async function run() {
       warnings: [],
     }),
   );
-  if (traversalBoundaryPdf.html.includes(pathToFileURL(path.join(FIXTURES_DIR, "input", "g1-tiny.png")).href)) {
-    throw new Error("basic-render 断言失败:PDF .. 越界图片被改写为 file URL");
-  }
-  if (!absoluteBoundaryPdf.html.includes('src="about:blank"') || !traversalBoundaryPdf.html.includes('src="about:blank"')) {
-    throw new Error("basic-render 断言失败:PDF 越界图片未置为安全空 src");
-  }
+  await suite.case("PDF .. 越界图片不改写为 file URL,两类越界均置为安全空 src", () => {
+    if (traversalBoundaryPdf.html.includes(pathToFileURL(path.join(FIXTURES_DIR, "input", "g1-tiny.png")).href)) {
+      throw new Error("basic-render 断言失败:PDF .. 越界图片被改写为 file URL");
+    }
+    if (!absoluteBoundaryPdf.html.includes('src="about:blank"') || !traversalBoundaryPdf.html.includes('src="about:blank"')) {
+      throw new Error("basic-render 断言失败:PDF 越界图片未置为安全空 src");
+    }
+  });
   console.log("[ok] basic-render:PDF 本地图片绝对路径/.. 越界 file URL 阻断断言通过");
 
   // ---------- 图片读取失败原因细分(imageLoadFailureWarning,docx/pdf 双侧) ----------
@@ -434,9 +494,11 @@ export async function run() {
       },
       warnings: enoentWarnings,
     });
-    if (!enoentWarnings.some((w) => formatWarning(w) === "图片文件不存在: missing-img.png")) {
-      throw new Error(`basic-render 断言失败:${fmt} ENOENT 未细分为「图片文件不存在」,warnings=${JSON.stringify(enoentWarnings)}`);
-    }
+    await suite.case(`${fmt} 侧 ENOENT 细分为图片文件不存在`, () => {
+      if (!enoentWarnings.some((w) => formatWarning(w) === "图片文件不存在: missing-img.png")) {
+        throw new Error(`basic-render 断言失败:${fmt} ENOENT 未细分为「图片文件不存在」,warnings=${JSON.stringify(enoentWarnings)}`);
+      }
+    });
     /** @type {Warning[]} */
     const eaccesWarnings = [];
     await convertTyped("![缺图](missing-img.png)", fmt, {
@@ -446,9 +508,11 @@ export async function run() {
       },
       warnings: eaccesWarnings,
     });
-    if (!eaccesWarnings.some((w) => formatWarning(w) === "图片文件无访问权限: missing-img.png")) {
-      throw new Error(`basic-render 断言失败:${fmt} EACCES 未细分为「图片文件无访问权限」,warnings=${JSON.stringify(eaccesWarnings)}`);
-    }
+    await suite.case(`${fmt} 侧 EACCES 细分为图片文件无访问权限`, () => {
+      if (!eaccesWarnings.some((w) => formatWarning(w) === "图片文件无访问权限: missing-img.png")) {
+        throw new Error(`basic-render 断言失败:${fmt} EACCES 未细分为「图片文件无访问权限」,warnings=${JSON.stringify(eaccesWarnings)}`);
+      }
+    });
   }
   console.log("[ok] basic-render:图片失败原因细分(ENOENT/EACCES 独立文案,docx/pdf 对齐)断言通过");
 
@@ -456,13 +520,15 @@ export async function run() {
   // 依据(dist/core/convert.ts):context.warnings 缺省时内部兜底为空数组,转换不抛错;
   // 缺失图片等警告路径在无 warnings 收集器时静默(不崩溃)。
   const noWarnDocx = asDocxArtifact(await convertTyped("![缺图](missing.png)", "docx", { baseDir: FIXTURES_DIR }));
-  if (noWarnDocx.buffer.length === 0) {
-    throw new Error("basic-render 断言失败:convert 无 warnings 参数时应正常产出 docx buffer");
-  }
   const noWarnPdf = asPdfArtifact(await convertTyped("![缺图](missing.png)", "pdf", { baseDir: FIXTURES_DIR }));
-  if (noWarnPdf.html.length === 0) {
-    throw new Error("basic-render 断言失败:convert 无 warnings 参数时应正常产出 pdf html");
-  }
+  await suite.case("convert 无 warnings 参数时 docx/pdf 均正常产出", () => {
+    if (noWarnDocx.buffer.length === 0) {
+      throw new Error("basic-render 断言失败:convert 无 warnings 参数时应正常产出 docx buffer");
+    }
+    if (noWarnPdf.html.length === 0) {
+      throw new Error("basic-render 断言失败:convert 无 warnings 参数时应正常产出 pdf html");
+    }
+  });
   console.log("[ok] basic-render:convert 无 warnings 参数(warnings ?? [] 兜底)docx/pdf 均正常产出");
 
   // ---------- 补充断言:代码块 pdf hljs 高亮(实现 src/core/pdf/render.ts highlight) ----------
@@ -479,9 +545,11 @@ export async function run() {
     ["</code></pre>", "hljs 收尾"],
   ];
   for (const [needle, label] of pdfChecks) {
-    if (!pdfArtifact.html.includes(needle)) {
-      throw new Error(`basic-render 断言失败:PDF 代码高亮缺少 ${label}`);
-    }
+    await suite.case(`pdf 代码高亮:${label}`, () => {
+      if (!pdfArtifact.html.includes(needle)) {
+        throw new Error(`basic-render 断言失败:PDF 代码高亮缺少 ${label}`);
+      }
+    });
   }
   console.log("[ok] basic-render:代码块 pdf 高亮(language-ts 围栏 + hljs token 类 span)断言通过");
 
@@ -508,15 +576,17 @@ export async function run() {
         warnings: brokenPdfWarnings,
       }),
     );
-    if (!brokenPdf.html.includes('<pre class="hljs"><code>if (a &lt; b &amp;&amp; c &gt; d) {}\n</code></pre>')) {
-      throw new Error("basic-render 断言失败:hljs 抛错未回退转义输出(期望 escapeHtml 兜底)");
-    }
-    if (brokenPdf.html.includes('<span class="hljs-keyword">')) {
-      throw new Error("basic-render 断言失败:hljs 抛错回退不应含 token 类 span(未走 highlight)");
-    }
-    if (!brokenPdfWarnings.some((w) => formatWarning(w) === "代码高亮失败,已降级为纯文本: broken")) {
-      throw new Error(`basic-render 断言失败:pdf hljs 抛错未产生高亮降级警告,warnings=${JSON.stringify(brokenPdfWarnings)}`);
-    }
+    await suite.case("hljs 抛错回退转义输出(无 token 类 span)且带高亮降级警告", () => {
+      if (!brokenPdf.html.includes('<pre class="hljs"><code>if (a &lt; b &amp;&amp; c &gt; d) {}\n</code></pre>')) {
+        throw new Error("basic-render 断言失败:hljs 抛错未回退转义输出(期望 escapeHtml 兜底)");
+      }
+      if (brokenPdf.html.includes('<span class="hljs-keyword">')) {
+        throw new Error("basic-render 断言失败:hljs 抛错回退不应含 token 类 span(未走 highlight)");
+      }
+      if (!brokenPdfWarnings.some((w) => formatWarning(w) === "代码高亮失败,已降级为纯文本: broken")) {
+        throw new Error(`basic-render 断言失败:pdf hljs 抛错未产生高亮降级警告,warnings=${JSON.stringify(brokenPdfWarnings)}`);
+      }
+    });
     console.log("[ok] basic-render:hljs.highlight 抛错回退转义输出 + 高亮降级警告(render.ts)断言通过");
   } finally {
     hljs.unregisterLanguage("broken");
@@ -533,15 +603,19 @@ export async function run() {
     }),
   );
   const fnXml = await unzipPart(fnDocx.buffer, "word/footnotes.xml");
-  if (!fnXml.includes("引用内容")) {
-    throw new Error("basic-render 断言失败:脚注定义内 blockquote 文本未渲染");
-  }
-  if (!fnXml.includes('<w:shd w:fill="F2F2F2" w:val="clear"/>') || !fnXml.includes('<w:ind w:left="720"/>')) {
-    throw new Error("basic-render 断言失败:脚注内 blockquote 缺少灰底/左缩进(renderBlockquote)");
-  }
-  if (!fnXml.includes('<w:pBdr><w:bottom w:val="single" w:color="999999" w:sz="6"/>')) {
-    throw new Error("basic-render 断言失败:脚注内 thematicBreak 缺少下边框(renderThematicBreak)");
-  }
+  await suite.case("脚注定义内 blockquote 文本渲染并带灰底/左缩进", () => {
+    if (!fnXml.includes("引用内容")) {
+      throw new Error("basic-render 断言失败:脚注定义内 blockquote 文本未渲染");
+    }
+    if (!fnXml.includes('<w:shd w:fill="F2F2F2" w:val="clear"/>') || !fnXml.includes('<w:ind w:left="720"/>')) {
+      throw new Error("basic-render 断言失败:脚注内 blockquote 缺少灰底/左缩进(renderBlockquote)");
+    }
+  });
+  await suite.case("脚注定义内 thematicBreak 渲染下边框", () => {
+    if (!fnXml.includes('<w:pBdr><w:bottom w:val="single" w:color="999999" w:sz="6"/>')) {
+      throw new Error("basic-render 断言失败:脚注内 thematicBreak 缺少下边框(renderThematicBreak)");
+    }
+  });
   console.log("[ok] basic-render:脚注定义内 blockquote/thematicBreak 渲染断言通过");
 
   // ---------- 列表项/引用块内块级内容(公式正常成文,其余按降级线转文本) ----------
@@ -582,9 +656,14 @@ export async function run() {
   const containerBuffer = await renderDocx(parseMarkdown(containerMd), { warnings: containerWarnings });
   const containerXml = await unzipPart(containerBuffer, "word/document.xml");
   // 列表内公式:成 Office MathML(E / = / m c 各自 MathRun),不降级为 TeX 源码文本
-  if (!containerXml.includes("<m:oMath>")) {
-    throw new Error("basic-render 断言失败:列表内 display 公式未渲染为 Office MathML(缺 <m:oMath>)");
-  }
+  await suite.case("列表内 display 公式成 Office MathML 而非 TeX 源码文本", () => {
+    if (!containerXml.includes("<m:oMath>")) {
+      throw new Error("basic-render 断言失败:列表内 display 公式未渲染为 Office MathML(缺 <m:oMath>)");
+    }
+    if (containerXml.includes("E = mc^2")) {
+      throw new Error("basic-render 断言失败:列表内 display 公式仍以 TeX 源码文本成文(E = mc^2)");
+    }
+  });
   for (const [needle, label] of /** @type {[string, string][]} */ ([
     ["<m:t>E</m:t>", "公式左侧 E"],
     ["<m:t>=</m:t>", "公式等号"],
@@ -592,28 +671,35 @@ export async function run() {
     ["<m:sSup>", "公式上标结构 m:sSup"],
     ["<m:sup><m:r><m:t>2</m:t></m:r></m:sup>", "公式上标 2"],
   ])) {
-    if (!containerXml.includes(needle)) {
-      throw new Error(`basic-render 断言失败:列表内 display 公式缺少 ${label}(${needle})`);
-    }
-  }
-  if (containerXml.includes("E = mc^2")) {
-    throw new Error("basic-render 断言失败:列表内 display 公式仍以 TeX 源码文本成文(E = mc^2)");
+    await suite.case(`列表内 display 公式含 ${label}`, () => {
+      if (!containerXml.includes(needle)) {
+        throw new Error(`basic-render 断言失败:列表内 display 公式缺少 ${label}(${needle})`);
+      }
+    });
   }
   // 容器内非公式内容仍走等宽灰字降级(此处由引用块内白名单外 html 提供)
-  if (!containerXml.includes('<w:color w:val="888888"/>')) {
-    throw new Error("basic-render 断言失败:容器内 html 降级文本缺少等宽灰字(w:color 888888)");
-  }
-  for (const row of ["a | b", "1 | 2"]) {
-    if (!containerXml.includes(row)) {
-      throw new Error(`basic-render 断言失败:列表内表格未降级为逐行文本段落(缺少「${row}」)`);
+  await suite.case("容器内非公式内容走等宽灰字降级(w:color 888888)", () => {
+    if (!containerXml.includes('<w:color w:val="888888"/>')) {
+      throw new Error("basic-render 断言失败:容器内 html 降级文本缺少等宽灰字(w:color 888888)");
     }
+  });
+  for (const row of ["a | b", "1 | 2"]) {
+    await suite.case(`列表内表格降级为逐行文本段落:${row}`, () => {
+      if (!containerXml.includes(row)) {
+        throw new Error(`basic-render 断言失败:列表内表格未降级为逐行文本段落(缺少「${row}」)`);
+      }
+    });
   }
-  if (!containerXml.includes("code-in-quote")) {
-    throw new Error("basic-render 断言失败:引用块内代码块未渲染(code-in-quote 缺失)");
-  }
-  if (!containerXml.includes("&lt;div&gt;bad-html&lt;/div&gt;")) {
-    throw new Error("basic-render 断言失败:引用块内白名单外 html 未降级为原样文本");
-  }
+  await suite.case("引用块内代码块内容成文", () => {
+    if (!containerXml.includes("code-in-quote")) {
+      throw new Error("basic-render 断言失败:引用块内代码块未渲染(code-in-quote 缺失)");
+    }
+  });
+  await suite.case("引用块内白名单外 html 降级为原样文本", () => {
+    if (!containerXml.includes("&lt;div&gt;bad-html&lt;/div&gt;")) {
+      throw new Error("basic-render 断言失败:引用块内白名单外 html 未降级为原样文本");
+    }
+  });
   // 警告文案断言(formatWarning 格式化后逐字匹配)
   /** @param {string} text 期望文案 */
   const expectContainerWarn = (text) => containerWarnings.some((w) => formatWarning(w) === text);
@@ -622,16 +708,20 @@ export async function run() {
     "代码块 在引用块内暂不支持,已降级为文本",
     "HTML 在引用块内暂不支持,已降级为文本",
   ]) {
-    if (!expectContainerWarn(text)) {
-      throw new Error(`basic-render 断言失败:warnings 缺少容器降级警告「${text}」,warnings=${JSON.stringify(containerWarnings)}`);
-    }
+    await suite.case(`容器降级警告文案存在:${text}`, () => {
+      if (!expectContainerWarn(text)) {
+        throw new Error(`basic-render 断言失败:warnings 缺少容器降级警告「${text}」,warnings=${JSON.stringify(containerWarnings)}`);
+      }
+    });
   }
   // 公式既已正常渲染,不得再报「容器内暂不支持」(公式在容器内是被支持的)
-  if (containerWarnings.some((w) => formatWarning(w).startsWith("公式 在"))) {
-    throw new Error(
-      `basic-render 断言失败:列表内 display 公式正常渲染却仍报容器降级警告,warnings=${JSON.stringify(containerWarnings.map((w) => formatWarning(w)))}`,
-    );
-  }
+  await suite.case("列表内 display 公式正常渲染时不报容器降级警告", () => {
+    if (containerWarnings.some((w) => formatWarning(w).startsWith("公式 在"))) {
+      throw new Error(
+        `basic-render 断言失败:列表内 display 公式正常渲染却仍报容器降级警告,warnings=${JSON.stringify(containerWarnings.map((w) => formatWarning(w)))}`,
+      );
+    }
+  });
   console.log("[ok] basic-render:容器内 display 公式成 Office MathML + 表格/代码块/html 降级文本 + 警告 断言通过");
 
   // ---------- imageToDocx resolver memo 缓存(render.ts resolveImageCached) ----------
@@ -652,19 +742,25 @@ export async function run() {
     const memoXml = await unzipPart(memoBuffer, "word/document.xml");
     /** @param {string} src 图片 src */
     const countOf = (src) => calls.filter((c) => c === src).length;
-    if (countOf("./memo-a.png") !== 1) {
-      throw new Error(`basic-render 断言失败:同 URL 两处出现应只调 resolver 一次,实际 ${countOf("./memo-a.png")} 次,calls=${JSON.stringify(calls)}`);
-    }
-    if (countOf("./memo-miss.png") !== 2) {
-      throw new Error(`basic-render 断言失败:失败结果不应缓存(缺失 URL 两处出现应各解析一次),实际 ${countOf("./memo-miss.png")} 次,calls=${JSON.stringify(calls)}`);
-    }
+    await suite.case("同 URL 成功解析只调 resolver 一次(失败不缓存,两处各解析一次)", () => {
+      if (countOf("./memo-a.png") !== 1) {
+        throw new Error(`basic-render 断言失败:同 URL 两处出现应只调 resolver 一次,实际 ${countOf("./memo-a.png")} 次,calls=${JSON.stringify(calls)}`);
+      }
+      if (countOf("./memo-miss.png") !== 2) {
+        throw new Error(`basic-render 断言失败:失败结果不应缓存(缺失 URL 两处出现应各解析一次),实际 ${countOf("./memo-miss.png")} 次,calls=${JSON.stringify(calls)}`);
+      }
+    });
     // 成功图片两处均内嵌(两份 ImageRun,数据来自同一缓存)
-    const embedCount = (memoXml.match(/<w:drawing>/g) || []).length;
-    if (embedCount !== 2) {
-      throw new Error(`basic-render 断言失败:同 URL 图片应渲染两处 <w:drawing>,实际 ${embedCount}`);
-    }
+    await suite.case("同 URL 图片两处出现均内嵌(两份 drawing 复用同一缓存)", () => {
+      const embedCount = (memoXml.match(/<w:drawing>/g) || []).length;
+      if (embedCount !== 2) {
+        throw new Error(`basic-render 断言失败:同 URL 图片应渲染两处 <w:drawing>,实际 ${embedCount}`);
+      }
+    });
     console.log("[ok] basic-render:图片 memo 缓存(同 URL 单次解析 + 失败不缓存)断言通过");
   }
 
+  // saveArtifact 留在 case 外:落盘是段级副作用,不该被单条断言的成败带着走
   await saveArtifact("basic-render", { docx: buffer });
+  return { cases: suite.results };
 }

@@ -22,6 +22,7 @@ import { collectMarkdownPaths, resolveOutputPath } from "../../dist/main/convert
 import { formatWarning } from "../../dist/core/i18n/index.js";
 import { removeFile, removeTree } from "../harness/temp-resource.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const { assert } = createAsserter("paths");
 
@@ -70,6 +71,7 @@ function sameMembers(actual, expected, msg) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const dir = path.join(os.tmpdir(), `m2w-paths-${process.pid}`);
   try {
     // ================= 目录树(collectMarkdownPaths 扫描对象) =================
@@ -122,50 +124,56 @@ export async function run() {
       rooted("sub/deep.md"),
       rooted("sub/nested/deepest.markdown"),
     ];
-    assert(tree.skipped.length === 0, `目录递归:skipped 应为空,实际 ${JSON.stringify(tree.skipped)}`);
-    assert(
-      tree.files.length === expectedTree.length && expectedTree.every((file) => tree.files.includes(file)),
-      `目录递归:收集集合不符\n${describeSetDiff(tree.files, expectedTree)}`,
-    );
-    assert(
-      !tree.files.includes(rooted(".git/history.md")) && !tree.files.includes(rooted(".hidden/secret.md")),
-      "目录递归:点开头目录内文件被收集",
-    );
-    assert(!tree.files.includes(rooted(".hiddenfile.md")), "目录递归:点开头文件被收集(实际行为:点前缀条目一律跳过)");
-    console.log("[ok] paths:collectMarkdownPaths 目录递归(嵌套/点目录/点文件跳过/非 md 静默)");
-
-    // ---- 6. 排序:localeCompare sensitivity base(大小写不敏感)。
-    // apple < Banana 可区分大小写敏感排序(后者 B(66) < a(97) 会颠倒);
-    // sortdir < sub(全路径字典序,跨目录稳定) ----
-    /**
-     * 文件在收集结果中的下标(未收集到则为 -1)。
-     * @param {string} relative 相对 root 的 POSIX 风格路径
-     * @returns {number} 下标
-     */
-    const idx = (relative) => tree.files.indexOf(rooted(relative));
-    assert(idx("sortdir/apple.md") < idx("sortdir/Banana.md"), "排序:apple 应在 Banana 前(大小写不敏感)");
-    assert(
-      idx("sortdir/Banana.md") < idx("sortdir/mango.md") && idx("sortdir/mango.md") < idx("sortdir/zebra.md"),
-      "排序:sortdir 内字典序错误",
-    );
-    assert(
-      idx("a.md") < idx("b.markdown") && idx("sortdir/apple.md") < idx("sub/deep.md"),
-      "排序:跨目录全路径字典序错误",
-    );
-    console.log("[ok] paths:collectMarkdownPaths 排序(大小写不敏感字典序)");
-
-    // ---- 4/5/7. 直接传:md 进 files、非 md 与不存在进 skipped、seen 去重 ----
+    // 直接传与去重两条 case 的判定都要用到本次目录递归的结果(重扫代价高且会漂移),
+    // 故提到 case 之前一次算好
     const ghost = path.join(dir, "ghost.md"); // 故意不写盘
     const direct = await collectMarkdownPaths([f.a, f.a, f.txt, f.deepest, ghost]);
-    sameMembers(direct.files, [f.a, f.deepest], "直接传 md 收集错误");
-    sameMembers(direct.skipped, [f.txt, ghost], "直接传非 md/不存在 skipped 错误");
-    assert(direct.files.length === 2, "去重:重复传入同一路径仍收集两次");
     const dupDir = await collectMarkdownPaths([root, root]); // 目录重复传入 → seen 按 resolve 去重只扫一次
-    assert(
-      dupDir.files.length === expectedTree.length,
-      `去重:目录重复传入收集数量不一致\n${describeSetDiff(dupDir.files, expectedTree)}`,
-    );
-    console.log("[ok] paths:collectMarkdownPaths 直接传 md/skipped/不存在/去重");
+
+    await suite.case("目录递归:嵌套收集/点目录与点文件跳过/非 md 静默", () => {
+      assert(tree.skipped.length === 0, `目录递归:skipped 应为空,实际 ${JSON.stringify(tree.skipped)}`);
+      assert(
+        tree.files.length === expectedTree.length && expectedTree.every((file) => tree.files.includes(file)),
+        `目录递归:收集集合不符\n${describeSetDiff(tree.files, expectedTree)}`,
+      );
+      assert(
+        !tree.files.includes(rooted(".git/history.md")) && !tree.files.includes(rooted(".hidden/secret.md")),
+        "目录递归:点开头目录内文件被收集",
+      );
+      assert(!tree.files.includes(rooted(".hiddenfile.md")), "目录递归:点开头文件被收集(实际行为:点前缀条目一律跳过)");
+      console.log("[ok] paths:collectMarkdownPaths 目录递归(嵌套/点目录/点文件跳过/非 md 静默)");
+    });
+
+    await suite.case("排序:大小写不敏感字典序(目录内与跨目录)", () => {
+      // apple < Banana 可区分大小写敏感排序(后者 B(66) < a(97) 会颠倒);
+      // sortdir < sub(全路径字典序,跨目录稳定)
+      const idx = (/** @type {string} */ relative) => tree.files.indexOf(rooted(relative));
+      assert(idx("sortdir/apple.md") < idx("sortdir/Banana.md"), "排序:apple 应在 Banana 前(大小写不敏感)");
+      assert(
+        idx("sortdir/Banana.md") < idx("sortdir/mango.md") && idx("sortdir/mango.md") < idx("sortdir/zebra.md"),
+        "排序:sortdir 内字典序错误",
+      );
+      assert(
+        idx("a.md") < idx("b.markdown") && idx("sortdir/apple.md") < idx("sub/deep.md"),
+        "排序:跨目录全路径字典序错误",
+      );
+      console.log("[ok] paths:collectMarkdownPaths 排序(大小写不敏感字典序)");
+    });
+
+    await suite.case("直接传:md 进 files、非 md 与不存在进 skipped", () => {
+      sameMembers(direct.files, [f.a, f.deepest], "直接传 md 收集错误");
+      sameMembers(direct.skipped, [f.txt, ghost], "直接传非 md/不存在 skipped 错误");
+      console.log("[ok] paths:collectMarkdownPaths 直接传 md/skipped/不存在");
+    });
+
+    await suite.case("去重:重复传入同一文件/目录只扫一次", () => {
+      assert(direct.files.length === 2, "去重:重复传入同一路径仍收集两次");
+      assert(
+        dupDir.files.length === expectedTree.length,
+        `去重:目录重复传入收集数量不一致\n${describeSetDiff(dupDir.files, expectedTree)}`,
+      );
+      console.log("[ok] paths:collectMarkdownPaths 直接传 md/skipped/不存在/去重");
+    });
 
     // ================= resolveOutputPath =================
     const srcMd = path.join(dir, "sample.md");
@@ -175,20 +183,27 @@ export async function run() {
     // ---- 10. outputDir 空串 → 源目录(默认 baseName = 去扩展名);pdf → .pdf;
     // baseName 覆盖;有效 outputDir(不存在的目录)→ mkdir 创建并落指定目录 ----
     const emptyOut = await resolveOutputPath(srcMd, "docx", "");
-    assert(emptyOut.warnings.length === 0, `空串输出目录:不应有警告,实际 ${JSON.stringify(emptyOut.warnings)}`);
-    assert(path.dirname(emptyOut.outputPath) === srcDir, "空串输出目录:未落在源目录");
-    assert(emptyOut.outputPath.endsWith("sample.docx"), `空串输出目录:文件名错误 ${emptyOut.outputPath}`);
-    assert((await resolveOutputPath(srcMd, "pdf", "")).outputPath.endsWith(".pdf"), "pdf 格式扩展名错误");
     const renamed = await resolveOutputPath(srcMd, "docx", "", "custom-name");
-    assert(path.basename(renamed.outputPath) === "custom-name.docx", "baseName 覆盖无效");
     const targetDir = path.join(dir, "out-target");
     const validOut = await resolveOutputPath(srcMd, "docx", targetDir);
-    assert(
-      validOut.warnings.length === 0 && path.dirname(validOut.outputPath) === targetDir,
-      `有效输出目录:未落指定目录 ${validOut.outputPath}`,
-    );
-    await fs.stat(targetDir); // mkdir recursive 已创建
-    console.log("[ok] paths:resolveOutputPath 输出目录(空串→源目录/有效→创建落盘/baseName/pdf)");
+
+    await suite.case("输出目录:空串→源目录/有效目录创建落盘", async () => {
+      assert(emptyOut.warnings.length === 0, `空串输出目录:不应有警告,实际 ${JSON.stringify(emptyOut.warnings)}`);
+      assert(path.dirname(emptyOut.outputPath) === srcDir, "空串输出目录:未落在源目录");
+      assert(emptyOut.outputPath.endsWith("sample.docx"), `空串输出目录:文件名错误 ${emptyOut.outputPath}`);
+      assert(
+        validOut.warnings.length === 0 && path.dirname(validOut.outputPath) === targetDir,
+        `有效输出目录:未落指定目录 ${validOut.outputPath}`,
+      );
+      await fs.stat(targetDir); // mkdir recursive 已创建
+      console.log("[ok] paths:resolveOutputPath 输出目录(空串→源目录/有效→创建落盘)");
+    });
+
+    await suite.case("输出目录:pdf 扩展名 + baseName 覆盖", async () => {
+      assert((await resolveOutputPath(srcMd, "pdf", "")).outputPath.endsWith(".pdf"), "pdf 格式扩展名错误");
+      assert(path.basename(renamed.outputPath) === "custom-name.docx", "baseName 覆盖无效");
+      console.log("[ok] paths:resolveOutputPath 输出目录(空串→源目录/有效→创建落盘/baseName/pdf)");
+    });
 
     // ---- 8. 不做存在性探测:同名文件已存在时仍返回同一首选路径(无「(2)」后缀)。
     // 选名与占位由产物提交器经独占创建合并完成,此处的 stat 探测是覆盖根因,不得回归 ----
@@ -196,42 +211,49 @@ export async function run() {
     await fs.writeFile(takenName, "占位", "utf8");
     const takenOnce = await resolveOutputPath(srcMd, "docx", "", "taken");
     const takenTwice = await resolveOutputPath(srcMd, "docx", "", "taken");
-    assert(
-      path.basename(takenOnce.outputPath) === "taken.docx" && takenOnce.outputPath === takenTwice.outputPath,
-      `存在性探测回归:已存在同名文件时仍应返回首选路径,实际 ${takenOnce.outputPath} / ${takenTwice.outputPath}`,
-    );
+    await suite.case("不做存在性探测(首选路径交由提交器独占创建)", () => {
+      assert(
+        path.basename(takenOnce.outputPath) === "taken.docx" && takenOnce.outputPath === takenTwice.outputPath,
+        `存在性探测回归:已存在同名文件时仍应返回首选路径,实际 ${takenOnce.outputPath} / ${takenTwice.outputPath}`,
+      );
+      console.log("[ok] paths:resolveOutputPath 不做存在性探测(首选路径交由提交器独占创建)");
+    });
     removeFile(takenName);
-    console.log("[ok] paths:resolveOutputPath 不做存在性探测(首选路径交由提交器独占创建)");
 
     // ---- 9. 超长路径(候选 >250):回落源目录 + 一条「输出路径过长」警告,文件名不截断;
     // 回落后的 candidate 不再二次检查长度——源目录 + 超长 baseName 仍 >250 时原样返回 ----
     const longName = "x".repeat(260);
     const longOut = await resolveOutputPath(srcMd, "docx", targetDir, longName);
-    const [longWarning] = longOut.warnings;
-    assert(
-      longOut.warnings.length === 1 && longWarning !== undefined && formatWarning(longWarning).includes("输出路径过长"),
-      `超长路径:应恰一条「输出路径过长」警告,实际 ${JSON.stringify(longOut.warnings)}`,
-    );
-    assert(path.dirname(longOut.outputPath) === srcDir, "超长路径:未回落源目录");
-    assert(path.basename(longOut.outputPath) === `${longName}.docx`, "超长路径:文件名被截断或改动");
-    assert(longOut.outputPath.length > 250, "超长路径:回落后的候选长度与实现不符(仍 >250)");
-    console.log("[ok] paths:resolveOutputPath 超长路径回落(>250→源目录+警告,不截断)");
+    await suite.case("超长路径回落(>250→源目录+警告,不截断)", () => {
+      const [longWarning] = longOut.warnings;
+      assert(
+        longOut.warnings.length === 1 && longWarning !== undefined && formatWarning(longWarning).includes("输出路径过长"),
+        `超长路径:应恰一条「输出路径过长」警告,实际 ${JSON.stringify(longOut.warnings)}`,
+      );
+      assert(path.dirname(longOut.outputPath) === srcDir, "超长路径:未回落源目录");
+      assert(path.basename(longOut.outputPath) === `${longName}.docx`, "超长路径:文件名被截断或改动");
+      assert(longOut.outputPath.length > 250, "超长路径:回落后的候选长度与实现不符(仍 >250)");
+      console.log("[ok] paths:resolveOutputPath 超长路径回落(>250→源目录+警告,不截断)");
+    });
 
     // ---- 10. outputDir mkdir 失败(指向已存在的普通文件 → EEXIST)→ 回落源目录
     // + 一条「输出目录不可用」警告 ----
     const blocker = path.join(dir, "blocker.txt");
     await fs.writeFile(blocker, "blocker", "utf8");
     const badOut = await resolveOutputPath(srcMd, "docx", blocker);
-    const [badWarning] = badOut.warnings;
-    assert(
-      badOut.warnings.length === 1 && badWarning !== undefined && formatWarning(badWarning).includes("输出目录不可用"),
-      `mkdir 失败:应恰一条「输出目录不可用」警告,实际 ${JSON.stringify(badOut.warnings)}`,
-    );
-    assert(path.dirname(badOut.outputPath) === srcDir, "mkdir 失败:未回落源目录");
-    assert(badOut.outputPath.endsWith("sample.docx"), "mkdir 失败:回落文件名错误");
-    console.log("[ok] paths:resolveOutputPath mkdir 失败回落(输出目录不可用→源目录+警告)");
+    await suite.case("mkdir 失败回落(输出目录不可用→源目录+警告)", () => {
+      const [badWarning] = badOut.warnings;
+      assert(
+        badOut.warnings.length === 1 && badWarning !== undefined && formatWarning(badWarning).includes("输出目录不可用"),
+        `mkdir 失败:应恰一条「输出目录不可用」警告,实际 ${JSON.stringify(badOut.warnings)}`,
+      );
+      assert(path.dirname(badOut.outputPath) === srcDir, "mkdir 失败:未回落源目录");
+      assert(badOut.outputPath.endsWith("sample.docx"), "mkdir 失败:回落文件名错误");
+      console.log("[ok] paths:resolveOutputPath mkdir 失败回落(输出目录不可用→源目录+警告)");
+    });
   } finally {
     // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
     removeTree(dir);
   }
+  return { cases: suite.results };
 }

@@ -30,6 +30,7 @@ import { FIXTURES_DIR } from "../harness/paths.js";
 import { unzipPart, zipContains } from "../harness/docx-utils.js";
 import { saveArtifact } from "../harness/artifacts.js";
 import { asDocxArtifact, asPdfArtifact, convertWithFs } from "../harness/convert-helpers.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /** @typedef {import("../../dist/core/i18n/index.js").ConvertWarning} Warning */
 
@@ -58,7 +59,11 @@ export const fixtures = {
 
 /** Mermaid 图表渲染 core 层契约 */
 export async function run() {
+  const suite = createCaseSuite();
   // ---- docx 成功路径:resolver 被调用(围栏原文)→ 内嵌 PNG 图片(缩放 600×300→400×200) ----
+  // 转换在 case 之外备好:下面 5 条断言读的都是同一份已完成的产物(resolver 入参与
+  // document.xml/media/警告都是转换一次后的终态),逐条把转换重复一遍反而掩盖
+  // 「是哪一份产物不对」
   {
     /** @type {string[]} */
     const received = [];
@@ -70,21 +75,31 @@ export async function run() {
     const warnings = [];
     const docx = asDocxArtifact(await convertTyped(MD_OK, "docx", { baseDir: FIXTURES_DIR, warnings, mermaidResolver: okResolver }));
     const xml = await unzipPart(docx.buffer, "word/document.xml");
-    if (received.length !== 1 || received[0] !== "graph TD\n  A-->B") {
-      throw new Error(`docx 成功路径:resolver 未收到围栏原文,received=${JSON.stringify(received)}(remark fence 去尾换行)`);
-    }
-    if (!xml.includes("a:blip") || !xml.includes("<w:drawing>")) {
-      throw new Error("docx 成功路径:document.xml 缺少内嵌图片(drawingML <a:blip> 或 <w:drawing>)");
-    }
-    if (!xml.includes('cx="3810000"') || !xml.includes('cy="1905000"')) {
-      throw new Error("docx 成功路径:图片缩放 EMU 错误(600×300 → scaleToFit 400×200 × 9525)");
-    }
-    if (!zipContains(docx.buffer, "word/media")) {
-      throw new Error("docx 成功路径:zip 缺少 media 部件");
-    }
-    if (warnings.some((x) => formatWarning(x).includes("Mermaid"))) {
-      throw new Error(`docx 成功路径:不应产生 Mermaid 警告,warnings=${JSON.stringify(warnings)}`);
-    }
+    await suite.case("docx 成功路径:resolver 收到围栏原文", () => {
+      if (received.length !== 1 || received[0] !== "graph TD\n  A-->B") {
+        throw new Error(`docx 成功路径:resolver 未收到围栏原文,received=${JSON.stringify(received)}(remark fence 去尾换行)`);
+      }
+    });
+    await suite.case("docx 成功路径:document.xml 内嵌图片", () => {
+      if (!xml.includes("a:blip") || !xml.includes("<w:drawing>")) {
+        throw new Error("docx 成功路径:document.xml 缺少内嵌图片(drawingML <a:blip> 或 <w:drawing>)");
+      }
+    });
+    await suite.case("docx 成功路径:图片缩放 EMU", () => {
+      if (!xml.includes('cx="3810000"') || !xml.includes('cy="1905000"')) {
+        throw new Error("docx 成功路径:图片缩放 EMU 错误(600×300 → scaleToFit 400×200 × 9525)");
+      }
+    });
+    await suite.case("docx 成功路径:zip media 部件", () => {
+      if (!zipContains(docx.buffer, "word/media")) {
+        throw new Error("docx 成功路径:zip 缺少 media 部件");
+      }
+    });
+    await suite.case("docx 成功路径:无 Mermaid 警告", () => {
+      if (warnings.some((x) => formatWarning(x).includes("Mermaid"))) {
+        throw new Error(`docx 成功路径:不应产生 Mermaid 警告,warnings=${JSON.stringify(warnings)}`);
+      }
+    });
     await saveArtifact("mermaid", { docx: docx.buffer });
     console.log("[ok] mermaid:docx 成功路径 resolver 收围栏原文 + a:blip/缩放 EMU/media 部件,断言通过");
   }
@@ -99,15 +114,21 @@ export async function run() {
       mermaidResolver: async () => null,
     }));
     const xml = await unzipPart(docx.buffer, "word/document.xml");
-    if (xml.includes("a:blip")) {
-      throw new Error("docx 降级路径:null 结果不应内嵌图片");
-    }
-    if (!xml.includes("graph TD")) {
-      throw new Error("docx 降级路径:代码原文未保留");
-    }
-    if (!warnings.some((x) => formatWarning(x) === "Mermaid 渲染失败: 渲染服务返回空结果,已降级为代码块")) {
-      throw new Error(`docx 降级路径:缺少空结果降级警告,warnings=${JSON.stringify(warnings)}`);
-    }
+    await suite.case("docx 降级路径:无内嵌图片", () => {
+      if (xml.includes("a:blip")) {
+        throw new Error("docx 降级路径:null 结果不应内嵌图片");
+      }
+    });
+    await suite.case("docx 降级路径:代码原文保留", () => {
+      if (!xml.includes("graph TD")) {
+        throw new Error("docx 降级路径:代码原文未保留");
+      }
+    });
+    await suite.case("docx 降级路径:空结果降级警告", () => {
+      if (!warnings.some((x) => formatWarning(x) === "Mermaid 渲染失败: 渲染服务返回空结果,已降级为代码块")) {
+        throw new Error(`docx 降级路径:缺少空结果降级警告,warnings=${JSON.stringify(warnings)}`);
+      }
+    });
     console.log("[ok] mermaid:docx 降级路径(null)代码原文保留 + 警告,断言通过");
   }
 
@@ -123,12 +144,16 @@ export async function run() {
       },
     }));
     const xml = await unzipPart(docx.buffer, "word/document.xml");
-    if (xml.includes("a:blip") || !xml.includes("graph TD")) {
-      throw new Error("docx 降级路径(抛错):应降级为代码块原文且无图片");
-    }
-    if (!warnings.some((x) => formatWarning(x) === "Mermaid 渲染失败: boom,已降级为代码块")) {
-      throw new Error(`docx 降级路径(抛错):缺少带 reason 的警告,warnings=${JSON.stringify(warnings)}`);
-    }
+    await suite.case("docx 降级路径(抛错):降级为代码块原文且无图片", () => {
+      if (xml.includes("a:blip") || !xml.includes("graph TD")) {
+        throw new Error("docx 降级路径(抛错):应降级为代码块原文且无图片");
+      }
+    });
+    await suite.case("docx 降级路径(抛错):警告带 reason", () => {
+      if (!warnings.some((x) => formatWarning(x) === "Mermaid 渲染失败: boom,已降级为代码块")) {
+        throw new Error(`docx 降级路径(抛错):缺少带 reason 的警告,warnings=${JSON.stringify(warnings)}`);
+      }
+    });
     console.log("[ok] mermaid:docx 降级路径(抛错 boom)警告带 reason,断言通过");
   }
 
@@ -138,15 +163,21 @@ export async function run() {
     const warnings = [];
     const docx = asDocxArtifact(await convertTyped(MD_OK, "docx", { baseDir: FIXTURES_DIR, warnings }));
     const xml = await unzipPart(docx.buffer, "word/document.xml");
-    if (xml.includes("a:blip")) {
-      throw new Error("docx 无 resolver:mermaid 围栏不应内嵌图片(原行为)");
-    }
-    if (!xml.includes("graph TD")) {
-      throw new Error("docx 无 resolver:代码文本应保留");
-    }
-    if (warnings.some((x) => formatWarning(x).includes("Mermaid"))) {
-      throw new Error(`docx 无 resolver:不应产生 Mermaid 警告,warnings=${JSON.stringify(warnings)}`);
-    }
+    await suite.case("docx 无 resolver:无内嵌图片", () => {
+      if (xml.includes("a:blip")) {
+        throw new Error("docx 无 resolver:mermaid 围栏不应内嵌图片(原行为)");
+      }
+    });
+    await suite.case("docx 无 resolver:代码文本保留", () => {
+      if (!xml.includes("graph TD")) {
+        throw new Error("docx 无 resolver:代码文本应保留");
+      }
+    });
+    await suite.case("docx 无 resolver:无 Mermaid 警告", () => {
+      if (warnings.some((x) => formatWarning(x).includes("Mermaid"))) {
+        throw new Error(`docx 无 resolver:不应产生 Mermaid 警告,warnings=${JSON.stringify(warnings)}`);
+      }
+    });
     console.log("[ok] mermaid:docx 无 resolver 原行为不变,断言通过");
   }
 
@@ -159,19 +190,27 @@ export async function run() {
       return { svg: FAKE_SVG, png: PNG_MAGIC, width: 600, height: 300 };
     };
     const pdf = asPdfArtifact(await convertTyped(MD_SPECIAL, "pdf", { baseDir: FIXTURES_DIR, warnings: [], mermaidResolver: okResolver }));
-    if (!pdf.html.includes('<div class="mermaid-svg">')) {
-      throw new Error('pdf 成功路径:缺少 <div class="mermaid-svg">');
-    }
-    if (!pdf.html.includes(FAKE_SVG)) {
-      throw new Error("pdf 成功路径:SVG 内容未内联");
-    }
-    if (pdf.html.includes('<div class="mermaid">')) {
-      throw new Error("pdf 成功路径:存在占位残留 <div class=\"mermaid\">");
-    }
+    await suite.case("pdf 成功路径:mermaid-svg 容器", () => {
+      if (!pdf.html.includes('<div class="mermaid-svg">')) {
+        throw new Error('pdf 成功路径:缺少 <div class="mermaid-svg">');
+      }
+    });
+    await suite.case("pdf 成功路径:SVG 内容内联", () => {
+      if (!pdf.html.includes(FAKE_SVG)) {
+        throw new Error("pdf 成功路径:SVG 内容未内联");
+      }
+    });
+    await suite.case("pdf 成功路径:无占位残留", () => {
+      if (pdf.html.includes('<div class="mermaid">')) {
+        throw new Error("pdf 成功路径:存在占位残留 <div class=\"mermaid\">");
+      }
+    });
     // 特殊字符:escapeHtml(占位)→ decodeEntities(还原)对称,resolver 收到逐字符原码
-    if (received.length !== 1 || received[0] !== 'graph TD; A["<x> & \'q\'"]\n') {
-      throw new Error(`pdf 成功路径:resolver 未收到逐字符原码(含尾随换行),received=${JSON.stringify(received)}`);
-    }
+    await suite.case("pdf 成功路径:resolver 收到逐字符原码", () => {
+      if (received.length !== 1 || received[0] !== 'graph TD; A["<x> & \'q\'"]\n') {
+        throw new Error(`pdf 成功路径:resolver 未收到逐字符原码(含尾随换行),received=${JSON.stringify(received)}`);
+      }
+    });
     console.log("[ok] mermaid:pdf 成功路径 mermaid-svg 内联 + 特殊字符逐字符往返,断言通过");
   }
 
@@ -184,22 +223,32 @@ export async function run() {
       warnings,
       mermaidResolver: async () => null,
     }));
-    if (!pdf.html.includes('<pre class="mermaid-fallback"><code>')) {
-      throw new Error('pdf 降级路径:缺少 <pre class="mermaid-fallback">');
-    }
-    if (pdf.html.includes('<div class="mermaid-svg">')) {
-      throw new Error("pdf 降级路径:null 结果不应内联 SVG");
-    }
+    await suite.case("pdf 降级路径:mermaid-fallback 容器", () => {
+      if (!pdf.html.includes('<pre class="mermaid-fallback"><code>')) {
+        throw new Error('pdf 降级路径:缺少 <pre class="mermaid-fallback">');
+      }
+    });
+    await suite.case("pdf 降级路径:不内联 SVG", () => {
+      if (pdf.html.includes('<div class="mermaid-svg">')) {
+        throw new Error("pdf 降级路径:null 结果不应内联 SVG");
+      }
+    });
     // 原文保留(转义形态:双引号→&quot;、< >→&lt; &gt;、&→&amp;,单引号不转)
-    if (!pdf.html.includes("&quot;&lt;x&gt; &amp; 'q'&quot;")) {
-      throw new Error("pdf 降级路径:fallback 代码块缺少转义原文");
-    }
-    if (pdf.html.includes("<x>")) {
-      throw new Error("pdf 降级路径:fallback 泄漏明文 <x>(未转义)");
-    }
-    if (!warnings.some((x) => formatWarning(x) === "Mermaid 渲染失败: 渲染服务返回空结果,已降级为代码块")) {
-      throw new Error(`pdf 降级路径:缺少降级警告,warnings=${JSON.stringify(warnings)}`);
-    }
+    await suite.case("pdf 降级路径:fallback 含转义原文", () => {
+      if (!pdf.html.includes("&quot;&lt;x&gt; &amp; 'q'&quot;")) {
+        throw new Error("pdf 降级路径:fallback 代码块缺少转义原文");
+      }
+    });
+    await suite.case("pdf 降级路径:fallback 不泄漏明文", () => {
+      if (pdf.html.includes("<x>")) {
+        throw new Error("pdf 降级路径:fallback 泄漏明文 <x>(未转义)");
+      }
+    });
+    await suite.case("pdf 降级路径:降级警告存在", () => {
+      if (!warnings.some((x) => formatWarning(x) === "Mermaid 渲染失败: 渲染服务返回空结果,已降级为代码块")) {
+        throw new Error(`pdf 降级路径:缺少降级警告,warnings=${JSON.stringify(warnings)}`);
+      }
+    });
     console.log("[ok] mermaid:pdf 降级路径(null)mermaid-fallback 转义原文 + 警告,断言通过");
   }
 
@@ -214,19 +263,27 @@ export async function run() {
         throw new Error("boom");
       },
     }));
-    if (!pdf.html.includes('<pre class="mermaid-fallback"><code>')) {
-      throw new Error('pdf 降级路径(抛错):缺少 <pre class="mermaid-fallback">');
-    }
-    if (pdf.html.includes('<div class="mermaid-svg">')) {
-      throw new Error("pdf 降级路径(抛错):抛错不应内联 SVG");
-    }
+    await suite.case("pdf 降级路径(抛错):mermaid-fallback 容器", () => {
+      if (!pdf.html.includes('<pre class="mermaid-fallback"><code>')) {
+        throw new Error('pdf 降级路径(抛错):缺少 <pre class="mermaid-fallback">');
+      }
+    });
+    await suite.case("pdf 降级路径(抛错):不内联 SVG", () => {
+      if (pdf.html.includes('<div class="mermaid-svg">')) {
+        throw new Error("pdf 降级路径(抛错):抛错不应内联 SVG");
+      }
+    });
     // 原文保留(转义形态,与 null 降级一致)
-    if (!pdf.html.includes("&quot;&lt;x&gt; &amp; 'q'&quot;")) {
-      throw new Error("pdf 降级路径(抛错):fallback 代码块缺少转义原文");
-    }
-    if (!warnings.some((x) => formatWarning(x) === "Mermaid 渲染失败: boom,已降级为代码块")) {
-      throw new Error(`pdf 降级路径(抛错):缺少带 reason 的警告,warnings=${JSON.stringify(warnings)}`);
-    }
+    await suite.case("pdf 降级路径(抛错):fallback 含转义原文", () => {
+      if (!pdf.html.includes("&quot;&lt;x&gt; &amp; 'q'&quot;")) {
+        throw new Error("pdf 降级路径(抛错):fallback 代码块缺少转义原文");
+      }
+    });
+    await suite.case("pdf 降级路径(抛错):警告带 reason", () => {
+      if (!warnings.some((x) => formatWarning(x) === "Mermaid 渲染失败: boom,已降级为代码块")) {
+        throw new Error(`pdf 降级路径(抛错):缺少带 reason 的警告,warnings=${JSON.stringify(warnings)}`);
+      }
+    });
     console.log("[ok] mermaid:pdf 降级路径(抛错 boom)警告带 reason + fallback,断言通过");
   }
 
@@ -234,12 +291,16 @@ export async function run() {
   {
     const pdf = asPdfArtifact(await convertTyped(MD_OK, "pdf", { baseDir: FIXTURES_DIR, warnings: [] }));
     // markdown-it 兜底:非注册语言经 escapeHtml(--&gt;),内容行保留缩进,包装为 hljs pre
-    if (!pdf.html.includes('<pre class="hljs"><code>graph TD\n  A--&gt;B\n</code></pre>')) {
-      throw new Error("pdf 无 resolver:缺少原 hljs 兜底代码块(转义形态)");
-    }
-    if (pdf.html.includes("class=\"mermaid")) {
-      throw new Error("pdf 无 resolver:不应出现 mermaid 占位/容器 class");
-    }
+    await suite.case("pdf 无 resolver:原 hljs 兜底代码块", () => {
+      if (!pdf.html.includes('<pre class="hljs"><code>graph TD\n  A--&gt;B\n</code></pre>')) {
+        throw new Error("pdf 无 resolver:缺少原 hljs 兜底代码块(转义形态)");
+      }
+    });
+    await suite.case("pdf 无 resolver:无 mermaid class", () => {
+      if (pdf.html.includes("class=\"mermaid")) {
+        throw new Error("pdf 无 resolver:不应出现 mermaid 占位/容器 class");
+      }
+    });
     console.log("[ok] mermaid:pdf 无 resolver 原 hljs 兜底,断言通过");
   }
 
@@ -251,29 +312,39 @@ export async function run() {
       mermaidResolver: async () => ({ svg: FAKE_SVG, png: PNG_MAGIC, width: 100, height: 50 }),
     }));
     const xml = await unzipPart(docx.buffer, "word/document.xml");
-    if (xml.includes("a:blip")) {
-      throw new Error("非 mermaid 围栏:js 围栏不应走 mermaid 图片分支");
-    }
+    await suite.case("非 mermaid 围栏:docx 不走 mermaid 图片分支", () => {
+      if (xml.includes("a:blip")) {
+        throw new Error("非 mermaid 围栏:js 围栏不应走 mermaid 图片分支");
+      }
+    });
     // js 为已知语言 → docx 走 hljs 高亮拆分(code-highlight.ts),文本逐片段保留
     // (const → keyword 着色,1 → number 着色;仍不走 mermaid 图片分支)
+    // 逐片段一个 case:片段名即定位键,合成一条时首段缺失就报不出缺的是哪一段
     for (const frag of ["const", " a = ", "1", ";"]) {
-      if (!xml.includes(`<w:t xml:space="preserve">${frag}</w:t>`)) {
-        throw new Error(`非 mermaid 围栏:docx 应保留 js 代码文本片段「${frag}」`);
-      }
+      await suite.case(`非 mermaid 围栏:docx 保留代码文本片段「${frag}」`, () => {
+        if (!xml.includes(`<w:t xml:space="preserve">${frag}</w:t>`)) {
+          throw new Error(`非 mermaid 围栏:docx 应保留 js 代码文本片段「${frag}」`);
+        }
+      });
     }
     const pdf = asPdfArtifact(await convertTyped(MD_JS, "pdf", {
       baseDir: FIXTURES_DIR,
       warnings: [],
       mermaidResolver: async () => ({ svg: FAKE_SVG, png: PNG_MAGIC, width: 100, height: 50 }),
     }));
-    if (!pdf.html.includes('<pre class="hljs"><code class="language-js">')) {
-      throw new Error("非 mermaid 围栏:pdf 应走 js hljs 高亮(带 resolver 也不变)");
-    }
-    if (pdf.html.includes("class=\"mermaid")) {
-      throw new Error("非 mermaid 围栏:pdf 不应出现 mermaid class");
-    }
+    await suite.case("非 mermaid 围栏:pdf 走 js hljs 高亮", () => {
+      if (!pdf.html.includes('<pre class="hljs"><code class="language-js">')) {
+        throw new Error("非 mermaid 围栏:pdf 应走 js hljs 高亮(带 resolver 也不变)");
+      }
+    });
+    await suite.case("非 mermaid 围栏:pdf 无 mermaid class", () => {
+      if (pdf.html.includes("class=\"mermaid")) {
+        throw new Error("非 mermaid 围栏:pdf 不应出现 mermaid class");
+      }
+    });
     console.log("[ok] mermaid:非 mermaid 围栏(js)docx 文本 / pdf hljs 不变,断言通过");
   }
 
   console.log("[ok] mermaid:core 层契约测试全部通过(9 条验收点)");
+  return { cases: suite.results };
 }

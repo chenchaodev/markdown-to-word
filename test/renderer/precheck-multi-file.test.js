@@ -38,6 +38,7 @@ import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
 import { installDomStub, fireListener, makeElement } from "./dom-stub.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const { assert: harnessAssert } = createAsserter("precheck-multi-file");
 
@@ -111,6 +112,7 @@ const unpairedMath = () => ({
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   /** @param {string} rel @returns {string} */
   const distUrl = (rel) => pathToFileURL(path.join(ROOT, "dist", "renderer", rel)).href;
 
@@ -227,532 +229,594 @@ export async function run() {
     state.selectedFiles = mergeFiles;
     usePendingPrecheck();
 
+    // 1 段发起、2 段等它结算:声明提到 case 外(否则第 2 段拿不到这条链)。
+    // 报告弹窗的存在与否是 2 段判定的前提,故 1 段只到「决策前」为止,点击留在 2 段内
+    /** @type {Promise<unknown>} */
+    let mergeChain;
+    /** 第 3 段测量的转换次数基线,第 4 段断言要用它(相对量) */
+    let mergesBeforeCancel = 0;
+
     /* ---------- 1. 合并:逐文件预检 + 决策前不转换 + 预检期单实例 ---------- */
-    const mergeChain = flow.runMerge({ files: mergeFiles, format: "docx" });
-    await flush();
-    assert(
-      preCount() === 1 && precheckPaths[0] === mergeFiles[0],
-      `合并应逐文件预检且按源文件顺序,实际 ${JSON.stringify(precheckPaths)}`,
-    );
-    assert(flow.isConvertCommandBlocked(), "预检进行中命令锁应生效(按钮随之置灰)");
-    assert(mergeCount() === 0, "预检未决时不得发起合并转换");
-    // 预检未决时重复发起另一条命令:复用同一条链,不并发、不多发预检
-    void flow.runBatch();
-    await flush();
-    assert(
-      preCount() === 1,
-      `预检进行中重复发起命令不得并发再发预检,实际 ${JSON.stringify(precheckPaths)}`,
-    );
-    assert(batchCount() === 0, "被复用的第二条命令不得自行发起转换");
-    settleNext([fenceWarning(7)]);
-    await flush();
-    assert(
-      preCount() === 2 && precheckPaths[1] === mergeFiles[1],
-      `第二个源文件应在前一个结算后再查,实际 ${JSON.stringify(precheckPaths)}`,
-    );
-    settleNext([fenceWarning(3)]);
-    await flush();
-    assert(
-      elementFor("precheckDialog").classList.contains("hidden") === false,
-      "有告警时应弹出预检报告",
-    );
-    assert(mergeCount() === 0, "用户决策前不得调用 convertMerge");
+    await suite.case("合并 · 逐文件预检且按源文件顺序", async () => {
+      mergeChain = flow.runMerge({ files: mergeFiles, format: "docx" });
+      await flush();
+      assert(
+        preCount() === 1 && precheckPaths[0] === mergeFiles[0],
+        `合并应逐文件预检且按源文件顺序,实际 ${JSON.stringify(precheckPaths)}`,
+      );
+      assert(flow.isConvertCommandBlocked(), "预检进行中命令锁应生效(按钮随之置灰)");
+      assert(mergeCount() === 0, "预检未决时不得发起合并转换");
+      // 预检未决时重复发起另一条命令:复用同一条链,不并发、不多发预检
+      void flow.runBatch();
+      await flush();
+      assert(
+        preCount() === 1,
+        `预检进行中重复发起命令不得并发再发预检,实际 ${JSON.stringify(precheckPaths)}`,
+      );
+      assert(batchCount() === 0, "被复用的第二条命令不得自行发起转换");
+      settleNext([fenceWarning(7)]);
+      await flush();
+      assert(
+        preCount() === 2 && precheckPaths[1] === mergeFiles[1],
+        `第二个源文件应在前一个结算后再查,实际 ${JSON.stringify(precheckPaths)}`,
+      );
+      settleNext([fenceWarning(3)]);
+      await flush();
+      assert(
+        elementFor("precheckDialog").classList.contains("hidden") === false,
+        "有告警时应弹出预检报告",
+      );
+      assert(mergeCount() === 0, "用户决策前不得调用 convertMerge");
+    });
 
     /* ---------- 2. 报告按文件分组 ---------- */
-    const groups = listChildren();
-    assert(groups.length === 2, `两个文件各有告警时应渲染两个分组,实际 ${groups.length}`);
-    assert(
-      groups.every((group) => group.className === "precheck-group"),
-      `分组容器应挂 precheck-group,实际 ${JSON.stringify(groups.map((g) => g.className))}`,
-    );
-    const [titleA, itemsA] = childElements(groups[0] ?? elementFor("__none__"));
-    const [titleB, itemsB] = childElements(groups[1] ?? elementFor("__none__"));
-    assert(
-      /** @type {any} */ (titleA)?.tagName === "H3" && /** @type {any} */ (titleB)?.tagName === "H3",
-      `组头应是标题元素 h3(读屏按层级播报),实际 ${JSON.stringify([
-        /** @type {any} */ (titleA)?.tagName,
-        /** @type {any} */ (titleB)?.tagName,
-      ])}`,
-    );
-    assert(
-      titleA?.className === "precheck-group-title" &&
-        titleA.textContent === "a.md" &&
-        titleA.title === "C:\\work\\a.md",
-      `组头应为文件标识(文件名 + 完整路径 title),实际 ${JSON.stringify({
-        cls: titleA?.className,
-        text: titleA?.textContent,
-        title: titleA?.title,
-      })}`,
-    );
-    assert(
-      titleB?.className === "precheck-group-title" && titleB.textContent === "b.md",
-      `第二组组头应为 b.md,实际 ${JSON.stringify(titleB?.textContent)}`,
-    );
-    assert(
-      itemsA?.className === "precheck-group-items" &&
-        childElements(itemsA).length === 1 &&
-        childElements(itemsA)[0]?.className === "precheck-item",
-      "组内应是该文件自己的告警行(precheck-item)",
-    );
-    assert(
-      itemsB?.className === "precheck-group-items" && childElements(itemsB).length === 1,
-      "第二组内也应有自己的告警行",
-    );
-    // 描述行计数 = 告警总数(2 个文件各 1 条 → 共 2 处),与分组标题不重复表达
-    const descText = elementFor("precheckDesc").textContent;
-    assert(
-      typeof descText === "string" && descText.includes("2"),
-      `报告描述行应按告警总数计数,实际 ${JSON.stringify(descText)}`,
-    );
+    await suite.case("报告 · 按文件分组渲染(h3 组头/文件标识/各组自己的告警)", async () => {
+      const groups = listChildren();
+      assert(groups.length === 2, `两个文件各有告警时应渲染两个分组,实际 ${groups.length}`);
+      assert(
+        groups.every((group) => group.className === "precheck-group"),
+        `分组容器应挂 precheck-group,实际 ${JSON.stringify(groups.map((g) => g.className))}`,
+      );
+      const [titleA, itemsA] = childElements(groups[0] ?? elementFor("__none__"));
+      const [titleB, itemsB] = childElements(groups[1] ?? elementFor("__none__"));
+      assert(
+        /** @type {any} */ (titleA)?.tagName === "H3" && /** @type {any} */ (titleB)?.tagName === "H3",
+        `组头应是标题元素 h3(读屏按层级播报),实际 ${JSON.stringify([
+          /** @type {any} */ (titleA)?.tagName,
+          /** @type {any} */ (titleB)?.tagName,
+        ])}`,
+      );
+      assert(
+        titleA?.className === "precheck-group-title" &&
+          titleA.textContent === "a.md" &&
+          titleA.title === "C:\\work\\a.md",
+        `组头应为文件标识(文件名 + 完整路径 title),实际 ${JSON.stringify({
+          cls: titleA?.className,
+          text: titleA?.textContent,
+          title: titleA?.title,
+        })}`,
+      );
+      assert(
+        titleB?.className === "precheck-group-title" && titleB.textContent === "b.md",
+        `第二组组头应为 b.md,实际 ${JSON.stringify(titleB?.textContent)}`,
+      );
+      assert(
+        itemsA?.className === "precheck-group-items" &&
+          childElements(itemsA).length === 1 &&
+          childElements(itemsA)[0]?.className === "precheck-item",
+        "组内应是该文件自己的告警行(precheck-item)",
+      );
+      assert(
+        itemsB?.className === "precheck-group-items" && childElements(itemsB).length === 1,
+        "第二组内也应有自己的告警行",
+      );
+      // 描述行计数 = 告警总数(2 个文件各 1 条 → 共 2 处),与分组标题不重复表达
+      const descText = elementFor("precheckDesc").textContent;
+      assert(
+        typeof descText === "string" && descText.includes("2"),
+        `报告描述行应按告警总数计数,实际 ${JSON.stringify(descText)}`,
+      );
 
-    clickDecision(true);
-    await mergeChain;
-    assert(mergeCount() === 1, `确认后应恰好调用一次 convertMerge,实际 ${mergeCalls.length}`);
-    assert(
-      mergeCalls[0]?.files.join("|") === mergeFiles.join("|") && mergeCalls[0]?.format === "docx",
-      "convertMerge 应收到完整源文件列表与格式",
-    );
-    assert(!flow.isConvertCommandBlocked(), "命令结算后命令锁应释放");
+      clickDecision(true);
+      await mergeChain;
+      assert(mergeCount() === 1, `确认后应恰好调用一次 convertMerge,实际 ${mergeCalls.length}`);
+      assert(
+        mergeCalls[0]?.files.join("|") === mergeFiles.join("|") && mergeCalls[0]?.format === "docx",
+        "convertMerge 应收到完整源文件列表与格式",
+      );
+      assert(!flow.isConvertCommandBlocked(), "命令结算后命令锁应释放");
+    });
 
     /* ---------- 3. 点「取消」:整条命令中止 ---------- */
-    precheckPaths.length = 0;
-    const cancelChain = flow.runMerge({ files: mergeFiles, format: "pdf" });
-    await flush();
-    settleNext([fenceWarning(1)]);
-    await flush();
-    settleNext([fenceWarning(2)]);
-    await flush();
-    const mergesBeforeCancel = mergeCalls.length;
-    clickDecision(false);
-    await cancelChain;
-    assert(
-      mergeCalls.length === mergesBeforeCancel,
-      "用户点取消时不得调用 convertMerge(预检失败即中止,不改成照样转)",
-    );
-    assert(
-      preCount() === 2,
-      "取消只拦转换本身:预检已逐文件查过,不重发也不回滚",
-    );
+    await suite.case("合并 · 点取消即中止(不调 convertMerge)", async () => {
+      precheckPaths.length = 0;
+      const cancelChain = flow.runMerge({ files: mergeFiles, format: "pdf" });
+      await flush();
+      settleNext([fenceWarning(1)]);
+      await flush();
+      settleNext([fenceWarning(2)]);
+      await flush();
+      mergesBeforeCancel = mergeCalls.length;
+      clickDecision(false);
+      await cancelChain;
+      assert(
+        mergeCalls.length === mergesBeforeCancel,
+        "用户点取消时不得调用 convertMerge(预检失败即中止,不改成照样转)",
+      );
+      assert(
+        preCount() === 2,
+        "取消只拦转换本身:预检已逐文件查过,不重发也不回滚",
+      );
+    });
 
     /* ---------- 4. 单组告警:保持扁平列表,不出现分组标识 ---------- */
-    precheckPaths.length = 0;
-    const oneGroupChain = flow.runMerge({ files: mergeFiles, format: "docx" });
-    await flush();
-    settleNext([fenceWarning(1)]);
-    await flush();
-    settleNext([]); // 第二个文件干净 → 只有一组告警
-    await flush();
-    const flat = listChildren();
-    assert(
-      flat.length === 1 && flat[0]?.className === "precheck-item",
-      `只有一个文件有告警时应保持扁平告警列表,实际 ${JSON.stringify(flat.map((n) => n.className))}`,
-    );
-    assert(
-      flat.every((node) => node.className !== "precheck-group"),
-      "单组场景不得出现分组标识行(单文件形态不许退步)",
-    );
-    clickDecision(true);
-    await oneGroupChain;
-    assert(mergeCalls.length === mergesBeforeCancel + 1, "单组告警确认后照常合并");
+    await suite.case("报告 · 单组告警保持扁平列表且确认后照常合并", async () => {
+      precheckPaths.length = 0;
+      const oneGroupChain = flow.runMerge({ files: mergeFiles, format: "docx" });
+      await flush();
+      settleNext([fenceWarning(1)]);
+      await flush();
+      settleNext([]); // 第二个文件干净 → 只有一组告警
+      await flush();
+      const flat = listChildren();
+      assert(
+        flat.length === 1 && flat[0]?.className === "precheck-item",
+        `只有一个文件有告警时应保持扁平告警列表,实际 ${JSON.stringify(flat.map((n) => n.className))}`,
+      );
+      assert(
+        flat.every((node) => node.className !== "precheck-group"),
+        "单组场景不得出现分组标识行(单文件形态不许退步)",
+      );
+      clickDecision(true);
+      await oneGroupChain;
+      assert(mergeCalls.length === mergesBeforeCancel + 1, "单组告警确认后照常合并");
+    });
 
     /* ---------- 5. 同名文件:组头回退全路径(两组同名等于没分组) ---------- */
-    precheckPaths.length = 0;
-    const sameName = ["C:\\work\\x\\notes.md", "C:\\work\\y\\notes.md"];
-    const sameNameChain = flow.runMerge({ files: sameName, format: "docx" });
-    await flush();
-    settleNext([fenceWarning(1)]);
-    await flush();
-    settleNext([fenceWarning(1)]);
-    await flush();
-    const sameTitles = listChildren().map((group) => childElements(group)[0]);
-    assert(
-      sameTitles.length === 2 &&
-        sameTitles[0]?.textContent === sameName[0] &&
-        sameTitles[1]?.textContent === sameName[1],
-      `同名文件的组头应回退全路径,实际 ${JSON.stringify(sameTitles.map((n) => n?.textContent))}`,
-    );
-    clickDecision(true);
-    await sameNameChain;
+    await suite.case("报告 · 同名文件的组头回退全路径", async () => {
+      precheckPaths.length = 0;
+      const sameName = ["C:\\work\\x\\notes.md", "C:\\work\\y\\notes.md"];
+      const sameNameChain = flow.runMerge({ files: sameName, format: "docx" });
+      await flush();
+      settleNext([fenceWarning(1)]);
+      await flush();
+      settleNext([fenceWarning(1)]);
+      await flush();
+      const sameTitles = listChildren().map((group) => childElements(group)[0]);
+      assert(
+        sameTitles.length === 2 &&
+          sameTitles[0]?.textContent === sameName[0] &&
+          sameTitles[1]?.textContent === sameName[1],
+        `同名文件的组头应回退全路径,实际 ${JSON.stringify(sameTitles.map((n) => n?.textContent))}`,
+      );
+      clickDecision(true);
+      await sameNameChain;
+    });
 
     /* ---------- 6. 预检抛错:该文件跳过,主流程不阻断 ---------- */
-    precheckPaths.length = 0;
-    let firstThrows = true;
-    usePrecheck(async (filePath) => {
-      if (firstThrows) {
-        firstThrows = false;
-        throw new Error("precheck 读取失败");
-      }
-      return filePath === mergeFiles[1] ? [fenceWarning(5)] : [];
+    await suite.case("预检 · 单个文件抛错被跳过且不阻断主流程", async () => {
+      precheckPaths.length = 0;
+      let firstThrows = true;
+      usePrecheck(async (filePath) => {
+        if (firstThrows) {
+          firstThrows = false;
+          throw new Error("precheck 读取失败");
+        }
+        return filePath === mergeFiles[1] ? [fenceWarning(5)] : [];
+      });
+      const throwChain = flow.runMerge({ files: mergeFiles, format: "docx" });
+      await flush();
+      assert(
+        preCount() === 2,
+        `预检抛错的文件应被跳过并继续查下一个,实际 ${JSON.stringify(precheckPaths)}`,
+      );
+      assert(
+        elementFor("precheckDialog").classList.contains("hidden") === false,
+        "抛错文件之外的告警仍应正常弹报告",
+      );
+      const mergesBeforeThrowConfirm = mergeCalls.length;
+      clickDecision(true);
+      await throwChain;
+      assert(
+        mergeCalls.length === mergesBeforeThrowConfirm + 1,
+        "预检失败不阻断主流程(确认后照常合并)",
+      );
     });
-    const throwChain = flow.runMerge({ files: mergeFiles, format: "docx" });
-    await flush();
-    assert(
-      preCount() === 2,
-      `预检抛错的文件应被跳过并继续查下一个,实际 ${JSON.stringify(precheckPaths)}`,
-    );
-    assert(
-      elementFor("precheckDialog").classList.contains("hidden") === false,
-      "抛错文件之外的告警仍应正常弹报告",
-    );
-    const mergesBeforeThrowConfirm = mergeCalls.length;
-    clickDecision(true);
-    await throwChain;
-    assert(
-      mergeCalls.length === mergesBeforeThrowConfirm + 1,
-      "预检失败不阻断主流程(确认后照常合并)",
-    );
 
     /* ---------- 7. 预检 busy:状态行提示并中止 ---------- */
-    precheckPaths.length = 0;
-    usePrecheck(async () => ({ busy: true, error: "另一个转换正在进行" }));
-    const mergesBeforeBusy = mergeCalls.length;
-    await flow.runMerge({ files: mergeFiles, format: "docx" });
-    assert(mergeCalls.length === mergesBeforeBusy, "预检返回 busy 时应中止,不得发起合并");
-    const statusText = elementFor("status").textContent;
-    assert(
-      typeof statusText === "string" && statusText.includes("另一个转换正在进行"),
-      `预检 busy 应把原因呈现在状态行,实际 ${JSON.stringify(statusText)}`,
-    );
-    assert(!flow.isConvertCommandBlocked(), "中止后命令锁应释放(界面不悬挂)");
+    await suite.case("预检 · 返回 busy 时状态行提示并中止", async () => {
+      precheckPaths.length = 0;
+      usePrecheck(async () => ({ busy: true, error: "另一个转换正在进行" }));
+      const mergesBeforeBusy = mergeCalls.length;
+      await flow.runMerge({ files: mergeFiles, format: "docx" });
+      assert(mergeCalls.length === mergesBeforeBusy, "预检返回 busy 时应中止,不得发起合并");
+      const statusText = elementFor("status").textContent;
+      assert(
+        typeof statusText === "string" && statusText.includes("另一个转换正在进行"),
+        `预检 busy 应把原因呈现在状态行,实际 ${JSON.stringify(statusText)}`,
+      );
+      assert(!flow.isConvertCommandBlocked(), "中止后命令锁应释放(界面不悬挂)");
+    });
 
     /* ---------- 8. 批量:同样逐文件预检 + 决策前不转换 ---------- */
-    precheckPaths.length = 0;
-    usePendingPrecheck(); // 回到挂起形态(6/7 换成了即时结算实现)
-    state.selectedFiles = mergeFiles;
-    const batchChain = flow.runBatch();
-    await flush();
-    assert(
-      preCount() === 1 && precheckPaths[0] === mergeFiles[0],
-      `批量应逐文件预检,实际 ${JSON.stringify(precheckPaths)}`,
-    );
-    settleNext([fenceWarning(1)]);
-    await flush();
-    settleNext([fenceWarning(2)]);
-    await flush();
-    assert(batchCount() === 0, "用户决策前不得调用 convertBatch");
-    clickDecision(true);
-    await batchChain;
-    assert(batchCount() === 1, `确认后应恰好调用一次 convertBatch,实际 ${batchCalls.length}`);
-    assert(
-      batchCalls[0]?.files.join("|") === mergeFiles.join("|"),
-      "convertBatch 应收到完整源文件列表",
-    );
+    await suite.case("批量 · 逐文件预检且决策前不调 convertBatch", async () => {
+      precheckPaths.length = 0;
+      usePendingPrecheck(); // 回到挂起形态(6/7 换成了即时结算实现)
+      state.selectedFiles = mergeFiles;
+      const batchChain = flow.runBatch();
+      await flush();
+      assert(
+        preCount() === 1 && precheckPaths[0] === mergeFiles[0],
+        `批量应逐文件预检,实际 ${JSON.stringify(precheckPaths)}`,
+      );
+      settleNext([fenceWarning(1)]);
+      await flush();
+      settleNext([fenceWarning(2)]);
+      await flush();
+      assert(batchCount() === 0, "用户决策前不得调用 convertBatch");
+      clickDecision(true);
+      await batchChain;
+      assert(batchCount() === 1, `确认后应恰好调用一次 convertBatch,实际 ${batchCalls.length}`);
+      assert(
+        batchCalls[0]?.files.join("|") === mergeFiles.join("|"),
+        "convertBatch 应收到完整源文件列表",
+      );
+    });
     // 批量收尾会弹结果窗(模态),后续用例的模态判定需从干净态起算
     dialogs.hideBatchDialog();
     state.selectedFiles = [];
 
     /* ---------- 9. 粘贴直转(selection 域):此前无预检,收口后自然覆盖 ---------- */
-    precheckPaths.length = 0;
-    usePendingPrecheck();
-    const clipPath = "C:\\Users\\me\\AppData\\Local\\Temp\\clip.md";
+    // 单文件转换的调用记录:本段与第 13/20 段共用一份(桩换掉了也还指着它),故声明在 case 外
     /** @type {Array<{ filePath: string; format: string }>} */
     const convertCalls = [];
     const convertCount = () => convertCalls.length;
-    /** @type {any} */ (globalThis.window).api.clipboardRead = async () => ({
-      type: "text",
-      mdPath: clipPath,
+    await suite.case("粘贴直转 · 先预检临时文件、决策后才转换、收尾恢复按钮", async () => {
+      precheckPaths.length = 0;
+      usePendingPrecheck();
+      const clipPath = "C:\\Users\\me\\AppData\\Local\\Temp\\clip.md";
+      /** @type {any} */ (globalThis.window).api.clipboardRead = async () => ({
+        type: "text",
+        mdPath: clipPath,
+      });
+      /** @type {any} */ (globalThis.window).api.convert = async (
+        /** @type {string} */ filePath,
+        /** @type {string} */ format,
+      ) => {
+        convertCalls.push({ filePath, format });
+        return { ok: true, outputPath: "out.docx", warnings: [] };
+      };
+      const selection = await import(distUrl("convert/events/selection.js"));
+      selection.bindSelectionEvents();
+      const pasteBtn = elementFor("pasteConvertBtn");
+      pasteBtn.disabled = false;
+      fireListener(pasteBtn, "click", { stopPropagation() {} });
+      await flush();
+      assert(
+        preCount() === 1 && precheckPaths[0] === clipPath,
+        `粘贴直转也应先预检该临时文件(收口后自然覆盖),实际 ${JSON.stringify(precheckPaths)}`,
+      );
+      assert(convertCount() === 0, "粘贴直转的预检未决时不得转换");
+      settleNext([fenceWarning(4)]);
+      await flush();
+      assert(
+        elementFor("precheckDialog").classList.contains("hidden") === false,
+        "粘贴直转的预检告警同样应弹报告",
+      );
+      clickDecision(true);
+      await flush();
+      assert(
+        convertCount() === 1 && convertCalls[0]?.filePath === clipPath,
+        `确认后粘贴直转照常转换,实际 ${JSON.stringify(convertCalls)}`,
+      );
+      assert(
+        pasteBtn.disabled === false,
+        "粘贴直转收尾应恢复按钮可用(锁与预检都由命令内部收口,入口不残留忙态)",
+      );
     });
-    /** @type {any} */ (globalThis.window).api.convert = async (
-      /** @type {string} */ filePath,
-      /** @type {string} */ format,
-    ) => {
-      convertCalls.push({ filePath, format });
-      return { ok: true, outputPath: "out.docx", warnings: [] };
-    };
-    const selection = await import(distUrl("convert/events/selection.js"));
-    selection.bindSelectionEvents();
-    const pasteBtn = elementFor("pasteConvertBtn");
-    pasteBtn.disabled = false;
-    fireListener(pasteBtn, "click", { stopPropagation() {} });
-    await flush();
-    assert(
-      preCount() === 1 && precheckPaths[0] === clipPath,
-      `粘贴直转也应先预检该临时文件(收口后自然覆盖),实际 ${JSON.stringify(precheckPaths)}`,
-    );
-    assert(convertCount() === 0, "粘贴直转的预检未决时不得转换");
-    settleNext([fenceWarning(4)]);
-    await flush();
-    assert(
-      elementFor("precheckDialog").classList.contains("hidden") === false,
-      "粘贴直转的预检告警同样应弹报告",
-    );
-    clickDecision(true);
-    await flush();
-    assert(
-      convertCount() === 1 && convertCalls[0]?.filePath === clipPath,
-      `确认后粘贴直转照常转换,实际 ${JSON.stringify(convertCalls)}`,
-    );
-    assert(
-      pasteBtn.disabled === false,
-      "粘贴直转收尾应恢复按钮可用(锁与预检都由命令内部收口,入口不残留忙态)",
-    );
 
     /* ---------- 11. 合并遇 blocksMerge:阻断(不弹确认框,不调 convertMerge) ---------- */
-    precheckPaths.length = 0;
-    usePendingPrecheck();
-    state.selectedFiles = mergeFiles;
-    const blockedChain = flow.runMerge({ files: mergeFiles, format: "docx" });
-    const mergesBeforeBlock = mergeCount();
-    await flush();
-    settleNext([blockingFence(7)]);
-    await flush();
-    settleNext([]); // 第二个文件干净
-    await flush();
-    assert(
-      elementFor("precheckDialog").classList.contains("hidden"),
-      "合并遇阻断告警时不得弹预检报告框(那个「继续转换」按钮对阻断是假的)",
-    );
-    await blockedChain;
-    assert(mergeCount() === mergesBeforeBlock, "合并被阻断时 convertMerge 绝不被调用");
-    // 长文本(哪个文件/第几行/后果)只在汇总卡出现一次,状态行只有短句
-    const detail11 = cardError();
-    assert(
-      detail11.includes("a.md") && detail11.includes("7"),
-      `卡片须说清哪个文件、第几行,实际 ${JSON.stringify(detail11)}`,
-    );
-    assert(
-      detail11.includes("变成一个代码块"),
-      `卡片须说清后果(变代码块),实际 ${JSON.stringify(detail11)}`,
-    );
-    assert(
-      !detail11.includes("\\"),
-      `无重名时卡片应只给文件名(不含目录分隔符),实际 ${JSON.stringify(detail11)}`,
-    );
-    assert(!detail11.includes("另有"), "只有一个文件带阻断告警时不得出现「另有 N 个」");
-    const short11 = statusLine();
-    assert(
-      short11.includes("1") && short11.includes("未闭合"),
-      `状态行应是一句短句(几个文件 + 未闭合),实际 ${JSON.stringify(short11)}`,
-    );
-    assert(
-      !short11.includes("变成一个代码块") && !short11.includes("a.md"),
-      `长文本不得再进状态行(冗余且会挤掉卡片),实际 ${JSON.stringify(short11)}`,
-    );
-    // 标题如实描述:转换根本没开始,不能说「合并失败」
-    assert(
-      cardTitle() === i18n.DICT.zh["convert.merge.blockedTitle"],
-      `卡片标题应为如实描述的「合并未执行」,实际 ${JSON.stringify(cardTitle())}`,
-    );
-    assert(
-      cardTitle() !== i18n.DICT.zh["convert.merge.failedTitle"],
-      "阻断不得复用「合并失败」标题(会让人以为转换跑过)",
-    );
-    // 界面必须回到可用:命令锁释放 + 合并按钮可点(不留「永久忙碌」)
-    assert(!flow.isConvertCommandBlocked(), "阻断后命令锁应释放");
-    assert(
-      elementFor("mergeBtn").disabled === false,
-      `阻断后合并按钮应恢复可用,实际 disabled=${elementFor("mergeBtn").disabled}`,
-    );
-    assert(state.mode === null, `阻断后不应残留转换态,实际 mode=${state.mode}`);
+    // 阻断信息的载体:第 12 段起的卡片/状态行文案判定都读它,故取数(跑一次阻断)留在 case 外,
+    // 第 11 段只判「阻断发生了」(不弹框/不转换),文案逐条另立 case
+    await suite.case("合并阻断 · 不弹报告框且 convertMerge 绝不被调用", async () => {
+      precheckPaths.length = 0;
+      usePendingPrecheck();
+      state.selectedFiles = mergeFiles;
+      const blockedChain = flow.runMerge({ files: mergeFiles, format: "docx" });
+      const mergesBeforeBlock = mergeCount();
+      await flush();
+      settleNext([blockingFence(7)]);
+      await flush();
+      settleNext([]); // 第二个文件干净
+      await flush();
+      assert(
+        elementFor("precheckDialog").classList.contains("hidden"),
+        "合并遇阻断告警时不得弹预检报告框(那个「继续转换」按钮对阻断是假的)",
+      );
+      await blockedChain;
+      assert(mergeCount() === mergesBeforeBlock, "合并被阻断时 convertMerge 绝不被调用");
+    });
+    await suite.describe("合并阻断 · 详情文案与界面恢复", async (s) => {
+      await s.case("卡片说清文件与行号", () => {
+        // 长文本(哪个文件/第几行/后果)只在汇总卡出现一次,状态行只有短句
+        const detail11 = cardError();
+        assert(
+          detail11.includes("a.md") && detail11.includes("7"),
+          `卡片须说清哪个文件、第几行,实际 ${JSON.stringify(detail11)}`,
+        );
+      });
+      await s.case("卡片说清后果(变代码块)", () => {
+        const detail11 = cardError();
+        assert(
+          detail11.includes("变成一个代码块"),
+          `卡片须说清后果(变代码块),实际 ${JSON.stringify(detail11)}`,
+        );
+      });
+      await s.case("无重名时卡片只给文件名且不出现「另有 N 个」", () => {
+        const detail11 = cardError();
+        assert(
+          !detail11.includes("\\"),
+          `无重名时卡片应只给文件名(不含目录分隔符),实际 ${JSON.stringify(detail11)}`,
+        );
+        assert(!detail11.includes("另有"), "只有一个文件带阻断告警时不得出现「另有 N 个」");
+      });
+      await s.case("状态行是一句短句(几个文件 + 未闭合)且不含长文本", () => {
+        const short11 = statusLine();
+        assert(
+          short11.includes("1") && short11.includes("未闭合"),
+          `状态行应是一句短句(几个文件 + 未闭合),实际 ${JSON.stringify(short11)}`,
+        );
+        assert(
+          !short11.includes("变成一个代码块") && !short11.includes("a.md"),
+          `长文本不得再进状态行(冗余且会挤掉卡片),实际 ${JSON.stringify(short11)}`,
+        );
+      });
+      await s.case("标题是如实的合并未执行(不复用合并失败)", () => {
+        // 标题如实描述:转换根本没开始,不能说「合并失败」
+        assert(
+          cardTitle() === i18n.DICT.zh["convert.merge.blockedTitle"],
+          `卡片标题应为如实描述的「合并未执行」,实际 ${JSON.stringify(cardTitle())}`,
+        );
+        assert(
+          cardTitle() !== i18n.DICT.zh["convert.merge.failedTitle"],
+          "阻断不得复用「合并失败」标题(会让人以为转换跑过)",
+        );
+      });
+      await s.case("阻断后界面回到可用(锁释放/按钮可点/无残留转换态)", () => {
+        // 界面必须回到可用:命令锁释放 + 合并按钮可点(不留「永久忙碌」)
+        assert(!flow.isConvertCommandBlocked(), "阻断后命令锁应释放");
+        assert(
+          elementFor("mergeBtn").disabled === false,
+          `阻断后合并按钮应恢复可用,实际 disabled=${elementFor("mergeBtn").disabled}`,
+        );
+        assert(state.mode === null, `阻断后不应残留转换态,实际 mode=${state.mode}`);
+      });
+    });
 
     /* ---------- 12. 合并只有非阻断告警:照常弹报告 + 可继续 ---------- */
-    precheckPaths.length = 0;
-    const mergesBeforeSoft = mergeCount();
-    const softChain = flow.runMerge({ files: mergeFiles, format: "docx" });
-    await flush();
-    settleNext([unpairedMath()]);
-    await flush();
-    settleNext([unpairedMath()]);
-    await flush();
-    assert(
-      elementFor("precheckDialog").classList.contains("hidden") === false,
-      "合并的非阻断告警应照常弹报告(不得被合并阻断规则误伤)",
-    );
-    clickDecision(true);
-    await softChain;
-    assert(
-      mergeCount() === mergesBeforeSoft + 1,
-      `非阻断告警确认后照常合并,实际新增 ${mergeCount() - mergesBeforeSoft} 次`,
-    );
+    await suite.case("合并 · 非阻断告警照常弹报告且可继续", async () => {
+      precheckPaths.length = 0;
+      const mergesBeforeSoft = mergeCount();
+      const softChain = flow.runMerge({ files: mergeFiles, format: "docx" });
+      await flush();
+      settleNext([unpairedMath()]);
+      await flush();
+      settleNext([unpairedMath()]);
+      await flush();
+      assert(
+        elementFor("precheckDialog").classList.contains("hidden") === false,
+        "合并的非阻断告警应照常弹报告(不得被合并阻断规则误伤)",
+      );
+      clickDecision(true);
+      await softChain;
+      assert(
+        mergeCount() === mergesBeforeSoft + 1,
+        `非阻断告警确认后照常合并,实际新增 ${mergeCount() - mergesBeforeSoft} 次`,
+      );
+    });
 
     /* ---------- 13. 单文件遇未闭合围栏:仍是「警告 + 可继续」 ---------- */
-    precheckPaths.length = 0;
-    state.selectedFiles = [mergeFiles[0]];
-    const singleChain = flow.runConvert(mergeFiles[0], "docx");
-    await flush();
-    settleNext([blockingFence(7)]);
-    await flush();
-    assert(
-      elementFor("precheckDialog").classList.contains("hidden") === false,
-      "单文件遇未闭合围栏仍应弹报告(blocksMerge 只管合并)",
-    );
-    const convertsBefore = convertCount();
-    clickDecision(true);
-    await singleChain;
-    assert(
-      convertCount() === convertsBefore + 1,
-      "单文件点继续后照常转换(不得被合并阻断规则波及)",
-    );
+    await suite.case("单文件 · 未闭合围栏仍弹报告且点继续后照常转换", async () => {
+      precheckPaths.length = 0;
+      state.selectedFiles = [mergeFiles[0]];
+      const singleChain = flow.runConvert(mergeFiles[0], "docx");
+      await flush();
+      settleNext([blockingFence(7)]);
+      await flush();
+      assert(
+        elementFor("precheckDialog").classList.contains("hidden") === false,
+        "单文件遇未闭合围栏仍应弹报告(blocksMerge 只管合并)",
+      );
+      const convertsBefore = convertCount();
+      clickDecision(true);
+      await singleChain;
+      assert(
+        convertCount() === convertsBefore + 1,
+        "单文件点继续后照常转换(不得被合并阻断规则波及)",
+      );
+    });
 
     /* ---------- 14. 批量遇未闭合围栏:仍是「警告 + 可继续」 ---------- */
-    precheckPaths.length = 0;
-    state.selectedFiles = mergeFiles;
-    const batchChain2 = flow.runBatch();
-    await flush();
-    settleNext([blockingFence(7)]);
-    await flush();
-    settleNext([]);
-    await flush();
-    assert(
-      elementFor("precheckDialog").classList.contains("hidden") === false,
-      "批量遇未闭合围栏仍应弹报告(blocksMerge 只管合并)",
-    );
-    const batchesBefore = batchCount();
-    clickDecision(true);
-    await batchChain2;
-    assert(
-      batchCount() === batchesBefore + 1,
-      "批量点继续后照常转换(不得被合并阻断规则波及)",
-    );
+    await suite.case("批量 · 未闭合围栏仍弹报告且点继续后照常转换", async () => {
+      precheckPaths.length = 0;
+      state.selectedFiles = mergeFiles;
+      const batchChain2 = flow.runBatch();
+      await flush();
+      settleNext([blockingFence(7)]);
+      await flush();
+      settleNext([]);
+      await flush();
+      assert(
+        elementFor("precheckDialog").classList.contains("hidden") === false,
+        "批量遇未闭合围栏仍应弹报告(blocksMerge 只管合并)",
+      );
+      const batchesBefore = batchCount();
+      clickDecision(true);
+      await batchChain2;
+      assert(
+        batchCount() === batchesBefore + 1,
+        "批量点继续后照常转换(不得被合并阻断规则波及)",
+      );
+    });
     dialogs.hideBatchDialog(); // 批量收尾的结果窗是模态,后续用例需干净态
 
     /* ---------- 15. 2 个以上文件带阻断:详报第一个 + 「另有 N 个」 ---------- */
-    precheckPaths.length = 0;
-    const threeFiles = ["C:\\work\\a.md", "C:\\work\\b.md", "C:\\work\\c.md"];
-    const mergesBeforeMultiBlock = mergeCount();
-    const multiBlockChain = flow.runMerge({ files: threeFiles, format: "docx" });
-    await flush();
-    settleNext([blockingFence(7)]);
-    await flush();
-    settleNext([blockingFence(3)]);
-    await flush();
-    settleNext([blockingFence(5)]);
-    await flush();
-    const multiDetail = cardError();
-    assert(
-      multiDetail.includes("a.md") && multiDetail.includes("7"),
-      `应详报第一个出问题的文件(a.md 第 7 行),实际 ${JSON.stringify(multiDetail)}`,
-    );
-    assert(
-      multiDetail.includes("2"),
-      `应补出「另有 2 个」,实际 ${JSON.stringify(multiDetail)}`,
-    );
-    assert(
-      !multiDetail.includes("b.md") && !multiDetail.includes("c.md"),
-      `只详报第一个文件,不该把其余文件名也塞进信息,实际 ${JSON.stringify(multiDetail)}`,
-    );
-    // 多个阻断文件但名字互不相同 → 仍用文件名(不因「多文件」就退化成全路径)
-    assert(
-      !multiDetail.includes("\\"),
-      `名字不重名时卡片应只给文件名,实际 ${JSON.stringify(multiDetail)}`,
-    );
-    // 状态行短句给的是「带阻断的文件总数」(含首个),不是长文本
-    assert(
-      statusLine().includes("3"),
-      `状态行短句应给 3 个文件(总数),实际 ${JSON.stringify(statusLine())}`,
-    );
-    assert(
-      !statusLine().includes("变成一个代码块"),
-      `长文本只应出现在卡片一次,实际 ${JSON.stringify(statusLine())}`,
-    );
-    await multiBlockChain;
-    assert(mergeCount() === mergesBeforeMultiBlock, "多文件阻断时仍不转换");
+    await suite.case("多文件阻断 · 详报第一个并补出「另有 N 个」", async () => {
+      precheckPaths.length = 0;
+      const threeFiles = ["C:\\work\\a.md", "C:\\work\\b.md", "C:\\work\\c.md"];
+      const mergesBeforeMultiBlock = mergeCount();
+      const multiBlockChain = flow.runMerge({ files: threeFiles, format: "docx" });
+      await flush();
+      settleNext([blockingFence(7)]);
+      await flush();
+      settleNext([blockingFence(3)]);
+      await flush();
+      settleNext([blockingFence(5)]);
+      await flush();
+      const multiDetail = cardError();
+      assert(
+        multiDetail.includes("a.md") && multiDetail.includes("7"),
+        `应详报第一个出问题的文件(a.md 第 7 行),实际 ${JSON.stringify(multiDetail)}`,
+      );
+      assert(
+        multiDetail.includes("2"),
+        `应补出「另有 2 个」,实际 ${JSON.stringify(multiDetail)}`,
+      );
+      assert(
+        !multiDetail.includes("b.md") && !multiDetail.includes("c.md"),
+        `只详报第一个文件,不该把其余文件名也塞进信息,实际 ${JSON.stringify(multiDetail)}`,
+      );
+      // 多个阻断文件但名字互不相同 → 仍用文件名(不因「多文件」就退化成全路径)
+      assert(
+        !multiDetail.includes("\\"),
+        `名字不重名时卡片应只给文件名,实际 ${JSON.stringify(multiDetail)}`,
+      );
+      // 状态行短句给的是「带阻断的文件总数」(含首个),不是长文本
+      assert(
+        statusLine().includes("3"),
+        `状态行短句应给 3 个文件(总数),实际 ${JSON.stringify(statusLine())}`,
+      );
+      assert(
+        !statusLine().includes("变成一个代码块"),
+        `长文本只应出现在卡片一次,实际 ${JSON.stringify(statusLine())}`,
+      );
+      await multiBlockChain;
+      assert(mergeCount() === mergesBeforeMultiBlock, "多文件阻断时仍不转换");
+    });
 
     /* ---------- 16. 成书向导付印路径(withPrecheck([]) → runMerge)同样被阻断 ---------- */
-    precheckPaths.length = 0;
-    const mergesBeforeWizard = mergeCount();
-    const wizardChain = flow.withPrecheck([], () =>
-      flow.runMerge({ files: mergeFiles, format: "docx" }),
-    );
-    await flush();
-    settleNext([blockingFence(7)]);
-    await flush();
-    settleNext([]);
-    await flush();
-    await wizardChain;
-    assert(
-      preCount() === 2,
-      `向导付印应逐文件预检(借锁链里由 runMerge 提供),实际 ${JSON.stringify(precheckPaths)}`,
-    );
-    assert(mergeCount() === mergesBeforeWizard, "向导付印遇阻断同样不得合并");
-    assert(
-      cardError().includes("变成一个代码块"),
-      `向导付印的阻断详情同样应进卡片并呈现后果,实际 ${JSON.stringify(cardError())}`,
-    );
+    await suite.case("向导付印 · 借锁链里同样逐文件预检且遇阻断不合并", async () => {
+      precheckPaths.length = 0;
+      const mergesBeforeWizard = mergeCount();
+      const wizardChain = flow.withPrecheck([], () =>
+        flow.runMerge({ files: mergeFiles, format: "docx" }),
+      );
+      await flush();
+      settleNext([blockingFence(7)]);
+      await flush();
+      settleNext([]);
+      await flush();
+      await wizardChain;
+      assert(
+        preCount() === 2,
+        `向导付印应逐文件预检(借锁链里由 runMerge 提供),实际 ${JSON.stringify(precheckPaths)}`,
+      );
+      assert(mergeCount() === mergesBeforeWizard, "向导付印遇阻断同样不得合并");
+      assert(
+        cardError().includes("变成一个代码块"),
+        `向导付印的阻断详情同样应进卡片并呈现后果,实际 ${JSON.stringify(cardError())}`,
+      );
+    });
     state.selectedFiles = [];
 
     /* ---------- 17. 同名文件都有阻断:显示全路径(与报告弹窗同一判据) ---------- */
-    // 硬阻断没有「点继续」这条路,若只显示 intro.md,用户修完一份再撞另一份,
-    // 正好落回本轮要消除的「来回 N 轮」。
-    precheckPaths.length = 0;
-    const twinFiles = ["C:\\work\\docs\\intro.md", "C:\\work\\chapters\\intro.md"];
-    const mergesBeforeTwin = mergeCount();
-    const twinChain = flow.runMerge({ files: twinFiles, format: "docx" });
-    await flush();
-    settleNext([blockingFence(7)]);
-    await flush();
-    settleNext([blockingFence(9)]);
-    await flush();
-    const twinDetail = cardError();
-    assert(
-      twinDetail.includes(twinFiles[0] ?? ""),
-      `同名文件的阻断信息应显示全路径(第一个),实际 ${JSON.stringify(twinDetail)}`,
-    );
-    assert(
-      twinDetail.includes("1"),
-      `另一个同名文件应由「另有 1 个」带出,实际 ${JSON.stringify(twinDetail)}`,
-    );
-    assert(
-      !statusLine().includes("intro.md"),
-      `状态行短句不该带文件名(详情在卡片),实际 ${JSON.stringify(statusLine())}`,
-    );
-    await twinChain;
-    assert(mergeCount() === mergesBeforeTwin, "同名阻断同样不转换");
+    await suite.case("同名阻断 · 显示全路径且状态行不带文件名", async () => {
+      // 硬阻断没有「点继续」这条路,若只显示 intro.md,用户修完一份再撞另一份,
+      // 正好落回本轮要消除的「来回 N 轮」。
+      precheckPaths.length = 0;
+      const twinFiles = ["C:\\work\\docs\\intro.md", "C:\\work\\chapters\\intro.md"];
+      const mergesBeforeTwin = mergeCount();
+      const twinChain = flow.runMerge({ files: twinFiles, format: "docx" });
+      await flush();
+      settleNext([blockingFence(7)]);
+      await flush();
+      settleNext([blockingFence(9)]);
+      await flush();
+      const twinDetail = cardError();
+      assert(
+        twinDetail.includes(twinFiles[0] ?? ""),
+        `同名文件的阻断信息应显示全路径(第一个),实际 ${JSON.stringify(twinDetail)}`,
+      );
+      assert(
+        twinDetail.includes("1"),
+        `另一个同名文件应由「另有 1 个」带出,实际 ${JSON.stringify(twinDetail)}`,
+      );
+      assert(
+        !statusLine().includes("intro.md"),
+        `状态行短句不该带文件名(详情在卡片),实际 ${JSON.stringify(statusLine())}`,
+      );
+      await twinChain;
+      assert(mergeCount() === mergesBeforeTwin, "同名阻断同样不转换");
+    });
 
     /* ---------- 18. 同名但干净孪生:候选集含未报错的文件,仍回退全路径 ---------- */
-    precheckPaths.length = 0;
-    const twinClean = ["C:\\work\\docs\\notes.md", "C:\\work\\chapters\\notes.md"];
-    const twinCleanChain = flow.runMerge({ files: twinClean, format: "docx" });
-    await flush();
-    settleNext([blockingFence(2)]);
-    await flush();
-    settleNext([]); // 同名的另一份是干净的:候选集按「本次预检的文件」算,仍算重名
-    await flush();
-    assert(
-      cardError().includes(twinClean[0] ?? ""),
-      `同名的干净孪生也参与重名判定(否则指代不明),实际 ${JSON.stringify(cardError())}`,
-    );
-    assert(!cardError().includes("另有"), "只有一个文件带阻断 → 不应出现「另有 N 个」");
-    await twinCleanChain;
+    await suite.case("同名干净孪生 · 候选集按本次预检的文件算,仍回退全路径", async () => {
+      precheckPaths.length = 0;
+      const twinClean = ["C:\\work\\docs\\notes.md", "C:\\work\\chapters\\notes.md"];
+      const twinCleanChain = flow.runMerge({ files: twinClean, format: "docx" });
+      await flush();
+      settleNext([blockingFence(2)]);
+      await flush();
+      settleNext([]); // 同名的另一份是干净的:候选集按「本次预检的文件」算,仍算重名
+      await flush();
+      assert(
+        cardError().includes(twinClean[0] ?? ""),
+        `同名的干净孪生也参与重名判定(否则指代不明),实际 ${JSON.stringify(cardError())}`,
+      );
+      assert(!cardError().includes("另有"), "只有一个文件带阻断 → 不应出现「另有 N 个」");
+      await twinCleanChain;
+    });
     state.selectedFiles = [];
 
     /* ---------- 19. 真失败路径不受影响:标题仍是既有的「合并失败」 ---------- */
-    precheckPaths.length = 0;
-    usePendingPrecheck();
-    /** @type {any} */ (globalThis.window).api.convertMerge = async (
-      /** @type {string[]} */ files,
-      /** @type {string} */ format,
-    ) => {
-      mergeCalls.push({ files, format });
-      return { ok: false, error: "输出目录不可写" };
-    };
-    const realFailChain = flow.runMerge({ files: mergeFiles, format: "docx" });
-    await flush();
-    settleNext([]);
-    await flush();
-    settleNext([]);
-    await flush();
-    assert(
-      elementFor("precheckDialog").classList.contains("hidden"),
-      "无告警时不该弹报告框(直接进转换)",
-    );
-    await realFailChain;
-    assert(
-      cardTitle() === i18n.DICT.zh["convert.merge.failedTitle"],
-      `真失败仍应说「合并失败」,实际 ${JSON.stringify(cardTitle())}`,
-    );
-    assert(
-      cardTitle() !== i18n.DICT.zh["convert.merge.blockedTitle"],
-      "真失败不得被阻断标题污染",
-    );
-    assert(
-      cardError().includes("输出目录不可写"),
-      `真失败的原因应照旧进卡片,实际 ${JSON.stringify(cardError())}`,
-    );
-    assert(
-      !statusLine().includes("未闭合"),
-      `真失败的状态行不该说围栏,实际 ${JSON.stringify(statusLine())}`,
-    );
+    await suite.case("真失败路径 · 标题仍是合并失败且未被阻断文案污染", async () => {
+      precheckPaths.length = 0;
+      usePendingPrecheck();
+      /** @type {any} */ (globalThis.window).api.convertMerge = async (
+        /** @type {string[]} */ files,
+        /** @type {string} */ format,
+      ) => {
+        mergeCalls.push({ files, format });
+        return { ok: false, error: "输出目录不可写" };
+      };
+      const realFailChain = flow.runMerge({ files: mergeFiles, format: "docx" });
+      await flush();
+      settleNext([]);
+      await flush();
+      settleNext([]);
+      await flush();
+      assert(
+        elementFor("precheckDialog").classList.contains("hidden"),
+        "无告警时不该弹报告框(直接进转换)",
+      );
+      await realFailChain;
+      assert(
+        cardTitle() === i18n.DICT.zh["convert.merge.failedTitle"],
+        `真失败仍应说「合并失败」,实际 ${JSON.stringify(cardTitle())}`,
+      );
+      assert(
+        cardTitle() !== i18n.DICT.zh["convert.merge.blockedTitle"],
+        "真失败不得被阻断标题污染",
+      );
+      assert(
+        cardError().includes("输出目录不可写"),
+        `真失败的原因应照旧进卡片,实际 ${JSON.stringify(cardError())}`,
+      );
+      assert(
+        !statusLine().includes("未闭合"),
+        `真失败的状态行不该说围栏,实际 ${JSON.stringify(statusLine())}`,
+      );
+    });
     /** @type {any} */ (globalThis.window).api.convertMerge = async (
       /** @type {string[]} */ files,
       /** @type {string} */ format,
@@ -822,98 +886,104 @@ export async function run() {
       assert(state.mode === null, `${label}:失败后应归位转换态,实际 mode=${state.mode}`);
     };
 
-    precheckPaths.length = 0;
-    resetSummaryCard();
-    usePrecheck(async () => []); // 无告警:直接进转换,不弹报告框
-    /** @type {any} */ (globalThis.window).api.convert = async () => {
-      throw new Error("IPC 断了");
-    };
-    state.selectedFiles = [mergeFiles[0]];
-    await flow.runConvert(mergeFiles[0], "docx");
-    assertThrownFailure("单文件", "convert.failed.status", "convert.failed.title", "IPC 断了");
-    // 命令锁释放的行为证据:紧接着再发一条命令,应能真的走到 IPC
-    const convertsBeforeRetry = convertCount();
-    /** @type {any} */ (globalThis.window).api.convert = async (
-      /** @type {string} */ filePath,
-      /** @type {string} */ format,
-    ) => {
-      convertCalls.push({ filePath, format });
-      return { ok: true, outputPath: "out.docx", warnings: [] };
-    };
-    precheckPaths.length = 0;
-    await flow.runConvert(mergeFiles[0], "docx");
-    assert(
-      convertCount() === convertsBeforeRetry + 1,
-      `单文件失败后下一条命令仍应能发起(锁已释放),实际新增 ${convertCount() - convertsBeforeRetry} 次`,
-    );
+    await suite.case("单文件抛错 · 失败呈现共核 + 下一条命令仍能发起", async () => {
+      precheckPaths.length = 0;
+      resetSummaryCard();
+      usePrecheck(async () => []); // 无告警:直接进转换,不弹报告框
+      /** @type {any} */ (globalThis.window).api.convert = async () => {
+        throw new Error("IPC 断了");
+      };
+      state.selectedFiles = [mergeFiles[0]];
+      await flow.runConvert(mergeFiles[0], "docx");
+      assertThrownFailure("单文件", "convert.failed.status", "convert.failed.title", "IPC 断了");
+      // 命令锁释放的行为证据:紧接着再发一条命令,应能真的走到 IPC
+      const convertsBeforeRetry = convertCount();
+      /** @type {any} */ (globalThis.window).api.convert = async (
+        /** @type {string} */ filePath,
+        /** @type {string} */ format,
+      ) => {
+        convertCalls.push({ filePath, format });
+        return { ok: true, outputPath: "out.docx", warnings: [] };
+      };
+      precheckPaths.length = 0;
+      await flow.runConvert(mergeFiles[0], "docx");
+      assert(
+        convertCount() === convertsBeforeRetry + 1,
+        `单文件失败后下一条命令仍应能发起(锁已释放),实际新增 ${convertCount() - convertsBeforeRetry} 次`,
+      );
+    });
 
     /* ---------- 21. 批量:convertBatch 抛错(含 lastBatchResult 清理) ---------- */
-    precheckPaths.length = 0;
-    resetSummaryCard();
-    /** @type {any} */ (globalThis.window).api.convertBatch = async () => {
-      throw new Error("IPC 断了");
-    };
-    // 批量窗的「重试失败项」等入口读 lastBatchResult:抛错后留陈旧结果会让用户
-    // 重试到上一轮的失败项,故 catch 里必须清空(批量独有,另两条流程无此字段)。
-    state.lastBatchResult = {
-      ok: true,
-      items: [{ file: "C:\\work\\stale.md", ok: false, error: "上一轮的失败" }],
-      okCount: 0,
-      failCount: 1,
-      canceledCount: 0,
-    };
-    state.selectedFiles = mergeFiles;
-    await flow.runBatch();
-    assertThrownFailure("批量", "convert.batch.failed", "convert.batch.failedTitle", "IPC 断了");
-    assert(
-      state.lastBatchResult === null,
-      `批量抛错后应清空 lastBatchResult,实际 ${JSON.stringify(state.lastBatchResult)}`,
-    );
-    const batchesBeforeRetry = batchCount();
-    /** @type {any} */ (globalThis.window).api.convertBatch = async (
-      /** @type {string[]} */ files,
-      /** @type {string} */ format,
-    ) => {
-      batchCalls.push({ files, format });
-      return {
-        items: files.map((file) => ({ file, ok: true })),
-        okCount: files.length,
-        failCount: 0,
-        canceledCount: 0,
-        canceled: false,
+    await suite.case("批量抛错 · 失败呈现共核 + 清 lastBatchResult + 下一条命令仍能发起", async () => {
+      precheckPaths.length = 0;
+      resetSummaryCard();
+      /** @type {any} */ (globalThis.window).api.convertBatch = async () => {
+        throw new Error("IPC 断了");
       };
-    };
-    precheckPaths.length = 0;
-    await flow.runBatch();
-    assert(
-      batchCount() === batchesBeforeRetry + 1,
-      `批量失败后下一条命令仍应能发起(锁已释放),实际新增 ${batchCount() - batchesBeforeRetry} 次`,
-    );
+      // 批量窗的「重试失败项」等入口读 lastBatchResult:抛错后留陈旧结果会让用户
+      // 重试到上一轮的失败项,故 catch 里必须清空(批量独有,另两条流程无此字段)。
+      state.lastBatchResult = {
+        ok: true,
+        items: [{ file: "C:\\work\\stale.md", ok: false, error: "上一轮的失败" }],
+        okCount: 0,
+        failCount: 1,
+        canceledCount: 0,
+      };
+      state.selectedFiles = mergeFiles;
+      await flow.runBatch();
+      assertThrownFailure("批量", "convert.batch.failed", "convert.batch.failedTitle", "IPC 断了");
+      assert(
+        state.lastBatchResult === null,
+        `批量抛错后应清空 lastBatchResult,实际 ${JSON.stringify(state.lastBatchResult)}`,
+      );
+      const batchesBeforeRetry = batchCount();
+      /** @type {any} */ (globalThis.window).api.convertBatch = async (
+        /** @type {string[]} */ files,
+        /** @type {string} */ format,
+      ) => {
+        batchCalls.push({ files, format });
+        return {
+          items: files.map((file) => ({ file, ok: true })),
+          okCount: files.length,
+          failCount: 0,
+          canceledCount: 0,
+          canceled: false,
+        };
+      };
+      precheckPaths.length = 0;
+      await flow.runBatch();
+      assert(
+        batchCount() === batchesBeforeRetry + 1,
+        `批量失败后下一条命令仍应能发起(锁已释放),实际新增 ${batchCount() - batchesBeforeRetry} 次`,
+      );
+    });
     dialogs.hideBatchDialog(); // 成功路径的结果窗是模态,后续用例需干净态
     state.selectedFiles = [];
 
     /* ---------- 22. 合并:convertMerge 抛错 ---------- */
-    precheckPaths.length = 0;
-    resetSummaryCard();
-    /** @type {any} */ (globalThis.window).api.convertMerge = async () => {
-      throw new Error("IPC 断了");
-    };
-    await flow.runMerge({ files: mergeFiles, format: "docx" });
-    assertThrownFailure("合并", "convert.merge.failed", "convert.merge.failedTitle", "IPC 断了");
-    const mergesBeforeRetry = mergeCount();
-    /** @type {any} */ (globalThis.window).api.convertMerge = async (
-      /** @type {string[]} */ files,
-      /** @type {string} */ format,
-    ) => {
-      mergeCalls.push({ files, format });
-      return { ok: true, outputPath: `out.${format}`, warnings: [] };
-    };
-    precheckPaths.length = 0;
-    await flow.runMerge({ files: mergeFiles, format: "docx" });
-    assert(
-      mergeCount() === mergesBeforeRetry + 1,
-      `合并失败后下一条命令仍应能发起(锁已释放),实际新增 ${mergeCount() - mergesBeforeRetry} 次`,
-    );
+    await suite.case("合并抛错 · 失败呈现共核 + 下一条命令仍能发起", async () => {
+      precheckPaths.length = 0;
+      resetSummaryCard();
+      /** @type {any} */ (globalThis.window).api.convertMerge = async () => {
+        throw new Error("IPC 断了");
+      };
+      await flow.runMerge({ files: mergeFiles, format: "docx" });
+      assertThrownFailure("合并", "convert.merge.failed", "convert.merge.failedTitle", "IPC 断了");
+      const mergesBeforeRetry = mergeCount();
+      /** @type {any} */ (globalThis.window).api.convertMerge = async (
+        /** @type {string[]} */ files,
+        /** @type {string} */ format,
+      ) => {
+        mergeCalls.push({ files, format });
+        return { ok: true, outputPath: `out.${format}`, warnings: [] };
+      };
+      precheckPaths.length = 0;
+      await flow.runMerge({ files: mergeFiles, format: "docx" });
+      assert(
+        mergeCount() === mergesBeforeRetry + 1,
+        `合并失败后下一条命令仍应能发起(锁已释放),实际新增 ${mergeCount() - mergesBeforeRetry} 次`,
+      );
+    });
 
     /* ---------- 23. 可操作化口径:单文件/合并改写,批量原样透传 ---------- */
     // 20-22 的错误文本不含任何被 actionableError 识别的错误码,故那一层是
@@ -922,37 +992,43 @@ export async function run() {
     // 原始 error,状态行若单独改写就会与弹窗里那条对不上),故此处断言其透传。
     const busyText = i18nApi.t("error.fileBusy");
     const busyMessage = "EBUSY: resource busy or locked";
-    precheckPaths.length = 0;
-    resetSummaryCard();
-    /** @type {any} */ (globalThis.window).api.convert = async () => {
-      throw new Error(busyMessage);
-    };
-    state.selectedFiles = [mergeFiles[0]];
-    await flow.runConvert(mergeFiles[0], "docx");
-    assertThrownFailure("单文件可操作化", "convert.failed.status", "convert.failed.title", busyText);
-    assert(
-      !cardError().includes("EBUSY"),
-      `单文件的错误码应被换成可操作文案,实际 ${JSON.stringify(cardError())}`,
-    );
-    precheckPaths.length = 0;
-    resetSummaryCard();
-    /** @type {any} */ (globalThis.window).api.convertMerge = async () => {
-      throw new Error(busyMessage);
-    };
-    await flow.runMerge({ files: mergeFiles, format: "docx" });
-    assertThrownFailure("合并可操作化", "convert.merge.failed", "convert.merge.failedTitle", busyText);
-    precheckPaths.length = 0;
-    resetSummaryCard();
-    /** @type {any} */ (globalThis.window).api.convertBatch = async () => {
-      throw new Error(busyMessage);
-    };
-    state.selectedFiles = mergeFiles;
-    await flow.runBatch();
-    assertThrownFailure("批量可操作化", "convert.batch.failed", "convert.batch.failedTitle", busyMessage);
-    assert(
-      cardError() === busyMessage,
-      `批量刻意不过 displayError(与批量窗逐条展示的原始 error 对齐),实际 ${JSON.stringify(cardError())}`,
-    );
+    await suite.case("可操作化 · 单文件把错误码换成可操作文案", async () => {
+      precheckPaths.length = 0;
+      resetSummaryCard();
+      /** @type {any} */ (globalThis.window).api.convert = async () => {
+        throw new Error(busyMessage);
+      };
+      state.selectedFiles = [mergeFiles[0]];
+      await flow.runConvert(mergeFiles[0], "docx");
+      assertThrownFailure("单文件可操作化", "convert.failed.status", "convert.failed.title", busyText);
+      assert(
+        !cardError().includes("EBUSY"),
+        `单文件的错误码应被换成可操作文案,实际 ${JSON.stringify(cardError())}`,
+      );
+    });
+    await suite.case("可操作化 · 合并把错误码换成可操作文案", async () => {
+      precheckPaths.length = 0;
+      resetSummaryCard();
+      /** @type {any} */ (globalThis.window).api.convertMerge = async () => {
+        throw new Error(busyMessage);
+      };
+      await flow.runMerge({ files: mergeFiles, format: "docx" });
+      assertThrownFailure("合并可操作化", "convert.merge.failed", "convert.merge.failedTitle", busyText);
+    });
+    await suite.case("可操作化 · 批量刻意原样透传错误码", async () => {
+      precheckPaths.length = 0;
+      resetSummaryCard();
+      /** @type {any} */ (globalThis.window).api.convertBatch = async () => {
+        throw new Error(busyMessage);
+      };
+      state.selectedFiles = mergeFiles;
+      await flow.runBatch();
+      assertThrownFailure("批量可操作化", "convert.batch.failed", "convert.batch.failedTitle", busyMessage);
+      assert(
+        cardError() === busyMessage,
+        `批量刻意不过 displayError(与批量窗逐条展示的原始 error 对齐),实际 ${JSON.stringify(cardError())}`,
+      );
+    });
     // 收尾复位桩与状态:留下抛错桩会成为后面段的隐形地雷(同进程共用 window.api)
     /** @type {any} */ (globalThis.window).api.convert = async () => ({
       ok: true,
@@ -978,43 +1054,54 @@ export async function run() {
     /** 取占位符集合并排序(占位符须三语言一致,与 i18n-registry 段同款口径)。 */
     const placeholders = (/** @type {unknown} */ text) =>
       [...String(text).matchAll(/\$\{(\w+)\}/g)].map((m) => m[1]).sort().join(",");
+    // 每个键一行 case:这一行就是「该键三语言齐备 + 占位符一致 + 未沿用中文原文」
     for (const key of NEW_KEYS) {
-      for (const { code } of i18n.LANGUAGES) {
-        const value = i18n.DICT[code][key];
-        assert(
-          typeof value === "string" && value.trim().length > 0,
-          `${code} 应有非空文案 ${key}`,
-        );
-        assert(
-          placeholders(value) === placeholders(i18n.DICT.zh[key]),
-          `${code}.${key} 占位符应与 zh 一致(zh=[${placeholders(i18n.DICT.zh[key])}] ${code}=[${placeholders(value)}])`,
-        );
-      }
-      assert(i18n.DICT.en[key] !== i18n.DICT.zh[key], `en.${key} 不应沿用中文原文`);
-      assert(i18n.DICT.ja[key] !== i18n.DICT.zh[key], `ja.${key} 不应沿用中文原文`);
+      await suite.case(`i18n · ${key} 三语言齐备且占位符一致`, () => {
+        for (const { code } of i18n.LANGUAGES) {
+          const value = i18n.DICT[code][key];
+          assert(
+            typeof value === "string" && value.trim().length > 0,
+            `${code} 应有非空文案 ${key}`,
+          );
+          assert(
+            placeholders(value) === placeholders(i18n.DICT.zh[key]),
+            `${code}.${key} 占位符应与 zh 一致(zh=[${placeholders(i18n.DICT.zh[key])}] ${code}=[${placeholders(value)}])`,
+          );
+        }
+        assert(i18n.DICT.en[key] !== i18n.DICT.zh[key], `en.${key} 不应沿用中文原文`);
+        assert(i18n.DICT.ja[key] !== i18n.DICT.zh[key], `ja.${key} 不应沿用中文原文`);
+      });
     }
-    assert(
-      placeholders(i18n.DICT.zh["convert.merge.blockedStatus"]) === "count",
-      "blockedStatus 的占位符应恰为 count",
-    );
-    assert(
-      placeholders(i18n.DICT.zh["convert.merge.blockedTitle"]) === "",
-      "blockedTitle 不该带占位符(标题是固定措辞)",
-    );
-    assert(
-      i18n.DICT.zh["convert.merge.blockedTitle"] !== i18n.DICT.zh["convert.merge.failedTitle"],
-      "阻断标题不得与真失败标题同文案(否则两处又混成一句话)",
-    );
-    // 逐语言经 t() 命中(缺键会回退裸 key/英文,在此暴露)
-    for (const { code } of i18n.LANGUAGES) {
-      i18nApi.setLanguage(code);
+    await suite.case("i18n · blockedTitle 不带占位符且与真失败标题不同文案", () => {
       assert(
-        i18nApi.t("convert.merge.blockedStatus", { count: 2 }) ===
-          i18n.DICT[code]["convert.merge.blockedStatus"].replace("${count}", "2"),
-        `${code} 下 t(convert.merge.blockedStatus) 应命中本语言字典`,
+        placeholders(i18n.DICT.zh["convert.merge.blockedStatus"]) === "count",
+        "blockedStatus 的占位符应恰为 count",
       );
-    }
-    i18nApi.setLanguage("zh"); // 语言是模块级状态,复位避免污染后续段
+      assert(
+        placeholders(i18n.DICT.zh["convert.merge.blockedTitle"]) === "",
+        "blockedTitle 不该带占位符(标题是固定措辞)",
+      );
+      assert(
+        i18n.DICT.zh["convert.merge.blockedTitle"] !== i18n.DICT.zh["convert.merge.failedTitle"],
+        "阻断标题不得与真失败标题同文案(否则两处又混成一句话)",
+      );
+    });
+    // 逐语言经 t() 命中(缺键会回退裸 key/英文,在此暴露)。
+    // 语言是模块级状态:切语言与复位成对放在同一条 case 里,失败也不污染后续段
+    await suite.case("i18n · 逐语言经 t() 命中本语言字典", () => {
+      try {
+        for (const { code } of i18n.LANGUAGES) {
+          i18nApi.setLanguage(code);
+          assert(
+            i18nApi.t("convert.merge.blockedStatus", { count: 2 }) ===
+              i18n.DICT[code]["convert.merge.blockedStatus"].replace("${count}", "2"),
+            `${code} 下 t(convert.merge.blockedStatus) 应命中本语言字典`,
+          );
+        }
+      } finally {
+        i18nApi.setLanguage("zh"); // 复位避免污染后续段
+      }
+    });
 
     /* ---------- 25. 守护:裁切修复的两条 flex:none 不得被摘掉(源契约) ---------- */
     // 固定槽 .feed 里的两项都不可压缩:可压缩项被更高的一项挤扁后,自己的
@@ -1026,27 +1113,34 @@ export async function run() {
         .readFileSync(path.join(ROOT, "src", "renderer", "style", "base.css"), "utf8")
         .replace(/\/\*[\s\S]*?\*\//g, ""),
     );
-    assert(statusRule, "base.css 应有 .status 规则");
-    assert(
-      /flex:\s*none/.test(statusRule?.[1] ?? ""),
-      `.status 必须 flex:none(不可被固定槽里的汇总卡压扁),实际规则体:${statusRule?.[1]}`,
-    );
     const cardRule = /\n\.feed \.result-summary \{([^}]*)\}/.exec(
       fs
         .readFileSync(path.join(ROOT, "src", "renderer", "style", "dialogs.css"), "utf8")
         .replace(/\/\*[\s\S]*?\*\//g, ""),
     );
-    assert(cardRule, "dialogs.css 应有 .feed .result-summary 规则");
-    assert(
-      /flex:\s*none/.test(cardRule?.[1] ?? ""),
-      `.feed .result-summary 必须 flex:none(卡片高于槽时交给槽内滚动,而不是被压扁),实际规则体:${cardRule?.[1]}`,
-    );
+    await suite.describe("源契约 · 固定槽两项不可压缩", async (s) => {
+      await s.case("base.css 的 .status 必须 flex:none", () => {
+        assert(statusRule, "base.css 应有 .status 规则");
+        assert(
+          /flex:\s*none/.test(statusRule?.[1] ?? ""),
+          `.status 必须 flex:none(不可被固定槽里的汇总卡压扁),实际规则体:${statusRule?.[1]}`,
+        );
+      });
+      await s.case("dialogs.css 的 .feed .result-summary 必须 flex:none", () => {
+        assert(cardRule, "dialogs.css 应有 .feed .result-summary 规则");
+        assert(
+          /flex:\s*none/.test(cardRule?.[1] ?? ""),
+          `.feed .result-summary 必须 flex:none(卡片高于槽时交给槽内滚动,而不是被压扁),实际规则体:${cardRule?.[1]}`,
+        );
+      });
+    });
 
     /* ---------- 26. 守护:调用点不再自带 withPrecheck(预检只在命令函数内部) ---------- */
     // 预检收口在 convert-flow 的三个命令函数里;入口再包一层就会双跑预检、
     // 连弹两次报告。唯一例外是成书向导:它用 withPrecheck([]) 借锁把
     // 「付印 docx+pdf」当一条命令,预检本身由 runMerge 内部提供。
     const srcRoot = path.join(ROOT, "src", "renderer");
+    // 全树扫源码是取数(与两条断言无关),留在 case 外
     /** @type {string[]} */
     const wrapCallers = [];
     const walk = (/** @type {string} */ dir) => {
@@ -1063,26 +1157,34 @@ export async function run() {
       }
     };
     walk(srcRoot);
-    assert(
-      wrapCallers.length === 1 && wrapCallers[0] === "wizard/book-wizard.ts",
-      `预检收口后调用点不应再出现 withPrecheck(唯一例外:向导借锁),实际 ${JSON.stringify(wrapCallers)}`,
-    );
     const flowSource = fs.readFileSync(
       path.join(srcRoot, "convert/convert-flow.ts"),
       "utf8",
     );
-    for (const command of ["runConvert", "runBatch", "runMerge"]) {
-      assert(
-        new RegExp(`export function ${command}\\([\\s\\S]{0,320}?precheckedCommand\\(`).test(
-          flowSource,
-        ),
-        `${command} 入口应自带预检收口(precheckedCommand)`,
-      );
-    }
+    await suite.describe("源契约 · 预检只在命令函数内部", async (s) => {
+      await s.case("调用点不再自带 withPrecheck(唯一例外是向导借锁)", () => {
+        assert(
+          wrapCallers.length === 1 && wrapCallers[0] === "wizard/book-wizard.ts",
+          `预检收口后调用点不应再出现 withPrecheck(唯一例外:向导借锁),实际 ${JSON.stringify(wrapCallers)}`,
+        );
+      });
+      // 每个命令函数一行 case:这一行就是「该入口自带 precheckedCommand 收口」
+      for (const command of ["runConvert", "runBatch", "runMerge"]) {
+        await s.case(`${command} 入口自带预检收口`, () => {
+          assert(
+            new RegExp(`export function ${command}\\([\\s\\S]{0,320}?precheckedCommand\\(`).test(
+              flowSource,
+            ),
+            `${command} 入口应自带预检收口(precheckedCommand)`,
+          );
+        });
+      }
+    });
 
     console.log(
       "[ok] precheck-multi-file:合并/批量/单文件/粘贴直转逐文件预检(按序·每文件一次) + 决策门(确认前不转换/取消即中止) + 报告按文件分组(h3 组头/单组扁平/同名回退全路径) + 预检异常不阻断 + busy 中止 + 预检期单实例 + 合并遇 blocksMerge 阻断(不弹框·不转换·界面恢复·多文件补「另有 N 个」·向导付印同阻·同名回退全路径) + 单文件/批量不被波及 + 抛错路径(单文件/批量/合并:状态行·卡片 fail 态+failedTitle·原始错误·命令锁释放·mode 归位·批量清 lastBatchResult·可操作化口径) + 调用点不再自带 withPrecheck 断言通过",
     );
+    return { cases: suite.results };
   } finally {
     dom.restore();
   }

@@ -21,6 +21,7 @@ import hljs from "highlight.js/lib/common";
 import { unzipPart } from "../harness/docx-utils.js";
 import { saveArtifact } from "../harness/artifacts.js";
 import { convertWithFs, pdfHtmlOf } from "../harness/convert-helpers.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /** @typedef {import("../../dist/core/i18n/index.js").ConvertWarning} ConvertWarning */
 
@@ -44,57 +45,77 @@ export const fixtures = {
 };
 
 export async function run() {
+  const suite = createCaseSuite();
   // ---- 1. ```ts 高亮:keyword/string/comment 着色 + 特殊字符还原 ----
   const buffer = await renderDocx(parseMarkdown(MD_TS));
+  // 空 buffer 是解包前提,留在 case 外:归进去后每条着色判定都报「未着色」,盖掉真因
   if (buffer.length === 0) {
     throw new Error("code-highlight 断言失败:docx buffer 为空");
   }
   const xml = await unzipPart(buffer, "word/document.xml");
-  // keyword(const/function/return)→ CF222E
-  if (!xml.includes('<w:color w:val="CF222E"/>')) {
-    throw new Error('code-highlight 断言失败:keyword 未着色(期望 <w:color w:val="CF222E"/>)');
-  }
-  // string(模板字符串 `Hello, )→ 0A3069
-  if (!xml.includes('<w:color w:val="0A3069"/>')) {
-    throw new Error('code-highlight 断言失败:string 未着色(期望 <w:color w:val="0A3069"/>)');
-  }
+  await suite.case("keyword 着色为 CF222E", () => {
+    if (!xml.includes('<w:color w:val="CF222E"/>')) {
+      throw new Error('code-highlight 断言失败:keyword 未着色(期望 <w:color w:val="CF222E"/>)');
+    }
+  });
+  await suite.case("string 着色为 0A3069", () => {
+    if (!xml.includes('<w:color w:val="0A3069"/>')) {
+      throw new Error('code-highlight 断言失败:string 未着色(期望 <w:color w:val="0A3069"/>)');
+    }
+  });
   // comment → 6E7781 + 斜体(<w:i/>)
-  if (!xml.includes('<w:color w:val="6E7781"/>') || !xml.includes("<w:i/>")) {
-    throw new Error("code-highlight 断言失败:comment 未着色/未斜体(期望 6E7781 + <w:i/>)");
-  }
+  await suite.case("comment 着色为 6E7781 且斜体", () => {
+    if (!xml.includes('<w:color w:val="6E7781"/>') || !xml.includes("<w:i/>")) {
+      throw new Error("code-highlight 断言失败:comment 未着色/未斜体(期望 6E7781 + <w:i/>)");
+    }
+  });
   // 特殊字符还原:hljs 实体解码后 docx 库按 XML 转义序列化(< → &lt;),无双重转义
-  if (!xml.includes('<w:t xml:space="preserve">// note a &lt; b &amp;&amp; c &gt; d</w:t>')) {
-    throw new Error("code-highlight 断言失败:注释特殊字符未正确还原(< > & 应解码后转义序列化)");
-  }
-  if (xml.includes("&amp;lt;")) {
-    throw new Error("code-highlight 断言失败:特殊字符双重转义残留(&amp;lt; 说明实体未解码)");
-  }
+  await suite.case("注释特殊字符解码后转义序列化", () => {
+    if (!xml.includes('<w:t xml:space="preserve">// note a &lt; b &amp;&amp; c &gt; d</w:t>')) {
+      throw new Error("code-highlight 断言失败:注释特殊字符未正确还原(< > & 应解码后转义序列化)");
+    }
+  });
+  await suite.case("无特殊字符双重转义残留", () => {
+    if (xml.includes("&amp;lt;")) {
+      throw new Error("code-highlight 断言失败:特殊字符双重转义残留(&amp;lt; 说明实体未解码)");
+    }
+  });
   console.log("[ok] code-highlight:```ts 高亮(keyword/string/comment 着色 + 特殊字符还原)断言通过");
 
   // ---- 2. 无语言围栏 → 无高亮(无 <w:color) ----
   const plainXml = await unzipPart(await renderDocx(parseMarkdown(MD_PLAIN)), "word/document.xml");
-  if (!plainXml.includes("const plain = 1;")) {
-    throw new Error("code-highlight 断言失败:无语言代码块文本缺失");
-  }
-  if (plainXml.includes("<w:color")) {
-    throw new Error("code-highlight 断言失败:无语言代码块不应有高亮(<w:color)");
-  }
+  await suite.case("无语言代码块文本在位", () => {
+    if (!plainXml.includes("const plain = 1;")) {
+      throw new Error("code-highlight 断言失败:无语言代码块文本缺失");
+    }
+  });
+  await suite.case("无语言代码块无高亮色", () => {
+    if (plainXml.includes("<w:color")) {
+      throw new Error("code-highlight 断言失败:无语言代码块不应有高亮(<w:color)");
+    }
+  });
   console.log("[ok] code-highlight:无语言代码块降级等宽文本(无 <w:color)断言通过");
 
   // ---- 3. 未知语言围栏 → 无高亮 ----
   const unknownXml = await unzipPart(await renderDocx(parseMarkdown(MD_UNKNOWN)), "word/document.xml");
-  if (!unknownXml.includes("const unknown = 1;")) {
-    throw new Error("code-highlight 断言失败:未知语言代码块文本缺失");
-  }
-  if (unknownXml.includes("<w:color")) {
-    throw new Error("code-highlight 断言失败:未知语言代码块不应有高亮(<w:color)");
-  }
+  await suite.case("未知语言代码块文本在位", () => {
+    if (!unknownXml.includes("const unknown = 1;")) {
+      throw new Error("code-highlight 断言失败:未知语言代码块文本缺失");
+    }
+  });
+  await suite.case("未知语言代码块无高亮色", () => {
+    if (unknownXml.includes("<w:color")) {
+      throw new Error("code-highlight 断言失败:未知语言代码块不应有高亮(<w:color)");
+    }
+  });
   console.log("[ok] code-highlight:未知语言代码块降级等宽文本(无 <w:color)断言通过");
 
   // ---- 4. 行结构:3 行代码 → 2 个 <w:br/> ----
-  if ((xml.match(/<w:br\/>/g) || []).length !== 2) {
-    throw new Error("code-highlight 断言失败:3 行代码换行 run(<w:br/>)数量 != 2");
-  }
+  await suite.case("3 行代码换行 run 数量为 2", () => {
+    if ((xml.match(/<w:br\/>/g) || []).length !== 2) {
+      throw new Error("code-highlight 断言失败:3 行代码换行 run(<w:br/>)数量 != 2");
+    }
+  });
   console.log("[ok] code-highlight:行结构(3 行 → 2 个 <w:br/>)断言通过");
 
   // ---- 5. 文本完整:原文各片段均出现在 XML 中(高亮拆分不丢内容) ----
@@ -112,10 +133,13 @@ export async function run() {
     "`Hello, ",
     "${name}",
   ];
+  // 片段逐个一个 case:高亮拆分丢一段不该掩盖其余片段
   for (const frag of fragments) {
-    if (!xml.includes(`<w:t xml:space="preserve">${frag}</w:t>`)) {
-      throw new Error(`code-highlight 断言失败:高亮拆分后缺少文本片段「${frag}」`);
-    }
+    await suite.case(`高亮拆分后文本片段在位: ${frag}`, () => {
+      if (!xml.includes(`<w:t xml:space="preserve">${frag}</w:t>`)) {
+        throw new Error(`code-highlight 断言失败:高亮拆分后缺少文本片段「${frag}」`);
+      }
+    });
   }
   console.log("[ok] code-highlight:文本完整(高亮拆分后原文各片段均在)断言通过");
 
@@ -125,6 +149,8 @@ export async function run() {
   // 触发方式与 basic-render pdf 侧一致(注册编译期即抛错的坏语言,用后注销)。
   // 坏语言注册是本用例的触发手段(注册/编译期即抛错),按 hljs 的 Language 契约收窄夹具形状
   hljs.registerLanguage("broken", () => /** @type {import("highlight.js").Language} */ ({ match: "x", begin: /y/ }));
+  // ⚠ unregisterLanguage 留在 run() 顶层的 finally:清理若进了 case,
+  // case 判红时 hljs 注册表会残留坏语言,污染其后所有段(而不是只报本段这一条)
   try {
     /** @type {ConvertWarning[]} */
     const brokenWarnings = [];
@@ -132,15 +158,21 @@ export async function run() {
       warnings: brokenWarnings,
     });
     const brokenXml = await unzipPart(brokenBuffer, "word/document.xml");
-    if (!brokenWarnings.some((w) => formatWarning(w) === "代码高亮失败,已降级为纯文本: broken")) {
-      throw new Error(`code-highlight 断言失败:hljs 抛错未产生高亮降级警告,warnings=${JSON.stringify(brokenWarnings)}`);
-    }
-    if (!brokenXml.includes("if (a &lt; b) {}")) {
-      throw new Error("code-highlight 断言失败:hljs 抛错降级后代码文本缺失");
-    }
-    if (brokenXml.includes("<w:color")) {
-      throw new Error("code-highlight 断言失败:hljs 抛错降级不应有高亮色(<w:color)");
-    }
+    await suite.case("hljs 抛错产生高亮降级警告", () => {
+      if (!brokenWarnings.some((w) => formatWarning(w) === "代码高亮失败,已降级为纯文本: broken")) {
+        throw new Error(`code-highlight 断言失败:hljs 抛错未产生高亮降级警告,warnings=${JSON.stringify(brokenWarnings)}`);
+      }
+    });
+    await suite.case("hljs 抛错降级后代码文本在位", () => {
+      if (!brokenXml.includes("if (a &lt; b) {}")) {
+        throw new Error("code-highlight 断言失败:hljs 抛错降级后代码文本缺失");
+      }
+    });
+    await suite.case("hljs 抛错降级无高亮色", () => {
+      if (brokenXml.includes("<w:color")) {
+        throw new Error("code-highlight 断言失败:hljs 抛错降级不应有高亮色(<w:color)");
+      }
+    });
     console.log("[ok] code-highlight:hljs 抛错降级等宽 + 高亮降级警告 断言通过");
 
     // ---- 6b. 去重口径双侧一致:N 个**同一门坏语言**的代码块 ⇒ docx 与 pdf 各只报 1 条 ----
@@ -162,12 +194,14 @@ export async function run() {
     const dupPdfCount = dupPdfWarnings.filter(
       (w) => formatWarning(w) === "代码高亮失败,已降级为纯文本: broken",
     ).length;
-    if (dupDocxCount !== 1 || dupPdfCount !== 1) {
-      throw new Error(
-        `code-highlight 断言失败:${DUPES} 个坏语言代码块应两侧各报 1 条,`
-        + `实际 docx=${dupDocxCount} pdf=${dupPdfCount}(口径分叉)`,
-      );
-    }
+    await suite.case("同类坏语言代码块的降级警告双侧各报 1 条", () => {
+      if (dupDocxCount !== 1 || dupPdfCount !== 1) {
+        throw new Error(
+          `code-highlight 断言失败:${DUPES} 个坏语言代码块应两侧各报 1 条,`
+          + `实际 docx=${dupDocxCount} pdf=${dupPdfCount}(口径分叉)`,
+        );
+      }
+    });
     // 反向锚点:去重不能吃掉**不同语言**各自的降级 —— 两门坏语言应各报 1 条
     hljs.registerLanguage("broken2", () => /** @type {import("highlight.js").Language} */ ({ match: "x", begin: /y/ }));
     try {
@@ -182,12 +216,16 @@ export async function run() {
       });
       const countLang = (/** @type {readonly ConvertWarning[]} */ ws) =>
         ws.filter((w) => formatWarning(w).startsWith("代码高亮失败,已降级为纯文本:")).length;
-      if (countLang(twoLangDocx) !== 2 || countLang(twoLangPdf) !== 2) {
-        throw new Error(
-          `code-highlight 断言失败:两门坏语言应各报 1 条(共 2 条),`
-          + `实际 docx=${countLang(twoLangDocx)} pdf=${countLang(twoLangPdf)}`,
-        );
-      }
+      const twoLangDocxCount = countLang(twoLangDocx);
+      const twoLangPdfCount = countLang(twoLangPdf);
+      await suite.case("不同语言的降级警告各保留 1 条(共 2 条)", () => {
+        if (twoLangDocxCount !== 2 || twoLangPdfCount !== 2) {
+          throw new Error(
+            `code-highlight 断言失败:两门坏语言应各报 1 条(共 2 条),`
+            + `实际 docx=${twoLangDocxCount} pdf=${twoLangPdfCount}`,
+          );
+        }
+      });
     } finally {
       hljs.unregisterLanguage("broken2");
     }
@@ -203,26 +241,43 @@ export async function run() {
   // 7a. docx 产物色值 ⊆ 色板(样例命中的 token 类逐一来自单源)
   // 色板按 token 类名动态索引(契约单源:Record<string, HljsTokenStyle>,dist 侧为字面量对象)
   const palette = /** @type {Record<string, HljsTokenStyle>} */ (HLJS_PALETTE);
+  // 色板逐类一个 case:cls 是该色值的稳定标识
   for (const cls of ["keyword", "string", "comment", "title", "built_in", "number"]) {
-    const color = palette[cls]?.color;
-    if (!color) throw new Error(`code-highlight 断言失败:色板缺少 token 类 ${cls}`);
-    if (!xml.includes(`<w:color w:val="${color}"/>`)) {
-      throw new Error(`code-highlight 断言失败:docx 未落地单源色板 ${cls}=${color}`);
-    }
+    await suite.case(`docx 落地单源色板 ${cls}`, () => {
+      const color = palette[cls]?.color;
+      if (!color) throw new Error(`code-highlight 断言失败:色板缺少 token 类 ${cls}`);
+      if (!xml.includes(`<w:color w:val="${color}"/>`)) {
+        throw new Error(`code-highlight 断言失败:docx 未落地单源色板 ${cls}=${color}`);
+      }
+    });
   }
   // 7b. pdf 侧 .hljs-* CSS 由同一色板生成(buildHljsCss 产物逐条进模板)
   const pdfArt = (await convertWithFs(MD_TS, "pdf", { baseDir: "." }));
   const hljsCss = buildHljsCss();
-  if (!pdfHtmlOf(pdfArt).includes(hljsCss)) {
-    throw new Error("code-highlight 断言失败:pdf 模板 CSS 应包含 buildHljsCss 单源生成产物");
-  }
-  for (const [cls, style] of Object.entries(palette)) {
-    if (style.color && !hljsCss.includes(`#${style.color.toLowerCase()}`)) {
-      throw new Error(`code-highlight 断言失败:生成 CSS 缺少 ${cls} 色值 #${style.color.toLowerCase()}`);
+  await suite.case("pdf 模板 CSS 含 buildHljsCss 单源生成产物", () => {
+    if (!pdfHtmlOf(pdfArt).includes(hljsCss)) {
+      throw new Error("code-highlight 断言失败:pdf 模板 CSS 应包含 buildHljsCss 单源生成产物");
     }
-    if (style.background && !hljsCss.includes(`background: #${style.background.toLowerCase()}`)) {
-      throw new Error(`code-highlight 断言失败:生成 CSS 缺少 ${cls} 底色`);
+  });
+  for (const [cls, style] of Object.entries(palette)) {
+    // 前景色与底色是两件事:色值漏掉与底色漏掉分别报
+    if (style.color) {
+      const lower = style.color.toLowerCase();
+      await suite.case(`生成 CSS 含 ${cls} 色值 #${lower}`, () => {
+        if (!hljsCss.includes(`#${lower}`)) {
+          throw new Error(`code-highlight 断言失败:生成 CSS 缺少 ${cls} 色值 #${lower}`);
+        }
+      });
+    }
+    if (style.background) {
+      const lowerBg = style.background.toLowerCase();
+      await suite.case(`生成 CSS 含 ${cls} 底色 #${lowerBg}`, () => {
+        if (!hljsCss.includes(`background: #${lowerBg}`)) {
+          throw new Error(`code-highlight 断言失败:生成 CSS 缺少 ${cls} 底色`);
+        }
+      });
     }
   }
   console.log("[ok] code-highlight:色板单源(docx 落地 + pdf 生成 CSS 逐 token 同源)断言通过");
+  return { cases: suite.results };
 }

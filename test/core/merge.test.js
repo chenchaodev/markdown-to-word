@@ -14,6 +14,7 @@ import { FIXTURES_DIR } from "../harness/paths.js";
 import { htmlToPdf } from "../harness/pdf-utils.js";
 import { saveArtifact } from "../harness/artifacts.js";
 import { asPdfArtifact, convertWithFs } from "../harness/convert-helpers.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /**
  * 递归收集目录下全部 .md(含子目录)。
@@ -43,6 +44,7 @@ export const meta = { description: "合并段:FIXTURES_DIR/manual 全部 .md(含
 export const fixtures = { main: bracketMd };
 
 export async function run() {
+  const suite = createCaseSuite();
   const manualDir = path.join(FIXTURES_DIR, "manual");
   const mdFiles = (await collectMarkdown(manualDir)).sort((a, b) => a.localeCompare(b));
   const inputs = await Promise.all(
@@ -64,20 +66,28 @@ export async function run() {
   // markdown-it 链接规范化编码为 %5C,Chromium 无法加载 → 断言 file:// src 无 %5C
   // 且均以 file:/// 开头。
   const fileImageSrcs = [...mergedArtifact.html.matchAll(/src="file:\/\/\/[^"]*"/g)].map((m) => m[0]);
+  // 「有 file:// 图片」是逐条 src 判定的存在性前提,留在 case 外:
+  // 拆进去后逐条 src 判红报出的是「某张图的前缀不对」,而非「整份 HTML 一张本地图都没有」
   if (fileImageSrcs.length === 0) {
     throw new Error("merge 断言失败:合并 PDF 中间 HTML 无 file:// 图片 src");
   }
+  // 两条形态判定逐条一个 case:前缀形态与 %5C 编码是两处不同的改写问题
   for (const src of fileImageSrcs) {
-    if (!src.startsWith('src="file:///')) {
-      throw new Error(`merge 断言失败:file:// 图片 src 应以 file:/// 开头:${src}`);
-    }
-    if (src.includes("%5C")) {
-      throw new Error(`merge 断言失败:file:// 图片 src 含 %5C(反斜杠编码 bug 形态):${src}`);
-    }
+    await suite.case(`file:// 图片 src 以 file:/// 开头:${src}`, () => {
+      if (!src.startsWith('src="file:///')) {
+        throw new Error(`merge 断言失败:file:// 图片 src 应以 file:/// 开头:${src}`);
+      }
+    });
+    await suite.case(`file:// 图片 src 无 %5C 反斜杠编码:${src}`, () => {
+      if (src.includes("%5C")) {
+        throw new Error(`merge 断言失败:file:// 图片 src 含 %5C(反斜杠编码 bug 形态):${src}`);
+      }
+    });
   }
   console.log(`[ok] merge:file:// 图片 src 全部 file:/// 开头且无 %5C(共 ${fileImageSrcs.length} 处)`);
   const mergedPdf = await htmlToPdf(mergedArtifact.html, mergedArtifact.footerTemplate);
   const headings = extractHeadings(mergedArtifact.html);
+  // 标题是后续书签注入的内容来源,空则那条链路无从断言 —— 取数前提,留在 case 外
   if (headings.length === 0) {
     throw new Error("merge 断言失败:合并 PDF 未提取到任何标题(书签注入无内容)");
   }
@@ -88,12 +98,16 @@ export async function run() {
   await saveArtifact("merged-manual", { pdf: Buffer.from(finalPdf) });
 
   // 括号配对 URL:绝对 URL 含括号原样保留;相对路径含括号重定位为合并基准下的相对引用
-  if (!bracketMerged.includes("https://example.com/a(b).png")) {
-    throw new Error(`merge 断言失败:含括号的绝对 URL 应原样保留,实际输出:\n${bracketMerged}`);
-  }
-  if (!bracketMerged.includes("![b](./my(1).png)")) {
-    throw new Error(`merge 断言失败:相对路径应重定位为相对引用,实际输出:\n${bracketMerged}`);
-  }
+  await suite.case("括号配对 URL:绝对 URL 原样保留", () => {
+    if (!bracketMerged.includes("https://example.com/a(b).png")) {
+      throw new Error(`merge 断言失败:含括号的绝对 URL 应原样保留,实际输出:\n${bracketMerged}`);
+    }
+  });
+  await suite.case("括号配对 URL:相对路径重定位为相对引用", () => {
+    if (!bracketMerged.includes("![b](./my(1).png)")) {
+      throw new Error(`merge 断言失败:相对路径应重定位为相对引用,实际输出:\n${bracketMerged}`);
+    }
+  });
   console.log("[ok] merge:括号配对 URL(绝对原样保留/相对重定位)断言通过");
 
   // 用户绝对/UNC/file URL 不属于 merge 内部可改写范围,必须原样保留给图片信任边界(adr-012)拒绝。
@@ -102,10 +116,13 @@ export async function run() {
     content: `![absolute](${absoluteImage})\n\n![unc](//server/share/image.png)\n\n![file](file:///C:/temp/image.png)`,
     baseDir: FIXTURES_DIR,
   }]);
+  // 三类 URL 逐个一个 case:绝对/UNC/file 任一类被改写是三处不同的边界问题
   for (const source of [absoluteImage, "//server/share/image.png", "file:///C:/temp/image.png"]) {
-    if (!externalSources.includes(source)) {
-      throw new Error(`merge 断言失败:用户绝对/UNC/file URL 应原样保留:${source}\n${externalSources}`);
-    }
+    await suite.case(`用户 URL 原样保留: ${source}`, () => {
+      if (!externalSources.includes(source)) {
+        throw new Error(`merge 断言失败:用户绝对/UNC/file URL 应原样保留:${source}\n${externalSources}`);
+      }
+    });
   }
   console.log("[ok] merge:用户绝对/UNC/file URL 原样保留(交给 图片信任边界(adr-012) 拒绝)断言通过");
 
@@ -115,22 +132,30 @@ export async function run() {
     { content: leadingFrontmatter, baseDir: FIXTURES_DIR },
   ]);
   const protectedPrefix = "  ---\r\ntitle: [[原始标题]]\r\ncover: ![front](front.png)\r\n  ---\r\n";
-  if (!protectedLeading.startsWith(protectedPrefix) || !protectedLeading.includes("![front](front.png)")) {
-    throw new Error(`merge 断言失败:首文件 frontmatter/前导空格/内部图片未原样保护:\n${protectedLeading}`);
-  }
-  if (!protectedLeading.endsWith("![body](./body.png)")) {
-    throw new Error(`merge 断言失败:首文件只应 trim body:\n${protectedLeading}`);
-  }
+  await suite.case("首文件 frontmatter/前导空格/内部图片原样保护", () => {
+    if (!protectedLeading.startsWith(protectedPrefix) || !protectedLeading.includes("![front](front.png)")) {
+      throw new Error(`merge 断言失败:首文件 frontmatter/前导空格/内部图片未原样保护:\n${protectedLeading}`);
+    }
+  });
+  await suite.case("首文件只 trim body", () => {
+    if (!protectedLeading.endsWith("![body](./body.png)")) {
+      throw new Error(`merge 断言失败:首文件只应 trim body:\n${protectedLeading}`);
+    }
+  });
   const onlyFrontmatter = "---\ntitle: only\n---\n";
-  if (mergeMarkdowns([{ content: onlyFrontmatter, baseDir: FIXTURES_DIR }]) !== onlyFrontmatter) {
-    throw new Error("merge 断言失败:仅 frontmatter 的首文件应原样保留");
-  }
+  await suite.case("仅 frontmatter 的首文件原样保留", () => {
+    if (mergeMarkdowns([{ content: onlyFrontmatter, baseDir: FIXTURES_DIR }]) !== onlyFrontmatter) {
+      throw new Error("merge 断言失败:仅 frontmatter 的首文件应原样保留");
+    }
+  });
   for (const newline of ["\n", "\r\n", "\r"]) {
     const lineEndingFrontmatter = `---${newline}title: t${newline}cover: ![front](front.png)${newline}---${newline}${newline}![body](body.png)${newline}`;
     const lineEndingResult = mergeMarkdowns([{ content: lineEndingFrontmatter, baseDir: FIXTURES_DIR }]);
-    if (!lineEndingResult.startsWith(`---${newline}title: t${newline}cover: ![front](front.png)${newline}---${newline}`)) {
-      throw new Error(`merge 断言失败:${newline === "\r" ? "CR" : newline === "\r\n" ? "CRLF" : "LF"} frontmatter 未原样保护`);
-    }
+    await suite.case(`frontmatter 原样保护: ${newline === "\r" ? "CR" : newline === "\r\n" ? "CRLF" : "LF"}`, () => {
+      if (!lineEndingResult.startsWith(`---${newline}title: t${newline}cover: ![front](front.png)${newline}---${newline}`)) {
+        throw new Error(`merge 断言失败:${newline === "\r" ? "CR" : newline === "\r\n" ? "CRLF" : "LF"} frontmatter 未原样保护`);
+      }
+    });
   }
   console.log("[ok] merge:首文件 frontmatter 保护(前导空格/仅 frontmatter/CRLF/CR/内部图片)断言通过");
 
@@ -142,12 +167,16 @@ export async function run() {
     { content: "   \n\n  ", baseDir: FIXTURES_DIR },
     { content: "# 乙", baseDir: FIXTURES_DIR },
   ]);
-  if (mergedWithEmpty !== "# 甲\n\n<!-- page-break -->\n\n# 乙") {
-    throw new Error(`merge 断言失败:空文件应跳过不产生空段,实际输出:\n${JSON.stringify(mergedWithEmpty)}`);
-  }
-  if (mergeMarkdowns([{ content: "  \n", baseDir: FIXTURES_DIR }, { content: "", baseDir: FIXTURES_DIR }]) !== "") {
-    throw new Error("merge 断言失败:全空输入应返回空串");
-  }
+  await suite.case("中间的空文件跳过不产生空段/多余分页符", () => {
+    if (mergedWithEmpty !== "# 甲\n\n<!-- page-break -->\n\n# 乙") {
+      throw new Error(`merge 断言失败:空文件应跳过不产生空段,实际输出:\n${JSON.stringify(mergedWithEmpty)}`);
+    }
+  });
+  await suite.case("全空输入返回空串", () => {
+    if (mergeMarkdowns([{ content: "  \n", baseDir: FIXTURES_DIR }, { content: "", baseDir: FIXTURES_DIR }]) !== "") {
+      throw new Error("merge 断言失败:全空输入应返回空串");
+    }
+  });
   console.log("[ok] merge:空文件跳过(不产生空段/多余分页符,全空 → 空串)断言通过");
 
   // ---------- 分页符防叠加(merge.ts mergeMarkdowns) ----------
@@ -157,9 +186,11 @@ export async function run() {
     { content: "# 乙", baseDir: FIXTURES_DIR },
     { content: "# 丙", baseDir: FIXTURES_DIR },
   ]);
-  if (noDoubleBreak !== "# 甲\n\n<!-- page-break -->\n\n# 乙\n\n<!-- page-break -->\n\n# 丙") {
-    throw new Error(`merge 断言失败:尾部分页符不应叠加,实际输出:\n${JSON.stringify(noDoubleBreak)}`);
-  }
+  await suite.case("尾部分页符不叠加", () => {
+    if (noDoubleBreak !== "# 甲\n\n<!-- page-break -->\n\n# 乙\n\n<!-- page-break -->\n\n# 丙") {
+      throw new Error(`merge 断言失败:尾部分页符不应叠加,实际输出:\n${JSON.stringify(noDoubleBreak)}`);
+    }
+  });
   console.log("[ok] merge:分页符防叠加断言通过");
 
   // ---------- 代码块内示例图片语法不参与路径改写(absolutizeImages) ----------
@@ -182,12 +213,17 @@ export async function run() {
     },
   ]);
   for (const sample of ["![示例图](demo.png)", "![w](w.png)", "`![内联](inline.png)`"]) {
-    if (!codeAware.includes(sample)) {
-      throw new Error(`merge 断言失败:代码块内示例图片语法被改写:${sample},实际输出:\n${codeAware}`);
+    await suite.case(`代码块内示例图片语法不被改写: ${sample}`, () => {
+      if (!codeAware.includes(sample)) {
+        throw new Error(`merge 断言失败:代码块内示例图片语法被改写:${sample},实际输出:\n${codeAware}`);
+      }
+    });
+  }
+  await suite.case("代码块外图片重定位为相对路径", () => {
+    if (!codeAware.includes("![真实](./real.png)") || !codeAware.includes("![尾部](./tail.png)")) {
+      throw new Error(`merge 断言失败:代码块外图片应重定位为相对路径,实际输出:\n${codeAware}`);
     }
-  }
-  if (!codeAware.includes("![真实](./real.png)") || !codeAware.includes("![尾部](./tail.png)")) {
-    throw new Error(`merge 断言失败:代码块外图片应重定位为相对路径,实际输出:\n${codeAware}`);
-  }
+  });
   console.log("[ok] merge:代码块感知(围栏/行内不改写,块外重定位为相对路径)断言通过");
+  return { cases: suite.results };
 }

@@ -20,6 +20,7 @@ import { backupSettings } from "../harness/settings.js";
 import { convertImpl } from "../../dist/main/converter/index.js";
 import { removeTree } from "../harness/temp-resource.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const GBK_MD = "# GBK 中文标题\n\n正文内容 你好世界\n";
 
@@ -40,6 +41,7 @@ function assert(cond, msg) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const dir = path.join(os.tmpdir(), `m2w-gbk-${process.pid}`);
   const restoreSettings = await backupSettings();
   try {
@@ -49,18 +51,24 @@ export async function run() {
     const gbkMd = path.join(dir, "gbk-sample.md");
     await fs.writeFile(gbkMd, iconv.encode(GBK_MD, "gbk"));
 
+    // 共享前置:docx 生成是本段唯一昂贵步骤,提到 case 之前,两条 case 只引用其结果
     const result = await convertImpl(gbkMd, "docx");
-    // 警告为 ConvertWarning(含 KeyedWarning 支),断言经 formatWarning 格式化后的最终文案
-    assert(
-      result.warnings.some((w) => formatWarning(w).includes("已按 GBK 编码读取")),
-      `warnings 缺少 GBK 警告: ${JSON.stringify(result.warnings)}`,
-    );
-    const zip = await JSZip.loadAsync(await fs.readFile(result.outputPath));
-    const documentXml = zip.file("word/document.xml");
-    assert(documentXml !== null, "docx 产物应含 word/document.xml");
-    const xml = await documentXml.async("string");
-    assert(xml.includes("中文标题"), "document.xml 缺少中文标题(GBK 解码乱码?)");
-    assert(xml.includes("你好世界"), "document.xml 缺少正文中文(GBK 解码乱码?)");
+
+    await suite.case("GBK 文件转换 → 警告文案提示按 GBK 读取", () => {
+      // 警告为 ConvertWarning(含 KeyedWarning 支),断言经 formatWarning 格式化后的最终文案
+      assert(
+        result.warnings.some((w) => formatWarning(w).includes("已按 GBK 编码读取")),
+        `warnings 缺少 GBK 警告: ${JSON.stringify(result.warnings)}`,
+      );
+    });
+    await suite.case("GBK 文件转换 → document.xml 中文正确", async () => {
+      const zip = await JSZip.loadAsync(await fs.readFile(result.outputPath));
+      const documentXml = zip.file("word/document.xml");
+      assert(documentXml !== null, "docx 产物应含 word/document.xml");
+      const xml = await documentXml.async("string");
+      assert(xml.includes("中文标题"), "document.xml 缺少中文标题(GBK 解码乱码?)");
+      assert(xml.includes("你好世界"), "document.xml 缺少正文中文(GBK 解码乱码?)");
+    });
     console.log(
       `[ok] gbk-encoding:GBK 文件转换 → 警告文案 + document.xml 中文正确 (${path.basename(result.outputPath)})`,
     );
@@ -70,4 +78,5 @@ export async function run() {
     // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
     removeTree(dir);
   }
+  return { cases: suite.results };
 }

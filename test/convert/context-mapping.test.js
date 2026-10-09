@@ -11,6 +11,7 @@
  */
 import { buildConvertContext, TEST_ONLY_CONTEXT_KEYS } from "../../dist/convert/context.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 // 真值断言取公共单源(收敛重复面,口径见 assert.js 文件头)
 const { assert } = createAsserter("context-mapping(convert)");
@@ -73,23 +74,31 @@ const settings = {
 };
 
 export async function run() {
+  const suite = createCaseSuite();
   const builtCtx = await buildConvertContext({
     baseDir: ".",
     title: "设置 schema 护栏",
     settings,
     imageResolver: async () => null,
   });
-  for (const testOnly of TEST_ONLY_CONTEXT_KEYS) {
-    assert(
-      !(testOnly in builtCtx),
-      `${testOnly} 生产零注入,不得出现在 buildConvertContext 产出的上下文里`,
-    );
-  }
-  for (const k of [
-    "pageSetup", "typography", "breakBeforeH1", "toc", "tocMode", "equationNumbering",
-    "pdfCss", "headerFooter", "watermark",
-  ]) {
-    assert(k in builtCtx, `生产上下文应映射设置键 ${k}`);
-  }
+  // 负向面:仅测试注入的键若进了生产上下文,就是「设了也不生效」之外的反面 —— 假开关
+  await suite.case("生产上下文不含仅测试注入键", () => {
+    for (const testOnly of TEST_ONLY_CONTEXT_KEYS) {
+      assert(
+        !(testOnly in builtCtx),
+        `${testOnly} 生产零注入,不得出现在 buildConvertContext 产出的上下文里`,
+      );
+    }
+  });
+  // 正向面:设置键逐个映射进上下文(一条断链即「设了不生效」)
+  await suite.case("生产上下文映射全部设置键", () => {
+    for (const k of [
+      "pageSetup", "typography", "breakBeforeH1", "toc", "tocMode", "equationNumbering",
+      "pdfCss", "headerFooter", "watermark",
+    ]) {
+      assert(k in builtCtx, `生产上下文应映射设置键 ${k}`);
+    }
+  });
   console.log(`[ok] context-mapping(convert):生产上下文映射不含 ${TEST_ONLY_CONTEXT_KEYS.length} 个仅测试注入字段`);
+  return { cases: suite.results };
 }

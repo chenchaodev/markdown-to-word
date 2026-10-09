@@ -52,6 +52,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 import { resolveNode } from "../harness/node-exec.js";
 import { ROOT } from "../harness/paths.js";
 import { removeFile, removeTree } from "../harness/temp-resource.js";
@@ -387,10 +388,15 @@ function holdDirectory(dir) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
+  // 沙盒清理与真实产物快照比对留在 try/finally:case 失败只记该 case,不会跳到这里,
+  // 而清理与快照是**段级**职责(本段绝不允许改动真实产物),故不进 case。
+  const realBefore = snapshotRealOutputs();
   // 定向断言先跑:它是本段唯一的静态守护,红的时候症状直接是「少了哪一份副本」,
   // 而漏写副本在运行时只会表现为「门禁起不来」,离根因很远。
-  assertCopySetIsClosed();
-  const realBefore = snapshotRealOutputs();
+  await suite.case("0. 沙盒副本闭包:相对 import ⊆ 复制集", () => {
+    assertCopySetIsClosed();
+  });
   /** @type {string[]} */
   const sandboxes = [];
   const create = () => {
@@ -402,7 +408,7 @@ export async function run() {
   let failure = null;
   try {
     // ---------- 0. 沙箱纪律:脚本逐字节一致 + 真实产物零改动 ----------
-    {
+    await suite.case("0. 沙箱纪律:脚本副本逐字节一致,清理目标只写死 dist/release", () => {
       const root = create();
       const copy = path.join(root, "gates", "artifacts", "clean-artifacts.mjs");
       assert(
@@ -417,10 +423,10 @@ export async function run() {
         `清理目标应只写死 dist/release 两个生成目录,实际 ${targetDirsLine}`,
       );
       assert(/--target <dist\|release\|all>/.test(SCRIPT_SOURCE), "用法说明应声明只接受三个目标关键字");
-    }
+    });
 
     // ---------- 1. 合法 dry-run:dist / release / all,零删除且幂等 ----------
-    {
+    await suite.case("1. dist dry-run:预告递归删除与连带增量缓存,零删除且可重复", () => {
       const root = create();
       seedArtifacts(root);
 
@@ -435,7 +441,10 @@ export async function run() {
       const again = runClean(root, ["--target", "dist", "--dry-run"]);
       assert(again.output === distDry.output, `重复 dry-run 输出应稳定;实际 ${again.output}`);
       assertFixtureIntact(root, "重复 dist dry-run");
-
+    });
+    await suite.case("1. release dry-run:预告递归删除且不牵连增量缓存;all 先 dist 后 release", () => {
+      const root = create();
+      seedArtifacts(root);
       const releaseDry = runClean(root, ["--target", "release", "--dry-run"]);
       assert(releaseDry.code === 0, `release dry-run 应成功,实际 ${releaseDry.code}:${releaseDry.output}`);
       assert(releaseDry.output.includes("[dry-run] clean:release 将递归删除:release"), `release dry-run 应预告递归删除;实际 ${releaseDry.output}`);
@@ -447,11 +456,11 @@ export async function run() {
       assert(allDry.output.includes("clean:dist 将递归删除:dist") && allDry.output.includes("clean:release 将递归删除:release"), `all dry-run 应同时预告两者;实际 ${allDry.output}`);
       assert(allDry.output.indexOf("clean:dist") < allDry.output.indexOf("clean:release"), "all 应先 dist 后 release");
       assertFixtureIntact(root, "all dry-run");
-      console.log("[ok] clean-artifacts-gate:dist/release/all 预演零删除、输出可重复,增量缓存连带规则正确");
-    }
+    });
+    console.log("[ok] clean-artifacts-gate:dist/release/all 预演零删除、输出可重复,增量缓存连带规则正确");
 
     // ---------- 2. 真实删除 + 重复执行幂等 ----------
-    {
+    await suite.case("2. dist 真实删除:递归删 dist、连带增量缓存,不波及 release/源码/文档", () => {
       const root = create();
       seedArtifacts(root);
 
@@ -465,6 +474,11 @@ export async function run() {
       assert(fs.existsSync(path.join(root, "src", "nested.tsbuildinfo")), "增量缓存清理非递归,保护区内的同名文件须留存");
       assert(fs.existsSync(path.join(root, "release", "MarkdownToWord-Setup-3.12.0.exe")), "--target dist 不得波及 release");
       assert(fs.existsSync(path.join(root, "src", "main", "index.ts")) && fs.existsSync(path.join(root, "docs", "keep.md")), "源码与文档不得被清理波及");
+    });
+    await suite.case("2. 重复执行幂等:目标缺失时 dist/release/all 均零退出", () => {
+      const root = create();
+      seedArtifacts(root);
+      runClean(root, ["--target", "dist"]);
 
       const distAgain = runClean(root, ["--target", "dist"]);
       assert(distAgain.code === 0, `目标缺失时重复清理应仍成功,实际 ${distAgain.code}:${distAgain.output}`);
@@ -481,11 +495,11 @@ export async function run() {
       const allClean = runClean(root, ["--target", "all"]);
       assert(allClean.code === 0, `all 清理应成功,实际 ${allClean.code}:${allClean.output}`);
       assert(allClean.output.includes("clean:dist 目标不存在") && allClean.output.includes("clean:release 目标不存在"), `全空沙盒上 all 应双路幂等;实际 ${allClean.output}`);
-      console.log("[ok] clean-artifacts-gate:真实删除、连带增量缓存、重复执行幂等(dist/release/all)");
-    }
+    });
+    console.log("[ok] clean-artifacts-gate:真实删除、连带增量缓存、重复执行幂等(dist/release/all)");
 
     // ---------- 3. 目标缺失(干净检出 / 只建了一半) ----------
-    {
+    await suite.case("3. 目标缺失幂等跳过:全新沙盒 all / 只有 release 时 dist", () => {
       const root = create();
       const allMissing = runClean(root, ["--target", "all"]);
       assert(allMissing.code === 0, `全新沙盒上 all 应成功,实际 ${allMissing.code}:${allMissing.output}`);
@@ -497,8 +511,8 @@ export async function run() {
       const onlyRelease = runClean(root, ["--target", "dist"]);
       assert(onlyRelease.code === 0 && onlyRelease.output.includes("[ok] clean:dist 目标不存在"), "只有 release 时 dist 目标应幂等跳过");
       assert(fs.existsSync(path.join(root, "release", "app.exe")), "跳过的目标不得影响另一个目标目录");
-      console.log("[ok] clean-artifacts-gate:目标缺失幂等跳过(全新沙盒 / 只有 release)");
-    }
+    });
+    console.log("[ok] clean-artifacts-gate:目标缺失幂等跳过(全新沙盒 / 只有 release)");
 
     // ---------- 4. 参数面:缺目标 / 缺取值 / 越界 target / 未知参数,全部零删除 ----------
     {
@@ -523,15 +537,20 @@ export async function run() {
         { label: "未知短选项", args: ["-x"], pattern: /无法识别的参数:-x/, usage: true },
         { label: "多余位置参数", args: ["--target", "dist", "leftover"], pattern: /无法识别的参数:leftover/, usage: true },
       ];
+      // 逐负例一个 case:一种参数错判红不该掩盖其余十四种
       for (const item of cases) {
-        const result = runClean(root, item.args);
-        assertFailure(result, item.pattern, item.label, { usage: item.usage === true });
-        assertFixtureIntact(root, item.label);
-        assert(fs.existsSync(path.join(root, "tsconfig.tsbuildinfo")), `${item.label} 不得连带删除增量缓存`);
+        await suite.case(`4. 参数面负例非零退出 + 零删除:${item.label}`, () => {
+          const result = runClean(root, item.args);
+          assertFailure(result, item.pattern, item.label, { usage: item.usage === true });
+          assertFixtureIntact(root, item.label);
+          assert(fs.existsSync(path.join(root, "tsconfig.tsbuildinfo")), `${item.label} 不得连带删除增量缓存`);
+        });
       }
-      const help = runClean(root, ["--help"]);
-      assert(help.code === 0 && help.output.includes(USAGE_HINT), `--help 应打印用法并零退出,实际 ${help.code}:${help.output}`);
-      assertFixtureIntact(root, "--help");
+      await suite.case("4. --help 打印用法并零退出且零删除", () => {
+        const help = runClean(root, ["--help"]);
+        assert(help.code === 0 && help.output.includes(USAGE_HINT), `--help 应打印用法并零退出,实际 ${help.code}:${help.output}`);
+        assertFixtureIntact(root, "--help");
+      });
       console.log(`[ok] clean-artifacts-gate:${cases.length} 个参数面负例全部非零退出 + 零删除,--help 零退出`);
     }
 
@@ -549,14 +568,17 @@ export async function run() {
         { label: "package.json 非法 JSON", pkg: "{ not json", pattern: /Invalid package config|package\.json 不可读/, args: ["--target", "all"], allowStack: true },
         { label: "package.json 缺失", pkg: null, pattern: /package\.json 不可读/, args: ["--target", "all"] },
       ];
+      // 逐不一致一个 case:每格都要新建沙盒(对账读的是各自的 package.json)
       for (const item of cases) {
-        const root = create();
-        seedArtifacts(root);
-        writePackageJson(root, item.pkg);
-        const result = runClean(root, item.args);
-        // 非法 JSON 那格由 Node 在加载期抛错(栈是 Node 的,非本脚本未归一化的诊断),故豁免栈断言
-        assertFailure(result, item.pattern, item.label, { allowStack: item.allowStack === true });
-        assertFixtureIntact(root, item.label);
+        await suite.case(`5. 打包配置不一致拒绝执行且零删除:${item.label}`, () => {
+          const root = create();
+          seedArtifacts(root);
+          writePackageJson(root, item.pkg);
+          const result = runClean(root, item.args);
+          // 非法 JSON 那格由 Node 在加载期抛错(栈是 Node 的,非本脚本未归一化的诊断),故豁免栈断言
+          assertFailure(result, item.pattern, item.label, { allowStack: item.allowStack === true });
+          assertFixtureIntact(root, item.label);
+        });
       }
       console.log(`[ok] clean-artifacts-gate:${cases.length} 类打包配置不一致均拒绝执行且零删除`);
     }
@@ -564,14 +586,16 @@ export async function run() {
     // ---------- 6. 删除级守卫可达性(只改 TARGET_DIRS 一行的沙盒夹具) ----------
     {
       // 正向锚点:夹具通路本身是忠实的 —— 重定向到普通目录会真删(否则负向用例无意义)
-      const anchor = create();
-      seedArtifacts(anchor);
-      writeFileIn(anchor, "build-out/keep.txt", "x\n");
-      writeRedirectedScript(anchor, "'build-out'");
-      const anchored = runClean(anchor, ["--target", "dist"], "clean-artifacts.redirect.mjs");
-      assert(anchored.code === 0, `重定向到普通目录应可正常删除,实际 ${anchored.code}:${anchored.output}`);
-      assert(!fs.existsSync(path.join(anchor, "build-out")), "重定向到普通目录时应真删(夹具通路有效)");
-      assert(anchored.output.includes("[ok] clean:dist 已删除:build-out"), `应报告被删的相对路径;实际 ${anchored.output}`);
+      await suite.case("6. 正向锚点:重定向到普通目录应真删(夹具通路有效)", () => {
+        const anchor = create();
+        seedArtifacts(anchor);
+        writeFileIn(anchor, "build-out/keep.txt", "x\n");
+        writeRedirectedScript(anchor, "'build-out'");
+        const anchored = runClean(anchor, ["--target", "dist"], "clean-artifacts.redirect.mjs");
+        assert(anchored.code === 0, `重定向到普通目录应可正常删除,实际 ${anchored.code}:${anchored.output}`);
+        assert(!fs.existsSync(path.join(anchor, "build-out")), "重定向到普通目录时应真删(夹具通路有效)");
+        assert(anchored.output.includes("[ok] clean:dist 已删除:build-out"), `应报告被删的相对路径;实际 ${anchored.output}`);
+      });
 
       // value: 以沙盒根与项目外的兄弟目录为参数,产出写进常量行的字符串字面量
       /** @type {{ label: string; value: (root: string, outside: string) => string; expect: RegExp; sentinels: string[] }[]} */
@@ -586,24 +610,27 @@ export async function run() {
         { label: "目标含空路径段(./)", value: () => "'./dist'", expect: /含空路径段/, sentinels: ["dist/main/index.js"] },
         { label: "目标含空路径段(//)", value: () => "'a//dist'", expect: /含空路径段/, sentinels: [] },
       ];
+      // 逐守卫一个 case:一种守卫失守不该掩盖其余守卫仍要报的形态
       for (const item of cases) {
-        const root = create();
-        seedArtifacts(root);
-        const outside = `${root}-outside`;
-        writeFileIn(outside, "keep.txt", "sentinel\n");
-        sandboxes.push(outside);
-        writeRedirectedScript(root, item.value(root, outside));
-        const result = runClean(root, ["--target", "dist"], "clean-artifacts.redirect.mjs");
-        assertFailure(result, item.expect, item.label);
-        assert(fs.existsSync(path.join(outside, "keep.txt")), `${item.label} 不得删到项目根之外`);
-        for (const sentinel of item.sentinels) {
-          assert(fs.existsSync(path.join(root, ...sentinel.split("/"))), `${item.label} 不得删到 ${sentinel}`);
-        }
-        assertFixtureIntact(root, item.label);
+        await suite.case(`6. 删除级守卫拒绝删除:${item.label}`, () => {
+          const root = create();
+          seedArtifacts(root);
+          const outside = `${root}-outside`;
+          writeFileIn(outside, "keep.txt", "sentinel\n");
+          sandboxes.push(outside);
+          writeRedirectedScript(root, item.value(root, outside));
+          const result = runClean(root, ["--target", "dist"], "clean-artifacts.redirect.mjs");
+          assertFailure(result, item.expect, item.label);
+          assert(fs.existsSync(path.join(outside, "keep.txt")), `${item.label} 不得删到项目根之外`);
+          for (const sentinel of item.sentinels) {
+            assert(fs.existsSync(path.join(root, ...sentinel.split("/"))), `${item.label} 不得删到 ${sentinel}`);
+          }
+          assertFixtureIntact(root, item.label);
+        });
       }
 
       // 目标不是目录
-      {
+      await suite.case("6. 目标不是目录:拒绝删除且文件内容不变", () => {
         const root = create();
         seedArtifacts(root);
         writeFileIn(root, "notadir", "i am a file\n");
@@ -611,10 +638,10 @@ export async function run() {
         const result = runClean(root, ["--target", "dist"], "clean-artifacts.redirect.mjs");
         assertFailure(result, /目标不是目录,拒绝删除/, "目标不是目录");
         assert(fs.readFileSync(path.join(root, "notadir"), "utf8") === "i am a file\n", "非目录目标不得被删");
-      }
+      });
 
       // 目标是联接点(目录 junction;lstat 报符号链接 → 走拒绝分支,项目外目录不受影响)
-      {
+      await suite.case("6. 目标是联接点:拒绝递归删除且项目外真实目录不受影响", () => {
         const root = create();
         seedArtifacts(root);
         const outside = `${root}-outside`;
@@ -636,12 +663,13 @@ export async function run() {
           assert(fs.existsSync(path.join(outside, "keep.txt")), "联接点目标不得波及项目外真实目录");
           assertFixtureIntact(root, "目标是联接点");
         }
-      }
+      });
       console.log("[ok] clean-artifacts-gate:保护区/上跳段/绝对路径/空段/非目录/联接点守卫均拒绝(夹具通路已由正向锚点验证)");
     }
 
     // ---------- 7. 删除失败:非零退出 + 可操作诊断 + 释放后重试成功 ----------
-    {
+    // 占用句柄的释放必须留在这个 case 内的 finally:它不是段级清理,而是「用例自身的资源」
+    await suite.case("7. 删除失败(占用夹具):非零退出 + 可操作诊断 + 目标仍在", async () => {
       const root = create();
       seedArtifacts(root);
       const holder = holdDirectory(path.join(root, "dist"));
@@ -676,10 +704,10 @@ export async function run() {
         assert(!fs.existsSync(path.join(root, "dist")), "重试成功后 dist 应被删除");
       }
       console.log("[ok] clean-artifacts-gate:删除失败路径(占用夹具)退出码与诊断符合预期,释放后可重试");
-    }
+    });
 
     // ---------- 8. 生产配置契约(只读):真实 package.json 与 clean 链 ----------
-    {
+    await suite.case("8. 生产配置契约:真实 build.files/output 与 clean 链顺序", () => {
       const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
       /** @type {unknown[]} */
       const files = Array.isArray(pkg.build?.files) ? pkg.build.files : [];
@@ -693,7 +721,7 @@ export async function run() {
       const distChain = pkg.scripts.dist;
       assert(/npm run clean:dist && npm run clean:release && npm run build/.test(distChain), `dist 链应先清理后构建,实际 ${distChain}`);
       console.log("[ok] clean-artifacts-gate:真实打包配置与 clean 链顺序(清理先于 build)符合契约");
-    }
+    });
   } catch (error) {
     failure = /** @type {Error} */ (error);
   } finally {
@@ -715,4 +743,5 @@ export async function run() {
     }
   }
   if (failure !== null) throw failure;
+  return { cases: suite.results };
 }

@@ -9,6 +9,7 @@
  *   且确定性(同输入同输出,交叉引用可对上)。
  */
 import { slugify, uniqueSlug, docxBookmarkId } from "../../dist/core/markdown/slug.js";
+import { createCaseSuite } from "../harness/case.js";
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
@@ -38,34 +39,46 @@ export async function run() {
     ["!!!", "section"],
     ["", "section"],
   ];
+  const suite = createCaseSuite();
+  // slugify 矩阵逐行一个 case:输入串即该条的稳定标识,直接从输入取名
   for (const [input, expected] of slugCases) {
-    const actual = slugify(input);
-    if (actual !== expected) {
-      throw new Error(`slugify 断言失败: ${JSON.stringify(input)} → ${JSON.stringify(actual)}(期望 ${JSON.stringify(expected)})`);
-    }
+    await suite.case(`slugify: ${JSON.stringify(input)}`, () => {
+      const actual = slugify(input);
+      if (actual !== expected) {
+        throw new Error(`slugify 断言失败: ${JSON.stringify(input)} → ${JSON.stringify(actual)}(期望 ${JSON.stringify(expected)})`);
+      }
+    });
   }
   console.log(`[ok] slugify:${slugCases.length} 组断言通过(中文保留/空白转连字符/符号删除/大小写保留/空回退)`);
 
   // ---------- uniqueSlug ----------
+  // 取数备在 case 之前:三次连续调用共享同一个 seen(递减序列本身是被断言的事实,
+  // 拆进 case 各自重建 seen 就测不到递增了)
   const seen = new Map();
   const u1 = uniqueSlug("标题", seen);
   const u2 = uniqueSlug("标题", seen);
   const u3 = uniqueSlug("标题", seen);
-  if (u1 !== "标题" || u2 !== "标题-2" || u3 !== "标题-3") {
-    throw new Error(`uniqueSlug 断言失败:重复标题应 -2/-3 递增,实际 ${u1}/${u2}/${u3}`);
-  }
+  await suite.case("uniqueSlug:同一标题重复出现时 -2/-3 递增", () => {
+    if (u1 !== "标题" || u2 !== "标题-2" || u3 !== "标题-3") {
+      throw new Error(`uniqueSlug 断言失败:重复标题应 -2/-3 递增,实际 ${u1}/${u2}/${u3}`);
+    }
+  });
   // 不同标题不递增(基数不同 → 各自从 -1 起)
-  const other = uniqueSlug("其他", seen);
-  if (other !== "其他") {
-    throw new Error(`uniqueSlug 断言失败:不同标题不应递增,实际 ${other}`);
-  }
+  await suite.case("uniqueSlug:不同标题不递增", () => {
+    const other = uniqueSlug("其他", seen);
+    if (other !== "其他") {
+      throw new Error(`uniqueSlug 断言失败:不同标题不应递增,实际 ${other}`);
+    }
+  });
   // 不同原文但 slug 基数相同 → 仍按基数去重递增(如空白与连字符归一后同基数)
-  const seen2 = new Map();
-  const s1 = uniqueSlug("A B", seen2);
-  const s2 = uniqueSlug("A-B", seen2);
-  if (s1 !== "A-B" || s2 !== "A-B-2") {
-    throw new Error(`uniqueSlug 断言失败:同基数不同原文应递增,实际 ${s1}/${s2}`);
-  }
+  await suite.case("uniqueSlug:同基数不同原文仍去重递增", () => {
+    const seen2 = new Map();
+    const s1 = uniqueSlug("A B", seen2);
+    const s2 = uniqueSlug("A-B", seen2);
+    if (s1 !== "A-B" || s2 !== "A-B-2") {
+      throw new Error(`uniqueSlug 断言失败:同基数不同原文应递增,实际 ${s1}/${s2}`);
+    }
+  });
   console.log("[ok] uniqueSlug:-2/-3 递增、不同标题不递增、同基数跨原文去重 断言通过");
 
   // ---------- docxBookmarkId ----------
@@ -89,30 +102,45 @@ export async function run() {
   const truncated = [];
   for (const [input, expected] of bookmarkCases) {
     const actual = docxBookmarkId(input);
-    if (expected !== null && actual !== expected) {
-      throw new Error(`docxBookmarkId 断言失败: ${JSON.stringify(input)} → ${JSON.stringify(actual)}(期望 ${JSON.stringify(expected)})`);
+    if (expected !== null) {
+      await suite.case(`docxBookmarkId: ${JSON.stringify(input)}`, () => {
+        if (actual !== expected) {
+          throw new Error(`docxBookmarkId 断言失败: ${JSON.stringify(input)} → ${JSON.stringify(actual)}(期望 ${JSON.stringify(expected)})`);
+        }
+      });
+    } else {
+      truncated.push([input, actual]);
     }
-    if (expected === null) truncated.push([input, actual]);
   }
+  // 截断分支:形态与确定性是两件事,故同一输入拆两个 case
   for (const [input, actual] of truncated) {
-    if (actual.length !== 40) {
-      throw new Error(`docxBookmarkId 断言失败:截断后应恰为 40 字符,实际 ${actual.length}`);
-    }
-    if (!/^.{35}-[0-9a-f]{4}$/u.test(actual)) {
-      throw new Error(`docxBookmarkId 断言失败:截断格式应为 35 字符 + - + 4 位十六进制哈希,实际 ${JSON.stringify(actual)}`);
-    }
-    if (docxBookmarkId(input) !== actual) {
-      throw new Error("docxBookmarkId 断言失败:截断哈希应确定性(同输入同输出)");
-    }
+    await suite.case(`docxBookmarkId: ${JSON.stringify(input)} 走截断加哈希(35 字符 + - + 4 位十六进制)`, () => {
+      if (actual.length !== 40) {
+        throw new Error(`docxBookmarkId 断言失败:截断后应恰为 40 字符,实际 ${actual.length}`);
+      }
+      if (!/^.{35}-[0-9a-f]{4}$/u.test(actual)) {
+        throw new Error(`docxBookmarkId 断言失败:截断格式应为 35 字符 + - + 4 位十六进制哈希,实际 ${JSON.stringify(actual)}`);
+      }
+    });
+    await suite.case(`docxBookmarkId: ${JSON.stringify(input)} 截断哈希确定性(同输入同输出)`, () => {
+      if (docxBookmarkId(input) !== actual) {
+        throw new Error("docxBookmarkId 断言失败:截断哈希应确定性(同输入同输出)");
+      }
+    });
   }
   // 核心场景:两个共享前 40 字符的不同长标题 → 书签名必须不同(此前碰撞)
   const long1 = `${"共享前缀".repeat(13)}甲`; // 超 40 字符,前 40 与下者相同
   const long2 = `${"共享前缀".repeat(13)}乙`;
+  // 前置校验留在 case 之外:它保证的是下一条的判定对象成立,
+  // 拆进去会让「构造错了」报成「书签名碰撞」,与真因无关
   if (long1.slice(0, 40) !== long2.slice(0, 40)) {
     throw new Error("docxBookmarkId 测试前置失败:构造的两标题应共享前 40 字符");
   }
-  if (docxBookmarkId(long1) === docxBookmarkId(long2)) {
-    throw new Error("docxBookmarkId 断言失败:共享前 40 字符的不同标题不得产出同名书签");
-  }
+  await suite.case("docxBookmarkId:共享前 40 字符的不同标题不得产出同名书签", () => {
+    if (docxBookmarkId(long1) === docxBookmarkId(long2)) {
+      throw new Error("docxBookmarkId 断言失败:共享前 40 字符的不同标题不得产出同名书签");
+    }
+  });
   console.log("[ok] docxBookmarkId:数字前缀/短输入原样/截断加哈希(40 字符·确定性·防碰撞)断言通过");
+  return { cases: suite.results };
 }

@@ -16,6 +16,7 @@ import path from "node:path";
 import { writeTempHtml } from "../../dist/main/services/temp-html.js";
 import { removeFile } from "../harness/temp-resource.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const { assert } = createAsserter("temp-html");
 
@@ -24,61 +25,76 @@ export const fixtures = null;
 
 /** 纯 Node 段(零 Electron API) */
 export async function run() {
+  const suite = createCaseSuite();
   // ---- 1. 基本写入:tmpdir 下命名形状 + 内容逐字(utf8 中文) ----
   const html = "<html><body><h1>中文标题</h1><p>preview</p></body></html>";
   const { htmlPath, cleanup } = await writeTempHtml(html);
   try {
-    assert(path.dirname(htmlPath) === os.tmpdir(), `临时文件应位于 os.tmpdir(),实际 ${path.dirname(htmlPath)}`);
-    const name = path.basename(htmlPath);
-    assert(
-      new RegExp(`^m2w-${process.pid}-\\d+-[0-9a-f]{8}\\.html$`).test(name),
-      `文件名应为 m2w-{pid}-{time}-{uuid8hex}.html,实际 ${name}`,
-    );
-    assert((await fs.readFile(htmlPath, "utf8")) === html, "写入内容应与输入逐字一致");
-    console.log("[ok] temp-html:tmpdir 路径/命名形状(randomUUID 段)/内容逐字 断言通过");
+    await suite.case("tmpdir 路径/命名形状(randomUUID 段)/内容逐字", async () => {
+      assert(path.dirname(htmlPath) === os.tmpdir(), `临时文件应位于 os.tmpdir(),实际 ${path.dirname(htmlPath)}`);
+      const name = path.basename(htmlPath);
+      assert(
+        new RegExp(`^m2w-${process.pid}-\\d+-[0-9a-f]{8}\\.html$`).test(name),
+        `文件名应为 m2w-{pid}-{time}-{uuid8hex}.html,实际 ${name}`,
+      );
+      assert((await fs.readFile(htmlPath, "utf8")) === html, "写入内容应与输入逐字一致");
+      console.log("[ok] temp-html:tmpdir 路径/命名形状(randomUUID 段)/内容逐字 断言通过");
+    });
 
     // ---- 2. cleanup 删除 + 幂等(force:文件已删再调不抛) ----
-    await cleanup();
-    let gone = false;
-    try {
-      await fs.access(htmlPath);
-    } catch {
-      gone = true;
-    }
-    assert(gone, "cleanup 后临时文件应被删除");
-    await cleanup(); // 幂等:第二次调用不抛(fs.rm force)
-    console.log("[ok] temp-html:cleanup 删除 + 幂等 断言通过");
+    // 依赖 case 1 写出的那个文件:case 1 失败时本 case 的 cleanup 仍幂等,不会二次炸
+    await suite.case("cleanup 删除 + 幂等", async () => {
+      await cleanup();
+      let gone = false;
+      try {
+        await fs.access(htmlPath);
+      } catch {
+        gone = true;
+      }
+      assert(gone, "cleanup 后临时文件应被删除");
+      await cleanup(); // 幂等:第二次调用不抛(fs.rm force)
+      console.log("[ok] temp-html:cleanup 删除 + 幂等 断言通过");
+    });
   } finally {
     removeFile(htmlPath); // 兜底清理,防断言失败残留(助手不抛,删不掉也不阻断段结果)
   }
 
   // ---- 3. 并发唯一性:25 次并发写入 → 路径互不相同、全部存在、全部可清理 ----
   // (randomUUID 随机段 + 'wx' 独占创建的间接验证:无碰撞、无覆盖)
+  // 25 次并发写入是一次性昂贵前置,提到 case 之前由两条 case 共享(不各自重建)
   const results = await Promise.all(
     Array.from({ length: 25 }, () => writeTempHtml("<p>x</p>")),
   );
   const paths = results.map((r) => r.htmlPath);
-  assert(new Set(paths).size === paths.length, "并发写入应产生互不相同的路径(无碰撞)");
-  for (const p of paths) {
-    let exists = false;
-    try {
-      await fs.access(p);
-      exists = true;
-    } catch {
-      /* 不存在 */
+
+  await suite.case("并发 25 次路径唯一(无碰撞)", () => {
+    assert(new Set(paths).size === paths.length, "并发写入应产生互不相同的路径(无碰撞)");
+  });
+
+  await suite.case("并发产物全部存在且 cleanup 后全部删除", async () => {
+    for (const p of paths) {
+      let exists = false;
+      try {
+        await fs.access(p);
+        exists = true;
+      } catch {
+        /* 不存在 */
+      }
+      assert(exists, `并发写入的文件应存在:${p}`);
     }
-    assert(exists, `并发写入的文件应存在:${p}`);
-  }
-  await Promise.all(results.map((r) => r.cleanup()));
-  for (const p of paths) {
-    let gone = true;
-    try {
-      await fs.access(p);
-      gone = false;
-    } catch {
-      /* 已删除 */
+    await Promise.all(results.map((r) => r.cleanup()));
+    for (const p of paths) {
+      let gone = true;
+      try {
+        await fs.access(p);
+        gone = false;
+      } catch {
+        /* 已删除 */
+      }
+      assert(gone, `cleanup 后不应残留:${p}`);
     }
-    assert(gone, `cleanup 后不应残留:${p}`);
-  }
-  console.log("[ok] temp-html:并发 25 次路径唯一/全部清理 断言通过");
+    console.log("[ok] temp-html:并发 25 次路径唯一/全部清理 断言通过");
+  });
+
+  return { cases: suite.results };
 }

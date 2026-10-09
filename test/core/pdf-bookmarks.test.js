@@ -11,6 +11,7 @@ import { PDFArray, PDFDict, PDFDocument, PDFHexString, PDFName, PDFRef } from "p
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { htmlToPdf } from "../harness/pdf-utils.js";
 import { asPdfArtifact, convertWithFs } from "../harness/convert-helpers.js";
+import { createCaseSuite } from "../harness/case.js";
 
 
 /**
@@ -64,6 +65,7 @@ export const fixtures = { main: md };
 
 /** PDF 书签端到端验收 */
 export async function run() {
+  const suite = createCaseSuite();
   const artifact = asPdfArtifact(
     await convertWithFs(md, "pdf", {
       baseDir: FIXTURES_DIR,
@@ -74,24 +76,41 @@ export async function run() {
 
   // 1. 提取 + 建树:三级标题 → 扁平列表 → 嵌套树(h1 顶层,h2/h3 挂最近上级)
   const headings = extractHeadings(artifact.html);
+  // 标题数是下面建树断言的判定对象,留在 case 外:数量不对时逐条报「某级没挂上」
+  // 会把真因(提取数量)盖掉
   if (headings.length !== 4) throw new Error(`extractHeadings 数量异常: ${headings.length}`);
   const tree = buildBookmarkTree(headings);
   const root = tree[0];
-  if (tree.length !== 1 || !root || root.title !== "书签一级标题") {
-    throw new Error("书签树:h1 未作顶层");
-  }
-  const second = root.children?.[0];
-  if (!second || second.title !== "书签二级标题") throw new Error("书签树:h2 未挂 h1 下");
-  const third = second.children?.[0];
-  if (!third || third.title !== "三级子节") throw new Error("书签树:h3 未挂 h2 下");
+  // root 的存在性是下面三条层级判定的对象,留在 case 外做一次前提收窄:
+  // 拆进 case 后每条 closure 都得各自判一遍 undefined,判红时报的还是「h2 没挂上」
+  if (!root) throw new Error("书签树:顶层节点缺失(tree 为空)");
+  await suite.case("书签树:h1 作顶层", () => {
+    if (tree.length !== 1 || root.title !== "书签一级标题") {
+      throw new Error("书签树:h1 未作顶层");
+    }
+  });
+  await suite.case("书签树:h2 挂 h1 下", () => {
+    const second = root.children?.[0];
+    if (!second || second.title !== "书签二级标题") throw new Error("书签树:h2 未挂 h1 下");
+  });
+  await suite.case("书签树:h3 挂 h2 下", () => {
+    const second = root.children?.[0];
+    const third = second?.children?.[0];
+    if (!third || third.title !== "三级子节") throw new Error("书签树:h3 未挂 h2 下");
+  });
   // 第二页小节与 h1 同级(层级回退),非 h2 的子树
-  if (tree.length !== 1 || root.children?.length !== 2) throw new Error("书签树:跨级后 h2 未回挂顶层");
+  await suite.case("书签树:跨级后 h2 回挂顶层", () => {
+    if (tree.length !== 1 || root.children?.length !== 2) throw new Error("书签树:跨级后 h2 未回挂顶层");
+  });
   console.log("[ok] 书签树:多级标题嵌套 + 跨级回挂结构正确");
 
   // 2. 端到端:printToPDF 产物 → 注入 → 回读(中文标题 + Dest 页面引用)
+  // case 名逐字复用 assertOutline 的 label 形参:失败文案与 case 名同源
   const pdf = await htmlToPdf(artifact.html, artifact.footerTemplate);
   const withBookmarks = await injectBookmarks(new Uint8Array(pdf), tree);
-  await assertOutline(withBookmarks, "书签一级标题", "书签端到端");
+  await suite.case("书签端到端", async () => {
+    await assertOutline(withBookmarks, "书签一级标题", "书签端到端");
+  });
   console.log("[ok] 书签端到端:Outlines 注入,中文标题 + Dest 页面引用正确");
 
   // ---------- lookupNamedDest 解析路径直测(bookmarks.ts) ----------
@@ -109,10 +128,12 @@ export async function run() {
     dests.set(PDFName.of("%E7%9B%AE%E6%A0%87"), doc.context.obj([doc.getPage(0).ref, "Fit"]));
     doc.catalog.set(PDFName.of("Dests"), doc.context.register(dests));
     const reloaded = await PDFDocument.load(await doc.save());
-    const dest = lookupNamedDest(reloaded, "目标");
-    if (!(dest instanceof PDFArray) || !(dest.asArray()[0] instanceof PDFRef)) {
-      throw new Error(`书签断言失败:旧式 Dests 字典未解析出命名目标「目标」,dest=${dest?.toString()}`);
-    }
+    await suite.case("旧式 /Dests 字典(百分号编码 UTF-8 key)解析命中", async () => {
+      const dest = lookupNamedDest(reloaded, "目标");
+      if (!(dest instanceof PDFArray) || !(dest.asArray()[0] instanceof PDFRef)) {
+        throw new Error(`书签断言失败:旧式 Dests 字典未解析出命名目标「目标」,dest=${dest?.toString()}`);
+      }
+    });
     console.log("[ok] 书签:旧式 /Dests 字典(百分号编码 UTF-8 key)解析命中");
   }
 
@@ -124,12 +145,14 @@ export async function run() {
     dests.set(PDFName.of("a%zz"), doc.context.obj([doc.getPage(0).ref, "Fit"]));
     doc.catalog.set(PDFName.of("Dests"), doc.context.register(dests));
     const reloaded = await PDFDocument.load(await doc.save());
-    const dest = lookupNamedDest(reloaded, "a%zz");
-    // 取文本须在 instanceof 收窄之前(收窄后 dest 变 never)
-    const destText = dest?.toString();
-    if (!(dest instanceof PDFArray)) {
-      throw new Error(`书签断言失败:非法百分号编码名应原样匹配(destKeyText catch),dest=${destText}`);
-    }
+    await suite.case("decodeURIComponent catch(非法 % 编码)原样返回并命中", async () => {
+      const dest = lookupNamedDest(reloaded, "a%zz");
+      // 取文本须在 instanceof 收窄之前(收窄后 dest 变 never)
+      const destText = dest?.toString();
+      if (!(dest instanceof PDFArray)) {
+        throw new Error(`书签断言失败:非法百分号编码名应原样匹配(destKeyText catch),dest=${destText}`);
+      }
+    });
     console.log("[ok] 书签:decodeURIComponent catch(非法 % 编码)原样返回并命中");
   }
 
@@ -144,10 +167,13 @@ export async function run() {
     dests.set(PDFName.of("indirect"), destDict);
     doc.catalog.set(PDFName.of("Dests"), doc.context.register(dests));
     const reloaded = await PDFDocument.load(await doc.save());
-    const dest = lookupNamedDest(reloaded, "indirect");
-    if (!(dest instanceof PDFArray) || !(dest.asArray()[0] instanceof PDFRef)) {
-      throw new Error(`书签断言失败:PDFDict 间接目标(/D 解引用)未解析,dest=${dest?.toString()}`);
-    }
+    await suite.case("PDFDict 间接目标(/D → PDFRef → PDFArray)解析命中", async () => {
+      const dest = lookupNamedDest(reloaded, "indirect");
+      if (!(dest instanceof PDFArray) || !(dest.asArray()[0] instanceof PDFRef)) {
+        throw new Error(`书签断言失败:PDFDict 间接目标(/D 解引用)未解析,dest=${dest?.toString()}`);
+      }
+    });
     console.log("[ok] 书签:PDFDict 间接目标(/D → PDFRef → PDFArray)解析命中");
   }
+  return { cases: suite.results };
 }

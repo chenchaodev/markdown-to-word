@@ -32,6 +32,7 @@ import { ROOT } from "../harness/paths.js";
 import { resolveNode } from "../harness/node-exec.js";
 import { createTempResource, removeTree } from "../harness/temp-resource.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /**
  * 本段测哪一层(ADR-062 L4 声明通道):**cli**,判据静态看不见本段的主体 ——
@@ -92,18 +93,27 @@ function assertPdfProduced(dir, name, runAsNode, label) {
 }
 
 export async function run() {
+  const suite = createCaseSuite();
   const { path: dir } = createTempResource({ label: "cli-pdf-launch" });
+  // 清理留在 run() 顶层:进了 case 的话,case 失败会先抛、finally 不执行,临时目录泄漏
   try {
     // 1) 干净环境:真跑一次 pdf(经宿主子进程)
-    assertPdfProduced(dir, "干净环境", undefined, "干净环境");
+    await suite.case("干净环境真跑 pdf 产出非空产物", async () => {
+      assertPdfProduced(dir, "干净环境", undefined, "干净环境");
+    });
 
     // 2) 反向锚点:注入 ELECTRON_RUN_AS_NODE 污染态,仍须成功。
     //    已装形态由 launcher 设该变量让 CLI 以纯 node 跑应用 exe;若子进程继承到它,
     //    宿主会跟着以纯 node 启动并以 SyntaxError 崩掉、pdf 静默不产出(退出码 3)。
     //    **`=0` 同样致命** —— Electron 只判存在性不判取值,所以两种取值都要覆盖,
     //    且修法必须是 delete 而不是置 0(见 host-launch.ts 的 hostEnv 注释)。
-    assertPdfProduced(dir, "污染1", "1", "ELECTRON_RUN_AS_NODE=1");
-    assertPdfProduced(dir, "污染0", "0", "ELECTRON_RUN_AS_NODE=0");
+    //    两种取值判红后彼此仍独立(修法只针对其中一种时另一条仍要报),故分列两个 case。
+    await suite.case("ELECTRON_RUN_AS_NODE=1 污染态仍成功", async () => {
+      assertPdfProduced(dir, "污染1", "1", "ELECTRON_RUN_AS_NODE=1");
+    });
+    await suite.case("ELECTRON_RUN_AS_NODE=0 污染态仍成功", async () => {
+      assertPdfProduced(dir, "污染0", "0", "ELECTRON_RUN_AS_NODE=0");
+    });
 
     console.log(
       "[ok] cli/pdf-launch:pdf 宿主真实拉起通过(纯 node 子进程真产出 pdf + 注入 ELECTRON_RUN_AS_NODE=1/0 两种污染态仍成功 —— 后者才是 env 泄漏那个 bug 的抓手)",
@@ -111,4 +121,5 @@ export async function run() {
   } finally {
     removeTree(dir);
   }
+  return { cases: suite.results };
 }

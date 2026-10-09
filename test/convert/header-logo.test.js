@@ -10,6 +10,7 @@
  */
 import { resolveHeaderLogo } from "../../dist/convert/context.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 // 真值断言取公共单源(收敛重复面,口径见 assert.js 文件头)
 const { assert } = createAsserter("header-logo(convert)");
@@ -34,18 +35,25 @@ const headerFooter = {
 };
 
 export async function run() {
-  const warnings = /** @type {import("../../dist/core/i18n/warning.js").KeyedWarning[]} */ ([]);
-  const missing = await resolveHeaderLogo(
-    { ...headerFooter, headerMode: "custom", headerLogoPath: "Z:\\no\\such\\logo.png" },
-    warnings,
-  );
-  assert(missing === undefined, "读取失败应返回 undefined(降级为无 logo)");
-  assert(
-    warnings.length === 1 && warnings[0]?.key === "warn.headerLogoLoadFailed",
-    "读取失败应产生 warn.headerLogoLoadFailed keyed 警告",
-  );
-  const skipped = await resolveHeaderLogo({ ...headerFooter, headerLogoPath: "C:\\x.png" });
-  assert(skipped === undefined, "非 custom 模式不应读 logo 文件");
+  const suite = createCaseSuite();
+  // 读失败的两面是同一件事(降级 + 留痕),合成一个 case:任一面不成立,再判「非 custom 不读」无意义
+  await suite.case("读取失败降级为无 logo 并留 keyed 警告", async () => {
+    const warnings = /** @type {import("../../dist/core/i18n/warning.js").KeyedWarning[]} */ ([]);
+    const missing = await resolveHeaderLogo(
+      { ...headerFooter, headerMode: "custom", headerLogoPath: "Z:\\no\\such\\logo.png" },
+      warnings,
+    );
+    assert(missing === undefined, "读取失败应返回 undefined(降级为无 logo)");
+    assert(
+      warnings.length === 1 && warnings[0]?.key === "warn.headerLogoLoadFailed",
+      "读取失败应产生 warn.headerLogoLoadFailed keyed 警告",
+    );
+  });
+  await suite.case("非 custom 模式不读 logo 文件", async () => {
+    const skipped = await resolveHeaderLogo({ ...headerFooter, headerLogoPath: "C:\\x.png" });
+    assert(skipped === undefined, "非 custom 模式不应读 logo 文件");
+  });
 
   console.log("[ok] header-logo(convert):logo 读取失败降级(undefined + keyed 警告)/非 custom 不读 断言通过");
+  return { cases: suite.results };
 }

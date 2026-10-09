@@ -48,6 +48,7 @@ import { buildViewportSettledScript, parseMeasureScript } from "../../shared/geo
 import { LIVENESS_PATHS, checkPathLiveness, mediaConditions } from "../../gates/geometry/geometry/driver.mjs";
 import { ROOT } from "../harness/paths.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const { assert: harnessAssert } = createAsserter("geometry-gate");
 
@@ -492,110 +493,150 @@ function withDrawer(samples, scenarioId, fn) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   // ---------- 1. 正向:全绿样本零 finding ----------
+  // 门禁判定结果是本段全部判定的取数(每条 case 各自重跑,此处这份供正向断言用)
   const green = runGeometryGate(cleanSamples(), { mediaConditions: MEDIA_CONDITIONS });
-  assert(
-    green.ok,
-    `标称样本应全绿,实际命中:${green.findings.map((f) => `${f.rule}@${f.scenario}:${f.message}`).join(" | ")}`,
-  );
-  assert(green.findings.length === 0, "全绿样本不应产生任何 finding");
-  // 放宽理由:门禁的 stats 声明为 object(判定层刻意不外泄内部结构),
-  // 此处只按契约读取 scenarios 计数。
-  const greenStats = /** @type {{ scenarios: number }} */ (green.stats);
-  assert(greenStats.scenarios === SCENARIOS.length, "统计的场景数应与规格表一致");
-  assert(green.passedScenarios.length === SCENARIOS.length, "全部场景都应有有效采样");
+  await suite.describe("正向 · 标称样本", async (s) => {
+    await s.case("标称样本全绿(ok 为真)", () => {
+      assert(
+        green.ok,
+        `标称样本应全绿,实际命中:${green.findings.map((f) => `${f.rule}@${f.scenario}:${f.message}`).join(" | ")}`,
+      );
+    });
+    await s.case("标称样本零 finding", () => {
+      assert(green.findings.length === 0, "全绿样本不应产生任何 finding");
+    });
+    await s.case("统计的场景数与规格表一致", () => {
+      // 放宽理由:门禁的 stats 声明为 object(判定层刻意不外泄内部结构),
+      // 此处只按契约读取 scenarios 计数。
+      const greenStats = /** @type {{ scenarios: number }} */ (green.stats);
+      assert(greenStats.scenarios === SCENARIOS.length, "统计的场景数应与规格表一致");
+    });
+    await s.case("全部场景都有有效采样", () => {
+      assert(green.passedScenarios.length === SCENARIOS.length, "全部场景都应有有效采样");
+    });
+  });
 
   // ---------- 2. 负向:缺场景 / 场景步骤失败(不得静默跳过) ----------
-  expectRule(cleanSamples().filter((s) => s.id !== "multi-960"), "scenario-missing", "multi-960");
-  expectRule(cleanSamples().map((s) => (s.id === "single-960" ? { ...s, error: "选择器不存在 #selectBtn" } : s)), "scenario-failed", "single-960");
+  await suite.case("负探针 · 缺场景判红在 scenario-missing", () => {
+    expectRule(cleanSamples().filter((s) => s.id !== "multi-960"), "scenario-missing", "multi-960");
+  });
+  await suite.case("负探针 · 场景步骤失败判红在 scenario-failed", () => {
+    expectRule(cleanSamples().map((s) => (s.id === "single-960" ? { ...s, error: "选择器不存在 #selectBtn" } : s)), "scenario-failed", "single-960");
+  });
 
   // ---------- 3. 负向:缺选择器 / 必需节点不可见 ----------
-  expectRule(withNode(cleanSamples(), "multi-960", "listcard", () => null), "selector-missing", "multi-960");
-  expectRule(
-    withNode(cleanSamples(), "converting-960", "progress", (n) => {
-      n.visible = false;
-      n.display = "none";
-      n.rect = { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
-    }),
-    "selector-hidden",
-    "converting-960",
-  );
+  await suite.case("负探针 · 节点缺失判红在 selector-missing", () => {
+    expectRule(withNode(cleanSamples(), "multi-960", "listcard", () => null), "selector-missing", "multi-960");
+  });
+  await suite.case("负探针 · 必需节点不可见判红在 selector-hidden", () => {
+    expectRule(
+      withNode(cleanSamples(), "converting-960", "progress", (n) => {
+        n.visible = false;
+        n.display = "none";
+        n.rect = { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+      }),
+      "selector-hidden",
+      "converting-960",
+    );
+  });
 
   // ---------- 4. 负向:视口不匹配 / 响应式档位未生效 / 舞台状态不匹配 ----------
-  expectRule(
-    cleanSamples().map((s) => (s.id === "compact-multi-880" ? { ...s, viewport: { width: 880, height: 700 } } : s)),
-    "viewport-mismatch",
-    "compact-multi-880",
-  );
+  await suite.case("负探针 · 视口不匹配判红在 viewport-mismatch", () => {
+    expectRule(
+      cleanSamples().map((s) => (s.id === "compact-multi-880" ? { ...s, viewport: { width: 880, height: 700 } } : s)),
+      "viewport-mismatch",
+      "compact-multi-880",
+    );
+  });
   // 首个高度档条件(缺省 "" 只在样式表未抽出任何条件时兜底,本段末尾另有非空断言)
   const [firstMediaCondition = ""] = MEDIA_CONDITIONS;
-  expectRule(
-    cleanSamples().map((s) =>
-      s.id === "compact-multi-880" ? { ...s, tiers: { ...s.tiers, [firstMediaCondition]: false } } : s,
-    ),
-    "tier-mismatch",
-    "compact-multi-880",
-  );
-  expectRule(
-    withNode(cleanSamples(), "single-960", "dropZone", (n) => {
-      n.dataStage = "empty";
-    }),
-    "stage-mismatch",
-    "single-960",
-  );
+  await suite.case("负探针 · 响应式档位未生效判红在 tier-mismatch", () => {
+    expectRule(
+      cleanSamples().map((s) =>
+        s.id === "compact-multi-880" ? { ...s, tiers: { ...s.tiers, [firstMediaCondition]: false } } : s,
+      ),
+      "tier-mismatch",
+      "compact-multi-880",
+    );
+  });
+  await suite.case("负探针 · 舞台状态不匹配判红在 stage-mismatch", () => {
+    expectRule(
+      withNode(cleanSamples(), "single-960", "dropZone", (n) => {
+        n.dataStage = "empty";
+      }),
+      "stage-mismatch",
+      "single-960",
+    );
+  });
 
   // ---------- 5. 负向:视口容纳 / 水平溢出 / 水平裁切 ----------
-  expectRule(
-    withNode(cleanSamples(), "halfscreen-multi-640", "actionbar", (n) => {
-      n.rect = { ...n.rect, width: n.rect.width + 80, right: n.rect.right + 80 };
-    }),
-    "viewport-overflow",
-    "halfscreen-multi-640",
-  );
-  expectRule(
-    cleanSamples().map((s) => ({ ...s, doc: { ...s.doc, scrollWidth: s.doc.scrollWidth + 40 } })),
-    "horizontal-overflow",
-    "empty-960",
-  );
-  expectRule(
-    withNode(cleanSamples(), "multi-960", "dropZone", (n) => {
-      n.scrollWidth = n.clientWidth + 24;
-    }),
-    "horizontal-clip",
-    "multi-960",
-  );
+  await suite.case("负探针 · 视口容纳不下判红在 viewport-overflow", () => {
+    expectRule(
+      withNode(cleanSamples(), "halfscreen-multi-640", "actionbar", (n) => {
+        n.rect = { ...n.rect, width: n.rect.width + 80, right: n.rect.right + 80 };
+      }),
+      "viewport-overflow",
+      "halfscreen-multi-640",
+    );
+  });
+  await suite.case("负探针 · 文档水平溢出判红在 horizontal-overflow", () => {
+    expectRule(
+      cleanSamples().map((s) => ({ ...s, doc: { ...s.doc, scrollWidth: s.doc.scrollWidth + 40 } })),
+      "horizontal-overflow",
+      "empty-960",
+    );
+  });
+  await suite.case("负探针 · 节点水平裁切判红在 horizontal-clip", () => {
+    expectRule(
+      withNode(cleanSamples(), "multi-960", "dropZone", (n) => {
+        n.scrollWidth = n.clientWidth + 24;
+      }),
+      "horizontal-clip",
+      "multi-960",
+    );
+  });
 
   // ---------- 6. 负向:紧凑档免滚动 / 固定槽塌陷 / 列轴漂移与越界 ----------
-  expectRule(
-    withNode(cleanSamples(), "halfscreen-empty-640", "dropZone", (n) => {
-      n.scrollHeight = n.clientHeight + 9;
-    }),
-    "compact-scroll",
-    "halfscreen-empty-640",
-  );
-  expectRule(
-    withNode(cleanSamples(), "multi-960", "historyHead", (n) => {
-      n.rect = { left: n.rect.left, top: n.rect.top, right: n.rect.left, bottom: n.rect.top, width: 0, height: 0 };
-    }),
-    "slot-collapsed",
-    "multi-960",
-  );
-  expectRule(
-    withNode(cleanSamples(), "single-960", "fhint", (n) => {
-      n.rect = { ...n.rect, left: n.rect.left + 12, right: n.rect.right + 12 };
-      n.clientWidth = n.clientWidth + 12;
-    }),
-    "column-drift",
-    "single-960",
-  );
-  expectRule(
-    withNode(cleanSamples(), "single-960", "quickBar", (n) => {
-      n.rect = { ...n.rect, left: n.rect.left - 30, right: n.rect.right - 30 };
-      n.clientWidth = n.clientWidth - 30;
-    }),
-    "column-bleed",
-    "single-960",
-  );
+  await suite.case("负探针 · 紧凑档免滚动预算超支判红在 compact-scroll", () => {
+    expectRule(
+      withNode(cleanSamples(), "halfscreen-empty-640", "dropZone", (n) => {
+        n.scrollHeight = n.clientHeight + 9;
+      }),
+      "compact-scroll",
+      "halfscreen-empty-640",
+    );
+  });
+  await suite.case("负探针 · 固定槽塌陷判红在 slot-collapsed", () => {
+    expectRule(
+      withNode(cleanSamples(), "multi-960", "historyHead", (n) => {
+        n.rect = { left: n.rect.left, top: n.rect.top, right: n.rect.left, bottom: n.rect.top, width: 0, height: 0 };
+      }),
+      "slot-collapsed",
+      "multi-960",
+    );
+  });
+  await suite.case("负探针 · 列轴漂移判红在 column-drift", () => {
+    expectRule(
+      withNode(cleanSamples(), "single-960", "fhint", (n) => {
+        n.rect = { ...n.rect, left: n.rect.left + 12, right: n.rect.right + 12 };
+        n.clientWidth = n.clientWidth + 12;
+      }),
+      "column-drift",
+      "single-960",
+    );
+  });
+  await suite.case("负探针 · 列轴越界判红在 column-bleed", () => {
+    expectRule(
+      withNode(cleanSamples(), "single-960", "quickBar", (n) => {
+        n.rect = { ...n.rect, left: n.rect.left - 30, right: n.rect.right - 30 };
+        n.clientWidth = n.clientWidth - 30;
+      }),
+      "column-bleed",
+      "single-960",
+    );
+  });
 
   // ---------- 7. 负向:阶段跳动(容差内放过、超阈值判红) ----------
   /** @param {number} delta 位移量(px) */
@@ -609,375 +650,380 @@ export async function run() {
       };
       n.clientHeight = n.clientHeight + delta;
     });
-  const withinTol = runGeometryGate(jump(0.5), { mediaConditions: MEDIA_CONDITIONS });
-  assert(withinTol.ok, `容差内的 0.5px 抖动不应判红,实际:${withinTol.findings.map((f) => f.rule).join(",")}`);
-  expectRule(jump(4), "geometry-jump", "converting-960");
-  // 槽节点只锁高度:仅纵向位移不判红(位置由固定槽之上的布局决定)
-  const slotShift = withNode(cleanSamples(), "multi-960", "historyHead", (n) => {
-    n.rect = { ...n.rect, top: n.rect.top + 9, bottom: n.rect.bottom + 9 };
+  await suite.case("阶段抖动 · 容差内的位移不判红", () => {
+    const withinTol = runGeometryGate(jump(0.5), { mediaConditions: MEDIA_CONDITIONS });
+    assert(withinTol.ok, `容差内的 0.5px 抖动不应判红,实际:${withinTol.findings.map((f) => f.rule).join(",")}`);
   });
-  assert(
-    runGeometryGate(slotShift, { mediaConditions: MEDIA_CONDITIONS }).ok,
-    "固定槽仅位置平移(高度不变)不应判红",
-  );
-  expectRule(
-    withNode(cleanSamples(), "multi-960", "historyHead", (n) => {
-      n.rect = { ...n.rect, height: n.rect.height + 6, bottom: n.rect.bottom + 6 };
-    }),
-    "geometry-jump",
-    "multi-960",
-  );
+  await suite.case("负探针 · 超容差位移判红在 geometry-jump", () => {
+    expectRule(jump(4), "geometry-jump", "converting-960");
+  });
+  // 槽节点只锁高度:仅纵向位移不判红(位置由固定槽之上的布局决定)
+  await suite.case("阶段抖动 · 固定槽仅位置平移不判红", () => {
+    const slotShift = withNode(cleanSamples(), "multi-960", "historyHead", (n) => {
+      n.rect = { ...n.rect, top: n.rect.top + 9, bottom: n.rect.bottom + 9 };
+    });
+    assert(
+      runGeometryGate(slotShift, { mediaConditions: MEDIA_CONDITIONS }).ok,
+      "固定槽仅位置平移(高度不变)不应判红",
+    );
+  });
+  await suite.case("负探针 · 固定槽撑高判红在 geometry-jump", () => {
+    expectRule(
+      withNode(cleanSamples(), "multi-960", "historyHead", (n) => {
+        n.rect = { ...n.rect, height: n.rect.height + 6, bottom: n.rect.bottom + 6 };
+      }),
+      "geometry-jump",
+      "multi-960",
+    );
+  });
 
   // ---------- 7b. 固定消息槽:高度恒定 + 撑高即判红 ----------
-  // (1) 完成态(状态行 + 结果汇总条同处一槽)不得改写槽高
-  expectRule(
-    withNode(cleanSamples(), "after-convert-960", "feed", (n) => {
-      n.rect = { ...n.rect, height: n.rect.height + 30, bottom: n.rect.bottom + 30 };
-      n.clientHeight = n.clientHeight + 30;
-    }),
-    "geometry-jump",
-    "after-convert-960",
-  );
-  // (2) 槽退化为 height:auto(结果汇总撑高)即越上限
-  expectRule(
-    withNode(cleanSamples(), "after-convert-960", "feed", (n) => {
-      n.rect = { ...n.rect, height: 214, bottom: n.rect.top + 214 };
-      n.clientHeight = 214;
-    }),
-    "slot-overflow",
-    "after-convert-960",
-  );
-  // (3) 槽塌陷(高度趋零)命中下限,而不是被上限规则漏过
-  expectRule(
-    withNode(cleanSamples(), "compact-multi-880", "feed", (n) => {
-      n.rect = { ...n.rect, height: 24, bottom: n.rect.top + 24 };
-      n.clientHeight = 24;
-    }),
-    "slot-collapsed",
-    "compact-multi-880",
-  );
+  await suite.case("负探针 · 完成态改写消息槽高判红在 geometry-jump", () => {
+    // (1) 完成态(状态行 + 结果汇总条同处一槽)不得改写槽高
+    expectRule(
+      withNode(cleanSamples(), "after-convert-960", "feed", (n) => {
+        n.rect = { ...n.rect, height: n.rect.height + 30, bottom: n.rect.bottom + 30 };
+        n.clientHeight = n.clientHeight + 30;
+      }),
+      "geometry-jump",
+      "after-convert-960",
+    );
+  });
+  await suite.case("负探针 · 消息槽撑高越上限判红在 slot-overflow", () => {
+    // (2) 槽退化为 height:auto(结果汇总撑高)即越上限
+    expectRule(
+      withNode(cleanSamples(), "after-convert-960", "feed", (n) => {
+        n.rect = { ...n.rect, height: 214, bottom: n.rect.top + 214 };
+        n.clientHeight = 214;
+      }),
+      "slot-overflow",
+      "after-convert-960",
+    );
+  });
+  await suite.case("负探针 · 消息槽塌陷命中下限而非被上限规则漏过", () => {
+    // (3) 槽塌陷(高度趋零)命中下限,而不是被上限规则漏过
+    expectRule(
+      withNode(cleanSamples(), "compact-multi-880", "feed", (n) => {
+        n.rect = { ...n.rect, height: 24, bottom: n.rect.top + 24 };
+        n.clientHeight = 24;
+      }),
+      "slot-collapsed",
+      "compact-multi-880",
+    );
+  });
 
   // ---------- 8. 容差与滚动预算可注入(门禁松紧由参数决定,而非硬编码) ----------
-  // 同一份 0.5px 抖动样本:默认容差 1px 放过,容差收紧到 0 即判红
-  expectRule(jump(0.5), "geometry-jump", "converting-960", { tolPx: 0 });
-  // 滚动预算同理:预算收到 -1 时"零溢出"也判红,证明 compact-scroll 真的在比较预算
-  expectRule(cleanSamples(), "compact-scroll", "compact-multi-880", { scrollBudgetPx: -1 });
+  await suite.case("负探针 · 容差收紧到 0 时同一抖动判红在 geometry-jump", () => {
+    // 同一份 0.5px 抖动样本:默认容差 1px 放过,容差收紧到 0 即判红
+    expectRule(jump(0.5), "geometry-jump", "converting-960", { tolPx: 0 });
+  });
+  await suite.case("负探针 · 滚动预算收到 -1 时零溢出也判红在 compact-scroll", () => {
+    // 滚动预算同理:预算收到 -1 时"零溢出"也判红,证明 compact-scroll 真的在比较预算
+    expectRule(cleanSamples(), "compact-scroll", "compact-multi-880", { scrollBudgetPx: -1 });
+  });
 
   // ---------- 8b. 抽屉:控件缺失 / 错组 / 乱序 / 不可见 ----------
-  // (1) 控件不存在:精确红在 selector-missing,而不是被「抽屉里 0 个异常」静默放过
-  expectRule(
-    withDrawer(cleanSamples(), drawerScenarioId("typography"), (d) => {
-      d.controls.marginTop = { found: false };
-    }),
-    "selector-missing",
-    drawerScenarioId("typography"),
-  );
-  // (2) 控件被挪到别的 panel
-  expectRule(
-    withDrawer(cleanSamples(), drawerScenarioId("typography"), (d) => {
-      pick(d, "marginTop").group = "numbering";
-    }),
-    "drawer-group-mismatch",
-    drawerScenarioId("typography"),
-  );
-  // (3) 组内顺序被打乱(正文字号与行距在视觉上对调)
-  expectRule(
-    withDrawer(cleanSamples(), drawerScenarioId("typography"), (d) => {
-      swapRows(d, "bodySizePt", "lineSpacing");
-    }),
-    "drawer-order-mismatch",
-    drawerScenarioId("typography"),
-  );
-  // (4) 控件 rect 归零 / 被 display:none 隐藏
-  expectRule(
-    withDrawer(cleanSamples(), drawerScenarioId("typography"), (d) => {
-      collapse(d, "bodySizePt");
-    }),
-    "selector-hidden",
-    drawerScenarioId("typography"),
-  );
-  // (5) 抽屉开着但某个分组的面板没切到位 → 量到的是上一组
-  expectRule(
-    withDrawer(cleanSamples(), drawerScenarioId("app"), (d) => {
-      d.activeGroup = "convert";
-    }),
-    "drawer-tab-mismatch",
-    drawerScenarioId("app"),
-  );
-  // (6) 抽屉没开
-  expectRule(
-    withDrawer(cleanSamples(), drawerScenarioId("preset"), (d) => {
-      d.shellVisible = false;
-    }),
-    "drawer-closed",
-    drawerScenarioId("preset"),
-  );
-  // (7) 扫描面零命中:一个控件都没量到时必须判红,不能当成「无问题」
-  expectRule(
-    withDrawer(cleanSamples(), drawerScenarioId("preset"), (d) => {
-      d.measured = 0;
-    }),
-    "selector-missing",
-    drawerScenarioId("preset"),
-  );
-  // (8) 抽屉内水平裁切(浮层不进文档 scrollWidth,故只能逐容器判)
-  expectRule(
-    withDrawer(cleanSamples(), drawerScenarioId("typography"), (d) => {
-      clipPanel(d, "panels", 18);
-    }),
-    "horizontal-clip",
-    drawerScenarioId("typography"),
-  );
-  // (9) 抽屉控件越出视口右缘
-  expectRule(
-    withDrawer(cleanSamples(), drawerScenarioId("typography"), (d) => {
-      pushRight(d, "bodySizePt", 996);
-    }),
-    "viewport-overflow",
-    drawerScenarioId("typography"),
-  );
+  await suite.describe("负探针 · 抽屉控件四类失效", async (s) => {
+    await s.case("抽屉控件不存在判红在 selector-missing", () => {
+      // (1) 控件不存在:精确红在 selector-missing,而不是被「抽屉里 0 个异常」静默放过
+      expectRule(
+        withDrawer(cleanSamples(), drawerScenarioId("typography"), (d) => {
+          d.controls.marginTop = { found: false };
+        }),
+        "selector-missing",
+        drawerScenarioId("typography"),
+      );
+    });
+    await s.case("控件被挪到别的 panel 判红在 drawer-group-mismatch", () => {
+      // (2) 控件被挪到别的 panel
+      expectRule(
+        withDrawer(cleanSamples(), drawerScenarioId("typography"), (d) => {
+          pick(d, "marginTop").group = "numbering";
+        }),
+        "drawer-group-mismatch",
+        drawerScenarioId("typography"),
+      );
+    });
+    await s.case("组内顺序被打乱判红在 drawer-order-mismatch", () => {
+      // (3) 组内顺序被打乱(正文字号与行距在视觉上对调)
+      expectRule(
+        withDrawer(cleanSamples(), drawerScenarioId("typography"), (d) => {
+          swapRows(d, "bodySizePt", "lineSpacing");
+        }),
+        "drawer-order-mismatch",
+        drawerScenarioId("typography"),
+      );
+    });
+    await s.case("控件被收起判红在 selector-hidden", () => {
+      // (4) 控件 rect 归零 / 被 display:none 隐藏
+      expectRule(
+        withDrawer(cleanSamples(), drawerScenarioId("typography"), (d) => {
+          collapse(d, "bodySizePt");
+        }),
+        "selector-hidden",
+        drawerScenarioId("typography"),
+      );
+    });
+    await s.case("抽屉开着但面板没切到位判红在 drawer-tab-mismatch", () => {
+      // (5) 抽屉开着但某个分组的面板没切到位 → 量到的是上一组
+      expectRule(
+        withDrawer(cleanSamples(), drawerScenarioId("app"), (d) => {
+          d.activeGroup = "convert";
+        }),
+        "drawer-tab-mismatch",
+        drawerScenarioId("app"),
+      );
+    });
+    await s.case("抽屉没开判红在 drawer-closed", () => {
+      // (6) 抽屉没开
+      expectRule(
+        withDrawer(cleanSamples(), drawerScenarioId("preset"), (d) => {
+          d.shellVisible = false;
+        }),
+        "drawer-closed",
+        drawerScenarioId("preset"),
+      );
+    });
+    await s.case("扫描面零命中判红在 selector-missing", () => {
+      // (7) 扫描面零命中:一个控件都没量到时必须判红,不能当成「无问题」
+      expectRule(
+        withDrawer(cleanSamples(), drawerScenarioId("preset"), (d) => {
+          d.measured = 0;
+        }),
+        "selector-missing",
+        drawerScenarioId("preset"),
+      );
+    });
+    await s.case("抽屉内水平裁切判红在 horizontal-clip", () => {
+      // (8) 抽屉内水平裁切(浮层不进文档 scrollWidth,故只能逐容器判)
+      expectRule(
+        withDrawer(cleanSamples(), drawerScenarioId("typography"), (d) => {
+          clipPanel(d, "panels", 18);
+        }),
+        "horizontal-clip",
+        drawerScenarioId("typography"),
+      );
+    });
+    await s.case("抽屉控件越出视口右缘判红在 viewport-overflow", () => {
+      // (9) 抽屉控件越出视口右缘
+      expectRule(
+        withDrawer(cleanSamples(), drawerScenarioId("typography"), (d) => {
+          pushRight(d, "bodySizePt", 996);
+        }),
+        "viewport-overflow",
+        drawerScenarioId("typography"),
+      );
+    });
+  });
 
   // ---------- 8c. 抽屉门控:两个方向都要判红 ----------
-  // (1) 该收起的从属项仍然可见(toc 关着而目录下拉摆在那儿;toc 出厂即开,关态是点一次关掉那侧)
-  expectRule(
-    withDrawer(cleanSamples(), drawerScenarioId("numbering", { toc: false }), (d) => {
-      expand(d, "tocMode");
-    }),
-    "drawer-gate-inverted",
-    drawerScenarioId("numbering", { toc: false }),
-  );
-  // (2) 同一门控的另一侧:toc 开着而目录下拉不出现(只测关闭侧会放过这类漏项)
-  expectRule(
-    withDrawer(cleanSamples(), drawerScenarioId("numbering"), (d) => {
-      collapse(d, "tocMode");
-    }),
-    "selector-hidden",
-    drawerScenarioId("numbering"),
-  );
-  // (3) 页眉自定义折叠的关闭侧
-  expectRule(
-    withDrawer(cleanSamples(), drawerScenarioId("headerwatermark"), (d) => {
-      expand(d, "headerText");
-    }),
-    "drawer-gate-inverted",
-    drawerScenarioId("headerwatermark"),
-  );
-  // (4) 页眉自定义折叠的另一侧(headerMode=custom 而凹陷容器没收起)
-  expectRule(
-    withDrawer(cleanSamples(), drawerScenarioId("headerwatermark", { headerMode: "custom" }), (d) => {
-      collapse(d, "headerLayout");
-    }),
-    "selector-hidden",
-    drawerScenarioId("headerwatermark", { headerMode: "custom" }),
-  );
-  // (5) AI 清理分档是**灰禁不是收起**(IA §3 规则 1 的唯一例外):总开关关着却可点即判红
-  expectRule(
-    withDrawer(cleanSamples(), drawerScenarioId("convert"), (d) => {
-      pick(d, "aiCleanupTidy").disabled = false;
-    }),
-    "drawer-tier-availability",
-    drawerScenarioId("convert"),
-  );
-  // (6) 反向:总开关开着而分档仍灰禁
-  expectRule(
-    withDrawer(cleanSamples(), drawerScenarioId("convert", { aiCleanup: true }), (d) => {
-      pick(d, "aiCleanupRewrite").disabled = true;
-    }),
-    "drawer-tier-availability",
-    drawerScenarioId("convert", { aiCleanup: true }),
-  );
-  // (7) 主控自身不可读:门控预期落空,须显式记 finding 而不是按「收起」放行
-  expectRule(
-    withDrawer(cleanSamples(), drawerScenarioId("numbering", { toc: false }), (d) => {
-      d.controls.toc = { found: false };
-    }),
-    "drawer-master-unreadable",
-    drawerScenarioId("numbering", { toc: false }),
-  );
+  await suite.describe("负探针 · 抽屉门控双向", async (s) => {
+    await s.case("该收起的从属项仍可见判红在 drawer-gate-inverted(目录下拉)", () => {
+      // (1) 该收起的从属项仍然可见(toc 关着而目录下拉摆在那儿;toc 出厂即开,关态是点一次关掉那侧)
+      expectRule(
+        withDrawer(cleanSamples(), drawerScenarioId("numbering", { toc: false }), (d) => {
+          expand(d, "tocMode");
+        }),
+        "drawer-gate-inverted",
+        drawerScenarioId("numbering", { toc: false }),
+      );
+    });
+    await s.case("该出现的从属项不出现判红在 selector-hidden(目录下拉)", () => {
+      // (2) 同一门控的另一侧:toc 开着而目录下拉不出现(只测关闭侧会放过这类漏项)
+      expectRule(
+        withDrawer(cleanSamples(), drawerScenarioId("numbering"), (d) => {
+          collapse(d, "tocMode");
+        }),
+        "selector-hidden",
+        drawerScenarioId("numbering"),
+      );
+    });
+    await s.case("页眉自定义折叠关闭侧判红在 drawer-gate-inverted", () => {
+      // (3) 页眉自定义折叠的关闭侧
+      expectRule(
+        withDrawer(cleanSamples(), drawerScenarioId("headerwatermark"), (d) => {
+          expand(d, "headerText");
+        }),
+        "drawer-gate-inverted",
+        drawerScenarioId("headerwatermark"),
+      );
+    });
+    await s.case("页眉自定义折叠另一侧判红在 selector-hidden", () => {
+      // (4) 页眉自定义折叠的另一侧(headerMode=custom 而凹陷容器没收起)
+      expectRule(
+        withDrawer(cleanSamples(), drawerScenarioId("headerwatermark", { headerMode: "custom" }), (d) => {
+          collapse(d, "headerLayout");
+        }),
+        "selector-hidden",
+        drawerScenarioId("headerwatermark", { headerMode: "custom" }),
+      );
+    });
+    await s.case("总开关关着而分档可点判红在 drawer-tier-availability", () => {
+      // (5) AI 清理分档是**灰禁不是收起**(IA §3 规则 1 的唯一例外):总开关关着却可点即判红
+      expectRule(
+        withDrawer(cleanSamples(), drawerScenarioId("convert"), (d) => {
+          pick(d, "aiCleanupTidy").disabled = false;
+        }),
+        "drawer-tier-availability",
+        drawerScenarioId("convert"),
+      );
+    });
+    await s.case("总开关开着而分档仍灰禁判红在 drawer-tier-availability", () => {
+      // (6) 反向:总开关开着而分档仍灰禁
+      expectRule(
+        withDrawer(cleanSamples(), drawerScenarioId("convert", { aiCleanup: true }), (d) => {
+          pick(d, "aiCleanupRewrite").disabled = true;
+        }),
+        "drawer-tier-availability",
+        drawerScenarioId("convert", { aiCleanup: true }),
+      );
+    });
+    await s.case("门控主控不可读判红在 drawer-master-unreadable", () => {
+      // (7) 主控自身不可读:门控预期落空,须显式记 finding 而不是按「收起」放行
+      expectRule(
+        withDrawer(cleanSamples(), drawerScenarioId("numbering", { toc: false }), (d) => {
+          d.controls.toc = { found: false };
+        }),
+        "drawer-master-unreadable",
+        drawerScenarioId("numbering", { toc: false }),
+      );
+    });
+  });
 
   // ---------- 9. 规格自洽:三张表互不悬空,且覆盖两档关键视口 ----------
   /** @type {Set<string>} */
   const ids = new Set(SCENARIOS.map((sc) => sc.id));
-  assert(ids.size === SCENARIOS.length, "场景 id 必须唯一");
-  for (const sc of SCENARIOS) {
-    for (const key of [...(sc.visible ?? []), ...(sc.present ?? [])]) {
-      assert(hasNodeSelector(key), `场景「${sc.id}」引用了未登记的测量节点 ${key}`);
-    }
-    for (const group of sc.columnAxis ?? []) {
-      if (group.ref !== undefined) {
-        assert(hasNodeSelector(group.ref), `场景「${sc.id}」列组参照节点未登记:${group.ref}`);
-      }
-      for (const key of group.members) {
-        assert(hasNodeSelector(key), `场景「${sc.id}」列组成员未登记:${key}`);
-      }
-      assert(
-        ["border", "padding"].includes(group.box),
-        `列组「${group.name}」须声明 box 语义(border/padding),实际 ${String(group.box)}`,
-      );
-    }
-  }
-  for (const key of X_CLIP_KEYS) {
-    assert(hasNodeSelector(key), `水平裁切守护节点未登记:${key}`);
-  }
-  for (const slot of SLOT_INVARIANTS) {
-    assert(hasNodeSelector(slot.node), `固定槽节点未登记:${slot.node}`);
-    assert(slot.minHeight > 0 && slot.why.length > 0, `固定槽「${slot.node}」须给出下限与依据`);
-  }
-  for (const group of CONSTANT_GROUPS) {
-    assert(hasNodeSelector(group.node), `恒定组「${group.id}」节点未登记:${group.node}`);
-    assert(ids.has(group.baseline), `恒定组「${group.id}」基准场景不存在:${group.baseline}`);
-    for (const id of group.members) {
-      assert(ids.has(id), `恒定组「${group.id}」成员场景不存在:${id}`);
-    }
-    assert(group.members.includes(group.baseline), `恒定组「${group.id}」成员须含基准场景 ${group.baseline}`);
-    assert(group.why.length > 10, `恒定组「${group.id}」须写明契约出处(why)`);
-  }
-  for (const wanted of ["880x620", "640x560"]) {
-    assert(
-      SCENARIOS.some((sc) => sc.viewport.join("x") === wanted),
-      `规格须覆盖关键视口 ${wanted}`,
-    );
-  }
   const compactScenarios = SCENARIOS.filter((o) => o.compact === true);
-  assert(compactScenarios.length > 0, "须有场景承载紧凑档免滚动断言");
-  assert(
-    compactScenarios.every((o) => o.viewport[1] <= 640),
-    "紧凑档场景的视口高须 <= 640(矮窗档),否则断言的不是紧凑档",
-  );
+  // ids / compactScenarios 是本组多条断言共用的派生集,留在 case 外
+  await suite.describe("规格自洽 · 场景/节点/恒定组三表", async (s) => {
+    await s.case("场景 id 唯一", () => {
+      assert(ids.size === SCENARIOS.length, "场景 id 必须唯一");
+    });
+    await s.case("场景引用的测量节点与列组成员都已登记", () => {
+      for (const sc of SCENARIOS) {
+        for (const key of [...(sc.visible ?? []), ...(sc.present ?? [])]) {
+          assert(hasNodeSelector(key), `场景「${sc.id}」引用了未登记的测量节点 ${key}`);
+        }
+        for (const group of sc.columnAxis ?? []) {
+          if (group.ref !== undefined) {
+            assert(hasNodeSelector(group.ref), `场景「${sc.id}」列组参照节点未登记:${group.ref}`);
+          }
+          for (const key of group.members) {
+            assert(hasNodeSelector(key), `场景「${sc.id}」列组成员未登记:${key}`);
+          }
+          assert(
+            ["border", "padding"].includes(group.box),
+            `列组「${group.name}」须声明 box 语义(border/padding),实际 ${String(group.box)}`,
+          );
+        }
+      }
+    });
+    await s.case("水平裁切守护节点都已登记", () => {
+      for (const key of X_CLIP_KEYS) {
+        assert(hasNodeSelector(key), `水平裁切守护节点未登记:${key}`);
+      }
+    });
+    await s.case("固定槽节点已登记且给出下限与依据", () => {
+      for (const slot of SLOT_INVARIANTS) {
+        assert(hasNodeSelector(slot.node), `固定槽节点未登记:${slot.node}`);
+        assert(slot.minHeight > 0 && slot.why.length > 0, `固定槽「${slot.node}」须给出下限与依据`);
+      }
+    });
+    await s.case("恒定组的节点/成员场景/契约出处都在册", () => {
+      for (const group of CONSTANT_GROUPS) {
+        assert(hasNodeSelector(group.node), `恒定组「${group.id}」节点未登记:${group.node}`);
+        assert(ids.has(group.baseline), `恒定组「${group.id}」基准场景不存在:${group.baseline}`);
+        for (const id of group.members) {
+          assert(ids.has(id), `恒定组「${group.id}」成员场景不存在:${id}`);
+        }
+        assert(group.members.includes(group.baseline), `恒定组「${group.id}」成员须含基准场景 ${group.baseline}`);
+        assert(group.why.length > 10, `恒定组「${group.id}」须写明契约出处(why)`);
+      }
+    });
+    await s.case("两档关键视口各有场景承载", () => {
+      for (const wanted of ["880x620", "640x560"]) {
+        assert(
+          SCENARIOS.some((sc) => sc.viewport.join("x") === wanted),
+          `规格须覆盖关键视口 ${wanted}`,
+        );
+      }
+    });
+    await s.case("紧凑档场景存在且视口高不高于矮窗档", () => {
+      assert(compactScenarios.length > 0, "须有场景承载紧凑档免滚动断言");
+      assert(
+        compactScenarios.every((o) => o.viewport[1] <= 640),
+        "紧凑档场景的视口高须 <= 640(矮窗档),否则断言的不是紧凑档",
+      );
+    });
+  });
 
   // ---------- 10. 媒体查询:真实样式表的高度档可求值,未覆盖写法显式抛错 ----------
-  assert(MEDIA_CONDITIONS.length > 0, "真实样式表未找到高度维度媒体查询,档位断言将失去依据");
-  for (const cond of MEDIA_CONDITIONS) {
-    assert(evaluateMediaCondition(cond, { width: 960, height: 680 }) === false, `960×680 下 ${cond} 应不成立`);
-    assert(evaluateMediaCondition(cond, { width: 640, height: 560 }) === true, `640×560 下 ${cond} 应成立`);
-  }
-  let unsupportedThrew = false;
-  try {
-    evaluateMediaCondition("(max-height: 40em)", { width: 960, height: 680 });
-  } catch {
-    unsupportedThrew = true;
-  }
-  assert(unsupportedThrew, "求值器遇到未覆盖写法应显式抛错(禁止静默忽略未覆盖的响应式档)");
-  assert(
-    extractHeightMediaConditions("@media (max-width: 720px) { .a { color: red } }").length === 0,
-    "宽度维度媒体查询不应被当作高度档抽出",
-  );
+  await suite.describe("媒体查询 · 高度档可求值", async (s) => {
+    await s.case("真实样式表抽出了高度维度媒体查询", () => {
+      assert(MEDIA_CONDITIONS.length > 0, "真实样式表未找到高度维度媒体查询,档位断言将失去依据");
+    });
+    // 每条高度档一行 case:case 名用条件串本身(它就是这一行的稳定标识)
+    for (const cond of MEDIA_CONDITIONS) {
+      await s.case(`高度档求值方向:${cond}`, () => {
+        assert(evaluateMediaCondition(cond, { width: 960, height: 680 }) === false, `960×680 下 ${cond} 应不成立`);
+        assert(evaluateMediaCondition(cond, { width: 640, height: 560 }) === true, `640×560 下 ${cond} 应成立`);
+      });
+    }
+    await s.case("未覆盖写法显式抛错而非静默忽略", () => {
+      let unsupportedThrew = false;
+      try {
+        evaluateMediaCondition("(max-height: 40em)", { width: 960, height: 680 });
+      } catch {
+        unsupportedThrew = true;
+      }
+      assert(unsupportedThrew, "求值器遇到未覆盖写法应显式抛错(禁止静默忽略未覆盖的响应式档)");
+    });
+    await s.case("宽度维度媒体查询不被当作高度档抽出", () => {
+      assert(
+        extractHeightMediaConditions("@media (max-width: 720px) { .a { color: red } }").length === 0,
+        "宽度维度媒体查询不应被当作高度档抽出",
+      );
+    });
+  });
 
   // ---------- 11. 页面侧脚本契约:等待表达式与解析器 ----------
   const settled = buildViewportSettledScript([880, 620], MEDIA_CONDITIONS);
-  assert(settled.includes("innerWidth"), "落定等待表达式应包含视口判定");
-  assert(
-    MEDIA_CONDITIONS.every((cond) => settled.includes(cond)),
-    "落定等待表达式应包含全部高度档条件",
-  );
-  assert(settled.includes("=== true"), "880×620 下 (max-height: 640px) 的期望值应为 true");
-  assert(!settled.includes("=== false"), "880×620 下不应出现 === false 的档位期望值");
-  const parsed = parseMeasureScript(JSON.stringify({ nodes: {} }));
-  assert(parsed.nodes !== undefined, "度量脚本解析应返回含 nodes 的对象");
-  for (const bad of [null, 42, "{not json", "{}"]) {
-    let threw = false;
-    try {
-      parseMeasureScript(bad);
-    } catch {
-      threw = true;
+  await suite.describe("页面侧脚本契约", async (s) => {
+    await s.case("落定等待表达式包含视口判定与全部高度档条件", () => {
+      assert(settled.includes("innerWidth"), "落定等待表达式应包含视口判定");
+      assert(
+        MEDIA_CONDITIONS.every((cond) => settled.includes(cond)),
+        "落定等待表达式应包含全部高度档条件",
+      );
+    });
+    await s.case("880×620 下的档位期望值全为 true(不出现 === false)", () => {
+      assert(settled.includes("=== true"), "880×620 下 (max-height: 640px) 的期望值应为 true");
+      assert(!settled.includes("=== false"), "880×620 下不应出现 === false 的档位期望值");
+    });
+    await s.case("度量脚本解析返回含 nodes 的对象", () => {
+      const parsed = parseMeasureScript(JSON.stringify({ nodes: {} }));
+      assert(parsed.nodes !== undefined, "度量脚本解析应返回含 nodes 的对象");
+    });
+    for (const bad of [null, 42, "{not json", "{}"]) {
+      await s.case(`度量脚本返回值非法时显式抛错:${JSON.stringify(bad)}`, () => {
+        let threw = false;
+        try {
+          parseMeasureScript(bad);
+        } catch {
+          threw = true;
+        }
+        assert(threw, `度量脚本返回值非法时(${JSON.stringify(bad)})应显式抛错,不返回半成品样本`);
+      });
     }
-    assert(threw, `度量脚本返回值非法时(${JSON.stringify(bad)})应显式抛错,不返回半成品样本`);
-  }
+  });
 
   // ---------- 11b. 抽屉规格自洽:表 ↔ 表 ↔ index.html 三方对得上 ----------
-  assert(new Set(DRAWER_GROUPS).size === DRAWER_GROUPS.length, "抽屉分组必须唯一");
-  assert(
-    Object.keys(DRAWER_CONTROLS).length === DRAWER_GROUPS.length,
-    `DRAWER_CONTROLS 的键须与 DRAWER_GROUPS 一一对应,实际 ${Object.keys(DRAWER_CONTROLS).join(",")}`,
-  );
-  assert(new Set(DRAWER_CONTROL_KEYS).size === DRAWER_CONTROL_KEYS.length, "抽屉控件键必须全表唯一");
-  for (const group of DRAWER_GROUPS) {
-    const list = drawerGroupControls(group);
-    assert(list.length > 0, `抽屉分组 ${group} 未登记任何控件`);
-    for (const control of list) {
-      const key = drawerControlKey(control);
-      // 定位形态二选一:同时给或都不给都会让选择器语义漂移(前者命中 id 而忽略 name)
-      assert(
-        (control.id === undefined) !== (control.name === undefined),
-        `抽屉控件 ${key} 的定位须给 id 或 name 之一(实际 id=${String(control.id)} name=${String(control.name)})`,
-      );
-      const selector = drawerControlSelector(control);
-      assert(
-        selector.startsWith(`${DRAWER_SELECTORS.shell} `),
-        `抽屉控件 ${key} 的选择器必须以 ${DRAWER_SELECTORS.shell} 为作用域(实际 ${selector});` +
-          `paper/orientation 在快速参数条有镜像副本,不加作用域会量错侧`,
-      );
-      assert(DRAWER_GROUP_BY_KEY.get(key) === group, `抽屉控件 ${key} 的组映射与声明组不一致`);
-    }
-  }
-  for (const key of DRAWER_CLIP_KEYS) {
-    assert(Object.hasOwn(DRAWER_SELECTORS, key), `抽屉水平裁切守护容器未在 DRAWER_SELECTORS 登记:${key}`);
-  }
   const registered = new Set(DRAWER_CONTROL_KEYS);
-  for (const cond of DRAWER_CONDITIONS) {
-    assert(registered.has(cond.control), `条件从属项的控件未登记:${cond.control}`);
-    assert(registered.has(cond.master), `条件从属项 ${cond.control} 的主控未登记:${cond.master}`);
-    assert(["switch", "radio"].includes(cond.masterKind), `条件从属项 ${cond.control} 的主控形态非法`);
-    assert(cond.why.length > 10, `条件从属项 ${cond.control} 须写明契约出处(why)`);
-  }
-  assert(
-    new Set(DRAWER_CONDITIONS.map((c) => c.control)).size === DRAWER_CONDITIONS.length,
-    "同一控件不得登记为两条条件从属项",
-  );
-  for (const tier of DRAWER_DISABLED_TIERS) {
-    assert(registered.has(tier.control), `灰禁从属项的控件未登记:${tier.control}`);
-    assert(registered.has(tier.master), `灰禁从属项 ${tier.control} 的主控未登记:${tier.master}`);
-    assert(
-      !DRAWER_CONDITIONS.some((c) => c.control === tier.control),
-      `控件 ${tier.control} 不得同时登记为「收起」与「灰禁」两种门控形态`,
-    );
-    assert(tier.why.length > 10, `灰禁从属项 ${tier.control} 须写明契约出处(why)`);
-  }
-  // 主控默认值表必须覆盖门控表引用的每个主控:少一个就会让合成样本的门控预期落空
   const masterKeys = new Set(Object.keys(DRAWER_MASTER_DEFAULTS));
-  for (const gate of [...DRAWER_CONDITIONS, ...DRAWER_DISABLED_TIERS]) {
-    assert(masterKeys.has(gate.master), `DRAWER_MASTER_DEFAULTS 缺少主控 ${gate.master}(被 ${gate.control} 引用)`);
-  }
-  for (const group of DRAWER_GROUPS) {
-    assert(
-      SCENARIOS.some((sc) => sc.drawerTab === group),
-      `抽屉分组 ${group} 没有承载场景,其控件可见性无人判定`,
-    );
-  }
-  // 抽屉场景的驱动步骤:开抽屉 → 切 tab → 逐个切主控档位;选择器全部由声明档位推出
-  const masterSwitches = new Map();
   const drawerScenarios = SCENARIOS.filter((s) => s.drawerTab !== undefined);
-  for (const sc of drawerScenarios) {
-    const tab = /** @type {string} */ (sc.drawerTab);
-    const masterEntries = Object.entries(sc.drawerMasters ?? {});
-    assert(sc.steps[0]?.selector === DRAWER_SELECTORS.open, `抽屉场景「${sc.id}」首步须是打开抽屉`);
-    assert(sc.steps[1]?.selector === `#settingsTab-${tab}`, `抽屉场景「${sc.id}」第二步须切到分组 tab ${tab}`);
-    assert(
-      sc.steps.length === 2 + masterEntries.length,
-      `抽屉场景「${sc.id}」的步骤数须与声明的主控档位数一致(声明 ${masterEntries.map(([k]) => k).join(",") || "无"})`,
-    );
-    masterEntries.forEach(([master, value], i) => {
-      const base = drawerControlSelector(drawerControl(master));
-      const want = typeof value === "boolean" ? base : `${base}[value="${String(value)}"]`;
-      assert(
-        sc.steps[i + 2]?.selector === want,
-        `抽屉场景「${sc.id}」第 ${i + 3} 步须是主控 ${master} 的档位切换(期望 ${want},实际 ${String(sc.steps[i + 2]?.selector)})`,
-      );
-      // 驱动步是「点一次」,同一主控被点第二次就回到原档位:只许在一条场景里切一次
-      const previous = masterSwitches.get(master);
-      assert(previous === undefined, `主控 ${master} 在场景「${String(previous)}」已切过一次,不得在「${sc.id}」再切`);
-      masterSwitches.set(master, sc.id);
-    });
-  }
-  // 每个门控主控都得有「切到开启档」的场景,否则该门控只测了关闭侧
-  for (const gate of [...DRAWER_CONDITIONS, ...DRAWER_DISABLED_TIERS]) {
-    assert(
-      drawerScenarios.some((sc) => (sc.drawerMasters ?? {})[gate.master] !== undefined),
-      `主控 ${gate.master} 没有「切到开启档」的场景,门控(${gate.control})只测了关闭侧`,
-    );
-  }
   // 顺序判据只取可见控件(收起态位置无意义),故每个控件至少要在一条场景里可见,
-  // 否则它的组内顺序永远无人判 —— 门禁"覆盖了 40 个控件"这句话就会掺水
+  // 否则它的组内顺序永远无人判 —— 门禁"覆盖了 40 个控件"这句话就会掺水。
+  // 这份合成是纯取数(逐场景重造抽屉度量),留在 case 外
   const everVisible = new Set();
   for (const sc of drawerScenarios) {
     const drawer = drawerSampleFor(sc, /** @type {NominalLayout} */ (LAYOUTS.get(sc.viewport.join("x"))));
@@ -985,22 +1031,10 @@ export async function run() {
       if (control.visible === true) everVisible.add(key);
     }
   }
-  for (const key of DRAWER_CONTROL_KEYS) {
-    assert(everVisible.has(key), `抽屉控件 ${key} 在任何抽屉场景里都不可见,其组内顺序无人判定`);
-  }
-
-  // index.html 交叉比对:分组取值、tab 顺序、控件锚点所在面板
+  // index.html 交叉比对:分组取值、tab 顺序、控件锚点所在面板(读盘 + 切片留在 case 外)
   const html = fs.readFileSync(path.join(ROOT, "src", "renderer", "index.html"), "utf8");
   const panelGroups = [...html.matchAll(/<section[^>]*\bdata-group="([^"]+)"/g)].map((m) => m[1]);
-  assert(
-    panelGroups.join(",") === DRAWER_GROUPS.join(","),
-    `index.html 的抽屉面板分组与 DRAWER_GROUPS 不一致(实际 ${panelGroups.join(",")})`,
-  );
   const tabOrder = [...html.matchAll(/id="settingsTab-([^"]+)"/g)].map((m) => m[1]);
-  assert(
-    tabOrder.join(",") === DRAWER_GROUPS.join(","),
-    `index.html 的抽屉 tab 顺序与 DRAWER_GROUPS 不一致(实际 ${tabOrder.join(",")})`,
-  );
   /** 分组 → 该 <section> 到下一个 <section> 之间的正文 */
   const panelSlices = new Map();
   const sectionStarts = [...html.matchAll(/<section\b/g)].map((m) => m.index ?? 0);
@@ -1010,17 +1044,143 @@ export async function run() {
     const end = index + 1 < sectionStarts.length ? sectionStarts[index + 1] : html.length;
     panelSlices.set(group[1], html.slice(at, end));
   }
-  for (const group of DRAWER_GROUPS) {
-    const slice = panelSlices.get(group);
-    assert(slice !== undefined, `index.html 找不到 data-group="${group}" 面板正文`);
-    for (const control of drawerGroupControls(group)) {
-      const anchor = control.name !== undefined ? `name="${control.name}"` : `id="${control.id}"`;
+  await suite.describe("规格自洽 · 抽屉三表与 index.html 对得上", async (s) => {
+    await s.case("抽屉分组/控件键唯一且 DRAWER_CONTROLS 与分组一一对应", () => {
+      assert(new Set(DRAWER_GROUPS).size === DRAWER_GROUPS.length, "抽屉分组必须唯一");
       assert(
-        slice.includes(anchor),
-        `抽屉控件 ${drawerControlKey(control)} 的锚点 ${anchor} 不在 data-group="${group}" 面板内;控件归组与规格声明对不上`,
+        Object.keys(DRAWER_CONTROLS).length === DRAWER_GROUPS.length,
+        `DRAWER_CONTROLS 的键须与 DRAWER_GROUPS 一一对应,实际 ${Object.keys(DRAWER_CONTROLS).join(",")}`,
       );
-    }
-  }
+      assert(new Set(DRAWER_CONTROL_KEYS).size === DRAWER_CONTROL_KEYS.length, "抽屉控件键必须全表唯一");
+    });
+    await s.case("每个分组的控件定位二选一、选择器带抽屉作用域、组映射一致", () => {
+      for (const group of DRAWER_GROUPS) {
+        const list = drawerGroupControls(group);
+        assert(list.length > 0, `抽屉分组 ${group} 未登记任何控件`);
+        for (const control of list) {
+          const key = drawerControlKey(control);
+          // 定位形态二选一:同时给或都不给都会让选择器语义漂移(前者命中 id 而忽略 name)
+          assert(
+            (control.id === undefined) !== (control.name === undefined),
+            `抽屉控件 ${key} 的定位须给 id 或 name 之一(实际 id=${String(control.id)} name=${String(control.name)})`,
+          );
+          const selector = drawerControlSelector(control);
+          assert(
+            selector.startsWith(`${DRAWER_SELECTORS.shell} `),
+            `抽屉控件 ${key} 的选择器必须以 ${DRAWER_SELECTORS.shell} 为作用域(实际 ${selector});` +
+              `paper/orientation 在快速参数条有镜像副本,不加作用域会量错侧`,
+          );
+          assert(DRAWER_GROUP_BY_KEY.get(key) === group, `抽屉控件 ${key} 的组映射与声明组不一致`);
+        }
+      }
+    });
+    await s.case("抽屉水平裁切守护容器都在 DRAWER_SELECTORS 登记", () => {
+      for (const key of DRAWER_CLIP_KEYS) {
+        assert(Object.hasOwn(DRAWER_SELECTORS, key), `抽屉水平裁切守护容器未在 DRAWER_SELECTORS 登记:${key}`);
+      }
+    });
+    await s.case("条件从属项的控件/主控已登记且形态与契约出处齐备", () => {
+      for (const cond of DRAWER_CONDITIONS) {
+        assert(registered.has(cond.control), `条件从属项的控件未登记:${cond.control}`);
+        assert(registered.has(cond.master), `条件从属项 ${cond.control} 的主控未登记:${cond.master}`);
+        assert(["switch", "radio"].includes(cond.masterKind), `条件从属项 ${cond.control} 的主控形态非法`);
+        assert(cond.why.length > 10, `条件从属项 ${cond.control} 须写明契约出处(why)`);
+      }
+      assert(
+        new Set(DRAWER_CONDITIONS.map((c) => c.control)).size === DRAWER_CONDITIONS.length,
+        "同一控件不得登记为两条条件从属项",
+      );
+    });
+    await s.case("灰禁从属项已登记且不与收起形态重复", () => {
+      for (const tier of DRAWER_DISABLED_TIERS) {
+        assert(registered.has(tier.control), `灰禁从属项的控件未登记:${tier.control}`);
+        assert(registered.has(tier.master), `灰禁从属项 ${tier.control} 的主控未登记:${tier.master}`);
+        assert(
+          !DRAWER_CONDITIONS.some((c) => c.control === tier.control),
+          `控件 ${tier.control} 不得同时登记为「收起」与「灰禁」两种门控形态`,
+        );
+        assert(tier.why.length > 10, `灰禁从属项 ${tier.control} 须写明契约出处(why)`);
+      }
+    });
+    await s.case("主控默认值表覆盖门控表引用的每个主控", () => {
+      // 少一个就会让合成样本的门控预期落空
+      for (const gate of [...DRAWER_CONDITIONS, ...DRAWER_DISABLED_TIERS]) {
+        assert(masterKeys.has(gate.master), `DRAWER_MASTER_DEFAULTS 缺少主控 ${gate.master}(被 ${gate.control} 引用)`);
+      }
+    });
+    await s.case("每个抽屉分组都有承载场景", () => {
+      for (const group of DRAWER_GROUPS) {
+        assert(
+          SCENARIOS.some((sc) => sc.drawerTab === group),
+          `抽屉分组 ${group} 没有承载场景,其控件可见性无人判定`,
+        );
+      }
+    });
+    await s.case("抽屉场景的驱动步骤与声明的主控档位一致且每个主控只切一次", () => {
+      // 抽屉场景的驱动步骤:开抽屉 → 切 tab → 逐个切主控档位;选择器全部由声明档位推出
+      // masterSwitches 跨场景累积(「同一主控只许切一次」本身就是跨场景判据),故整段一条 case
+      const masterSwitches = new Map();
+      for (const sc of drawerScenarios) {
+        const tab = /** @type {string} */ (sc.drawerTab);
+        const masterEntries = Object.entries(sc.drawerMasters ?? {});
+        assert(sc.steps[0]?.selector === DRAWER_SELECTORS.open, `抽屉场景「${sc.id}」首步须是打开抽屉`);
+        assert(sc.steps[1]?.selector === `#settingsTab-${tab}`, `抽屉场景「${sc.id}」第二步须切到分组 tab ${tab}`);
+        assert(
+          sc.steps.length === 2 + masterEntries.length,
+          `抽屉场景「${sc.id}」的步骤数须与声明的主控档位数一致(声明 ${masterEntries.map(([k]) => k).join(",") || "无"})`,
+        );
+        masterEntries.forEach(([master, value], i) => {
+          const base = drawerControlSelector(drawerControl(master));
+          const want = typeof value === "boolean" ? base : `${base}[value="${String(value)}"]`;
+          assert(
+            sc.steps[i + 2]?.selector === want,
+            `抽屉场景「${sc.id}」第 ${i + 3} 步须是主控 ${master} 的档位切换(期望 ${want},实际 ${String(sc.steps[i + 2]?.selector)})`,
+          );
+          // 驱动步是「点一次」,同一主控被点第二次就回到原档位:只许在一条场景里切一次
+          const previous = masterSwitches.get(master);
+          assert(previous === undefined, `主控 ${master} 在场景「${String(previous)}」已切过一次,不得在「${sc.id}」再切`);
+          masterSwitches.set(master, sc.id);
+        });
+      }
+    });
+    await s.case("每个门控主控都有切到开启档的场景", () => {
+      // 只测关闭侧会放过「只判了一边」这类漏项
+      for (const gate of [...DRAWER_CONDITIONS, ...DRAWER_DISABLED_TIERS]) {
+        assert(
+          drawerScenarios.some((sc) => (sc.drawerMasters ?? {})[gate.master] !== undefined),
+          `主控 ${gate.master} 没有「切到开启档」的场景,门控(${gate.control})只测了关闭侧`,
+        );
+      }
+    });
+    await s.case("每个抽屉控件至少在一条场景里可见", () => {
+      for (const key of DRAWER_CONTROL_KEYS) {
+        assert(everVisible.has(key), `抽屉控件 ${key} 在任何抽屉场景里都不可见,其组内顺序无人判定`);
+      }
+    });
+    await s.case("index.html 的抽屉面板分组与 tab 顺序都等于 DRAWER_GROUPS", () => {
+      assert(
+        panelGroups.join(",") === DRAWER_GROUPS.join(","),
+        `index.html 的抽屉面板分组与 DRAWER_GROUPS 不一致(实际 ${panelGroups.join(",")})`,
+      );
+      assert(
+        tabOrder.join(",") === DRAWER_GROUPS.join(","),
+        `index.html 的抽屉 tab 顺序与 DRAWER_GROUPS 不一致(实际 ${tabOrder.join(",")})`,
+      );
+    });
+    await s.case("index.html 里每个控件的锚点都在其声明分组的面板内", () => {
+      for (const group of DRAWER_GROUPS) {
+        const slice = panelSlices.get(group);
+        assert(slice !== undefined, `index.html 找不到 data-group="${group}" 面板正文`);
+        for (const control of drawerGroupControls(group)) {
+          const anchor = control.name !== undefined ? `name="${control.name}"` : `id="${control.id}"`;
+          assert(
+            slice.includes(anchor),
+            `抽屉控件 ${drawerControlKey(control)} 的锚点 ${anchor} 不在 data-group="${group}" 面板内;控件归组与规格声明对不上`,
+          );
+        }
+      }
+    });
+  });
 
   // ---------- CSS 令牌恒等判定层(正 + 负探针) ----------
   // 这批判据此前是读 dialogs.css 的正则(源文本形态 + 恒真),已迁到 check:geometry。
@@ -1047,12 +1207,13 @@ export async function run() {
   /** 依规格表逐项造读数:表加项而样本漏项,正向样本自己就先判红(不靠人记得同步) */
   const cssTokenAllGood = () =>
     CSS_TOKEN_RULES.map((rule) => cssTokenGood(String(rule.name)));
-  // 正向:三态互不相等 + 取消态落在中性区间 → 零 finding
+  // 正向判定结果(纯取数:整表读数跑一次判定)留在 case 外
   const goodToken = judgeCssTokens(cssTokenAllGood());
-  assert(
-    goodToken.ok && goodToken.findings.length === 0,
-    `令牌恒等正向样本应零 finding,实际 ${JSON.stringify(goodToken.findings)}`,
-  );
+  // 规格表非空是下面每条 tokenProbe 的共同前提(探针按规则名定位读数),留在 case 外:
+  // 表为空时该让整段在此中止,而不是让每条探针各报一次「规则不在规格表里」
+  const firstRule = cssTokenAllGood()[0];
+  assert(firstRule !== undefined, "CSS_TOKEN_RULES 为空:令牌恒等判据整体缺失(不得因无判据而判绿)");
+  const firstRuleName = String(firstRule.name);
 
   /**
    * 负探针:注入一种故障,断言判红**且命中那一条具体判据**。
@@ -1081,73 +1242,97 @@ export async function run() {
         `${JSON.stringify(got.findings.map((f) => f.message))}`,
     );
   };
-  const firstRule = cssTokenAllGood()[0];
-  assert(firstRule !== undefined, "CSS_TOKEN_RULES 为空:令牌恒等判据整体缺失(不得因无判据而判绿)");
-  const firstRuleName = String(firstRule.name);
-  tokenProbe(
-    "取消态被读成成功态同色",
-    (r) => { r.colors.canceled = r.colors.ok; },
-    firstRuleName,
-    "取消态被读成成功态同色",
-  );
-  tokenProbe(
-    "取消态被读成失败态同色",
-    (r) => { r.colors.canceled = r.colors.fail; },
-    firstRuleName,
-    "取消态被读成失败态同色",
-  );
-  tokenProbe(
-    "成功态与失败态同色",
-    (r) => { r.colors.fail = r.colors.ok; },
-    firstRuleName,
-    "成功态与失败态算出同一个颜色",
-  );
-  tokenProbe(
-    "取消态掉出中性区间",
-    (r) => { r.colors.canceled = "rgb(1, 2, 3)"; },
-    firstRuleName,
-    "取消态未落在中性区间",
-  );
-  tokenProbe(
-    "取消态等于语义对立令牌色",
-    (r) => { r.colors.canceled = "rgba(47, 125, 79, 0.12)"; },
-    firstRuleName,
-    "被读成 --ok-soft",
-  );
-  // 探针漏项/漂移:少一条读数也必须判红,不许「少跑判据也判绿」(这正是迁移的病根)
-  assert(
-    !judgeCssTokens(cssTokenAllGood().slice(1)).ok,
-    "令牌恒等判定在读数漏项时必须判红(漏项不得静默通过)",
-  );
-  /** @type {import("../../shared/geometry/geometry-core.mjs").CssTokenReading[]} */
-  const driftedReadings = cssTokenAllGood().map((r, i) =>
-    i === 0 ? { ...r, name: "not-in-spec" } : r,
-  );
-  const drifted = judgeCssTokens(driftedReadings);
-  assert(
-    !drifted.ok && drifted.findings.some((f) => f.rule.includes("not-in-spec")),
-    "读数项不在 CSS_TOKEN_RULES 表里时必须判红(规格与探针漂移)",
-  );
-  // 目标节点取不到:空串读数不得继续参与判色
-  /** @type {import("../../shared/geometry/geometry-core.mjs").CssTokenReading[]} */
-  const noTargetReadings = cssTokenAllGood().map((r) => ({ ...r, targetFound: false }));
-  assert(
-    !judgeCssTokens(noTargetReadings).ok,
-    "被读色节点缺失时必须判红(空串读数不可信)",
-  );
-  // 空串读数(探针拿到空值)本身也必须判红,不得因「三态全等」而被当成一致通过
-  /** @type {import("../../shared/geometry/geometry-core.mjs").CssTokenReading[]} */
-  const blankReadings = cssTokenAllGood().map((r, i) =>
-    i === 0
-      ? { ...r, colors: { base: "", ok: "", fail: "", canceled: "" }, expected: "" }
-      : r,
-  );
-  const blankResult = judgeCssTokens(blankReadings);
-  assert(!blankResult.ok, "读数为空串时必须判红(探针失效不得伪装成三态一致)");
-  assert(
-    blankResult.findings.some((f) => f.message.includes("读到空读数")),
-    `空串读数应报「读到空读数」(探针失效),实际 ${JSON.stringify(blankResult.findings.map((f) => f.message))}`,
-  );
+  // 每条负探针自带「造全表读数 → 坏一项 → 判定」全链,case 名用故障名
+  await suite.describe("CSS 令牌恒等判定层", async (s) => {
+    await s.case("正向 · 三态互不相等且取消态落在中性区间时零 finding", () => {
+      assert(
+        goodToken.ok && goodToken.findings.length === 0,
+        `令牌恒等正向样本应零 finding,实际 ${JSON.stringify(goodToken.findings)}`,
+      );
+    });
+    await s.case("负探针 · 取消态被读成成功态同色", () => {
+      tokenProbe(
+        "取消态被读成成功态同色",
+        (r) => { r.colors.canceled = r.colors.ok; },
+        firstRuleName,
+        "取消态被读成成功态同色",
+      );
+    });
+    await s.case("负探针 · 取消态被读成失败态同色", () => {
+      tokenProbe(
+        "取消态被读成失败态同色",
+        (r) => { r.colors.canceled = r.colors.fail; },
+        firstRuleName,
+        "取消态被读成失败态同色",
+      );
+    });
+    await s.case("负探针 · 成功态与失败态同色", () => {
+      tokenProbe(
+        "成功态与失败态同色",
+        (r) => { r.colors.fail = r.colors.ok; },
+        firstRuleName,
+        "成功态与失败态算出同一个颜色",
+      );
+    });
+    await s.case("负探针 · 取消态掉出中性区间", () => {
+      tokenProbe(
+        "取消态掉出中性区间",
+        (r) => { r.colors.canceled = "rgb(1, 2, 3)"; },
+        firstRuleName,
+        "取消态未落在中性区间",
+      );
+    });
+    await s.case("负探针 · 取消态等于语义对立令牌色", () => {
+      tokenProbe(
+        "取消态等于语义对立令牌色",
+        (r) => { r.colors.canceled = "rgba(47, 125, 79, 0.12)"; },
+        firstRuleName,
+        "被读成 --ok-soft",
+      );
+    });
+    // 探针漏项/漂移:少一条读数也必须判红,不许「少跑判据也判绿」(这正是迁移的病根)
+    await s.case("读数漏项时判红(不得因少跑判据而判绿)", () => {
+      assert(
+        !judgeCssTokens(cssTokenAllGood().slice(1)).ok,
+        "令牌恒等判定在读数漏项时必须判红(漏项不得静默通过)",
+      );
+    });
+    await s.case("读数项不在规格表里时判红", () => {
+      /** @type {import("../../shared/geometry/geometry-core.mjs").CssTokenReading[]} */
+      const driftedReadings = cssTokenAllGood().map((r, i) =>
+        i === 0 ? { ...r, name: "not-in-spec" } : r,
+      );
+      const drifted = judgeCssTokens(driftedReadings);
+      assert(
+        !drifted.ok && drifted.findings.some((f) => f.rule.includes("not-in-spec")),
+        "读数项不在 CSS_TOKEN_RULES 表里时必须判红(规格与探针漂移)",
+      );
+    });
+    await s.case("被读色节点缺失时判红", () => {
+      // 目标节点取不到:空串读数不得继续参与判色
+      /** @type {import("../../shared/geometry/geometry-core.mjs").CssTokenReading[]} */
+      const noTargetReadings = cssTokenAllGood().map((r) => ({ ...r, targetFound: false }));
+      assert(
+        !judgeCssTokens(noTargetReadings).ok,
+        "被读色节点缺失时必须判红(空串读数不可信)",
+      );
+    });
+    await s.case("空串读数判红且报读到空读数", () => {
+      // 空串读数(探针拿到空值)本身也必须判红,不得因「三态全等」而被当成一致通过
+      /** @type {import("../../shared/geometry/geometry-core.mjs").CssTokenReading[]} */
+      const blankReadings = cssTokenAllGood().map((r, i) =>
+        i === 0
+          ? { ...r, colors: { base: "", ok: "", fail: "", canceled: "" }, expected: "" }
+          : r,
+      );
+      const blankResult = judgeCssTokens(blankReadings);
+      assert(!blankResult.ok, "读数为空串时必须判红(探针失效不得伪装成三态一致)");
+      assert(
+        blankResult.findings.some((f) => f.message.includes("读到空读数")),
+        `空串读数应报「读到空读数」(探针失效),实际 ${JSON.stringify(blankResult.findings.map((f) => f.message))}`,
+      );
+    });
+  });
 
   // ---------- 12. 路径常量存活性(正锚点 + 负向夹具) ----------
   // 判据在门禁入口(见 gates/geometry/check-geometry.mjs 的 runLivenessGate),本段锁它的语义。
@@ -1155,59 +1340,78 @@ export async function run() {
   // import 规则只能看见那四分之一,换个写法就绕过(ADR-043 点名的失效形态);存活性锚在
   // 常量声明上,抓的是真实失效 —— 路径悬空时消费它的那一行必坏。
   // (1) 反向锚点:真实仓库里清单上的常量必须全部在位(清单为空 = 断言恒绿,必须先钉住)
+  // firstEntry 是下面负向夹具的取数来源(负向夹具要指名一个真实常量),留在 case 外
   const firstEntry = LIVENESS_PATHS[0];
   assert(firstEntry !== undefined, "存活性清单为空:断言会恒绿,等于没有门禁");
-  const realLiveness = checkPathLiveness();
-  assert(
-    realLiveness.ok,
-    `真实仓库的存活性清单应全部在位,实际悬空:${JSON.stringify(realLiveness.dangling)}`,
-  );
-  // 清单里的每项都必须真的指向 root 之下的路径(防止有人把产出目录塞进清单,
-  // 那样门禁会在正常流程下判红 —— 断言覆盖面必须只含「必然已存在」的常量)
-  for (const item of LIVENESS_PATHS) {
-    assert(
-      path.isAbsolute(item.target) && item.target.startsWith(ROOT),
-      `存活性清单项 ${item.name} 未锚定在项目根之下:${item.target}`,
-    );
-  }
-  // (2) 负向夹具:造一个悬空常量,必须判红**且指名是哪个常量**
+  // 负向夹具:造一个悬空常量,必须判红**且指名是哪个常量**
   // 用注入的探针伪造悬空,不动真实磁盘(夹具不得污染工作树)
   const danglingName = firstEntry.name;
   const danglingTarget = firstEntry.target;
   const injected = checkPathLiveness((p) => p !== danglingTarget);
-  assert(!injected.ok, `造出悬空常量 ${danglingName} 后仍判绿(存活性门禁漏检)`);
   const named = injected.dangling[0];
-  assert(
-    injected.dangling.length === 1 && named !== undefined && named.name === danglingName,
-    `悬空清单须指名常量 ${danglingName},实际 ${JSON.stringify(injected.dangling)}`,
-  );
-  assert(
-    named.target === danglingTarget,
-    "悬空项须带出该常量的绝对路径(否则定位不到是哪个路径没了)",
-  );
   // (3) 多项同时悬空要逐项点名,不得只报第一项(漏报的那项仍会在后面炸出无关面孔)
   const twoDangling = checkPathLiveness((p) => !LIVENESS_PATHS.slice(0, 2).some((item) => item.target === p));
-  assert(
-    !twoDangling.ok && twoDangling.dangling.length === 2,
-    `两项同时悬空时应逐项点名,实际 ${JSON.stringify(twoDangling.dangling)}`,
-  );
-  // (4) 惰性化回归:import 本模块不得触发读盘(REQ-127)。
-  // 判据是「导出的 mediaConditions 是函数」——顶层自执行若回来,它会变回顶层常量。
-  assert(
-    typeof mediaConditions === "function",
-    `mediaConditions 应为惰性函数(REQ-127),实际 ${typeof mediaConditions}`,
-  );
-  // 惰性求值 + 记忆化:两次调用返回同一份(整轮只读一次盘),且内容与本段自读的一致
-  const firstRead = mediaConditions();
-  const secondRead = mediaConditions();
-  assert(
-    firstRead === secondRead,
-    "mediaConditions 未记忆化:落定判据每轮读几十次盘",
-  );
-  assert(
-    firstRead.join("|") === MEDIA_CONDITIONS.join("|"),
-    "driver 的 mediaConditions 与本段自读结果不一致(两处读法已漂移)",
-  );
+  await suite.describe("路径常量存活性", async (s) => {
+    await s.case("真实仓库的存活性清单全部在位", () => {
+      const realLiveness = checkPathLiveness();
+      assert(
+        realLiveness.ok,
+        `真实仓库的存活性清单应全部在位,实际悬空:${JSON.stringify(realLiveness.dangling)}`,
+      );
+    });
+    await s.case("清单每项都锚定在项目根之下", () => {
+      // 清单里的每项都必须真的指向 root 之下的路径(防止有人把产出目录塞进清单,
+      // 那样门禁会在正常流程下判红 —— 断言覆盖面必须只含「必然已存在」的常量)
+      for (const item of LIVENESS_PATHS) {
+        assert(
+          path.isAbsolute(item.target) && item.target.startsWith(ROOT),
+          `存活性清单项 ${item.name} 未锚定在项目根之下:${item.target}`,
+        );
+      }
+    });
+    await s.case("负向夹具:造出悬空常量即判红", () => {
+      assert(!injected.ok, `造出悬空常量 ${danglingName} 后仍判绿(存活性门禁漏检)`);
+    });
+    await s.case("负向夹具:悬空清单指名常量", () => {
+      assert(
+        injected.dangling.length === 1 && named !== undefined && named.name === danglingName,
+        `悬空清单须指名常量 ${danglingName},实际 ${JSON.stringify(injected.dangling)}`,
+      );
+    });
+    await s.case("负向夹具:悬空项带出该常量的绝对路径", () => {
+      assert(
+        named?.target === danglingTarget,
+        "悬空项须带出该常量的绝对路径(否则定位不到是哪个路径没了)",
+      );
+    });
+    await s.case("两项同时悬空时逐项点名", () => {
+      assert(
+        !twoDangling.ok && twoDangling.dangling.length === 2,
+        `两项同时悬空时应逐项点名,实际 ${JSON.stringify(twoDangling.dangling)}`,
+      );
+    });
+    // (4) 惰性化回归:import 本模块不得触发读盘(REQ-127)。
+    // 判据是「导出的 mediaConditions 是函数」——顶层自执行若回来,它会变回顶层常量。
+    await s.case("mediaConditions 是惰性函数(REQ-127)", () => {
+      assert(
+        typeof mediaConditions === "function",
+        `mediaConditions 应为惰性函数(REQ-127),实际 ${typeof mediaConditions}`,
+      );
+    });
+    await s.case("mediaConditions 惰性求值且已记忆化", () => {
+      // 两次调用返回同一份(整轮只读一次盘),且内容与本段自读的一致
+      const firstRead = mediaConditions();
+      const secondRead = mediaConditions();
+      assert(
+        firstRead === secondRead,
+        "mediaConditions 未记忆化:落定判据每轮读几十次盘",
+      );
+      assert(
+        firstRead.join("|") === MEDIA_CONDITIONS.join("|"),
+        "driver 的 mediaConditions 与本段自读结果不一致(两处读法已漂移)",
+      );
+    });
+  });
 
   console.log(
     `[ok] geometry-gate:判定层正负探针通过(场景 ${SCENARIOS.length} / 恒定组 ${CONSTANT_GROUPS.length} / ` +
@@ -1216,4 +1420,5 @@ export async function run() {
       `CSS 令牌恒等 ${CSS_TOKEN_RULES.length} 项正负探针通过;` +
       `路径常量存活性 ${LIVENESS_PATHS.length} 项在位,负向夹具判红并点名)`,
   );
+  return { cases: suite.results };
 }

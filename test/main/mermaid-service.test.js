@@ -16,6 +16,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import { disposeMermaidService, renderMermaid } from "../../dist/main/services/mermaid-service.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const GOOD_CODE = "graph TD; A-->B";
 
@@ -109,22 +110,32 @@ function patchWebContents(fakeFactory) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const baseline = new Set(
     (await fs.readdir(os.tmpdir())).filter((n) => n.startsWith(`m2w-${process.pid}-`)),
   );
   // ---- 1. 真实渲染成功:PNG 魔数/逻辑尺寸/SVG 完整 ----
+  // 渲染结果备在 case 外:四条判定读的是同一次渲染的同一份产物
   const result = await renderMermaid(GOOD_CODE);
-  assert(result, "renderMermaid 返回 null(渲染失败)");
-  assert(
-    result.png.length > 8 &&
-      result.png[0] === 0x89 &&
-      result.png[1] === 0x50 &&
-      result.png[2] === 0x4e &&
-      result.png[3] === 0x47,
-    `png 魔数错误: ${result.png.subarray(0, 4).toString("hex")}`,
-  );
-  assert(result.width > 0 && result.height > 0, `尺寸异常: ${result.width}x${result.height}`);
-  assert(result.svg.includes("<svg"), "svg 缺少 <svg 标签");
+  await suite.case("renderMermaid 返回 null(渲染失败)", () => {
+    assert(result, "renderMermaid 返回 null(渲染失败)");
+  });
+  await suite.case("png 魔数", () => {
+    assert(
+      result && result.png.length > 8 &&
+        result.png[0] === 0x89 &&
+        result.png[1] === 0x50 &&
+        result.png[2] === 0x4e &&
+        result.png[3] === 0x47,
+      `png 魔数错误: ${result?.png.subarray(0, 4).toString("hex")}`,
+    );
+  });
+  await suite.case("逻辑尺寸", () => {
+    assert(result && result.width > 0 && result.height > 0, `尺寸异常: ${result?.width}x${result?.height}`);
+  });
+  await suite.case("svg 完整性", () => {
+    assert(result && result.svg.includes("<svg"), "svg 缺少 <svg 标签");
+  });
 
   // ---- 2. 降级路径:语法错误 → 页面内 parse 预检失败 → null;catch 日志留痕(170 行) ----
   const origLog = console.log;
@@ -138,13 +149,19 @@ export async function run() {
   } finally {
     console.log = origLog;
   }
-  assert(bad === null, "语法错误应返回 null(降级)");
-  assert(
-    logs.some((l) => l.includes("[mermaid-service] render failed") && l.includes("mermaid parse failed")),
-    `catch 日志应含「[mermaid-service] render failed: mermaid parse failed」,实际 ${JSON.stringify(logs)}`,
-  );
+  await suite.case("语法错误应返回 null(降级)", () => {
+    assert(bad === null, "语法错误应返回 null(降级)");
+  });
+  await suite.case("catch 日志应含「[mermaid-service] render failed: mermaid parse failed」", () => {
+    assert(
+      logs.some((l) => l.includes("[mermaid-service] render failed") && l.includes("mermaid parse failed")),
+      `catch 日志应含「[mermaid-service] render failed: mermaid parse failed」,实际 ${JSON.stringify(logs)}`,
+    );
+  });
 
   // ---- 3. 渲染超时 + 畸形返回值防御校验(挂起/垃圾返回值,均 → null) ----
+  // 原型补丁的还原留在 try/finally 顶层:它是段级卫生,归进 case 会在 case
+  // 失败时把 BrowserWindow.prototype 留在被替换的状态(后续 case 全污染)
   let restoreWc = null;
   try {
     restoreWc = patchWebContents(() => ({
@@ -162,25 +179,41 @@ export async function run() {
     }));
     const t0 = Date.now();
     const timeoutResult = await renderMermaid("TIMEOUT_SENTINEL", 200);
-    assert(timeoutResult === null, "超时应返回 null(降级)");
-    assert(Date.now() - t0 < 5000, "注入超时未生效(耗时接近默认 15s)");
-    assert((await renderMermaid("BADSHAPE_SENTINEL")) === null, "畸形 svg 形状应返回 null");
-    assert((await renderMermaid("EMPTYPNG_SENTINEL")) === null, "空 PNG 应返回 null");
-    assert((await renderMermaid("NOCOMMA_PNG_SENTINEL")) === null, "无逗号空 PNG 应返回 null(?? 兜底)");
-    assert((await renderMermaid("ZEROSIZE_SENTINEL")) === null, "非法尺寸应返回 null");
+    await suite.case("超时应返回 null(降级)", () => {
+      assert(timeoutResult === null, "超时应返回 null(降级)");
+    });
+    await suite.case("注入超时未生效(耗时接近默认 15s)", () => {
+      assert(Date.now() - t0 < 5000, "注入超时未生效(耗时接近默认 15s)");
+    });
+    await suite.case("畸形 svg 形状应返回 null", async () => {
+      assert((await renderMermaid("BADSHAPE_SENTINEL")) === null, "畸形 svg 形状应返回 null");
+    });
+    await suite.case("空 PNG 应返回 null", async () => {
+      assert((await renderMermaid("EMPTYPNG_SENTINEL")) === null, "空 PNG 应返回 null");
+    });
+    await suite.case("无逗号空 PNG 应返回 null(?? 兜底)", async () => {
+      assert((await renderMermaid("NOCOMMA_PNG_SENTINEL")) === null, "无逗号空 PNG 应返回 null(?? 兜底)");
+    });
+    await suite.case("非法尺寸应返回 null", async () => {
+      assert((await renderMermaid("ZEROSIZE_SENTINEL")) === null, "非法尺寸应返回 null");
+    });
   } finally {
     if (restoreWc) restoreWc();
   }
   // 超时/畸形路径后:串行队列未卡死、真实窗口仍可用
   const afterTimeout = await renderMermaid(GOOD_CODE);
-  assert(afterTimeout, "超时后队列/窗口应仍可用(恢复渲染)");
+  await suite.case("超时后队列/窗口应仍可用(恢复渲染)", () => {
+    assert(afterTimeout, "超时后队列/窗口应仍可用(恢复渲染)");
+  });
 
   // ---- 4. 渲染进程崩溃:forcefullyCrashRenderer → render-process-gone → 窗口销毁 → null;下次调用重建 ----
   const mermaidWin = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
-  assert(
-    mermaidWin && typeof mermaidWin.webContents.forcefullyCrashRenderer === "function",
-    "forcefullyCrashRenderer 不可用(崩溃路径无法实测)",
-  );
+  await suite.case("forcefullyCrashRenderer 不可用(崩溃路径无法实测)", () => {
+    assert(
+      mermaidWin && typeof mermaidWin.webContents.forcefullyCrashRenderer === "function",
+      "forcefullyCrashRenderer 不可用(崩溃路径无法实测)",
+    );
+  });
   restoreWc = null;
   try {
     restoreWc = patchWebContents((/** @type {Electron.WebContents} */ realWc) => {
@@ -195,12 +228,16 @@ export async function run() {
       return realWc;
     });
     const crashResult = await renderMermaid("CRASH_SENTINEL", 3000);
-    assert(crashResult === null, "渲染进程崩溃应返回 null(降级)");
+    await suite.case("渲染进程崩溃应返回 null(降级)", () => {
+      assert(crashResult === null, "渲染进程崩溃应返回 null(降级)");
+    });
   } finally {
     if (restoreWc) restoreWc();
   }
   const afterCrash = await renderMermaid(GOOD_CODE);
-  assert(afterCrash, "崩溃后窗口应自动重建并恢复渲染");
+  await suite.case("崩溃后窗口应自动重建并恢复渲染", () => {
+    assert(afterCrash, "崩溃后窗口应自动重建并恢复渲染");
+  });
 
   // ---- 5. 脚本加载失败(loadFile 抛错)→ null + 临时 HTML 清理 + 下次调用重建 ----
   disposeMermaidService(); // 销毁复用窗口,让 ensureWindow 走新建路径
@@ -210,15 +247,21 @@ export async function run() {
   };
   try {
     const loadFailResult = await renderMermaid(GOOD_CODE);
-    assert(loadFailResult === null, "loadFile 失败应返回 null(降级)");
+    await suite.case("loadFile 失败应返回 null(降级)", () => {
+      assert(loadFailResult === null, "loadFile 失败应返回 null(降级)");
+    });
   } finally {
     BrowserWindow.prototype.loadFile = origLoadFile;
   }
   await new Promise((r) => setTimeout(r, 100)); // 等 closed → cleanup 删除临时 HTML
   const tmpHtmlLeft = (await fs.readdir(os.tmpdir())).filter((n) => n.startsWith(`m2w-${process.pid}-`));
-  assert(tmpHtmlLeft.length === 0, `loadFile 失败:临时 HTML 残留 ${tmpHtmlLeft.join(", ")}`);
+  await suite.case("loadFile 失败:临时 HTML 残留", () => {
+    assert(tmpHtmlLeft.length === 0, `loadFile 失败:临时 HTML 残留 ${tmpHtmlLeft.join(", ")}`);
+  });
   const afterLoadFail = await renderMermaid(GOOD_CODE);
-  assert(afterLoadFail, "loadFile 失败后窗口应重建并恢复渲染");
+  await suite.case("loadFile 失败后窗口应重建并恢复渲染", () => {
+    assert(afterLoadFail, "loadFile 失败后窗口应重建并恢复渲染");
+  });
 
   // ---- 6. dispose 在途(会话创建未 settle):旧代任务不得复活窗口,临时 HTML 需回收 ----
   disposeMermaidService();
@@ -248,18 +291,30 @@ export async function run() {
       "会话创建进入在途窗口",
     );
     disposeMermaidService(); // 创建在途时释放服务(等价主窗口关闭/放弃转换)
-    assert((await inflight) === null, "dispose 在途的渲染应放弃(返回 null 而非失败日志)");
+    // 放弃判定与「旧代任务不复活窗口」读的是同一段在途窗口的**终态**:
+    // 两者都在 dispose 之后取,故可拆成两条;原型还原仍留在 finally 顶层
+    const inflightResult = await inflight;
+    await suite.case("dispose 在途的渲染应放弃(返回 null 而非失败日志)", () => {
+      assert(inflightResult === null, "dispose 在途的渲染应放弃(返回 null 而非失败日志)");
+    });
   } finally {
     BrowserWindow.prototype.loadFile = slowLoadFile;
   }
-  assert(
-    BrowserWindow.getAllWindows().length === baselineInflight,
-    "dispose 在途的旧代任务不得复活窗口(否则退出路径留下孤儿隐藏窗口)",
-  );
+  await suite.case("dispose 在途的旧代任务不得复活窗口(否则退出路径留下孤儿隐藏窗口)", () => {
+    assert(
+      BrowserWindow.getAllWindows().length === baselineInflight,
+      "dispose 在途的旧代任务不得复活窗口(否则退出路径留下孤儿隐藏窗口)",
+    );
+  });
   await new Promise((r) => setTimeout(r, 150)); // 等 closed → 临时 HTML 删除
   const inflightLeft = await tempHtmlLeft(baseline);
-  assert(inflightLeft.length === 0, `dispose 在途:临时 HTML 残留 ${inflightLeft.join(", ")}`);
-  assert(await renderMermaid(GOOD_CODE), "dispose 在途后应能重建会话并恢复渲染");
+  await suite.case("dispose 在途:临时 HTML 残留", () => {
+    assert(inflightLeft.length === 0, `dispose 在途:临时 HTML 残留 ${inflightLeft.join(", ")}`);
+  });
+  const afterInflight = await renderMermaid(GOOD_CODE);
+  await suite.case("dispose 在途后应能重建会话并恢复渲染", () => {
+    assert(afterInflight, "dispose 在途后应能重建会话并恢复渲染");
+  });
   console.log("[ok] mermaid-service:dispose 在途(创建未 settle)不复活窗口 + 临时 HTML 回收");
 
   // ---- 7. dispose 后已排队任务:不得新建窗口(代号失效即放弃本次渲染) ----
@@ -281,38 +336,66 @@ export async function run() {
     }));
     const firstTask = renderMermaid("QUEUED_FIRST", 5000);
     await waitFor(() => releaseFirst !== undefined, "首个渲染进入 executeJavaScript(队列被占)");
-    assert(releaseFirst !== undefined, "首个渲染应已交出释放句柄");
+    await suite.case("首个渲染应已交出释放句柄", () => {
+      assert(releaseFirst !== undefined, "首个渲染应已交出释放句柄");
+    });
     const queuedTask = renderMermaid("QUEUED_SECOND", 5000); // 排队中,尚未开始
     disposeMermaidService(); // 换代:排队任务提交时的代号失效
-    releaseFirst();
-    assert((await firstTask) !== null, "首个渲染(fake 返回合法结果)应正常完成");
+    // 释放句柄的存在性已由上方 case 记下;这里按 waitFor 的契约(它本身在超时即抛)
+    // 直接调用,非空判断只为类型收窄
+    if (releaseFirst) releaseFirst();
+    const firstResult = await firstTask;
+    await suite.case("首个渲染(fake 返回合法结果)应正常完成", () => {
+      assert(firstResult !== null, "首个渲染(fake 返回合法结果)应正常完成");
+    });
+    // 计时起点必须在 await 之前取:判定的是「排队任务多久结算」,
+    // 放到 await 之后量到的只是 await 自身的耗时
     const queuedStart = Date.now();
-    assert((await queuedTask) === null, "dispose 后排队的任务应放弃,不新建窗口");
-    assert(
-      Date.now() - queuedStart < 1000,
-      "放弃的排队任务应立即结算(不得走 5s 超时才降级,那说明它仍建了窗口)",
-    );
-    assert(execCalls === 1, `dispose 后排队任务不得再触达页面(executeJavaScript 应仅 1 次),实际 ${execCalls}`);
+    const queuedResult = await queuedTask;
+    await suite.case("dispose 后排队的任务应放弃,不新建窗口", () => {
+      assert(queuedResult === null, "dispose 后排队的任务应放弃,不新建窗口");
+    });
+    await suite.case("放弃的排队任务应立即结算(不得走 5s 超时才降级,那说明它仍建了窗口)", () => {
+      assert(
+        Date.now() - queuedStart < 1000,
+        "放弃的排队任务应立即结算(不得走 5s 超时才降级,那说明它仍建了窗口)",
+      );
+    });
+    await suite.case("dispose 后排队任务不得再触达页面(executeJavaScript 应仅 1 次)", () => {
+      assert(execCalls === 1, `dispose 后排队任务不得再触达页面(executeJavaScript 应仅 1 次),实际 ${execCalls}`);
+    });
   } finally {
     if (restoreWc) restoreWc();
   }
-  assert(
-    BrowserWindow.getAllWindows().length === baselineQueued,
-    "dispose 后排队任务不得留下窗口",
-  );
+  await suite.case("dispose 后排队任务不得留下窗口", () => {
+    assert(
+      BrowserWindow.getAllWindows().length === baselineQueued,
+      "dispose 后排队任务不得留下窗口",
+    );
+  });
   console.log("[ok] mermaid-service:dispose 后排队任务放弃渲染,不复活窗口");
 
   // ---- 8. 退出兜底(will-quit 监听):销毁常驻窗口;再次渲染自动重建 ----
-  assert(await renderMermaid(GOOD_CODE), "will-quit 测试前置:先重建常驻窗口");
+  // 三个 case 依次落在「重建 → 找到窗口 → emit 之前 → emit 之后」四个观测点上,
+  // 顺序不能动:emit 之后窗口已销毁,提前判定会读到未销毁的同一份状态
+  await suite.case("will-quit 测试前置:先重建常驻窗口", async () => {
+    assert(await renderMermaid(GOOD_CODE), "will-quit 测试前置:先重建常驻窗口");
+  });
   const quitWin = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
-  assert(quitWin, "will-quit 测试前置:未找到 mermaid 常驻窗口");
+  await suite.case("will-quit 测试前置:未找到 mermaid 常驻窗口", () => {
+    assert(quitWin, "will-quit 测试前置:未找到 mermaid 常驻窗口");
+  });
   app.emit("will-quit"); // 手动触发事件仅运行监听器,不真正退出应用
-  assert(quitWin.isDestroyed(), "will-quit 应销毁常驻窗口(退出兜底)");
+  await suite.case("will-quit 应销毁常驻窗口(退出兜底)", () => {
+    assert(quitWin !== undefined && quitWin.isDestroyed(), "will-quit 应销毁常驻窗口(退出兜底)");
+  });
   const afterQuit = await renderMermaid(GOOD_CODE);
-  assert(afterQuit, "will-quit 销毁后应自动重建窗口并恢复渲染");
+  await suite.case("will-quit 销毁后应自动重建窗口并恢复渲染", () => {
+    assert(afterQuit, "will-quit 销毁后应自动重建窗口并恢复渲染");
+  });
 
   console.log(
-    `[ok] mermaid-service:真实渲染 ${result.width}x${result.height}(2x PNG ${result.png.length} bytes,svg ${result.svg.length} chars);` +
+    `[ok] mermaid-service:真实渲染 ${result?.width}x${result?.height}(2x PNG ${result?.png.length} bytes,svg ${result?.svg.length} chars);` +
       "语法错误(含 catch 日志文案)/超时/畸形返回值(含无逗号空 PNG)/崩溃/loadFile 失败均降级 null," +
       "崩溃与加载失败后自动重建;will-quit 退出兜底销毁窗口且可重建",
   );
@@ -320,11 +403,16 @@ export async function run() {
   // ---- 9. 段末 teardown:常驻会话窗口与临时 HTML 在段内收干净 ----
   // 逐段子进程隔离后,入口不再持有段窗口(也无 app.quit() 兜底),残留若靠宿主退出时
   // 顺带关闭窗口,就是"依赖入口生命周期"的跨段假设;本段显式 dispose 并等回收落定。
+  // teardown 本身留在 case 之外:它与「窗口已清空」是同一步的两面,
+  // 归进 case 会让「窗口没清空」这个失败反过来阻止 teardown 跑完
   disposeMermaidService();
   await waitNoTempHtml(baseline, "段末 teardown");
-  assert(
-    BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()).length === 0,
-    "段末 teardown:不应留下未销毁的常驻窗口",
-  );
+  await suite.case("段末 teardown:不应留下未销毁的常驻窗口", () => {
+    assert(
+      BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()).length === 0,
+      "段末 teardown:不应留下未销毁的常驻窗口",
+    );
+  });
   console.log("[ok] mermaid-service:段末 teardown(常驻窗口销毁 + 临时 HTML 回收,不依赖入口退出)");
+  return { cases: suite.results };
 }

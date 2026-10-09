@@ -18,6 +18,7 @@ import path from "node:path";
 import { createJsonWriter, defaultJsonWriterDeps } from "../../dist/main/persist/atomic-json.js";
 import { removeTree } from "../harness/temp-resource.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /* 类型取自 dist 产物声明(ADR-069 起 declaration 已打开,interface 不再在 JS 里被擦除,
    import 产物即拿到 JsonWriterDeps / JsonWriter 的声明面,不必绕 src)。
@@ -46,6 +47,7 @@ function assert(cond, msg) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const dir = path.join(os.tmpdir(), `m2w-atomic-json-${process.pid}`);
   await fs.mkdir(dir, { recursive: true });
   try {
@@ -53,14 +55,16 @@ export async function run() {
     const writer = createJsonWriter();
     const file1 = path.join(dir, "state.json");
     await writer(file1, { a: 1, list: ["x", "y"] });
-    const raw1 = await fs.readFile(file1, "utf8");
-    assert(raw1 === `${JSON.stringify({ a: 1, list: ["x", "y"] }, null, 2)}\n`, "落盘内容应为 2 空格缩进 JSON + 末尾换行");
-    assert(JSON.parse(raw1).a === 1, "落盘内容应可解析回原值");
-    await fs.access(`${file1}.tmp`).then(
-      () => assert(false, "tmp 文件写后不应残留"),
-      () => undefined, // ENOENT = 已 rename,符合预期
-    );
-    console.log("[ok] atomic-json:原子写落盘读回(2 空格缩进+末尾换行,tmp 不残留)");
+    await suite.case("原子写落盘读回(2 空格缩进+末尾换行,tmp 不残留)", async () => {
+      const raw1 = await fs.readFile(file1, "utf8");
+      assert(raw1 === `${JSON.stringify({ a: 1, list: ["x", "y"] }, null, 2)}\n`, "落盘内容应为 2 空格缩进 JSON + 末尾换行");
+      assert(JSON.parse(raw1).a === 1, "落盘内容应可解析回原值");
+      await fs.access(`${file1}.tmp`).then(
+        () => assert(false, "tmp 文件写后不应残留"),
+        () => undefined, // ENOENT = 已 rename,符合预期
+      );
+      console.log("[ok] atomic-json:原子写落盘读回(2 空格缩进+末尾换行,tmp 不残留)");
+    });
 
     // ---- 2. 写队列串行顺序:并发发起,完成序 = 调用序,链尾即最终态 ----
     const file2 = path.join(dir, "queue.json");
@@ -70,13 +74,15 @@ export async function run() {
       writes.push(writer(file2, { seq: i }, () => committedOrder.push(i)));
     }
     await Promise.all(writes);
-    assert(
-      JSON.stringify(committedOrder) === JSON.stringify(Array.from({ length: 20 }, (_, k) => k + 1)),
-      `onCommitted 完成序应等于调用序,实际 ${JSON.stringify(committedOrder)}`,
-    );
-    const finalState = JSON.parse(await fs.readFile(file2, "utf8"));
-    assert(finalState.seq === 20, `链尾即最终态:文件应为最后一次写入(seq=20),实际 ${finalState.seq}`);
-    console.log("[ok] atomic-json:写队列串行(20 并发写完成序=调用序,链尾=最终态)");
+    await suite.case("写队列串行(20 并发写完成序=调用序,链尾=最终态)", async () => {
+      assert(
+        JSON.stringify(committedOrder) === JSON.stringify(Array.from({ length: 20 }, (_, k) => k + 1)),
+        `onCommitted 完成序应等于调用序,实际 ${JSON.stringify(committedOrder)}`,
+      );
+      const finalState = JSON.parse(await fs.readFile(file2, "utf8"));
+      assert(finalState.seq === 20, `链尾即最终态:文件应为最后一次写入(seq=20),实际 ${finalState.seq}`);
+      console.log("[ok] atomic-json:写队列串行(20 并发写完成序=调用序,链尾=最终态)");
+    });
 
     // ---- 3. 并发调用不交叉:不同实例独立队列;同实例多目标文件各自完整 ----
     // 门闩句柄:resolve 由下面构造 Promise 时写入,await 后即可调用
@@ -96,13 +102,17 @@ export async function run() {
     const bWrite = writerB(fileB1, { who: "b" }).then(() => fs.readFile(fileB1, "utf8"));
     const aSecond = writerA(fileA2, { who: "a-second" });
     const bRaw = await bWrite;
-    assert(JSON.parse(bRaw).who === "b", "B 实例不应被 A 实例队列阻塞(实例间独立)");
+    // 「B 未被阻塞」必须先于放闸断言(A 队列此时应仍被挂住),故取样后不入 case 之外
+    const bUnblocked = JSON.parse(bRaw).who === "b";
     assert(slowGate.resolve !== null, "门闩 Promise 构造后应已交出 resolve");
     slowGate.resolve();
     await Promise.all([aFirst, aSecond]);
-    assert(JSON.parse(await fs.readFile(fileA1, "utf8")).who === "a-first", "A 实例首写内容不符");
-    assert(JSON.parse(await fs.readFile(fileA2, "utf8")).who === "a-second", "A 实例串行后续写内容不符");
-    console.log("[ok] atomic-json:并发不交叉(实例间独立队列,实例内串行)");
+    await suite.case("并发不交叉:实例间独立队列,实例内串行", async () => {
+      assert(bUnblocked, "B 实例不应被 A 实例队列阻塞(实例间独立)");
+      assert(JSON.parse(await fs.readFile(fileA1, "utf8")).who === "a-first", "A 实例首写内容不符");
+      assert(JSON.parse(await fs.readFile(fileA2, "utf8")).who === "a-second", "A 实例串行后续写内容不符");
+      console.log("[ok] atomic-json:并发不交叉(实例间独立队列,实例内串行)");
+    });
 
     // ---- 3b. mutation queue:读当前值与合并在同一队列内,不同字段并发不丢 ----
     // enqueue 的回调提供“队列内写”能力:调用方把读当前值/合并也放入队列,
@@ -129,12 +139,14 @@ export async function run() {
       mutate({ left: true }),
       mutate({ right: true }),
     ]);
-    assert(leftResult.left && !leftResult.right, "mutation 第一个结果应只含自身补丁");
-    assert(rightResult.left && rightResult.right, "mutation 第二个结果应读到第一个已提交字段");
-    assert(current.left && current.right, "mutation 并发不同字段不得丢更新");
-    const mutationDisk = JSON.parse(await fs.readFile(mutationFile, "utf8"));
-    assert(mutationDisk.left && mutationDisk.right, "mutation 最终落盘应包含全部字段");
-    console.log("[ok] atomic-json:mutation queue(读改写整体串行,不同字段并发不丢)");
+    await suite.case("mutation queue(读改写整体串行,不同字段并发不丢)", async () => {
+      assert(leftResult.left && !leftResult.right, "mutation 第一个结果应只含自身补丁");
+      assert(rightResult.left && rightResult.right, "mutation 第二个结果应读到第一个已提交字段");
+      assert(current.left && current.right, "mutation 并发不同字段不得丢更新");
+      const mutationDisk = JSON.parse(await fs.readFile(mutationFile, "utf8"));
+      assert(mutationDisk.left && mutationDisk.right, "mutation 最终落盘应包含全部字段");
+      console.log("[ok] atomic-json:mutation queue(读改写整体串行,不同字段并发不丢)");
+    });
 
     // ---- 4. 失败路径:目标目录不存在 → writeFile(tmp) 失败;旧文件不破坏、队列不截断 ----
     const writerF = createJsonWriter();
@@ -147,18 +159,22 @@ export async function run() {
     } catch {
       failed = true;
     }
-    assert(failed, "失败写应向调用方抛错(错误由调用方处理)");
-    assert(JSON.parse(await fs.readFile(goodFile, "utf8")).v === 1, "失败写不应破坏旧文件");
-    // 失败清理:半成品 tmp 不残留(否则易被误当作已提交结果)
-    await fs
-      .access(`${badFile}.tmp`)
-      .then(
-        () => assert(false, "失败写不应残留 .tmp 临时文件"),
-        () => undefined, // ENOENT = 已清理,符合预期
-      );
+    await suite.case("失败路径:调用方收到错误 + 旧文件完好 + tmp 已清理", async () => {
+      assert(failed, "失败写应向调用方抛错(错误由调用方处理)");
+      assert(JSON.parse(await fs.readFile(goodFile, "utf8")).v === 1, "失败写不应破坏旧文件");
+      // 失败清理:半成品 tmp 不残留(否则易被误当作已提交结果)
+      await fs
+        .access(`${badFile}.tmp`)
+        .then(
+          () => assert(false, "失败写不应残留 .tmp 临时文件"),
+          () => undefined, // ENOENT = 已清理,符合预期
+        );
+    });
     // 失败后队列仍可用:同一实例后续写成功(单次失败不截断队列)
     await writerF(goodFile, { v: 3 });
-    assert(JSON.parse(await fs.readFile(goodFile, "utf8")).v === 3, "失败后同实例后续写应成功(队列不截断)");
+    await suite.case("失败后同实例后续写成功(队列不截断)", async () => {
+      assert(JSON.parse(await fs.readFile(goodFile, "utf8")).v === 3, "失败后同实例后续写应成功(队列不截断)");
+    });
     console.log("[ok] atomic-json:失败路径(调用方收到错误/旧文件完好/tmp 已清理/队列不截断)");
 
     /** 记录每次 rename 收到的错误码,按脚本决定第几次放行;放行那轮走真实 rename,
@@ -199,13 +215,15 @@ export async function run() {
       const writerR = createWriter({ ...defaultJsonWriterDeps, rename: flaky.transport, sleep, renameRetry: budget });
       const retryFile = path.join(dir, "retry.json");
       await writerR(retryFile, { v: 9 });
-      assert(JSON.parse(await fs.readFile(retryFile, "utf8")).v === 9, "瞬时占用重试后内容应真正落盘");
-      assert(flaky.seen.length === 2, `应恰好重试 2 次后成功,实际 ${JSON.stringify(flaky.seen)}`);
-      assert(
-        delays.length === 2 && delays[0] === 4 && delays[1] === 8,
-        `退避应从 baseDelayMs 起指数增长,实际 ${JSON.stringify(delays)}`,
-      );
-      assert(delays.every((ms) => ms <= budget.maxDelayMs), `单次退避不得超过封顶,实际 ${JSON.stringify(delays)}`);
+      await suite.case("瞬时占用有界退避后真正落盘", async () => {
+        assert(JSON.parse(await fs.readFile(retryFile, "utf8")).v === 9, "瞬时占用重试后内容应真正落盘");
+        assert(flaky.seen.length === 2, `应恰好重试 2 次后成功,实际 ${JSON.stringify(flaky.seen)}`);
+        assert(
+          delays.length === 2 && delays[0] === 4 && delays[1] === 8,
+          `退避应从 baseDelayMs 起指数增长,实际 ${JSON.stringify(delays)}`,
+        );
+        assert(delays.every((ms) => ms <= budget.maxDelayMs), `单次退避不得超过封顶,实际 ${JSON.stringify(delays)}`);
+      });
 
       // 5b. 真实故障码不得重试(重试掩盖问题)→ 立即抛错、tmp 已清理
       const hard = makeFlakyRename(["ENOSPC"]);
@@ -217,9 +235,11 @@ export async function run() {
       } catch (err) {
         hardFailed = /** @type {{ code?: string }} */ (err).code === "ENOSPC";
       }
-      assert(hardFailed, "ENOSPC 等真实故障须原样上抛");
-      assert(hard.seen.length === 1, `真实故障不得重试,实际尝试 ${hard.seen.length} 次`);
-      assert(delays.length === 2, "真实故障路径不得产生退避等待");
+      await suite.case("真实故障码不重试、原样上抛且无退避等待", () => {
+        assert(hardFailed, "ENOSPC 等真实故障须原样上抛");
+        assert(hard.seen.length === 1, `真实故障不得重试,实际尝试 ${hard.seen.length} 次`);
+        assert(delays.length === 2, "真实故障路径不得产生退避等待");
+      });
 
       // 5c. 瞬时占用持续到预算耗尽 → 仍须抛错且清理 tmp(不得静默当成功)
       const alwaysBusy = makeFlakyRename(["EBUSY"]);
@@ -231,17 +251,19 @@ export async function run() {
       } catch {
         busyFailed = true;
       }
-      assert(busyFailed, "重试预算耗尽须向调用方抛错");
-      assert(
-        alwaysBusy.seen.length === budget.attempts,
-        `应恰好尝试 budget.attempts=${budget.attempts} 次,实际 ${alwaysBusy.seen.length}`,
-      );
-      await fs
-        .access(`${busyFile}.tmp`)
-        .then(
-          () => assert(false, "重试耗尽后不应残留 .tmp"),
-          () => undefined, // ENOENT = 已清理
+      await suite.case("重试预算耗尽即抛错并清理 tmp", async () => {
+        assert(busyFailed, "重试预算耗尽须向调用方抛错");
+        assert(
+          alwaysBusy.seen.length === budget.attempts,
+          `应恰好尝试 budget.attempts=${budget.attempts} 次,实际 ${alwaysBusy.seen.length}`,
         );
+        await fs
+          .access(`${busyFile}.tmp`)
+          .then(
+            () => assert(false, "重试耗尽后不应残留 .tmp"),
+            () => undefined, // ENOENT = 已清理
+          );
+      });
       console.log("[ok] atomic-json:瞬时占用重试(有界退避落地/真实故障不重试/耗尽即抛错并清理)");
     }
 
@@ -267,8 +289,10 @@ export async function run() {
       });
       // 队列空时 drain 立即完成是合法的,故此处只断言「drain resolve 时三次写都已在盘上」
       await drained;
-      const onDisk = JSON.parse(await fs.readFile(drainFile, "utf8"));
-      assert(onDisk.seq === 2, `drain resolve 时队列应已排空(盘面为最后一次写),实际 ${JSON.stringify(onDisk)}`);
+      await suite.case("drain resolve 时队列已排空(盘面为最后一次写)", async () => {
+        const onDisk = JSON.parse(await fs.readFile(drainFile, "utf8"));
+        assert(onDisk.seq === 2, `drain resolve 时队列应已排空(盘面为最后一次写),实际 ${JSON.stringify(onDisk)}`);
+      });
 
       // 6b. 关键性质:drain 必须穿过瞬时占用重试 —— 重试未结束时它不能 resolve
       const flaky = makeFlakyRename(["EPERM", "EPERM", null]);
@@ -276,15 +300,17 @@ export async function run() {
       const retryFile = path.join(dir, "drain-retry.json");
       void retryWriter(retryFile, { v: 1 }).catch(() => undefined);
       await retryWriter.drain();
-      assert(
-        flaky.seen.length === 2,
-        `drain 应等到重试成功为止,实际重试 ${flaky.seen.length} 次(见重试码 ${JSON.stringify(flaky.seen)})`,
-      );
-      assert(
-        JSON.parse(await fs.readFile(retryFile, "utf8")).v === 1,
-        "drain resolve 时经重试的那次写必须已在盘面",
-      );
-      assert(drainDone, "drain 的 promise 应当已 resolve");
+      await suite.case("drain 穿过瞬时占用重试(等到成功为止且已落盘)", async () => {
+        assert(
+          flaky.seen.length === 2,
+          `drain 应等到重试成功为止,实际重试 ${flaky.seen.length} 次(见重试码 ${JSON.stringify(flaky.seen)})`,
+        );
+        assert(
+          JSON.parse(await fs.readFile(retryFile, "utf8")).v === 1,
+          "drain resolve 时经重试的那次写必须已在盘面",
+        );
+        assert(drainDone, "drain 的 promise 应当已 resolve");
+      });
 
       // 6c. 队列里有失败写时 drain 仍须 resolve(队列不截断,不得把 drain 变成死等)
       const failing = createWriter({
@@ -297,11 +323,14 @@ export async function run() {
       });
       const failFile = path.join(dir, "drain-fail.json");
       await failing(failFile, { v: 1 }).catch(() => undefined);
-      await failing.drain();
+      await suite.case("队列含失败写时 drain 仍须 resolve(不死等)", async () => {
+        await failing.drain();
+      });
       console.log("[ok] atomic-json:drain(等队列落盘/穿过重试/失败写不致死等)");
     }
   } finally {
     // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
     removeTree(dir);
   }
+  return { cases: suite.results };
 }

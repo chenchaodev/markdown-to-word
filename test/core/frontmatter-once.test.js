@@ -24,6 +24,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
 import { unzipPart } from "../harness/docx-utils.js";
 import { resolveNode } from "../harness/node-exec.js";
@@ -229,76 +230,93 @@ date: 2026-01-01
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   // ---- ① 结构:core 源码零 parseFrontmatter **代码**引用(「core 不再解析」的直接证据) ----
   // 判在代码骨架上(注释/字符串已剥):注释里解释这次改动不算引用,`parseFrontmatter(md)`
   // 这种真实调用才算 —— 判据才不会退化成「不许提这个词」。
   const convertSrc = codeSkeleton(fs.readFileSync(path.join(ROOT, CONVERT_SRC_REL), "utf8"));
-  const fmRefs = [...convertSrc.matchAll(/\bparseFrontmatter\b/g)];
-  assert(
-    fmRefs.length === 0,
-    `${CONVERT_SRC_REL} 仍引用 parseFrontmatter ${fmRefs.length} 次 —— core 应只取用阶段产物,不再解析 frontmatter`,
-  );
-  // DocMetadata 的 type 导入允许(只是类型),但值导入(真去调那个函数)不允许
-  assert(
-    !/import\s*\{[^}]*\bparseFrontmatter\b[^}]*\}\s*from/.test(convertSrc),
-    `${CONVERT_SRC_REL} 仍从 frontmatter 模块值导入 parseFrontmatter(DocMetadata 的 type 导入不受限)`,
-  );
+  await suite.case("core 源码零 parseFrontmatter 代码引用", () => {
+    const fmRefs = [...convertSrc.matchAll(/\bparseFrontmatter\b/g)];
+    assert(
+      fmRefs.length === 0,
+      `${CONVERT_SRC_REL} 仍引用 parseFrontmatter ${fmRefs.length} 次 —— core 应只取用阶段产物,不再解析 frontmatter`,
+    );
+    // DocMetadata 的 type 导入允许(只是类型),但值导入(真去调那个函数)不允许
+    assert(
+      !/import\s*\{[^}]*\bparseFrontmatter\b[^}]*\}\s*from/.test(convertSrc),
+      `${CONVERT_SRC_REL} 仍从 frontmatter 模块值导入 parseFrontmatter(DocMetadata 的 type 导入不受限)`,
+    );
+  });
   console.log(`[ok] frontmatter-once:${CONVERT_SRC_REL} 代码零 parseFrontmatter 引用`);
 
   // ---- ② 计数:单文件转换链上 frontmatter 恰好解析一次 ----
+  // 探针是子进程 + 全局计数,一次跑出的三段计数与产物形态供下列 case 共用
   const probe = runCountProbe();
-  assert(
-    probe.afterPrepare === 1,
-    `准备阶段应解析 1 次 frontmatter,实际 ${probe.afterPrepare}(0 = metadata 丢失,>1 = 上游内部已有重复)`,
-  );
-  assert(
-    probe.afterDocx === 1,
-    `docx 转换后计数应仍为 1,实际 ${probe.afterDocx}(core 又解析了一次 —— 本步要消灭的重复回归)`,
-  );
-  assert(
-    probe.afterPdf === 1,
-    `pdf 转换后计数应仍为 1,实际 ${probe.afterPdf}(core 又解析了一次 —— 本步要消灭的重复回归)`,
-  );
-  assert(probe.docxBytes > 0, "docx 产物应非空");
-  assert(probe.pdfKind === "pdf", `pdf 产物 kind 应为 pdf,实际 ${probe.pdfKind}`);
-  assert(
-    probe.metadataTitle === "探针标题",
-    `阶段产物 metadata.title 应为「探针标题」(metadata 真的传下去了),实际 ${String(probe.metadataTitle)}`,
-  );
+  await suite.case("准备阶段恰好解析一次 frontmatter", () => {
+    assert(
+      probe.afterPrepare === 1,
+      `准备阶段应解析 1 次 frontmatter,实际 ${probe.afterPrepare}(0 = metadata 丢失,>1 = 上游内部已有重复)`,
+    );
+  });
+  await suite.case("docx/pdf 转换后计数仍为 1(两侧各防 core 二次解析)", () => {
+    assert(
+      probe.afterDocx === 1,
+      `docx 转换后计数应仍为 1,实际 ${probe.afterDocx}(core 又解析了一次 —— 本步要消灭的重复回归)`,
+    );
+    assert(
+      probe.afterPdf === 1,
+      `pdf 转换后计数应仍为 1,实际 ${probe.afterPdf}(core 又解析了一次 —— 本步要消灭的重复回归)`,
+    );
+  });
+  await suite.case("计数探针两侧产物形态非空且 metadata 传下去了", () => {
+    assert(probe.docxBytes > 0, "docx 产物应非空");
+    assert(probe.pdfKind === "pdf", `pdf 产物 kind 应为 pdf,实际 ${probe.pdfKind}`);
+    assert(
+      probe.metadataTitle === "探针标题",
+      `阶段产物 metadata.title 应为「探针标题」(metadata 真的传下去了),实际 ${String(probe.metadataTitle)}`,
+    );
+  });
   console.log(
     `[ok] frontmatter-once:计数 prepare=${probe.afterPrepare} → docx=${probe.afterDocx} → pdf=${probe.afterPdf}(恰好 1 次)`,
   );
 
   // ---- ③ 行为:两侧产物无 frontmatter 残留 + context.metadata 覆盖语义不变 ----
-  const docxBuffer = docxBufferOf(await convertWithFs(MD, "docx", { baseDir: FIXTURES_DIR, warnings: [] }));
-  const docxXml = await unzipPart(docxBuffer, "word/document.xml");
-  assert(!docxXml.includes("author: frontmatter作者"), "docx 正文不应残留 frontmatter 原文行");
-  assert(docxXml.includes("frontmatter标题"), "docx 封面应消费阶段产物的 metadata.title");
+  await suite.case("docx 无 frontmatter 残留且封面消费 metadata.title", async () => {
+    const docxBuffer = docxBufferOf(await convertWithFs(MD, "docx", { baseDir: FIXTURES_DIR, warnings: [] }));
+    const docxXml = await unzipPart(docxBuffer, "word/document.xml");
+    assert(!docxXml.includes("author: frontmatter作者"), "docx 正文不应残留 frontmatter 原文行");
+    assert(docxXml.includes("frontmatter标题"), "docx 封面应消费阶段产物的 metadata.title");
+  });
   console.log("[ok] frontmatter-once:docx 无 frontmatter 残留且封面消费 metadata.title");
 
-  const pdf = asPdfArtifact(await convertWithFs(MD, "pdf", { baseDir: FIXTURES_DIR, title: "文件名", warnings: [] }));
-  assert(!pdf.html.includes("author: frontmatter作者"), "PDF HTML 不应残留 frontmatter 原文行");
-  assert(
-    pdf.html.includes('<div class="cover-title">frontmatter标题</div>'),
-    "PDF 封面应消费阶段产物的 metadata.title",
-  );
+  await suite.case("PDF 无 frontmatter 残留且封面消费 metadata.title", async () => {
+    const pdf = asPdfArtifact(await convertWithFs(MD, "pdf", { baseDir: FIXTURES_DIR, title: "文件名", warnings: [] }));
+    assert(!pdf.html.includes("author: frontmatter作者"), "PDF HTML 不应残留 frontmatter 原文行");
+    assert(
+      pdf.html.includes('<div class="cover-title">frontmatter标题</div>'),
+      "PDF 封面应消费阶段产物的 metadata.title",
+    );
+  });
   console.log("[ok] frontmatter-once:PDF 无 frontmatter 残留且封面消费 metadata.title");
 
-  const overridden = asPdfArtifact(
-    await convertWithFs(MD, "pdf", {
-      baseDir: FIXTURES_DIR,
-      title: "文件名",
-      warnings: [],
-      metadata: { title: "向导标题" },
-    }),
-  );
-  assert(
-    overridden.html.includes('<div class="cover-title">向导标题</div>'),
-    "context.metadata 覆盖语义应不变(向导封面通道)",
-  );
-  assert(
-    !overridden.html.includes("frontmatter标题"),
-    "context.metadata 覆盖后不应再出现 frontmatter title",
-  );
+  await suite.case("context.metadata 覆盖 frontmatter 的语义不变(向导封面通道)", async () => {
+    const overridden = asPdfArtifact(
+      await convertWithFs(MD, "pdf", {
+        baseDir: FIXTURES_DIR,
+        title: "文件名",
+        warnings: [],
+        metadata: { title: "向导标题" },
+      }),
+    );
+    assert(
+      overridden.html.includes('<div class="cover-title">向导标题</div>'),
+      "context.metadata 覆盖语义应不变(向导封面通道)",
+    );
+    assert(
+      !overridden.html.includes("frontmatter标题"),
+      "context.metadata 覆盖后不应再出现 frontmatter title",
+    );
+  });
   console.log("[ok] frontmatter-once:context.metadata 覆盖 frontmatter 的语义不变");
+  return { cases: suite.results };
 }

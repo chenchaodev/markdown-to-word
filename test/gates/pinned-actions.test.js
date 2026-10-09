@@ -29,6 +29,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 import { ROOT } from "../harness/paths.js";
 import { removeTree } from "../harness/temp-resource.js";
 import {
@@ -184,6 +185,7 @@ function baselineFor(...repos) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   /** @type {string[]} */
   const sandboxes = [];
   const track = (/** @type {string} */ dir) => {
@@ -191,65 +193,84 @@ export async function run() {
     return dir;
   };
 
+  // 清理留在 run() 顶层:进了 case 的话,case 失败会先抛、finally 不执行,沙盒残留系统临时区
   try {
     // ================= 1. 事实层:真实 workflow 与基线 =================
     {
       const usages = collectUsages(WORKFLOWS_DIR);
-      assert(usages.length === 14, `本仓应有 14 处 uses: 引用,实际 ${usages.length} 处(新增 action 时同步更新本断言与基线)`);
+      await suite.case("1. 事实层:每处 uses: 均为 40 位小写十六进制 SHA 且带版本注释", () => {
+        assert(usages.length === 14, `本仓应有 14 处 uses: 引用,实际 ${usages.length} 处(新增 action 时同步更新本断言与基线)`);
 
-      /** @type {Map<string, Set<string>>} action → 实际固定到的 SHA 集合 */
-      const shasByRepo = new Map();
-      for (const raw of usages) {
-        const usage = asRemote(raw);
-        const where = `${usage.file}:${usage.line}`;
-        assert(SHA_RE.test(usage.ref), `${where} 未固定到 40 位小写十六进制 SHA,实际 ref=${usage.ref}`);
-        const version = commentVersion(usage.comment);
-        assert(version !== null, `${where} 缺少「# vX.Y.Z」版本注释(当前「${usage.comment}」)`);
-        if (!shasByRepo.has(usage.repo)) shasByRepo.set(usage.repo, new Set());
-        /** @type {Set<string>} */ (shasByRepo.get(usage.repo)).add(usage.ref);
-      }
-      for (const [repo, shas] of shasByRepo) {
-        assert(shas.size === 1, `${repo} 被固定到 ${shas.size} 个不同 SHA(${[...shas].join(" / ")}),同一 action 必须同版本`);
-      }
-      assert(
-        [...shasByRepo.keys()].sort().join(",") === "actions/cache,actions/checkout,actions/setup-node,actions/upload-artifact",
-        `本仓应只用四个官方 action,实际 ${[...shasByRepo.keys()].sort().join(",")}`,
-      );
+        /** @type {Map<string, Set<string>>} action → 实际固定到的 SHA 集合 */
+        const shasByRepo = new Map();
+        for (const raw of usages) {
+          const usage = asRemote(raw);
+          const where = `${usage.file}:${usage.line}`;
+          assert(SHA_RE.test(usage.ref), `${where} 未固定到 40 位小写十六进制 SHA,实际 ref=${usage.ref}`);
+          const version = commentVersion(usage.comment);
+          assert(version !== null, `${where} 缺少「# vX.Y.Z」版本注释(当前「${usage.comment}」)`);
+          if (!shasByRepo.has(usage.repo)) shasByRepo.set(usage.repo, new Set());
+          /** @type {Set<string>} */ (shasByRepo.get(usage.repo)).add(usage.ref);
+        }
+        for (const [repo, shas] of shasByRepo) {
+          assert(shas.size === 1, `${repo} 被固定到 ${shas.size} 个不同 SHA(${[...shas].join(" / ")}),同一 action 必须同版本`);
+        }
+        assert(
+          [...shasByRepo.keys()].sort().join(",") === "actions/cache,actions/checkout,actions/setup-node,actions/upload-artifact",
+          `本仓应只用四个官方 action,实际 ${[...shasByRepo.keys()].sort().join(",")}`,
+        );
+      });
 
       // 基线:四个 action 的 SHA 与版本注释必须逐一对齐
       const baseline = JSON.parse(fs.readFileSync(BASELINE_PATH, "utf8"));
       const parsed = parseBaseline(baseline);
-      assert(parsed.problems.length === 0, `版本基线自身应合规:${parsed.problems.join(" | ")}`);
-      assert(
-        Object.keys(parsed.actions).sort().join(",") === [...shasByRepo.keys()].sort().join(","),
-        `基线条目应与 workflow 实际引用的 action 一一对应,基线=${Object.keys(parsed.actions).sort().join(",")}`,
-      );
-      for (const [repo, expected] of Object.entries(parsed.actions)) {
-        const shas = shasByRepo.get(repo) ?? new Set();
-        assert(shas.size > 0, `基线条目 ${repo} 在 workflow 中无引用`);
-        assert(shas.has(expected.sha), `基线 ${repo}.sha=${expected.sha} 与 workflow 实际固定的 SHA 不符(${[...shas].join("/")})`);
-        // 注释版本 = 基线版本:逐处核对(同一 action 在多处引用时都要一致)
+      await suite.case("1. 事实层:基线自身合规且条目与实际引用一一对应", () => {
+        assert(parsed.problems.length === 0, `版本基线自身应合规:${parsed.problems.join(" | ")}`);
+        const referencedRepos = new Set(usages.map((raw) => asRemote(raw).repo));
+        assert(
+          Object.keys(parsed.actions).sort().join(",") === [...referencedRepos].sort().join(","),
+          `基线条目应与 workflow 实际引用的 action 一一对应,基线=${Object.keys(parsed.actions).sort().join(",")}`,
+        );
+      });
+      await suite.case("1. 事实层:基线 SHA 与注释版本逐处对齐 workflow 实际", () => {
+        /** @type {Map<string, Set<string>>} action → 实际固定到的 SHA 集合 */
+        const shasByRepo = new Map();
         for (const raw of usages) {
           const usage = asRemote(raw);
-          if (usage.repo !== repo) continue;
-          assert(
-            commentVersion(usage.comment) === expected.version,
-            `${usage.file}:${usage.line} ${repo} 的版本注释 ${String(commentVersion(usage.comment))} 与基线 ${expected.version} 不符`,
-          );
+          if (!shasByRepo.has(usage.repo)) shasByRepo.set(usage.repo, new Set());
+          /** @type {Set<string>} */ (shasByRepo.get(usage.repo)).add(usage.ref);
         }
-      }
+        for (const [repo, expected] of Object.entries(parsed.actions)) {
+          const shas = shasByRepo.get(repo) ?? new Set();
+          assert(shas.size > 0, `基线条目 ${repo} 在 workflow 中无引用`);
+          assert(shas.has(expected.sha), `基线 ${repo}.sha=${expected.sha} 与 workflow 实际固定的 SHA 不符(${[...shas].join("/")})`);
+          // 注释版本 = 基线版本:逐处核对(同一 action 在多处引用时都要一致)
+          for (const raw of usages) {
+            const usage = asRemote(raw);
+            if (usage.repo !== repo) continue;
+            assert(
+              commentVersion(usage.comment) === expected.version,
+              `${usage.file}:${usage.line} ${repo} 的版本注释 ${String(commentVersion(usage.comment))} 与基线 ${expected.version} 不符`,
+            );
+          }
+        }
+      });
 
       // 门禁接入:脚本存在、指向正确、已入 verify:ci 且早于 build
-      assert(fs.existsSync(path.join(ROOT, "gates", "repo", "check-pinned-actions.mjs")), "缺少 gates/repo/check-pinned-actions.mjs");
-      assert(
-        PKG.scripts["check:pinned-actions"] === "node gates/repo/check-pinned-actions.mjs",
-        `check:pinned-actions 应指向 gates/repo/check-pinned-actions.mjs,实际 ${String(PKG.scripts["check:pinned-actions"])}`,
-      );
-      const chain = PKG.scripts["verify:ci"].split("&&").map((/** @type {string} */ s) => s.trim());
-      const pinnedAt = chain.indexOf("npm run check:pinned-actions");
-      const buildAt = chain.indexOf("npm run build");
-      assert(pinnedAt !== -1, `verify:ci 应含 check:pinned-actions,实际 ${chain.join(" -> ")}`);
-      assert(pinnedAt < buildAt, `check:pinned-actions 应早于 build(判定 workflow 文本,不消费 dist),实际 ${chain.join(" -> ")}`);
+      await suite.case("1. 事实层:门禁脚本存在且 check:pinned-actions 指向它", () => {
+        assert(fs.existsSync(path.join(ROOT, "gates", "repo", "check-pinned-actions.mjs")), "缺少 gates/repo/check-pinned-actions.mjs");
+        assert(
+          PKG.scripts["check:pinned-actions"] === "node gates/repo/check-pinned-actions.mjs",
+          `check:pinned-actions 应指向 gates/repo/check-pinned-actions.mjs,实际 ${String(PKG.scripts["check:pinned-actions"])}`,
+        );
+      });
+      await suite.case("1. 事实层:门禁已入 verify:ci 且早于 build", () => {
+        const chain = PKG.scripts["verify:ci"].split("&&").map((/** @type {string} */ s) => s.trim());
+        const pinnedAt = chain.indexOf("npm run check:pinned-actions");
+        const buildAt = chain.indexOf("npm run build");
+        assert(pinnedAt !== -1, `verify:ci 应含 check:pinned-actions,实际 ${chain.join(" -> ")}`);
+        assert(pinnedAt < buildAt, `check:pinned-actions 应早于 build(判定 workflow 文本,不消费 dist),实际 ${chain.join(" -> ")}`);
+      });
       console.log("[ok] pinned-actions:事实层(14 处引用全为 40 位 SHA + 版本注释 / 基线三方对齐 / 门禁早于 build 入链)");
     }
 
@@ -265,37 +286,49 @@ export async function run() {
           "      run: echo not-a-uses",
         ].join("\n"),
       );
-      assert(parsedLines.length === 3, `应抽到 3 处 uses:,实际 ${parsedLines.length} 处(注释行/非 uses 行不得被抽)`);
-      const first = at(parsedLines, 0, "uses 抽取");
-      const second = at(parsedLines, 1, "uses 抽取");
-      const third = at(parsedLines, 2, "uses 抽取");
-      assert(first.value === "actions/checkout@abc123" && first.comment === "v5.1.0", "不带引号 + 行尾注释解析错误");
-      assert(second.value === "actions/setup-node@def456" && second.comment === "v5.0.0", "单引号取值解析错误");
-      assert(third.value === "actions/upload-artifact@ghi789" && third.comment === "v5.0.0", "双引号取值解析错误");
-      assert(first.line === 1 && third.line === 3, "行号定位错误");
+      await suite.case("2. parseUses:只抽 uses 行,注释行与非 uses 行不得被抽", () => {
+        assert(parsedLines.length === 3, `应抽到 3 处 uses:,实际 ${parsedLines.length} 处(注释行/非 uses 行不得被抽)`);
+      });
+      await suite.case("2. parseUses:三种引号形态的取值与注释解析", () => {
+        const first = at(parsedLines, 0, "uses 抽取");
+        const second = at(parsedLines, 1, "uses 抽取");
+        const third = at(parsedLines, 2, "uses 抽取");
+        assert(first.value === "actions/checkout@abc123" && first.comment === "v5.1.0", "不带引号 + 行尾注释解析错误");
+        assert(second.value === "actions/setup-node@def456" && second.comment === "v5.0.0", "单引号取值解析错误");
+        assert(third.value === "actions/upload-artifact@ghi789" && third.comment === "v5.0.0", "双引号取值解析错误");
+        assert(first.line === 1 && third.line === 3, "行号定位错误");
+      });
 
       // 取值归类
-      assert(classifyUse("./.github/workflows/ci.yml").kind === "local", "./ 开头的本地 action 应归类为 local");
-      assert(classifyUse("docker://alpine:3.20").kind === "docker", "docker:// 应归类为 docker");
-      assert(classifyUse("actions/checkout@v5").kind === "remote", "owner/repo@ref 应归类为 remote");
-      assert(classifyUse("actions/checkout").kind === "malformed", "缺 @ 的引用应归类为 malformed");
-      assert(classifyUse("@v5").kind === "malformed", "@ 前为空的引用应归类为 malformed");
-      assert(classifyUse("").kind === "empty", "空取值应归类为 empty");
+      await suite.case("2. classifyUse:local / docker / remote 三类正向归类", () => {
+        assert(classifyUse("./.github/workflows/ci.yml").kind === "local", "./ 开头的本地 action 应归类为 local");
+        assert(classifyUse("docker://alpine:3.20").kind === "docker", "docker:// 应归类为 docker");
+        assert(classifyUse("actions/checkout@v5").kind === "remote", "owner/repo@ref 应归类为 remote");
+      });
+      await suite.case("2. classifyUse:缺 @ / @ 前为空 / 空取值三类负向归类", () => {
+        assert(classifyUse("actions/checkout").kind === "malformed", "缺 @ 的引用应归类为 malformed");
+        assert(classifyUse("@v5").kind === "malformed", "@ 前为空的引用应归类为 malformed");
+        assert(classifyUse("").kind === "empty", "空取值应归类为 empty");
+      });
 
       // 版本注释:只认首 token 的 vX.Y.Z,其余判 null(不猜)
-      assert(commentVersion("v5.1.0") === "v5.1.0", "纯版本注释应抽出版本");
-      assert(commentVersion("v5.1.0 已审核") === "v5.1.0", "版本后带说明文字时取首 token");
-      assert(commentVersion("5.1.0") === null, "缺 v 前缀的注释不得被猜成版本");
-      assert(commentVersion("pinned") === null, "非版本注释应返回 null");
-      assert(commentVersion("") === null, "空注释应返回 null");
+      await suite.case("2. commentVersion:只认 vX.Y.Z 首 token,其余判 null 不猜", () => {
+        assert(commentVersion("v5.1.0") === "v5.1.0", "纯版本注释应抽出版本");
+        assert(commentVersion("v5.1.0 已审核") === "v5.1.0", "版本后带说明文字时取首 token");
+        assert(commentVersion("5.1.0") === null, "缺 v 前缀的注释不得被猜成版本");
+        assert(commentVersion("pinned") === null, "非版本注释应返回 null");
+        assert(commentVersion("") === null, "空注释应返回 null");
+      });
 
       // analyze 纯函数:走 collectUsages 取事实(不手工拼对象,免得守护段与被测实现
       // 各写一份 uses 组装逻辑),合法沙盒零 problem
       const cleanSb = createSandbox({ "ci.yml": `${PINNED_LINE}\n` }, baselineFor("actions/checkout"));
       track(cleanSb.dir);
       const clean = analyze(collectUsages(cleanSb.workflowsDir), { actions: baselineFor("actions/checkout").actions }, { root: ROOT });
-      assert(clean.problems.length === 0, `合法引用不应报 problem:${clean.problems.join(" | ")}`);
-      assert(clean.stats.remote === 1 && clean.stats.local === 0, `统计口径应正确:${JSON.stringify(clean.stats)}`);
+      await suite.case("2. analyze:合法沙盒零 problem 且统计口径正确", () => {
+        assert(clean.problems.length === 0, `合法引用不应报 problem:${clean.problems.join(" | ")}`);
+        assert(clean.stats.remote === 1 && clean.stats.local === 0, `统计口径应正确:${JSON.stringify(clean.stats)}`);
+      });
       console.log("[ok] pinned-actions:判定原语(uses 抽取 / 取值归类 / 版本注释解析 / analyze 零违规)");
     }
 
@@ -444,33 +477,36 @@ export async function run() {
         },
       ];
 
+      // 逐夹具一个 case:一类漂移判红不该掩盖其余漂移(只报第一条就看不出是哪条规则失守)
       for (const item of cases) {
-        // 基线默认裁剪到「夹具里真实出现的 action」:多带一个未被引用的 action 会
-        // 额外触发「基线条目已无引用」,让用例不再只命中目标漂移(陈旧条目用例
-        // 用 keepBaseline 关掉裁剪 —— 它的目标漂移正是未被引用的基线条目)
-        const referenced = new Set();
-        for (const content of Object.values(item.workflows)) {
-          for (const entry of parseUses(content)) {
-            const kind = classifyUse(entry.value);
-            if (kind.kind === "remote") referenced.add(kind.repo);
+        await suite.case(`3. 漂移夹具判红并命中各自诊断:${item.label}`, async () => {
+          // 基线默认裁剪到「夹具里真实出现的 action」:多带一个未被引用的 action 会
+          // 额外触发「基线条目已无引用」,让用例不再只命中目标漂移(陈旧条目用例
+          // 用 keepBaseline 关掉裁剪 —— 它的目标漂移正是未被引用的基线条目)
+          const referenced = new Set();
+          for (const content of Object.values(item.workflows)) {
+            for (const entry of parseUses(content)) {
+              const kind = classifyUse(entry.value);
+              if (kind.kind === "remote") referenced.add(kind.repo);
+            }
           }
-        }
-        const doc = /** @type {{actions: Record<string, unknown>}|null} */ (item.baseline);
-        const actions = doc === null
-          ? null
-          : item.keepBaseline === true
-            ? doc.actions
-            : Object.fromEntries(Object.entries(doc.actions).filter(([repo]) => referenced.has(repo)));
-        const sb = createSandbox(item.workflows, doc === null ? null : { ...doc, actions });
-        track(sb.dir);
-        const args = ["--workflows", sb.workflowsDir];
-        if (item.args === undefined) {
-          args.push("--baseline", sb.baselineRel);
-        } else {
-          args.push(...item.args);
-        }
-        const result = await runCli(args);
-        assertFailure(result, item.pattern, item.label);
+          const doc = /** @type {{actions: Record<string, unknown>}|null} */ (item.baseline);
+          const actions = doc === null
+            ? null
+            : item.keepBaseline === true
+              ? doc.actions
+              : Object.fromEntries(Object.entries(doc.actions).filter(([repo]) => referenced.has(repo)));
+          const sb = createSandbox(item.workflows, doc === null ? null : { ...doc, actions });
+          track(sb.dir);
+          const args = ["--workflows", sb.workflowsDir];
+          if (item.args === undefined) {
+            args.push("--baseline", sb.baselineRel);
+          } else {
+            args.push(...item.args);
+          }
+          const result = await runCli(args);
+          assertFailure(result, item.pattern, item.label);
+        });
       }
       console.log(`[ok] pinned-actions:${cases.length} 类漂移夹具全部非零退出且命中各自诊断`);
     }
@@ -480,71 +516,83 @@ export async function run() {
       // 4a. 同形状的合法沙盒(含两 workflow 复用同一 action、本地 action 真实存在、容器引用)→ 零退出
       // 本地 action 的存在性按仓库根解析(main 的 root 固定为仓库根),故引用真实存在的
       // .github/workflows/ci.yml 而非沙盒内的同名文件
-      const sb = createSandbox(
-        {
-          "ci.yml": [
-            "name: CI",
-            "      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0",
-            "      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0",
-            "      - uses: docker://alpine:3.20",
-            "      - uses: ./.github/workflows/ci.yml",
-            "      # - uses: actions/checkout@commented # v9.9.9",
-          ].join("\n"),
-          "release.yml": "      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0\n",
-        },
-        goodBaseline(SANDBOX_ACTIONS),
-      );
-      track(sb.dir);
-      const ok = await runCli(["--workflows", sb.workflowsDir, "--baseline", sb.baselineRel]);
-      assert(ok.code === 0, `合法沙盒应零退出,实际 ${ok.code}:${ok.output}`);
-      assert(!ok.output.includes("[pinned-actions:fail]"), `合法沙盒不得有 fail 行:${ok.output}`);
-      assert(ok.output.includes("action 引用固定自检通过"), `合法沙盒应给出通过结论:${ok.output}`);
+      await suite.case("4. 正向锚点:同形状合法沙盒零退出且给出通过结论", async () => {
+        const sb = createSandbox(
+          {
+            "ci.yml": [
+              "name: CI",
+              "      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0",
+              "      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0",
+              "      - uses: docker://alpine:3.20",
+              "      - uses: ./.github/workflows/ci.yml",
+              "      # - uses: actions/checkout@commented # v9.9.9",
+            ].join("\n"),
+            "release.yml": "      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0\n",
+          },
+          goodBaseline(SANDBOX_ACTIONS),
+        );
+        track(sb.dir);
+        const ok = await runCli(["--workflows", sb.workflowsDir, "--baseline", sb.baselineRel]);
+        assert(ok.code === 0, `合法沙盒应零退出,实际 ${ok.code}:${ok.output}`);
+        assert(!ok.output.includes("[pinned-actions:fail]"), `合法沙盒不得有 fail 行:${ok.output}`);
+        assert(ok.output.includes("action 引用固定自检通过"), `合法沙盒应给出通过结论:${ok.output}`);
+      });
 
       // 4b. 同一沙盒只删掉版本注释 → 立刻判红(证明通过不是因为规则没生效)
-      const broken = createSandbox(
-        {
-          "ci.yml": [
-            "      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
-            "      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0",
-            "      - uses: docker://alpine:3.20",
-            "      - uses: ./.github/workflows/ci.yml",
-          ].join("\n"),
-        },
-        goodBaseline(SANDBOX_ACTIONS),
-      );
-      track(broken.dir);
-      const red = await runCli(["--workflows", broken.workflowsDir, "--baseline", broken.baselineRel]);
-      assertFailure(red, /缺少「# vX\.Y\.Z」版本注释/, "合法沙盒去掉版本注释");
+      await suite.case("4. 反向证明:同一沙盒去掉版本注释即判红", async () => {
+        const broken = createSandbox(
+          {
+            "ci.yml": [
+              "      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+              "      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0",
+              "      - uses: docker://alpine:3.20",
+              "      - uses: ./.github/workflows/ci.yml",
+            ].join("\n"),
+          },
+          goodBaseline(SANDBOX_ACTIONS),
+        );
+        track(broken.dir);
+        const red = await runCli(["--workflows", broken.workflowsDir, "--baseline", broken.baselineRel]);
+        assertFailure(red, /缺少「# vX\.Y\.Z」版本注释/, "合法沙盒去掉版本注释");
+      });
 
       // 4c. --no-baseline:只做引用卫生,基线不符不再判红(但非法 SHA 仍判红)
-      const noBaseline = createSandbox(
-        {
-          "ci.yml": [
-            "      - uses: actions/checkout@1111111111111111111111111111111111111111 # v5.1.0",
-            "      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0",
-          ].join("\n"),
-        },
-        goodBaseline(SANDBOX_ACTIONS),
-      );
-      track(noBaseline.dir);
-      const relaxed = await runCli(["--workflows", noBaseline.workflowsDir, "--no-baseline"]);
-      assert(relaxed.code === 0, `--no-baseline 下基线漂移不应判红,实际 ${relaxed.code}:${relaxed.output}`);
-      assert(relaxed.output.includes("基线比对已关闭"), `--no-baseline 应显式提示基线已关闭:${relaxed.output}`);
+      await suite.case("4. --no-baseline:基线漂移不判红且显式提示基线已关闭", async () => {
+        const noBaseline = createSandbox(
+          {
+            "ci.yml": [
+              "      - uses: actions/checkout@1111111111111111111111111111111111111111 # v5.1.0",
+              "      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0",
+            ].join("\n"),
+          },
+          goodBaseline(SANDBOX_ACTIONS),
+        );
+        track(noBaseline.dir);
+        const relaxed = await runCli(["--workflows", noBaseline.workflowsDir, "--no-baseline"]);
+        assert(relaxed.code === 0, `--no-baseline 下基线漂移不应判红,实际 ${relaxed.code}:${relaxed.output}`);
+        assert(relaxed.output.includes("基线比对已关闭"), `--no-baseline 应显式提示基线已关闭:${relaxed.output}`);
+      });
 
       // 4d. --help 零退出且不判红
-      const help = await runCli(["--help"]);
-      assert(help.code === 0, `--help 应零退出,实际 ${help.code}:${help.output}`);
-      assert(help.output.includes("--baseline"), `--help 应列出 --baseline:${help.output}`);
+      await suite.case("4. --help 零退出且列出 --baseline", async () => {
+        const help = await runCli(["--help"]);
+        assert(help.code === 0, `--help 应零退出,实际 ${help.code}:${help.output}`);
+        assert(help.output.includes("--baseline"), `--help 应列出 --baseline:${help.output}`);
+      });
       console.log("[ok] pinned-actions:正向锚点(合法沙盒零退出 / 去注释即判红 / --no-baseline 只收窄到引用卫生 / --help)");
     }
 
     // ================= 5. 真实仓库上的 CLI 复跑(门禁自身可运行) =================
     {
-      const real = await runCli([]);
-      assert(real.code === 0, `真实仓库应通过自建门禁,实际 ${real.code}:${real.output}`);
-      assert(real.output.includes("14 处 uses"), `真实仓库应报出 14 处引用:${real.output}`);
-      const relaxedReal = await runCli(["--no-baseline"]);
-      assert(relaxedReal.code === 0, `真实仓库 --no-baseline 应通过,实际 ${relaxedReal.code}:${relaxedReal.output}`);
+      await suite.case("5. 真实仓库 CLI 复跑通过并报出引用数", async () => {
+        const real = await runCli([]);
+        assert(real.code === 0, `真实仓库应通过自建门禁,实际 ${real.code}:${real.output}`);
+        assert(real.output.includes("14 处 uses"), `真实仓库应报出 14 处引用:${real.output}`);
+      });
+      await suite.case("5. 真实仓库 --no-baseline 应通过", async () => {
+        const relaxedReal = await runCli(["--no-baseline"]);
+        assert(relaxedReal.code === 0, `真实仓库 --no-baseline 应通过,实际 ${relaxedReal.code}:${relaxedReal.output}`);
+      });
       console.log("[ok] pinned-actions:真实仓库 CLI 复跑通过(14 处引用 / 基线一致)");
     }
   } finally {
@@ -555,4 +603,5 @@ export async function run() {
       if (!outcome.ok) throw new Error(`沙盒清理失败:${dir}:${outcome.error?.message ?? "删除后目录仍存在"}`);
     }
   }
+  return { cases: suite.results };
 }

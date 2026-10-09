@@ -23,6 +23,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 import { ROOT } from "../harness/paths.js";
 import { removeTree } from "../harness/temp-resource.js";
 import {
@@ -45,25 +46,36 @@ function readRepoText(...parts) {
 }
 
 export async function run() {
+  const suite = createCaseSuite();
   // ---- 1. 判定逻辑正/负锚点:先证明会抓错,再用于真实配置 ----
-  assert(classifyAuthenticode("Valid") === "signed", "Valid 应映射为 signed");
-  assert(classifyAuthenticode("NotSigned") === "unsigned", "NotSigned 应映射为 unsigned");
-  assert(classifyAuthenticode("NotTrusted") === "indeterminate", "NotTrusted(有签名但链不受信)不得当作 unsigned");
-  assert(classifyAuthenticode("UnknownError") === "indeterminate", "UnknownError 应为 indeterminate");
-  assert(classifyAuthenticode("HashMismatch") === "indeterminate", "HashMismatch 应为 indeterminate");
-  assert(classifyAuthenticode("") === "indeterminate", "空状态不得当作 unsigned");
-  assert(classifyAuthenticode("  notsigned  ") === "indeterminate", "大小写不匹配的状态不得当作 unsigned");
+  // 三态映射的每个取值都是独立的词法判定:一种判红不该掩盖其余五种
+  await suite.case("1. 三态映射:Valid/NotSigned 落明确态,其余含空与大写不符落 indeterminate", () => {
+    assert(classifyAuthenticode("Valid") === "signed", "Valid 应映射为 signed");
+    assert(classifyAuthenticode("NotSigned") === "unsigned", "NotSigned 应映射为 unsigned");
+    assert(classifyAuthenticode("NotTrusted") === "indeterminate", "NotTrusted(有签名但链不受信)不得当作 unsigned");
+    assert(classifyAuthenticode("UnknownError") === "indeterminate", "UnknownError 应为 indeterminate");
+    assert(classifyAuthenticode("HashMismatch") === "indeterminate", "HashMismatch 应为 indeterminate");
+    assert(classifyAuthenticode("") === "indeterminate", "空状态不得当作 unsigned");
+    assert(classifyAuthenticode("  notsigned  ") === "indeterminate", "大小写不匹配的状态不得当作 unsigned");
+  });
   console.log("[ok] signature-status:三态映射锚点(Valid/NotSigned/NotTrusted/UnknownError/空/大小写不符)");
 
-  assert(compareStatus("unsigned", "unsigned").ok === true, "一致状态应放行");
-  const mismatch = compareStatus("signed", "unsigned");
-  assert(mismatch.ok === false && Boolean(mismatch.reason), "状态冲突应判红并给出原因");
-  const indet = compareStatus("indeterminate", "unsigned");
-  assert(indet.ok === false, "无法判定必须判红");
-  assert(
-    Boolean(indet.reason) && String(indet.reason).includes("不得当作"),
-    "无法判定的提示须明确「不得当作未签名放行」",
-  );
+  // 一致放行 / 冲突判红 / 无法判定判红是三件事(修掉一个不该掩盖另两个)
+  await suite.case("1. 比对:一致放行", () => {
+    assert(compareStatus("unsigned", "unsigned").ok === true, "一致状态应放行");
+  });
+  await suite.case("1. 比对:状态冲突判红并给出原因", () => {
+    const mismatch = compareStatus("signed", "unsigned");
+    assert(mismatch.ok === false && Boolean(mismatch.reason), "状态冲突应判红并给出原因");
+  });
+  await suite.case("1. 比对:无法判定判红且措辞写明「不得当作」", () => {
+    const indet = compareStatus("indeterminate", "unsigned");
+    assert(indet.ok === false, "无法判定必须判红");
+    assert(
+      Boolean(indet.reason) && String(indet.reason).includes("不得当作"),
+      "无法判定的提示须明确「不得当作未签名放行」",
+    );
+  });
   console.log("[ok] signature-status:比对锚点(一致放行/冲突判红/无法判定判红且措辞正确)");
 
   // ---- 1b. buildEntry:探测路径(注入 probe)----
@@ -71,7 +83,7 @@ export async function run() {
   // 模块加载不了而直接抛错(PSModulePath 被 CI 注入值污染)。原实现里 execFileSync
   // 抛错会绕过全部三态逻辑,直接崩成 Node 原始堆栈;「探测手段不可用」必须
   // 与「状态无法判定」分开,同样判红,不得被当成 unsigned 放行。
-  {
+  await suite.case("1b. buildEntry:正常映射(NotSigned 放行 / Valid 冲突判红 / NotTrusted 走 indeterminate)", () => {
     const okEntry = buildEntry(path.join(ROOT, "release", "Setup-1.0.0.exe"), () => "NotSigned");
     assert(okEntry.status === "unsigned" && okEntry.ok === true, "探测返回 NotSigned 应判为 unsigned 且放行");
 
@@ -83,7 +95,8 @@ export async function run() {
       indetEntry.status === "indeterminate" && indetEntry.ok === false,
       "NotTrusted 仍走 indeterminate 路径且判红",
     );
-
+  });
+  await suite.case("1b. buildEntry:探测命令失败单列 probe-unavailable 并判红、措辞与原始错误可定位", () => {
     const boom = buildEntry(path.join(ROOT, "release", "Setup-1.0.0.exe"), () => {
       // 忠实复刻 CI 上真实 PowerShell 报错形态(含末行的 FullyQualifiedErrorId 标签)
       throw new Error(
@@ -104,11 +117,12 @@ export async function run() {
       String(boom.reason).includes("CouldNotAutoloadMatchingModule"),
       `探测失败须带上原始错误首行以便定位,实际:${String(boom.reason)}`,
     );
-  }
+  });
   console.log("[ok] signature-status:buildEntry(正常映射/探测不可用单列并判红且措辞正确)");
 
   // ---- 2. 沙箱:collectExeFiles 只收 exe,递归且忽略非可执行产物 ----
   const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "m2w-signature-"));
+  // 清理留在 run() 顶层:进了 case 的话,case 失败会先抛、finally 不执行,沙箱残留系统临时区
   try {
     fs.mkdirSync(path.join(sandbox, "win-unpacked"));
     fs.writeFileSync(path.join(sandbox, "Setup-1.0.0.exe"), "MZ");
@@ -116,15 +130,17 @@ export async function run() {
     fs.writeFileSync(path.join(sandbox, "latest.yml"), "version: 1.0.0");
     fs.writeFileSync(path.join(sandbox, "win-unpacked", "MarkdownToWord.exe"), "MZ");
     const found = collectExeFiles(sandbox).map((f) => path.relative(sandbox, f).split(path.sep).join("/")).sort();
-    assert(
-      found.length === 2 && found.includes("Setup-1.0.0.exe") && found.includes("win-unpacked/MarkdownToWord.exe"),
-      `exe 收集应只收 exe 且递归,实际 ${JSON.stringify(found)}`,
-    );
-    assert(
-      !found.some((f) => f.endsWith(".blockmap") || f.endsWith(".yml")),
-      "blockmap/yml 等非可执行产物不得被当作 exe",
-    );
-    assert(collectExeFiles(path.join(sandbox, "no-such-dir")).length === 0, "目录不存在应返回空数组而非抛错");
+    await suite.case("2. exe 收集:递归收全 exe、排除非可执行产物、缺目录不抛", () => {
+      assert(
+        found.length === 2 && found.includes("Setup-1.0.0.exe") && found.includes("win-unpacked/MarkdownToWord.exe"),
+        `exe 收集应只收 exe 且递归,实际 ${JSON.stringify(found)}`,
+      );
+      assert(
+        !found.some((f) => f.endsWith(".blockmap") || f.endsWith(".yml")),
+        "blockmap/yml 等非可执行产物不得被当作 exe",
+      );
+      assert(collectExeFiles(path.join(sandbox, "no-such-dir")).length === 0, "目录不存在应返回空数组而非抛错");
+    });
     console.log("[ok] signature-status:exe 收集锚点(递归/排除非 exe/缺目录不抛)");
   } finally {
     // 删不掉即抛:沙箱残留不得静默留在系统临时区(助手只吸收 Windows 上的瞬时占用)
@@ -136,36 +152,45 @@ export async function run() {
   const pkg = JSON.parse(readRepoText("package.json"));
   const win = pkg.build?.win ?? {};
   const nsis = pkg.build?.nsis ?? {};
-  for (const key of ["certificate", "certificateFile", "signtoolOptions", "sign", "signingHashAlgorithms"]) {
-    assert(!(key in win), `build.win 不得出现 ${key}(当前存在 → 声明的未签名状态为假话)`);
-    assert(!(key in nsis), `build.nsis 不得出现 ${key}(当前存在 → 声明的未签名状态为假话)`);
-  }
-  assert(
-    pkg.build?.forceCodeSigning === undefined,
-    "build.forceCodeSigning 不得为 true:adr-013 选择「披露」而非「无证书即发版失败」,置 true 会让发布链直接失败",
-  );
+  await suite.case("3. 打包配置无证书键(build.win 与 build.nsis 均无签名配置)", () => {
+    for (const key of ["certificate", "certificateFile", "signtoolOptions", "sign", "signingHashAlgorithms"]) {
+      assert(!(key in win), `build.win 不得出现 ${key}(当前存在 → 声明的未签名状态为假话)`);
+      assert(!(key in nsis), `build.nsis 不得出现 ${key}(当前存在 → 声明的未签名状态为假话)`);
+    }
+  });
+  await suite.case("3. build.forceCodeSigning 未设为 true(选「披露」而非「发版失败」)", () => {
+    assert(
+      pkg.build?.forceCodeSigning === undefined,
+      "build.forceCodeSigning 不得为 true:adr-013 选择「披露」而非「无证书即发版失败」,置 true 会让发布链直接失败",
+    );
+  });
   console.log("[ok] signature-status:打包配置无证书且未设 forceCodeSigning");
 
   // ---- 4. 事实侧基准常量(声明侧的「三处同改」耦合规则已移入 adr-013)----
   // 刻意**保留**这一条: 它断言的是事实侧的源(常量),不是文档措辞。
   // 若有人把常量翻成 signed,发布链会拿它与真实 exe 比对而红 —— 那是难以定位的失败,
   // 这里先给一句清楚的。
-  assert(
-    EXPECTED_SIGNATURE_STATUS === "unsigned",
-    `脚本声明状态应为 unsigned,实际 ${String(EXPECTED_SIGNATURE_STATUS)}`,
-  );
+  await suite.case("4. 事实侧基准常量为 unsigned", () => {
+    assert(
+      EXPECTED_SIGNATURE_STATUS === "unsigned",
+      `脚本声明状态应为 unsigned,实际 ${String(EXPECTED_SIGNATURE_STATUS)}`,
+    );
+  });
   console.log("[ok] signature-status:事实侧基准常量为 unsigned");
 
   // ---- 5. 用户文档仍保留未签名披露(用户侧唯一提示面)----
   const guide = readRepoText("docs", "USER-GUIDE.md");
-  assert(guide.includes("SmartScreen"), "USER-GUIDE 必须保留 SmartScreen 说明");
-  assert(
-    guide.includes("未做代码签名") || guide.includes("未签名"),
-    "USER-GUIDE 必须保留未签名披露,不得因优化而删除用户可见的风险提示",
-  );
+  await suite.case("5. 用户文档保留 SmartScreen 说明与未签名披露", () => {
+    assert(guide.includes("SmartScreen"), "USER-GUIDE 必须保留 SmartScreen 说明");
+    assert(
+      guide.includes("未做代码签名") || guide.includes("未签名"),
+      "USER-GUIDE 必须保留未签名披露,不得因优化而删除用户可见的风险提示",
+    );
+  });
   console.log("[ok] signature-status:用户文档保留 SmartScreen 与未签名披露");
 
   console.log("[ok] signature-status:门禁通过(配置无证书/基准常量为 unsigned/用户文档保留披露,两处一致)");
+  return { cases: suite.results };
 }
 
 export const fixtures = null;

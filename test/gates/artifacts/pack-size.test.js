@@ -26,6 +26,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createAsserter } from "../../harness/assert.js";
+import { createCaseSuite } from "../../harness/case.js";
 import { ROOT } from "../../harness/paths.js";
 import { removeFile, removeTree } from "../../harness/temp-resource.js";
 import {
@@ -322,6 +323,7 @@ function assertNoVolatileFields(report, label) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   /** @type {string[]} */
   const sandboxes = [];
   const track = (/** @type {string} */ dir) => {
@@ -340,51 +342,59 @@ export async function run() {
   try {
     // ================= 6. 体积实测:正向沙盒(字段与数值精确) =================
     {
+      // 取数(造沙盒 / 实测 / 核对 map)留在 case 外:case 内只放判定。段级守卫也留在
+      // case 外 —— 它是下面每一项判定的前置,失败会连带 TypeError 盖掉真因。
       const sb = track(fs.mkdtempSync(path.join(os.tmpdir(), SANDBOX_PREFIX)));
       const box = createReleaseSandbox({ root: sb, asarFiles: sandboxAsarFiles() });
       const measured = measure({ unpackedDir: box.unpackedDir, releaseDir: box.releaseDir });
       assert(measured.ok, `沙盒产物应可实测:${measured.ok ? "" : measured.reason}`);
       const items = measured.measurement.items;
-      // 逐项核对数值来源:app.asar = 文件字节,解包 exe = 2MiB,合计 = exe+asar+pak
-      assert(items.appAsar?.bytes === box.asar.fileBytes, `app.asar 应为文件字节 ${box.asar.fileBytes},实际 ${String(items.appAsar?.bytes)}`);
-      assert(items.unpackedExe?.bytes === box.exeBytes, `解包 exe 应为 ${box.exeBytes},实际 ${String(items.unpackedExe?.bytes)}`);
-      assert(items.installer?.bytes === box.installerBytes, `安装包应为 ${box.installerBytes},实际 ${String(items.installer?.bytes)}`);
-      assert(
-        items.unpackedTotal?.bytes === box.exeBytes + box.pakBytes + box.asar.fileBytes,
-        `解包目录合计应为 exe+pak+asar,实际 ${String(items.unpackedTotal?.bytes)}`,
-      );
-      // package.json 现在是真实内容(判重要读它),故按内容长度核算,不用魔法数
-      const katexManifestBytes = Buffer.byteLength(
-        manifest("katex", KATEX_PROJECT_VERSION, { commander: "^8.3.0" }),
-        "utf8",
-      );
-      assert(items.asarKatexFonts?.bytes === 28_000, `KaTeX 字体应为 16000+12000,实际 ${String(items.asarKatexFonts?.bytes)}`);
-      assert(
-        items.asarKatex?.bytes === katexManifestBytes + 22_000 + 260_000 + 28_000,
-        `KaTeX 资源应为 pkg(${katexManifestBytes})+css+js+字体,实际 ${String(items.asarKatex?.bytes)}`,
-      );
-      const mermaidManifestBytes = Buffer.byteLength(manifest("mermaid", "11.16.1"), "utf8");
-      assert(
-        items.asarMermaid?.bytes === mermaidManifestBytes + 1_800_000,
-        `Mermaid 应为 pkg(${mermaidManifestBytes})+dist,实际 ${String(items.asarMermaid?.bytes)}`,
-      );
-      assert(
-        /** @type {{ headerBytes: number, entryCount: number, unpackedEntryBytes: number }} */ (
-          /** @type {unknown} */ (measured.measurement.asar)
-        ).headerBytes === box.asar.headerBytes,
-        "asar 头字节应与合成包一致",
-      );
-      // asar 头部真解析(不是桩):包内条目能按路径取到
-      const tree = readAsarTree(box.asarPath);
-      assert(tree.ok, "合成 asar 应能被真实头部解析器读出");
-      assert(
-        tree.entries.has("node_modules/katex/dist/fonts/KaTeX_Main-Regular.woff2"),
-        "asar 目录树应能按路径下探到字体文件",
-      );
-      assert(
-        tree.entries.get("node_modules/katex/dist/fonts/KaTeX_Main-Regular.woff2")?.size === 16_000,
-        "条目 size 应原样读出",
-      );
+
+      await suite.case("6a 各子项字节逐项核对(含 asar 头两处)", () => {
+        // 逐项核对数值来源:app.asar = 文件字节,解包 exe = 2MiB,合计 = exe+asar+pak
+        assert(items.appAsar?.bytes === box.asar.fileBytes, `app.asar 应为文件字节 ${box.asar.fileBytes},实际 ${String(items.appAsar?.bytes)}`);
+        assert(items.unpackedExe?.bytes === box.exeBytes, `解包 exe 应为 ${box.exeBytes},实际 ${String(items.unpackedExe?.bytes)}`);
+        assert(items.installer?.bytes === box.installerBytes, `安装包应为 ${box.installerBytes},实际 ${String(items.installer?.bytes)}`);
+        assert(
+          items.unpackedTotal?.bytes === box.exeBytes + box.pakBytes + box.asar.fileBytes,
+          `解包目录合计应为 exe+pak+asar,实际 ${String(items.unpackedTotal?.bytes)}`,
+        );
+        // package.json 现在是真实内容(判重要读它),故按内容长度核算,不用魔法数
+        const katexManifestBytes = Buffer.byteLength(
+          manifest("katex", KATEX_PROJECT_VERSION, { commander: "^8.3.0" }),
+          "utf8",
+        );
+        assert(items.asarKatexFonts?.bytes === 28_000, `KaTeX 字体应为 16000+12000,实际 ${String(items.asarKatexFonts?.bytes)}`);
+        assert(
+          items.asarKatex?.bytes === katexManifestBytes + 22_000 + 260_000 + 28_000,
+          `KaTeX 资源应为 pkg(${katexManifestBytes})+css+js+字体,实际 ${String(items.asarKatex?.bytes)}`,
+        );
+        const mermaidManifestBytes = Buffer.byteLength(manifest("mermaid", "11.16.1"), "utf8");
+        assert(
+          items.asarMermaid?.bytes === mermaidManifestBytes + 1_800_000,
+          `Mermaid 应为 pkg(${mermaidManifestBytes})+dist,实际 ${String(items.asarMermaid?.bytes)}`,
+        );
+        assert(
+          /** @type {{ headerBytes: number, entryCount: number, unpackedEntryBytes: number }} */ (
+            /** @type {unknown} */ (measured.measurement.asar)
+          ).headerBytes === box.asar.headerBytes,
+          "asar 头字节应与合成包一致",
+        );
+      });
+
+      await suite.case("6a asar 头部真解析:目录树按路径下探到条目且 size 原样读出", () => {
+        // asar 头部真解析(不是桩):包内条目能按路径取到
+        const tree = readAsarTree(box.asarPath);
+        assert(tree.ok, "合成 asar 应能被真实头部解析器读出");
+        assert(
+          tree.entries.has("node_modules/katex/dist/fonts/KaTeX_Main-Regular.woff2"),
+          "asar 目录树应能按路径下探到字体文件",
+        );
+        assert(
+          tree.entries.get("node_modules/katex/dist/fonts/KaTeX_Main-Regular.woff2")?.size === 16_000,
+          "条目 size 应原样读出",
+        );
+      });
 
       // 基线 = 实测值 → 全项 ok、pass
       /** @type {Record<string, number>} */
@@ -394,21 +404,7 @@ export async function run() {
         if (typeof value === "number") measuredMap[spec.id] = value;
       }
       const verdict = evaluate(measured.measurement, parseBaseline(baselineDoc(measuredMap)));
-      assert(verdict.status === STATUS.pass, `基线等于实测时应通过,实际 ${verdict.status}:${verdict.problems.join("; ")}`);
-      assert(
-        verdict.rows.every((row) => row.verdict === "ok"),
-        `全项应为 ok,实际 ${JSON.stringify(verdict.rows.map((row) => [row.id, row.verdict]))}`,
-      );
       const appAsarRow = verdict.rows.find((row) => row.id === "appAsar");
-      assert(appAsarRow?.deltaBytes === 0, `等值基线差值应为 0,实际 ${String(appAsarRow?.deltaBytes)}`);
-      assert(
-        appAsarRow?.allowedGrowthBytes === Math.max(Math.floor(0.2 * box.asar.fileBytes), 64 * 1024 * 1024),
-        "容许增长应为 max(基线×20%, 64MiB)",
-      );
-      assert(
-        measured.measurement.asar.headerBytes === box.asar.headerBytes,
-        "asar 头字节应与合成包一致",
-      );
       const baseline = parseBaseline(baselineDoc(measuredMap));
       const report = buildPackSizeReport({
         measurement: measured.measurement,
@@ -416,33 +412,58 @@ export async function run() {
         verdict,
         baseline,
       });
-      assert(report.status === STATUS.pass && report.measured === true, "报告应记 pass/measured=true");
-      assertNoVolatileFields(report, "体积报告(沙盒正向)");
       const summary = renderPackSizeSummary(report);
-      assert(summary.includes("[pack-size] 状态 pass"), `摘要应给出通过结论:${summary}`);
-      assert(summary.includes("app.asar(appAsar)"), "摘要应逐项列出(含 id)");
-      assert(report.duplicates?.findings.length === 0, "沙盒正向只有一份 katex 副本,不应产生判重结论");
-      // 沙盒里只有三个真实 manifest(项目自身 / katex / mermaid;docx 只放了一个 index.js,
-      // 故意不给 manifest,顺带证明「没有 package.json 的目录不被当成包根」)
-      assert(report.duplicates?.packagesAnalyzed === 3, `应统计到 3 个包根,实际 ${String(report.duplicates?.packagesAnalyzed)}`);
-      // 判重原语:最小 semver 范围判定(覆盖依赖声明里实际出现的形态)
-      assert(satisfiesRange("0.16.47", "^0.16.45") === true, "0.16.47 应满足 ^0.16.45");
-      assert(satisfiesRange("0.18.1", "^0.16.45") === false, "0.18.1 不应满足 ^0.16.45");
-      assert(satisfiesRange("0.18.1", "^0.18.1") === true, "0.18.1 应满足 ^0.18.1");
-      assert(satisfiesRange("2.12.1", "1 - 2") === true, "2.12.1 应满足连字符范围 1 - 2");
-      assert(satisfiesRange("3.2.4", "1 - 2") === false, "3.2.4 不应满足 1 - 2");
-      assert(satisfiesRange("8.3.0", ">=8.0.0 <9.0.0") === true, "空格并列范围应按 AND 判定");
-      assert(satisfiesRange("9.0.0", ">=8.0.0 <9.0.0") === false, "空格并列范围上界应生效");
-      assert(satisfiesRange("1.2.3", "^1.0.0 || ^2.0.0") === true, "|| 应按 OR 判定");
-      assert(satisfiesRange("0.6.3", "0.6") === true, "缺省段 0.6 应覆盖 0.6.x");
-      assert(satisfiesRange("0.7.3", "0.6") === false, "缺省段 0.6 不应覆盖 0.7.x");
-      assert(satisfiesRange("1.0.0-rc.1", "^1.0.0") === null, "预发布版本应判不了(null)而非猜");
-      assert(satisfiesRange("1.0.0", "workspace:*") === null, "非 semver 范围应判不了(null)而非抛错");
+
+      await suite.case("6a 基线等于实测 ⇒ 全项 ok、pass、差值 0、容许增长取 max", () => {
+        assert(verdict.status === STATUS.pass, `基线等于实测时应通过,实际 ${verdict.status}:${verdict.problems.join("; ")}`);
+        assert(
+          verdict.rows.every((row) => row.verdict === "ok"),
+          `全项应为 ok,实际 ${JSON.stringify(verdict.rows.map((row) => [row.id, row.verdict]))}`,
+        );
+        assert(appAsarRow?.deltaBytes === 0, `等值基线差值应为 0,实际 ${String(appAsarRow?.deltaBytes)}`);
+        assert(
+          appAsarRow?.allowedGrowthBytes === Math.max(Math.floor(0.2 * box.asar.fileBytes), 64 * 1024 * 1024),
+          "容许增长应为 max(基线×20%, 64MiB)",
+        );
+        assert(
+          measured.measurement.asar.headerBytes === box.asar.headerBytes,
+          "asar 头字节应与合成包一致",
+        );
+      });
+
+      await suite.case("6a 报告与摘要:pass+measured、无易变字段、逐项列出、单副本无判重结论", () => {
+        assert(report.status === STATUS.pass && report.measured === true, "报告应记 pass/measured=true");
+        assertNoVolatileFields(report, "体积报告(沙盒正向)");
+        assert(summary.includes("[pack-size] 状态 pass"), `摘要应给出通过结论:${summary}`);
+        assert(summary.includes("app.asar(appAsar)"), "摘要应逐项列出(含 id)");
+        assert(report.duplicates?.findings.length === 0, "沙盒正向只有一份 katex 副本,不应产生判重结论");
+        // 沙盒里只有三个真实 manifest(项目自身 / katex / mermaid;docx 只放了一个 index.js,
+        // 故意不给 manifest,顺带证明「没有 package.json 的目录不被当成包根」)
+        assert(report.duplicates?.packagesAnalyzed === 3, `应统计到 3 个包根,实际 ${String(report.duplicates?.packagesAnalyzed)}`);
+      });
+
+      await suite.case("6a 判重原语:semver 范围最小判定(覆盖依赖声明里实际出现的形态)", () => {
+        assert(satisfiesRange("0.16.47", "^0.16.45") === true, "0.16.47 应满足 ^0.16.45");
+        assert(satisfiesRange("0.18.1", "^0.16.45") === false, "0.18.1 不应满足 ^0.16.45");
+        assert(satisfiesRange("0.18.1", "^0.18.1") === true, "0.18.1 应满足 ^0.18.1");
+        assert(satisfiesRange("2.12.1", "1 - 2") === true, "2.12.1 应满足连字符范围 1 - 2");
+        assert(satisfiesRange("3.2.4", "1 - 2") === false, "3.2.4 不应满足 1 - 2");
+        assert(satisfiesRange("8.3.0", ">=8.0.0 <9.0.0") === true, "空格并列范围应按 AND 判定");
+        assert(satisfiesRange("9.0.0", ">=8.0.0 <9.0.0") === false, "空格并列范围上界应生效");
+        assert(satisfiesRange("1.2.3", "^1.0.0 || ^2.0.0") === true, "|| 应按 OR 判定");
+        assert(satisfiesRange("0.6.3", "0.6") === true, "缺省段 0.6 应覆盖 0.6.x");
+        assert(satisfiesRange("0.7.3", "0.6") === false, "缺省段 0.6 不应覆盖 0.7.x");
+        assert(satisfiesRange("1.0.0-rc.1", "^1.0.0") === null, "预发布版本应判不了(null)而非猜");
+        assert(satisfiesRange("1.0.0", "workspace:*") === null, "非 semver 范围应判不了(null)而非抛错");
+      });
+
       console.log("[ok] observability:6a 体积实测正向(10 项字节逐项核对 + asar 头真解析 + 基线等值 → pass;单副本不产生判重结论)");
     }
 
     // ================= 7. 体积门禁负向:超阈值 / 异常缩小 / 必需子项缺失 =================
     {
+      // 取数(两份沙盒 + 实测 + 四个 verdict)全留在 case 外:7a/7b/7c/7e 共用第一份
+      // 实测,7d 用第二份,四个 case 的判定对象都由这里的取数决定。
       const sb = track(fs.mkdtempSync(path.join(os.tmpdir(), SANDBOX_PREFIX)));
       const box = createReleaseSandbox({ root: sb, asarFiles: sandboxAsarFiles() });
       const measured = measure({ unpackedDir: box.unpackedDir, releaseDir: box.releaseDir });
@@ -453,56 +474,10 @@ export async function run() {
         const value = measured.measurement.items[spec.id]?.bytes;
         if (typeof value === "number") measuredMap[spec.id] = value;
       }
-
-      // 7a 超阈值:点名是哪个子项 + 容许增长字节数取 max(相对, 绝对)
-      const tiny = parseBaseline(
-        baselineDoc(measuredMap, { asarNodeModules: 1000 }, { minGrowthBytes: 1, maxRelativeGrowth: 0.2 }),
-      );
-      const overVerdict = evaluate(measured.measurement, tiny);
-      assert(overVerdict.status === STATUS.fail, "子项超阈值应判红");
-      const overRow = overVerdict.rows.find((row) => row.id === "asarNodeModules");
-      assert(overRow?.verdict === "over", `asarNodeModules 应判 over,实际 ${overRow?.verdict}`);
-      assert(overRow?.allowedGrowthBytes === 200, `容许增长应为 1000×0.2=200,实际 ${String(overRow?.allowedGrowthBytes)}`);
-      const overProblem = overVerdict.problems.find((problem) => problem.includes("asarNodeModules"));
-      assert(overProblem !== undefined, "超阈值问题行应点名条目 id");
-      assert(
-        overProblem.includes("asar 内 node_modules(asarNodeModules)体积超阈值:1000 →"),
-        `问题行应含条目名与基线→实测,实际 ${overProblem}`,
-      );
-      // 未越界的条目不得被连坐
-      assert(
-        overVerdict.rows.filter((row) => row.verdict === "over").length === 1,
-        `只应有 1 项越界,实际 ${JSON.stringify(overVerdict.rows.filter((row) => row.verdict === "over").map((row) => row.id))}`,
-      );
-
-      // 7b 刚好在容许范围内(取 max 闸的宽者:绝对闸比相对闸宽时不判红)
-      const withinAbsolute = parseBaseline(
-        baselineDoc(measuredMap, { appAsar: Math.floor(num(measuredMap, "appAsar", "7b") / 1.2) }),
-      );
-      const withinVerdict = evaluate(measured.measurement, withinAbsolute);
-      const withinRow = withinVerdict.rows.find((row) => row.id === "appAsar");
-      assert(
-        withinRow?.verdict === "ok",
-        `增长 20% 但未越过 64MiB 绝对闸时不得判红(宁可漏报),实际 ${withinRow?.verdict}(+${String(withinRow?.deltaBytes)} 字节,容许 ${String(withinRow?.allowedGrowthBytes)})`,
-      );
-
-      // 7c 异常缩小(多半是资源没进包)
-      const shrink = parseBaseline(
-        baselineDoc(measuredMap, { asarKatexFonts: 10 * num(measuredMap, "asarKatexFonts", "7c") }),
-      );
-      const shrinkVerdict = evaluate(measured.measurement, shrink);
-      const shrinkRow = shrinkVerdict.rows.find((row) => row.id === "asarKatexFonts");
-      assert(shrinkRow?.verdict === "under", `缩到基线 10% 应判 under,实际 ${shrinkRow?.verdict}`);
-      assert(
-        shrinkVerdict.problems.some((problem) => problem.includes("体积异常缩小") && problem.includes("asarKatexFonts")),
-        `缩小问题行应点名条目,实际 ${JSON.stringify(shrinkVerdict.problems)}`,
-      );
-
-      // 7d 必需子项缺失(资源没进包)判红;非必需条目(安装包)缺失只告警
+      // 7d 的沙盒:删掉整个 KaTeX 字体目录(两个字体文件),模拟「资源没进包」
       const sb2 = track(fs.mkdtempSync(path.join(os.tmpdir(), SANDBOX_PREFIX)));
       const full = sandboxAsarFiles();
       const asarFiles = { ...full };
-      // 删掉整个 KaTeX 字体目录(两个字体文件),模拟「资源没进包」
       Reflect.deleteProperty(asarFiles, "node_modules/katex/dist/fonts/KaTeX_Main-Regular.woff2");
       Reflect.deleteProperty(asarFiles, "node_modules/katex/dist/fonts/KaTeX_Math-Italic.woff2");
       const box2 = createReleaseSandbox({ root: sb2, asarFiles });
@@ -515,19 +490,72 @@ export async function run() {
         const value = measured2.measurement.items[spec.id]?.bytes;
         if (typeof value === "number") map2[spec.id] = value;
       }
+
+      // 7a 超阈值:点名是哪个子项 + 容许增长字节数取 max(相对, 绝对)
+      const tiny = parseBaseline(
+        baselineDoc(measuredMap, { asarNodeModules: 1000 }, { minGrowthBytes: 1, maxRelativeGrowth: 0.2 }),
+      );
+      const overVerdict = evaluate(measured.measurement, tiny);
+      const overRow = overVerdict.rows.find((row) => row.id === "asarNodeModules");
+      const overProblem = overVerdict.problems.find((problem) => problem.includes("asarNodeModules"));
+      await suite.case("7a 子项超阈值:判红并点名条目与容许增长字节,未越界条目不连坐", () => {
+        assert(overVerdict.status === STATUS.fail, "子项超阈值应判红");
+        assert(overRow?.verdict === "over", `asarNodeModules 应判 over,实际 ${overRow?.verdict}`);
+        assert(overRow?.allowedGrowthBytes === 200, `容许增长应为 1000×0.2=200,实际 ${String(overRow?.allowedGrowthBytes)}`);
+        assert(overProblem !== undefined, "超阈值问题行应点名条目 id");
+        assert(
+          overProblem.includes("asar 内 node_modules(asarNodeModules)体积超阈值:1000 →"),
+          `问题行应含条目名与基线→实测,实际 ${overProblem}`,
+        );
+        // 未越界的条目不得被连坐
+        assert(
+          overVerdict.rows.filter((row) => row.verdict === "over").length === 1,
+          `只应有 1 项越界,实际 ${JSON.stringify(overVerdict.rows.filter((row) => row.verdict === "over").map((row) => row.id))}`,
+        );
+      });
+
+      // 7b 刚好在容许范围内(取 max 闸的宽者:绝对闸比相对闸宽时不判红)
+      const withinAbsolute = parseBaseline(
+        baselineDoc(measuredMap, { appAsar: Math.floor(num(measuredMap, "appAsar", "7b") / 1.2) }),
+      );
+      const withinVerdict = evaluate(measured.measurement, withinAbsolute);
+      const withinRow = withinVerdict.rows.find((row) => row.id === "appAsar");
+      await suite.case("7b 增长 20% 未越过绝对闸时不判红(宁可漏报)", () => {
+        assert(
+          withinRow?.verdict === "ok",
+          `增长 20% 但未越过 64MiB 绝对闸时不得判红(宁可漏报),实际 ${withinRow?.verdict}(+${String(withinRow?.deltaBytes)} 字节,容许 ${String(withinRow?.allowedGrowthBytes)})`,
+        );
+      });
+
+      // 7c 异常缩小(多半是资源没进包)
+      const shrink = parseBaseline(
+        baselineDoc(measuredMap, { asarKatexFonts: 10 * num(measuredMap, "asarKatexFonts", "7c") }),
+      );
+      const shrinkVerdict = evaluate(measured.measurement, shrink);
+      const shrinkRow = shrinkVerdict.rows.find((row) => row.id === "asarKatexFonts");
+      await suite.case("7c 异常缩小:判 under 并在问题行点名条目", () => {
+        assert(shrinkRow?.verdict === "under", `缩到基线 10% 应判 under,实际 ${shrinkRow?.verdict}`);
+        assert(
+          shrinkVerdict.problems.some((problem) => problem.includes("体积异常缩小") && problem.includes("asarKatexFonts")),
+          `缩小问题行应点名条目,实际 ${JSON.stringify(shrinkVerdict.problems)}`,
+        );
+      });
+
       const missingVerdict = evaluate(measured2.measurement, parseBaseline(baselineDoc(map2)));
       const fontRow = missingVerdict.rows.find((row) => row.id === "asarKatexFonts");
-      assert(fontRow?.verdict === "missing", `必需子项缺失应判 missing,实际 ${fontRow?.verdict}`);
-      assert(fontRow?.present === false && fontRow?.bytes === null, "缺失条目的字节应为 null(不填 0 冒充实测)");
       const installerRow = missingVerdict.rows.find((row) => row.id === "installer");
-      assert(
-        installerRow?.verdict === "missing" && missingVerdict.warnings.some((w) => w.includes("installer")),
-        `非必需条目缺失只告警,实际 verdict=${installerRow?.verdict} warnings=${JSON.stringify(missingVerdict.warnings)}`,
-      );
-      assert(
-        missingVerdict.problems.some((problem) => problem.includes("asarKatexFonts") && problem.includes("在产物中不存在")),
-        `必需子项缺失应判红并点名,实际 ${JSON.stringify(missingVerdict.problems)}`,
-      );
+      await suite.case("7d 必需子项缺失判红并点名;非必需条目(安装包)缺失只告警", () => {
+        assert(fontRow?.verdict === "missing", `必需子项缺失应判 missing,实际 ${fontRow?.verdict}`);
+        assert(fontRow?.present === false && fontRow?.bytes === null, "缺失条目的字节应为 null(不填 0 冒充实测)");
+        assert(
+          installerRow?.verdict === "missing" && missingVerdict.warnings.some((w) => w.includes("installer")),
+          `非必需条目缺失只告警,实际 verdict=${installerRow?.verdict} warnings=${JSON.stringify(missingVerdict.warnings)}`,
+        );
+        assert(
+          missingVerdict.problems.some((problem) => problem.includes("asarKatexFonts") && problem.includes("在产物中不存在")),
+          `必需子项缺失应判红并点名,实际 ${JSON.stringify(missingVerdict.problems)}`,
+        );
+      });
 
       // 7e 基线未登记的条目只告警(不误红)
       const partial = parseBaseline({
@@ -537,14 +565,16 @@ export async function run() {
         items: { appAsar: num(measuredMap, "appAsar", "7e") },
       });
       const partialVerdict = evaluate(measured.measurement, partial);
-      assert(
-        partialVerdict.status === STATUS.pass,
-        `基线只登记 1 项时其余项不应判红,实际 ${partialVerdict.status}:${partialVerdict.problems.join("; ")}`,
-      );
-      assert(
-        partialVerdict.warnings.some((warning) => warning.includes("基线未登记")),
-        `未登记条目应告警,实际 ${JSON.stringify(partialVerdict.warnings)}`,
-      );
+      await suite.case("7e 基线未登记的条目只告警,不误红", () => {
+        assert(
+          partialVerdict.status === STATUS.pass,
+          `基线只登记 1 项时其余项不应判红,实际 ${partialVerdict.status}:${partialVerdict.problems.join("; ")}`,
+        );
+        assert(
+          partialVerdict.warnings.some((warning) => warning.includes("基线未登记")),
+          `未登记条目应告警,实际 ${JSON.stringify(partialVerdict.warnings)}`,
+        );
+      });
       console.log("[ok] observability:7 体积门禁负向(超阈值点名/绝对闸宽者不误报/异常缩小/必需子项缺失/非必需仅告警/未登记仅告警)");
     }
 
@@ -601,38 +631,47 @@ export async function run() {
       // 8a 真缺陷之一:同包名**同版本**两处,且祖先位置已有同版本 → 判红 + 冗余字节按该版本计
       //     (顶层 0.18.1 + mermaid 嵌套 0.18.1;mermaid 声明 ^0.18.0,被满足 ⇒ 嵌套那份纯属冗余)
       {
+        // 取数留在 case 外:gate 造沙盒实测,findingOf 取结论。findingOf 自身会抛,
+        // 留在 case 外意味着它失败仍是段级失败(与接入前一致),不会让下游断言拿着
+        // undefined 去读属性而报出误导性的 TypeError。
         const result = gate({
           ...sandboxAsarFiles(),
           "node_modules/mermaid/package.json": manifest("mermaid", "11.16.1", { katex: "^0.18.0" }),
           ...katexCopyFiles("node_modules/mermaid/node_modules/katex", KATEX_PROJECT_VERSION),
         });
         const finding = findingOf(result.report, "katex");
-        assert(finding.classification === "redundant-same-version", `同版本冗余嵌套应判 redundant-same-version,实际 ${finding.classification}`);
-        assert(finding.red === true, "同包名同版本多副本是真缺陷,必须判红");
-        assert(
-          result.verdict.status === STATUS.fail && result.report.status === STATUS.fail,
-          `同版本冗余必须让门禁判红,实际 ${result.verdict.status}`,
-        );
-        assert(
-          result.verdict.rows.every((row) => row.verdict === "ok"),
-          `体积项应全 ok(证明红因不是体积阈值),实际 ${JSON.stringify(result.verdict.rows.map((row) => [row.id, row.verdict]))}`,
-        );
         const nested = finding.copies.find((copy) => copy.path === "node_modules/mermaid/node_modules/katex");
         const top = finding.copies.find((copy) => copy.path === "node_modules/katex");
-        assert(nested !== undefined && top !== undefined, "两份副本都应在结论里");
-        assert(
-          finding.reclaimableBytes === nested.bytes,
-          `可回收字节应等于那份多余副本的字节 ${nested.bytes},实际 ${finding.reclaimableBytes}`,
-        );
-        assert(finding.unavoidableBytes === 0, `同版本冗余属可回收,不应记进不可回收,实际 ${finding.unavoidableBytes}`);
         const problem = result.verdict.problems.find((line) => line.includes("katex"));
-        assert(problem !== undefined, "应产出点名 katex 的问题行");
-        assert(
-          problem.includes("不受体积阈值约束") &&
-            problem.includes("node_modules/mermaid/node_modules/katex") &&
-            problem.includes(`0.18.1`),
-          `问题行应说明阈值无关、点名冗余副本路径与版本,实际 ${problem}`,
-        );
+        await suite.case("8a 同版本冗余嵌套:判 redundant-same-version、门禁判红、体积项全 ok", () => {
+          assert(finding.classification === "redundant-same-version", `同版本冗余嵌套应判 redundant-same-version,实际 ${finding.classification}`);
+          assert(finding.red === true, "同包名同版本多副本是真缺陷,必须判红");
+          assert(
+            result.verdict.status === STATUS.fail && result.report.status === STATUS.fail,
+            `同版本冗余必须让门禁判红,实际 ${result.verdict.status}`,
+          );
+          assert(
+            result.verdict.rows.every((row) => row.verdict === "ok"),
+            `体积项应全 ok(证明红因不是体积阈值),实际 ${JSON.stringify(result.verdict.rows.map((row) => [row.id, row.verdict]))}`,
+          );
+        });
+        await suite.case("8a 同版本冗余嵌套:两份副本都在结论里,可回收字节 = 多余那份", () => {
+          assert(nested !== undefined && top !== undefined, "两份副本都应在结论里");
+          assert(
+            finding.reclaimableBytes === nested.bytes,
+            `可回收字节应等于那份多余副本的字节 ${nested.bytes},实际 ${finding.reclaimableBytes}`,
+          );
+          assert(finding.unavoidableBytes === 0, `同版本冗余属可回收,不应记进不可回收,实际 ${finding.unavoidableBytes}`);
+        });
+        await suite.case("8a 同版本冗余嵌套:问题行说明阈值无关、点名冗余副本路径与版本", () => {
+          assert(problem !== undefined, "应产出点名 katex 的问题行");
+          assert(
+            problem.includes("不受体积阈值约束") &&
+              problem.includes("node_modules/mermaid/node_modules/katex") &&
+              problem.includes(`0.18.1`),
+            `问题行应说明阈值无关、点名冗余副本路径与版本,实际 ${problem}`,
+          );
+        });
         console.log("[ok] observability:8a 同包名同版本两处 → 判红(可回收字节 = 多余那份的字节,体积项全 ok)");
       }
 
@@ -651,71 +690,82 @@ export async function run() {
           ...katexCopyFiles("node_modules/micromark-extension-math/node_modules/katex", KATEX_MERMAID_VERSION),
         });
         const finding = findingOf(result.report, "katex");
-        assert(
-          finding.classification === "parallel-versions",
-          `semver 强制并存的场景应判 parallel-versions,实际 ${finding.classification}`,
-        );
-        assert(finding.red === false, "同包名不同版本且声明范围互不重叠 = 合法并存,不得判红");
-        assert(
-          result.verdict.status === STATUS.pass && result.report.status === STATUS.pass,
-          `合法并存不得让门禁判红,实际 ${result.verdict.status}:${result.verdict.problems.join("; ")}`,
-        );
-        assert(
-          finding.reclaimableBytes === 0,
-          `版本互斥的并存没有可回收字节,实际 ${finding.reclaimableBytes}`,
-        );
-        // 版本与「谁要求哪个范围」都要摆出来,复核者一眼能看出是 semver 要求的并存
-        assertDeepEqual(
-          finding.copies.map((copy) => `${copy.path}@${copy.version}`),
-          [
-            `node_modules/katex@${KATEX_PROJECT_VERSION}`,
-            `node_modules/mermaid/node_modules/katex@${KATEX_MERMAID_VERSION}`,
-            `node_modules/micromark-extension-math/node_modules/katex@${KATEX_MERMAID_VERSION}`,
-          ],
-          "三份副本的路径与版本",
-        );
+        // 取数留在 case 外:副本清单与声明来源排序都是纯取数,放在 case 外让 case 只做判定
+        const copiesAsPathAtVersion = finding.copies.map((copy) => `${copy.path}@${copy.version}`);
         const declared = finding.declarations
           .map((decl) => `${decl.requirer}[${decl.field}]=${decl.range}→${String(decl.resolvedTo)}`)
           .sort();
-        assertDeepEqual(
-          declared,
-          [
-            `node_modules/@mdit/plugin-katex[dependencies]=^${KATEX_PROJECT_VERSION}→node_modules/katex`,
-            `node_modules/mermaid[dependencies]=^0.16.45→node_modules/mermaid/node_modules/katex`,
-            `node_modules/micromark-extension-math[dependencies]=^0.16.0→node_modules/micromark-extension-math/node_modules/katex`,
-            `package.json[dependencies]=^${KATEX_PROJECT_VERSION}→node_modules/katex`,
-          ],
-          "声明来源与解析落点",
-        );
         // 两份 0.16.47 分处兄弟分支、根被 0.18.1 占位 ⇒ 当前树形下无法提升位置,字节不可回收
         const sameVersion = finding.copies.filter((copy) => copy.version === KATEX_MERMAID_VERSION);
-        assert(sameVersion.length === 2, `应有两份 ${KATEX_MERMAID_VERSION} 副本,实际 ${sameVersion.length}`);
-        const oneCopyBytes = at(sameVersion, 0, "同版本副本").bytes;
-        assert(
-          finding.unavoidableBytes === oneCopyBytes,
-          `不可回收字节应为同版本兄弟副本中多出来的那份 ${oneCopyBytes},实际 ${finding.unavoidableBytes}`,
-        );
-        assert(
-          finding.notes.some((note) => note.includes("不可回收")),
-          `同版本兄弟副本应注明字节不可回收,实际 ${JSON.stringify(finding.notes)}`,
-        );
-        // ④ 跨版本同名同大小文件不计入可回收
-        assert(
-          finding.crossVersionIdenticalFiles.count === 4,
-          `跨版本同名同大小文件应为 4(css/js/2 字体),实际 ${finding.crossVersionIdenticalFiles.count}`,
-        );
-        assert(
-          finding.crossVersionIdenticalFiles.bytes === 22_000 + 260_000 + 16_000 + 12_000,
-          `跨版本同名文件字节仅作对照,实际 ${finding.crossVersionIdenticalFiles.bytes}`,
-        );
-        assert(
-          finding.reclaimableBytes === 0 && result.report.duplicates?.reclaimableBytes === 0,
-          "跨版本同名文件不得进入可回收口径",
-        );
         const summary = renderPackSizeSummary(result.report);
-        assert(summary.includes("可回收"), "摘要须单列可回收字节");
-        assert(summary.includes("不可回收"), "摘要须单列不可回收字节");
-        assert(summary.includes("mermaid"), "摘要须给出声明来源,便于复核");
+        await suite.case("8b 合法并存:判 parallel-versions、不判红、可回收字节 0", () => {
+          assert(
+            finding.classification === "parallel-versions",
+            `semver 强制并存的场景应判 parallel-versions,实际 ${finding.classification}`,
+          );
+          assert(finding.red === false, "同包名不同版本且声明范围互不重叠 = 合法并存,不得判红");
+          assert(
+            result.verdict.status === STATUS.pass && result.report.status === STATUS.pass,
+            `合法并存不得让门禁判红,实际 ${result.verdict.status}:${result.verdict.problems.join("; ")}`,
+          );
+          assert(
+            finding.reclaimableBytes === 0,
+            `版本互斥的并存没有可回收字节,实际 ${finding.reclaimableBytes}`,
+          );
+        });
+        // 版本与「谁要求哪个范围」都要摆出来,复核者一眼能看出是 semver 要求的并存
+        await suite.case("8b 合法并存:三份副本的路径与版本、声明来源与解析落点逐条列出", () => {
+          assertDeepEqual(
+            copiesAsPathAtVersion,
+            [
+              `node_modules/katex@${KATEX_PROJECT_VERSION}`,
+              `node_modules/mermaid/node_modules/katex@${KATEX_MERMAID_VERSION}`,
+              `node_modules/micromark-extension-math/node_modules/katex@${KATEX_MERMAID_VERSION}`,
+            ],
+            "三份副本的路径与版本",
+          );
+          assertDeepEqual(
+            declared,
+            [
+              `node_modules/@mdit/plugin-katex[dependencies]=^${KATEX_PROJECT_VERSION}→node_modules/katex`,
+              `node_modules/mermaid[dependencies]=^0.16.45→node_modules/mermaid/node_modules/katex`,
+              `node_modules/micromark-extension-math[dependencies]=^0.16.0→node_modules/micromark-extension-math/node_modules/katex`,
+              `package.json[dependencies]=^${KATEX_PROJECT_VERSION}→node_modules/katex`,
+            ],
+            "声明来源与解析落点",
+          );
+        });
+        await suite.case("8b 同版本兄弟副本:不可回收字节 = 多出来的那份,并注明不可回收", () => {
+          assert(sameVersion.length === 2, `应有两份 ${KATEX_MERMAID_VERSION} 副本,实际 ${sameVersion.length}`);
+          const oneCopyBytes = at(sameVersion, 0, "同版本副本").bytes;
+          assert(
+            finding.unavoidableBytes === oneCopyBytes,
+            `不可回收字节应为同版本兄弟副本中多出来的那份 ${oneCopyBytes},实际 ${finding.unavoidableBytes}`,
+          );
+          assert(
+            finding.notes.some((note) => note.includes("不可回收")),
+            `同版本兄弟副本应注明字节不可回收,实际 ${JSON.stringify(finding.notes)}`,
+          );
+        });
+        await suite.case("8b 跨版本同名同大小文件不计入任何可回收口径", () => {
+          assert(
+            finding.crossVersionIdenticalFiles.count === 4,
+            `跨版本同名同大小文件应为 4(css/js/2 字体),实际 ${finding.crossVersionIdenticalFiles.count}`,
+          );
+          assert(
+            finding.crossVersionIdenticalFiles.bytes === 22_000 + 260_000 + 16_000 + 12_000,
+            `跨版本同名文件字节仅作对照,实际 ${finding.crossVersionIdenticalFiles.bytes}`,
+          );
+          assert(
+            finding.reclaimableBytes === 0 && result.report.duplicates?.reclaimableBytes === 0,
+            "跨版本同名文件不得进入可回收口径",
+          );
+        });
+        await suite.case("8b 摘要须单列可回收/不可回收字节并给出声明来源", () => {
+          assert(summary.includes("可回收"), "摘要须单列可回收字节");
+          assert(summary.includes("不可回收"), "摘要须单列不可回收字节");
+          assert(summary.includes("mermaid"), "摘要须给出声明来源,便于复核");
+        });
         console.log(
           `[ok] observability:8b 合法并存(0.18.1 vs 两份 0.16.47,声明 ^0.18.1/^0.16.45/^0.16.0 互斥 → 不判红;可回收 0,不可回收 ${finding.unavoidableBytes})`,
         );
@@ -732,21 +782,25 @@ export async function run() {
           ...katexCopyFiles("node_modules/mermaid/node_modules/katex", "0.18.1"),
         });
         const finding = findingOf(result.report, "katex");
-        assert(
-          finding.classification === "unifyable-versions",
-          `本可统一到同一版本的场景应判 unifyable-versions,实际 ${finding.classification}`,
-        );
-        assert(finding.red === true, "声明范围重叠 = 真问题,必须判红");
-        assert(result.report.status === STATUS.fail, `应判红,实际 ${result.report.status}`);
         const nested = finding.copies.find((copy) => copy.path === "node_modules/mermaid/node_modules/katex");
-        assert(
-          finding.reclaimableBytes === nested?.bytes,
-          `可回收字节应等于可去掉的那份 ${String(nested?.bytes)},实际 ${finding.reclaimableBytes}`,
-        );
-        assert(
-          finding.reasons.some((reason) => reason.includes(KATEX_MERMAID_VERSION) && reason.includes("抽掉后其全部引用方")),
-          "应说明可统一到哪个版本(理由里点名落点版本与引用方),实际 " + JSON.stringify(finding.reasons),
-        );
+        await suite.case("8c 声明范围重叠:判 unifyable-versions 且判红", () => {
+          assert(
+            finding.classification === "unifyable-versions",
+            `本可统一到同一版本的场景应判 unifyable-versions,实际 ${finding.classification}`,
+          );
+          assert(finding.red === true, "声明范围重叠 = 真问题,必须判红");
+          assert(result.report.status === STATUS.fail, `应判红,实际 ${result.report.status}`);
+        });
+        await suite.case("8c 声明范围重叠:可回收字节 = 可去掉的那份,并说明可统一到哪个版本", () => {
+          assert(
+            finding.reclaimableBytes === nested?.bytes,
+            `可回收字节应等于可去掉的那份 ${String(nested?.bytes)},实际 ${finding.reclaimableBytes}`,
+          );
+          assert(
+            finding.reasons.some((reason) => reason.includes(KATEX_MERMAID_VERSION) && reason.includes("抽掉后其全部引用方")),
+            "应说明可统一到哪个版本(理由里点名落点版本与引用方),实际 " + JSON.stringify(finding.reasons),
+          );
+        });
         console.log("[ok] observability:8c 声明范围重叠(>=0.16.0 被 0.16.47 满足 → 多余的 0.18.1 可回收 → 判红)");
       }
 
@@ -761,20 +815,24 @@ export async function run() {
           ...katexCopyFiles("node_modules/mermaid/node_modules/katex", "0.19.0"),
         });
         const finding = findingOf(result.report, "katex");
-        assert(
-          finding.classification === "semver-violation",
-          `引用方拿到不满足其声明范围的版本应判 semver-violation,实际 ${finding.classification}`,
-        );
-        assert(finding.red === true, "semver 违规必须判红");
-        assert(
-          finding.reclaimableBytes === 0,
-          "semver 违规不是「省下来的字节」(副本还得在,只是版本该换),可回收应为 0",
-        );
         const problem = result.verdict.problems.find((line) => line.includes("katex"));
-        assert(
-          problem !== undefined && problem.includes("^0.16.45") && problem.includes("0.19.0"),
-          `问题行应摆出声明范围与实际版本,实际 ${String(problem)}`,
-        );
+        await suite.case("8d semver 违规:判 semver-violation 且判红,可回收字节 0", () => {
+          assert(
+            finding.classification === "semver-violation",
+            `引用方拿到不满足其声明范围的版本应判 semver-violation,实际 ${finding.classification}`,
+          );
+          assert(finding.red === true, "semver 违规必须判红");
+          assert(
+            finding.reclaimableBytes === 0,
+            "semver 违规不是「省下来的字节」(副本还得在,只是版本该换),可回收应为 0",
+          );
+        });
+        await suite.case("8d semver 违规:问题行摆出声明范围与实际版本", () => {
+          assert(
+            problem !== undefined && problem.includes("^0.16.45") && problem.includes("0.19.0"),
+            `问题行应摆出声明范围与实际版本,实际 ${String(problem)}`,
+          );
+        });
         console.log("[ok] observability:8d semver 违规(引用方要 ^0.16.45 却拿到 0.19.0 → 判红,可回收字节 0)");
       }
 
@@ -785,26 +843,30 @@ export async function run() {
           "node_modules/@types/katex/package.json": manifest("@types/katex", "0.16.7"),
           "node_modules/@types/katex/index.d.ts": 900,
         });
-        assertDeepEqual(
-          result.measurement.duplicates.excludedTypeOnly,
-          ["node_modules/@types/katex"],
-          "@types/katex 须归入排除项",
-        );
-        assert(
-          result.measurement.duplicates.findings.every((finding) => finding.copies.every((copy) => !copy.path.includes("@types/"))),
-          "@types/katex 不得作为副本参与判重",
-        );
-        assert(result.report.status === STATUS.pass, "仅有一个 @types/katex 不该判红");
-        // 原语级:副本根发现本身就把 @types/* 分到排除项(不参与任何判定)
+        // 原语级取数留在 case 外:副本根发现本身就把 @types/* 分到排除项(不参与任何判定)
         const tree = readAsarTree(result.box.asarPath);
         assert(tree.ok, "含 @types 的 asar 应可解析");
         const found = findPackageCopies(tree.entries, "katex");
-        assertDeepEqual(
-          found.copies.map((copy) => copy.path),
-          ["node_modules/katex"],
-          "运行期副本应只有顶层那份",
-        );
-        assertDeepEqual(found.excluded, ["node_modules/@types/katex"], "@types/katex 归入排除项");
+        await suite.case("8e @types/katex 归入排除项、不参与判重、不判红", () => {
+          assertDeepEqual(
+            result.measurement.duplicates.excludedTypeOnly,
+            ["node_modules/@types/katex"],
+            "@types/katex 须归入排除项",
+          );
+          assert(
+            result.measurement.duplicates.findings.every((finding) => finding.copies.every((copy) => !copy.path.includes("@types/"))),
+            "@types/katex 不得作为副本参与判重",
+          );
+          assert(result.report.status === STATUS.pass, "仅有一个 @types/katex 不该判红");
+        });
+        await suite.case("8e 原语级:副本根发现把 @types/* 分到排除项,运行期副本只剩顶层那份", () => {
+          assertDeepEqual(
+            found.copies.map((copy) => copy.path),
+            ["node_modules/katex"],
+            "运行期副本应只有顶层那份",
+          );
+          assertDeepEqual(found.excluded, ["node_modules/@types/katex"], "@types/katex 归入排除项");
+        });
         console.log("[ok] observability:8e @types/katex 仍排除(不进副本、不参与判重、不判红)");
       }
 
@@ -827,35 +889,41 @@ export async function run() {
         assert(measured.ok, "commander 沙盒应可实测");
         const duplicates = measured.measurement.duplicates;
         const commander = duplicates.findings.find((item) => item.name === "commander");
-        assert(commander !== undefined, "commander 的同版本副本也该被扫出来(规则与包名无关)");
-        assert(
-          commander.red === true && commander.classification === "redundant-same-version",
-          `同版本两处应判缺陷,实际 red=${String(commander.red)}/${commander.classification}`,
-        );
+        await suite.case("8f 判重引擎按包名通用:commander 同版本两处同样识别为缺陷", () => {
+          assert(commander !== undefined, "commander 的同版本副本也该被扫出来(规则与包名无关)");
+          assert(
+            commander.red === true && commander.classification === "redundant-same-version",
+            `同版本两处应判缺陷,实际 red=${String(commander.red)}/${commander.classification}`,
+          );
+        });
+        // 取数留在 case 外:基线 / verdict / 报告三者由同一份实测推出
         const baseline = parseBaseline(baselineDoc({}));
-        assertDeepEqual(baseline.duplicateWatch, ["katex"], "门禁名单来自基线数据");
-        // 名单外的真缺陷不进 problems(可见但不门禁),但必须出现在报告/摘要里(不静默)
         const verdict = evaluate(measured.measurement, baseline);
         const gatedCommander = verdict.duplicateFindings.find((item) => item.name === "commander");
-        assert(
-          gatedCommander?.gated === false,
-          `名单外的包名 gated 应为 false,实际 ${String(gatedCommander?.gated)}`,
-        );
-        assert(
-          !verdict.problems.some((line) => line.includes("commander")),
-          "名单外的包名不得进 problems",
-        );
         const report = buildPackSizeReport({
           measurement: measured.measurement,
           unmeasuredReason: null,
           verdict,
           baseline,
         });
-        assertDeepEqual(report.duplicateWatch, ["katex"], "报告须带上本次生效的门禁名单");
-        assert(
-          renderPackSizeSummary(report).includes("commander"),
-          "名单外的发现仍须呈现在摘要里(可见但不门禁)",
-        );
+        const summary = renderPackSizeSummary(report);
+        await suite.case("8f 门禁名单来自基线数据,名单外的包名不门禁也不静默", () => {
+          assertDeepEqual(baseline.duplicateWatch, ["katex"], "门禁名单来自基线数据");
+          assertDeepEqual(report.duplicateWatch, ["katex"], "报告须带上本次生效的门禁名单");
+          // 名单外的真缺陷不进 problems(可见但不门禁),但必须出现在报告/摘要里(不静默)
+          assert(
+            gatedCommander?.gated === false,
+            `名单外的包名 gated 应为 false,实际 ${String(gatedCommander?.gated)}`,
+          );
+          assert(
+            !verdict.problems.some((line) => line.includes("commander")),
+            "名单外的包名不得进 problems",
+          );
+          assert(
+            summary.includes("commander"),
+            "名单外的发现仍须呈现在摘要里(可见但不门禁)",
+          );
+        });
         console.log("[ok] observability:8f 判重引擎按包名通用(commander 同版本两处同样识别;门禁名单来自基线数据,名单外只报信息)");
       }
     }
@@ -868,21 +936,28 @@ export async function run() {
       const baselineFile = path.join(sb, "baseline.json");
       const emptyRelease = path.join(sb, "release");
       fs.mkdirSync(emptyRelease, { recursive: true });
+      // 取数(六次 CLI 调用 + 落盘报告)全留在 case 外:每个 case 的判定对象都由这里的
+      // CLI 产出决定,而 CLI 本身要改写 console(故它必须在 captureCli 的作用域里跑,
+      // 不能塞进 case —— 那会让 case 的失败与 console 改写交叠)。
       const result = await captureCli(() =>
         packSizeMain(["--release", emptyRelease, "--baseline", baselineFile, "--out", outFile]),
       );
-      assert(result.code === PACK_EXIT.unmeasured, `无产物应退出 ${PACK_EXIT.unmeasured},实际 ${result.code}`);
-      assert(String(PACK_EXIT.unmeasured) !== "0", "未测量的退出码必须非 0(不得被读成体积正常)");
       const written = JSON.parse(fs.readFileSync(outFile, "utf8"));
-      assert(written.status === STATUS.unmeasured, `落盘状态应为 unmeasured,实际 ${written.status}`);
-      assert(written.measured === false, "未测量时 measured 必须为 false");
-      assert(written.items.length === 0 && written.duplicates === null, "未测量时不得给出条目/副本数字");
-      assert(
-        typeof written.unmeasuredReason === "string" && written.unmeasuredReason.includes("解包目录不存在"),
-        `未测量原因应可操作,实际 ${String(written.unmeasuredReason)}`,
-      );
-      assertNoVolatileFields(written, "体积报告(未测量)");
-      assert(result.output.includes("未测量 ≠ 体积正常"), "摘要须明说未测量不等于体积正常");
+      await suite.case("9a 无产物:退出码 2 且落盘状态为 unmeasured/measured=false", () => {
+        assert(result.code === PACK_EXIT.unmeasured, `无产物应退出 ${PACK_EXIT.unmeasured},实际 ${result.code}`);
+        assert(String(PACK_EXIT.unmeasured) !== "0", "未测量的退出码必须非 0(不得被读成体积正常)");
+        assert(written.status === STATUS.unmeasured, `落盘状态应为 unmeasured,实际 ${written.status}`);
+        assert(written.measured === false, "未测量时 measured 必须为 false");
+      });
+      await suite.case("9a 无产物:不给条目/副本数字,原因可操作,摘要明说未测量≠体积正常", () => {
+        assert(written.items.length === 0 && written.duplicates === null, "未测量时不得给出条目/副本数字");
+        assert(
+          typeof written.unmeasuredReason === "string" && written.unmeasuredReason.includes("解包目录不存在"),
+          `未测量原因应可操作,实际 ${String(written.unmeasuredReason)}`,
+        );
+        assertNoVolatileFields(written, "体积报告(未测量)");
+        assert(result.output.includes("未测量 ≠ 体积正常"), "摘要须明说未测量不等于体积正常");
+      });
 
       // 9b 基线缺失 / 不合规 → 判红(门禁无法判定时不得报绿)
       const box = createReleaseSandbox({ root: sb, asarFiles: sandboxAsarFiles() });
@@ -896,23 +971,30 @@ export async function run() {
           outFile,
         ]),
       );
-      assert(missingBaseline.code === PACK_EXIT.fail, `基线缺失应退出 1,实际 ${missingBaseline.code}`);
-      assert(
-        missingBaseline.output.includes("体积基线文件不存在"),
-        `基线缺失应给出可读诊断:${missingBaseline.output}`,
-      );
       const badSchema = path.join(sb, "bad-baseline.json");
       fs.writeFileSync(badSchema, JSON.stringify({ baselineSchema: 99, items: { appAsar: "big" } }), "utf8");
       const badResult = await captureCli(() =>
         packSizeMain(["--release", box.releaseDir, "--baseline", badSchema, "--out", outFile]),
       );
-      assert(badResult.code === PACK_EXIT.fail, `基线不合规应退出 1,实际 ${badResult.code}`);
-      assert(
-        badResult.output.includes("baselineSchema 必须是") && badResult.output.includes("必须是非负整数字节"),
-        `基线不合规应逐项点名,实际 ${badResult.output}`,
-      );
+      await suite.case("9b 基线缺失:退出 1 并给出可读诊断", () => {
+        assert(missingBaseline.code === PACK_EXIT.fail, `基线缺失应退出 1,实际 ${missingBaseline.code}`);
+        assert(
+          missingBaseline.output.includes("体积基线文件不存在"),
+          `基线缺失应给出可读诊断:${missingBaseline.output}`,
+        );
+      });
+      await suite.case("9b 基线不合规:退出 1 并逐项点名", () => {
+        assert(badResult.code === PACK_EXIT.fail, `基线不合规应退出 1,实际 ${badResult.code}`);
+        assert(
+          badResult.output.includes("baselineSchema 必须是") && badResult.output.includes("必须是非负整数字节"),
+          `基线不合规应逐项点名,实际 ${badResult.output}`,
+        );
+      });
 
-      // 9c 基线不做自动重生成:脚本不提供写入基线的入口
+      // 9c 基线不做自动重生成:脚本不提供写入基线的入口。四个选项的 CLI 调用先跑完
+      // 收集成表,判定才进 case —— 否则第一个选项失败会让后三个根本没跑,看不出有几个被拒。
+      /** @type {{ forbidden: string, rejected: { code: unknown, output: string } }[]} */
+      const rejections = [];
       for (const forbidden of ["--write", "--update", "--update-baseline", "--set-baseline"]) {
         const rejected = await captureCli(() =>
           packSizeMain([
@@ -925,36 +1007,48 @@ export async function run() {
             forbidden,
           ]),
         );
-        assert(
-          rejected.code === PACK_EXIT.fail && rejected.output.includes("无法识别的选项"),
-          `${forbidden} 必须被拒(基线只能人工改),实际 code=${rejected.code} 输出:${rejected.output}`,
-        );
+        rejections.push({ forbidden, rejected });
       }
+      await suite.case("9c 基线不做自动重生成:四个写入类选项逐个被拒", () => {
+        for (const { forbidden, rejected } of rejections) {
+          assert(
+            rejected.code === PACK_EXIT.fail && rejected.output.includes("无法识别的选项"),
+            `${forbidden} 必须被拒(基线只能人工改),实际 code=${rejected.code} 输出:${rejected.output}`,
+          );
+        }
+      });
       // 真实基线文件在仓库里、且当前产物实测通过「无体积问题」这一层判定
       const repoBaseline = parseBaseline(
         JSON.parse(fs.readFileSync(path.join(ROOT, "gates", "artifacts", "pack-size.baseline.json"), "utf8")),
       );
-      assert(repoBaseline.problems.length === 0, `仓库基线自身应合规:${repoBaseline.problems.join(" | ")}`);
-      assert(
-        repoBaseline.thresholds.maxRelativeGrowth <= 0.25 && repoBaseline.thresholds.minGrowthBytes >= 32 * 1024 * 1024,
-        `仓库基线阈值须宽松(相对 ≤25% 且绝对闸 ≥32MiB),实际 ${JSON.stringify(repoBaseline.thresholds)}`,
-      );
-      for (const spec of MEASURED_ITEMS) {
+      await suite.case("9c 仓库基线自身合规且阈值宽松(相对 ≤25% 且绝对闸 ≥32MiB)", () => {
+        assert(repoBaseline.problems.length === 0, `仓库基线自身应合规:${repoBaseline.problems.join(" | ")}`);
         assert(
-          repoBaseline.items[spec.id] !== undefined,
-          `仓库基线应登记全部实测条目,缺 ${spec.id}(新增条目须同 PR 补基线)`,
+          repoBaseline.thresholds.maxRelativeGrowth <= 0.25 && repoBaseline.thresholds.minGrowthBytes >= 32 * 1024 * 1024,
+          `仓库基线阈值须宽松(相对 ≤25% 且绝对闸 ≥32MiB),实际 ${JSON.stringify(repoBaseline.thresholds)}`,
         );
-      }
-      // 判重门禁名单是基线数据(不是代码里写死的包名);名单必须登记 katex:
-      // 它是体积大头(单份 ~3.8 MiB,含 ~1 MiB 字体),重复即掉安装包体积
-      assert(
-        Array.isArray(repoBaseline.duplicateWatch) && repoBaseline.duplicateWatch.length > 0,
-        `仓库基线应登记判重门禁名单 duplicateWatch,实际 ${JSON.stringify(repoBaseline.duplicateWatch)}`,
-      );
-      assert(
-        repoBaseline.duplicateWatch.includes("katex"),
-        `门禁名单应含 katex,实际 ${JSON.stringify(repoBaseline.duplicateWatch)}`,
-      );
+      });
+      await suite.case("9c 仓库基线登记全部实测条目(新增条目须同 PR 补基线)", () => {
+        for (const spec of MEASURED_ITEMS) {
+          assert(
+            repoBaseline.items[spec.id] !== undefined,
+            `仓库基线应登记全部实测条目,缺 ${spec.id}(新增条目须同 PR 补基线)`,
+          );
+        }
+      });
+      await suite.case("9c 判重门禁名单是基线数据且含 katex", () => {
+        // 名单是数据不是代码里写死的包名;必须登记 katex —— 它是体积大头(含全部 KaTeX
+        // 字体),重复即掉安装包体积。字节数会随 katex 版本变,故不在此写死数值,
+        // 要看当前实际体积自己跑 `node gates/artifacts/pack-size.mjs --release <dir> --print-measurements`。
+        assert(
+          Array.isArray(repoBaseline.duplicateWatch) && repoBaseline.duplicateWatch.length > 0,
+          `仓库基线应登记判重门禁名单 duplicateWatch,实际 ${JSON.stringify(repoBaseline.duplicateWatch)}`,
+        );
+        assert(
+          repoBaseline.duplicateWatch.includes("katex"),
+          `门禁名单应含 katex,实际 ${JSON.stringify(repoBaseline.duplicateWatch)}`,
+        );
+      });
       console.log("[ok] observability:9 未测量/基线不合规/无自动重生成(退出码 2 与 1 分离,写入类选项被拒,仓库基线合规且宽松)");
     }
 
@@ -974,72 +1068,86 @@ export async function run() {
         if (typeof value === "number") measuredMap[spec.id] = value;
       }
       fs.writeFileSync(baselineFile, JSON.stringify(baselineDoc(measuredMap), null, 2), "utf8");
+      // 取数(三次 CLI 调用 + 落盘报告)留在 case 外,理由同第 9 组
       const runA = await captureCli(() =>
         packSizeMain(["--release", box.releaseDir, "--baseline", baselineFile, "--out", outA]),
       );
       const runB = await captureCli(() =>
         packSizeMain(["--release", box.releaseDir, "--baseline", baselineFile, "--out", outB]),
       );
-      assert(runA.code === PACK_EXIT.pass && runB.code === PACK_EXIT.pass, "基线等值时两次都应通过");
-      assert(
-        fs.readFileSync(outA, "utf8") === fs.readFileSync(outB, "utf8"),
-        "同输入两次报告应字节相同(体积报告必须可复现)",
-      );
-      assertNoVolatileFields(JSON.parse(fs.readFileSync(outA, "utf8")), "体积报告(可复现)");
+      await suite.case("10a 体积报告可复现:同输入两次字节相同、无绝对路径无时间戳", () => {
+        assert(runA.code === PACK_EXIT.pass && runB.code === PACK_EXIT.pass, "基线等值时两次都应通过");
+        assert(
+          fs.readFileSync(outA, "utf8") === fs.readFileSync(outB, "utf8"),
+          "同输入两次报告应字节相同(体积报告必须可复现)",
+        );
+        assertNoVolatileFields(JSON.parse(fs.readFileSync(outA, "utf8")), "体积报告(可复现)");
+      });
       // --print-measurements:只打印实测值、不写报告、不比对基线
       const printed = await captureCli(() =>
         packSizeMain(["--release", box.releaseDir, "--print-measurements", "--out", outB]),
       );
-      assert(printed.code === PACK_EXIT.pass, `--print-measurements 应零退出,实际 ${printed.code}`);
       const measurementJson = JSON.parse(printed.output);
-      assert(
-        measurementJson.items.appAsar.bytes === box.asar.fileBytes,
-        "--print-measurements 应打印实测 app.asar 字节",
-      );
+      await suite.case("10a --print-measurements 零退出并打印实测 app.asar 字节", () => {
+        assert(printed.code === PACK_EXIT.pass, `--print-measurements 应零退出,实际 ${printed.code}`);
+        assert(
+          measurementJson.items.appAsar.bytes === box.asar.fileBytes,
+          "--print-measurements 应打印实测 app.asar 字节",
+        );
+      });
 
-      // 真实产物自检:能测到就要能测出关键子项;没有产物则如实 unmeasured
+      // 真实产物自检:能测到就要能测出关键子项;没有产物则如实 unmeasured。
+      // 取数(measure 真实 release)留在 case 外;两条分支各自是独立的一件事。
       const realRelease = path.join(ROOT, "release");
       const realMeasured = measure({ unpackedDir: path.join(realRelease, "win-unpacked"), releaseDir: realRelease });
       if (realMeasured.ok) {
         const realItems = realMeasured.measurement.items;
         const realDuplicates = realMeasured.measurement.duplicates;
-        assert(
-          (realItems.asarKatexFonts?.bytes ?? 0) > 0,
-          "真实产物里 KaTeX 字体字节应为正(否则子项口径坏了)",
-        );
-        assert(
-          (realItems.asarNodeModules?.bytes ?? 0) > 0 && (realItems.appAsar?.bytes ?? 0) > 0,
-          "真实产物的 asar / node_modules 字节应为正",
-        );
+        await suite.case("10b 真实产物:关键子项字节为正(能测到就要测得出)", () => {
+          assert(
+            (realItems.asarKatexFonts?.bytes ?? 0) > 0,
+            "真实产物里 KaTeX 字体字节应为正(否则子项口径坏了)",
+          );
+          assert(
+            (realItems.asarNodeModules?.bytes ?? 0) > 0 && (realItems.appAsar?.bytes ?? 0) > 0,
+            "真实产物的 asar / node_modules 字节应为正",
+          );
+        });
         // 本仓真实 katex 场景:0.18.1(项目)与两份 0.16.47(mermaid / micromark-extension-math)
         // 是 semver 强制并存,必须判 parallel-versions 且不判红、可回收字节为 0
         const realKatex = realDuplicates.findings.find((item) => item.name === "katex");
-        assert(realKatex !== undefined, "真实产物应扫出 katex 的判重结论");
-        assert(
-          realKatex.classification === "parallel-versions" && realKatex.red === false,
-          `真实 katex 应判合法并存且不判红,实际 ${realKatex.classification}/red=${String(realKatex.red)}:${JSON.stringify(realKatex.notes)}`,
-        );
-        assert(
-          realKatex.reclaimableBytes === 0,
-          `真实产物没有可避免的同版本副本,可回收应为 0,实际 ${realKatex.reclaimableBytes}`,
-        );
-        assert(
-          realKatex.copies.length === 3 && new Set(realKatex.copies.map((copy) => copy.version)).size === 2,
-          `真实产物 katex 应为 3 份/2 个版本,实际 ${JSON.stringify(realKatex.copies.map((copy) => `${copy.path}@${copy.version}`))}`,
-        );
+        await suite.case("10b 真实产物 katex 判合法并存:不判红、可回收 0、3 份 2 版本", () => {
+          assert(realKatex !== undefined, "真实产物应扫出 katex 的判重结论");
+          assert(
+            realKatex.classification === "parallel-versions" && realKatex.red === false,
+            `真实 katex 应判合法并存且不判红,实际 ${realKatex.classification}/red=${String(realKatex.red)}:${JSON.stringify(realKatex.notes)}`,
+          );
+          assert(
+            realKatex.reclaimableBytes === 0,
+            `真实产物没有可避免的同版本副本,可回收应为 0,实际 ${realKatex.reclaimableBytes}`,
+          );
+          assert(
+            realKatex.copies.length === 3 && new Set(realKatex.copies.map((copy) => copy.version)).size === 2,
+            `真实产物 katex 应为 3 份/2 个版本,实际 ${JSON.stringify(realKatex.copies.map((copy) => `${copy.path}@${copy.version}`))}`,
+          );
+        });
         console.log(
-          `[ok] observability:10b 真实产物自检(asar ${String(realItems.appAsar?.bytes)} 字节 / KaTeX 字体 ${String(realItems.asarKatexFonts?.bytes)} 字节 / katex 3 份 2 版本 = 合法并存不判红;可回收 ${realKatex.reclaimableBytes},不可回收 ${realKatex.unavoidableBytes})`,
+          `[ok] observability:10b 真实产物自检(asar ${String(realItems.appAsar?.bytes)} 字节 / KaTeX 字体 ${String(realItems.asarKatexFonts?.bytes)} 字节 / katex 3 份 2 版本 = 合法并存不判红;可回收 ${realKatex?.reclaimableBytes},不可回收 ${realKatex?.unavoidableBytes})`,
         );
       } else {
         const reason = realMeasured.reason;
-        assert(
-          reason.includes("解包目录不存在") || reason.includes("应用归档缺失"),
-          `真实产物不可测时原因应是产物缺失,实际 ${reason}`,
-        );
+        await suite.case("10b 真实产物不可测时原因应是产物缺失(如实报未测量)", () => {
+          assert(
+            reason.includes("解包目录不存在") || reason.includes("应用归档缺失"),
+            `真实产物不可测时原因应是产物缺失,实际 ${reason}`,
+          );
+        });
         console.log(`[info] observability:10b 本机无真实产物,如实报未测量(${reason})`);
       }
       console.log("[ok] observability:10a 体积报告可复现(同输入同字节/无绝对路径无时间戳/--print-measurements 不写报告)");
     }
+
+    return { cases: suite.results };
   } finally {
     Reflect.set(process, "noAsar", previousNoAsar);
     for (const dir of sandboxes) {

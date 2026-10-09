@@ -31,6 +31,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolveNode } from "../harness/node-exec.js";
 import { ROOT } from "../harness/paths.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 // 真值断言取公共单源(收敛重复面,口径见 assert.js 文件头)
 const { assert } = createAsserter("version-chip");
@@ -127,57 +128,75 @@ export const fixtures = null;
 
 /** 版本号徽章的成功/失败两态(实跑 dist 组合根,注入 getVersion 行为) */
 export async function run() {
+  const suite = createCaseSuite();
+  // 两次子进程实跑是多 case 共享的昂贵前置(每次起一个进程装载 dist 组合根),
+  // 故在 case 之前一次备好:case 内只引用结果,失败也不会连带重跑子进程。
   // ---- 成功路径:注入 resolve → 徽标显示真实版本号 ----
   const ok = runCompositionRoot("resolve");
-  assert(
-    ok.chip === "v9.9.9",
-    `注入 resolve 时徽标应显示真实版本号,实际 ${JSON.stringify(ok.chip)}`,
-  );
-  assert(ok.unhandled.length === 0, `成功路径不该有未处理拒绝:${ok.unhandled.join(" | ")}`);
-
   // ---- 失败路径:注入 reject → 徽标非空可辨识,且不伪装成成功 ----
   const bad = runCompositionRoot("reject");
-  assert(bad.unhandled.length === 0, `注入 reject 时不应留下未处理拒绝(静默失败会变成一条无人认领的 unhandledRejection):${bad.unhandled.join(" | ")}`);
+
+  await suite.case("成功路径显示真实版本号", () => {
+    assert(
+      ok.chip === "v9.9.9",
+      `注入 resolve 时徽标应显示真实版本号,实际 ${JSON.stringify(ok.chip)}`,
+    );
+  });
+
+  await suite.case("成功路径无未处理拒绝", () => {
+    assert(ok.unhandled.length === 0, `成功路径不该有未处理拒绝:${ok.unhandled.join(" | ")}`);
+  });
+
+  await suite.case("失败路径无未处理拒绝", () => {
+    assert(bad.unhandled.length === 0, `注入 reject 时不应留下未处理拒绝(静默失败会变成一条无人认领的 unhandledRejection):${bad.unhandled.join(" | ")}`);
+  });
 
   // 断言 1:文案非空且可辨识
-  assert(
-    bad.chip.trim() !== "",
-    `注入 reject 时徽标文案不得为空(空白既看不出「取不到」也看不出「还没取到」):实际 ${JSON.stringify(bad.chip)}`,
-  );
-  assert(
-    bad.chip !== ok.chip,
-    `失败态文案必须与成功态可区分(否则无法从界面分辨「取不到」),成功=${JSON.stringify(ok.chip)} 失败=${JSON.stringify(bad.chip)}`,
-  );
-  assert(
-    bad.chip.includes("?"),
-    `失败态徽标应带可辨识的未知标记(问号),实际 ${JSON.stringify(bad.chip)}`,
-  );
+  await suite.case("失败态文案非空且与成功态可区分", () => {
+    assert(
+      bad.chip.trim() !== "",
+      `注入 reject 时徽标文案不得为空(空白既看不出「取不到」也看不出「还没取到」):实际 ${JSON.stringify(bad.chip)}`,
+    );
+    assert(
+      bad.chip !== ok.chip,
+      `失败态文案必须与成功态可区分(否则无法从界面分辨「取不到」),成功=${JSON.stringify(ok.chip)} 失败=${JSON.stringify(bad.chip)}`,
+    );
+    assert(
+      bad.chip.includes("?"),
+      `失败态徽标应带可辨识的未知标记(问号),实际 ${JSON.stringify(bad.chip)}`,
+    );
+  });
 
   // 断言 2:不得伪装成成功 —— 不得回填看起来像真实版本号的值
-  assert(
-    !LOOKS_LIKE_VERSION.test(bad.chip),
-    `失败态不得回填数字版本号(假版本号会把「取不到」伪装成「取到了」,比空白更难排查):实际 ${JSON.stringify(bad.chip)}`,
-  );
-  assert(
-    !LOOKS_LIKE_VERSION.test(bad.chip.trim().replace(/^v\?+$/, "v")),
-    `失败态不得用「去掉问号即为版本」的写法变相回填版本号:实际 ${JSON.stringify(bad.chip)}`,
-  );
+  await suite.case("失败态不得伪装成成功", () => {
+    assert(
+      !LOOKS_LIKE_VERSION.test(bad.chip),
+      `失败态不得回填数字版本号(假版本号会把「取不到」伪装成「取到了」,比空白更难排查):实际 ${JSON.stringify(bad.chip)}`,
+    );
+    assert(
+      !LOOKS_LIKE_VERSION.test(bad.chip.trim().replace(/^v\?+$/, "v")),
+      `失败态不得用「去掉问号即为版本」的写法变相回填版本号:实际 ${JSON.stringify(bad.chip)}`,
+    );
+  });
 
   // 断言 3:错误经既有通道(setError → #status)呈现,且带原因可定位
-  assert(
-    bad.status.trim() !== "",
-    `注入 reject 时错误须经既有通道(#status)可见呈现,实际状态行为空:${JSON.stringify(bad.status)}`,
-  );
-  assert(
-    bad.status.includes("ipc channel gone"),
-    `状态行须带上失败原因(否则只知道「失败」不知为何),实际 ${JSON.stringify(bad.status)}`,
-  );
-  assert(
-    bad.title.includes("ipc channel gone"),
-    `徽标 title 应带上失败原因(悬停即可定位),实际 ${JSON.stringify(bad.title)}`,
-  );
+  await suite.case("错误经状态行与徽标 title 双处可见并带原因", () => {
+    assert(
+      bad.status.trim() !== "",
+      `注入 reject 时错误须经既有通道(#status)可见呈现,实际状态行为空:${JSON.stringify(bad.status)}`,
+    );
+    assert(
+      bad.status.includes("ipc channel gone"),
+      `状态行须带上失败原因(否则只知道「失败」不知为何),实际 ${JSON.stringify(bad.status)}`,
+    );
+    assert(
+      bad.title.includes("ipc channel gone"),
+      `徽标 title 应带上失败原因(悬停即可定位),实际 ${JSON.stringify(bad.title)}`,
+    );
+  });
 
   console.log(
     "[ok] version-chip:resolve→显示真实版本号 / reject→文案非空可辨识且非数字版本号(不伪装成功)/ 错误经 #status 与 title 双处可见并带原因 / 两侧均无未处理拒绝",
   );
+  return { cases: suite.results };
 }

@@ -19,6 +19,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ROOT } from "../harness/paths.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /**
  * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
@@ -84,34 +85,42 @@ function extractRule(src, marker) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const src = fs.readFileSync(cssPath, "utf8");
 
   // 作用域一:显式深色;作用域二:跟随系统兜底(两块须逐行一致)
+  // 提取留在 case 之外:它自身抛错表示「标记找不到 / 括号不配对」,那是取数失败,
+  // 归不进「双块漂移」或「行数不足」任何一条,硬包进去只会报出与真因无关的 case 名
   const explicit = extractRule(src, 'html[data-theme="dark"] {');
   const system = extractRule(src, 'html:not([data-theme="light"]) {');
 
-  if (JSON.stringify(explicit) !== JSON.stringify(system)) {
-    const max = Math.max(explicit.length, system.length);
-    let first = -1;
-    for (let i = 0; i < max && first < 0; i++) {
-      if (explicit[i] !== system[i]) first = i;
+  await suite.case("深色双块规则体逐行恒等(显式 dark 与系统兜底同步维护)", () => {
+    if (JSON.stringify(explicit) !== JSON.stringify(system)) {
+      const max = Math.max(explicit.length, system.length);
+      let first = -1;
+      for (let i = 0; i < max && first < 0; i++) {
+        if (explicit[i] !== system[i]) first = i;
+      }
+      throw new Error(
+        `dark-token-parity 断言失败:深色双块逐行漂移(首个差异第 ${first + 1} 行)\n` +
+          `  作用域一(显式 dark):   ${explicit[first] ?? "(缺行)"}\n` +
+          `  作用域二(系统兜底):    ${system[first] ?? "(缺行)"}\n` +
+          `  两块必须逐行一致(块二注释:同步维护);改任一侧必须同步另一侧`,
+      );
     }
-    throw new Error(
-      `dark-token-parity 断言失败:深色双块逐行漂移(首个差异第 ${first + 1} 行)\n` +
-        `  作用域一(显式 dark):   ${explicit[first] ?? "(缺行)"}\n` +
-        `  作用域二(系统兜底):    ${system[first] ?? "(缺行)"}\n` +
-        `  两块必须逐行一致(块二注释:同步维护);改任一侧必须同步另一侧`,
-    );
-  }
+  });
 
   // 行数下限:防 marker 误配到残缺结构导致「空块相等」的假通过
-  if (explicit.length < 20) {
-    throw new Error(
-      `dark-token-parity 断言失败:提取行数异常(${explicit.length} 行,预期 ≥20),提取器或 base.css 结构需复核`,
-    );
-  }
+  await suite.case("提取行数达下限(防标记误配到残缺结构的假通过)", () => {
+    if (explicit.length < 20) {
+      throw new Error(
+        `dark-token-parity 断言失败:提取行数异常(${explicit.length} 行,预期 ≥20),提取器或 base.css 结构需复核`,
+      );
+    }
+  });
 
   console.log(
     `[ok] dark-token-parity:深色双块逐行恒等(${explicit.length} 行,显式/系统两作用域同步) 断言通过`,
   );
+  return { cases: suite.results };
 }

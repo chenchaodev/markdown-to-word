@@ -13,6 +13,7 @@ import {
   mimeFromBuffer,
   sniffImageType,
 } from "../../dist/core/image/image-type.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /**
  * 构造最小 PNG 文件头(签名 + 长度 + IHDR 块;仅前 24 字节,尺寸位于 offset 16/20)。
@@ -71,67 +72,111 @@ export const fixtures = null;
 
 /** image-type.ts 三函数单测 */
 export async function run() {
+  const suite = createCaseSuite();
+  // 每条 assertEq 一个 case:case 名逐字复用它的 label 形参,
+  // 报错文案与 case 名同源,不必两份清单同步维护
   // ---------- sniffImageType:魔数判定 + 未知/截断回退 ----------
-  assertEq(sniffImageType(pngHeader(10, 10)), "png", "sniff PNG");
-  assertEq(sniffImageType(jpegHeader(10, 10)), "jpg", "sniff JPEG");
-  assertEq(
-    sniffImageType(Buffer.from([0x47, 0x49, 0x46, 0x38, 0x39, 0x61])),
-    "gif",
-    "sniff GIF",
-  );
-  assertEq(
-    sniffImageType(Buffer.from("RIFF\u0000\u0000\u0000\u0000WEBP", "ascii")),
-    "webp",
-    "sniff WEBP",
-  );
+  await suite.case("sniff PNG", () => {
+    assertEq(sniffImageType(pngHeader(10, 10)), "png", "sniff PNG");
+  });
+  await suite.case("sniff JPEG", () => {
+    assertEq(sniffImageType(jpegHeader(10, 10)), "jpg", "sniff JPEG");
+  });
+  await suite.case("sniff GIF", () => {
+    assertEq(
+      sniffImageType(Buffer.from([0x47, 0x49, 0x46, 0x38, 0x39, 0x61])),
+      "gif",
+      "sniff GIF",
+    );
+  });
+  await suite.case("sniff WEBP", () => {
+    assertEq(
+      sniffImageType(Buffer.from("RIFF\u0000\u0000\u0000\u0000WEBP", "ascii")),
+      "webp",
+      "sniff WEBP",
+    );
+  });
   // 未知与数据不足 → null(不伪装 png,由调用方跳过嵌入 + 警告)
-  assertEq(sniffImageType(Buffer.from("hello")), null, "sniff 未知 → null");
-  assertEq(sniffImageType(Buffer.alloc(0)), null, "sniff 空数据 → null");
-  assertEq(sniffImageType(Buffer.from([0x89, 0x50])), null, "sniff 截断魔数 → null");
+  await suite.case("sniff 未知 → null", () => {
+    assertEq(sniffImageType(Buffer.from("hello")), null, "sniff 未知 → null");
+  });
+  await suite.case("sniff 空数据 → null", () => {
+    assertEq(sniffImageType(Buffer.alloc(0)), null, "sniff 空数据 → null");
+  });
+  await suite.case("sniff 截断魔数 → null", () => {
+    assertEq(sniffImageType(Buffer.from([0x89, 0x50])), null, "sniff 截断魔数 → null");
+  });
   console.log("[ok] sniffImageType:PNG/JPEG/GIF/WEBP 判定 + 未知/截断 → null 断言通过");
 
   // ---------- imageSizeFromBuffer:PNG(IHDR)/JPEG(SOF) 尺寸解析 ----------
-  const pngSize = imageSizeFromBuffer(pngHeader(320, 240));
-  assertEq(pngSize?.width, 320, "PNG width(IHDR offset 16)");
-  assertEq(pngSize?.height, 240, "PNG height(IHDR offset 20)");
+  await suite.case("PNG width(IHDR offset 16)", () => {
+    assertEq(imageSizeFromBuffer(pngHeader(320, 240))?.width, 320, "PNG width(IHDR offset 16)");
+  });
+  await suite.case("PNG height(IHDR offset 20)", () => {
+    assertEq(imageSizeFromBuffer(pngHeader(320, 240))?.height, 240, "PNG height(IHDR offset 20)");
+  });
 
-  const jpgSize = imageSizeFromBuffer(jpegHeader(640, 480));
-  assertEq(jpgSize?.width, 640, "JPEG width(SOF 扫描)");
-  assertEq(jpgSize?.height, 480, "JPEG height(SOF 扫描)");
+  await suite.case("JPEG width(SOF 扫描)", () => {
+    assertEq(imageSizeFromBuffer(jpegHeader(640, 480))?.width, 640, "JPEG width(SOF 扫描)");
+  });
+  await suite.case("JPEG height(SOF 扫描)", () => {
+    assertEq(imageSizeFromBuffer(jpegHeader(640, 480))?.height, 480, "JPEG height(SOF 扫描)");
+  });
 
   // 尺寸为 0 → null(宽度/高度均需 > 0)
-  assertEq(imageSizeFromBuffer(pngHeader(0, 100)), null, "PNG width=0 → null");
+  await suite.case("PNG width=0 → null", () => {
+    assertEq(imageSizeFromBuffer(pngHeader(0, 100)), null, "PNG width=0 → null");
+  });
   // 无 SOF(仅 SOI + EOI)→ null
-  assertEq(imageSizeFromBuffer(Buffer.from([0xff, 0xd8, 0xff, 0xd9])), null, "JPEG 无 SOF → null");
+  await suite.case("JPEG 无 SOF → null", () => {
+    assertEq(imageSizeFromBuffer(Buffer.from([0xff, 0xd8, 0xff, 0xd9])), null, "JPEG 无 SOF → null");
+  });
   // 非标记起始的畸形数据 → null
-  assertEq(
-    imageSizeFromBuffer(Buffer.from([0xff, 0xd8, 0x00, 0x00, 0x00, 0x00])),
-    null,
-    "JPEG 畸形数据 → null",
-  );
+  await suite.case("JPEG 畸形数据 → null", () => {
+    assertEq(
+      imageSizeFromBuffer(Buffer.from([0xff, 0xd8, 0x00, 0x00, 0x00, 0x00])),
+      null,
+      "JPEG 畸形数据 → null",
+    );
+  });
   // 非 PNG/JPEG(如 GIF)→ null
-  assertEq(
-    imageSizeFromBuffer(Buffer.from([0x47, 0x49, 0x46, 0x38, 0x39, 0x61])),
-    null,
-    "GIF 不支持尺寸解析 → null",
-  );
+  await suite.case("GIF 不支持尺寸解析 → null", () => {
+    assertEq(
+      imageSizeFromBuffer(Buffer.from([0x47, 0x49, 0x46, 0x38, 0x39, 0x61])),
+      null,
+      "GIF 不支持尺寸解析 → null",
+    );
+  });
   // 数据不足(不足 24 字节的 PNG 头)→ null
-  assertEq(imageSizeFromBuffer(Buffer.from([0x89, 0x50, 0x4e, 0x47])), null, "PNG 数据不足 → null");
+  await suite.case("PNG 数据不足 → null", () => {
+    assertEq(imageSizeFromBuffer(Buffer.from([0x89, 0x50, 0x4e, 0x47])), null, "PNG 数据不足 → null");
+  });
   console.log("[ok] imageSizeFromBuffer:PNG/JPEG 尺寸解析 + 零尺寸/无 SOF/畸形/类型不符 → null 断言通过");
 
   // ---------- mimeFromBuffer:data URL 用 MIME,未知 → null ----------
-  assertEq(mimeFromBuffer(pngHeader(10, 10)), "image/png", "mime PNG");
-  assertEq(mimeFromBuffer(jpegHeader(10, 10)), "image/jpeg", "mime JPEG");
-  assertEq(
-    mimeFromBuffer(Buffer.from([0x47, 0x49, 0x46, 0x38, 0x39, 0x61])),
-    "image/gif",
-    "mime GIF",
-  );
-  assertEq(
-    mimeFromBuffer(Buffer.from("RIFF\u0000\u0000\u0000\u0000WEBP", "ascii")),
-    "image/webp",
-    "mime WEBP",
-  );
-  assertEq(mimeFromBuffer(Buffer.from("hello")), null, "mime 未知 → null");
+  await suite.case("mime PNG", () => {
+    assertEq(mimeFromBuffer(pngHeader(10, 10)), "image/png", "mime PNG");
+  });
+  await suite.case("mime JPEG", () => {
+    assertEq(mimeFromBuffer(jpegHeader(10, 10)), "image/jpeg", "mime JPEG");
+  });
+  await suite.case("mime GIF", () => {
+    assertEq(
+      mimeFromBuffer(Buffer.from([0x47, 0x49, 0x46, 0x38, 0x39, 0x61])),
+      "image/gif",
+      "mime GIF",
+    );
+  });
+  await suite.case("mime WEBP", () => {
+    assertEq(
+      mimeFromBuffer(Buffer.from("RIFF\u0000\u0000\u0000\u0000WEBP", "ascii")),
+      "image/webp",
+      "mime WEBP",
+    );
+  });
+  await suite.case("mime 未知 → null", () => {
+    assertEq(mimeFromBuffer(Buffer.from("hello")), null, "mime 未知 → null");
+  });
   console.log("[ok] mimeFromBuffer:四类 MIME 判定 + 未知 → null 断言通过");
+  return { cases: suite.results };
 }

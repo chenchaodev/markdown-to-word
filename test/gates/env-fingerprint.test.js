@@ -14,6 +14,7 @@ import {
   parseCliOptions,
   runCommand,
 } from "../../gates/repo/print-env-fingerprint.mjs";
+import { createCaseSuite } from "../harness/case.js";
 
 /**
  * 构造探针结果(与 gates/repo/print-env-fingerprint.mjs 的 result() 同形)。
@@ -86,20 +87,33 @@ const positiveProbes = {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
+  // node:assert/strict 型:按**被测行为**分组,一个 case 覆盖同一行为的多个字段
+  // (拆开是把一条结构化 diff 拆成多条噪声)
   const positive = await collectEnvironmentFingerprint(positiveProbes);
-  assert.deepEqual(Object.keys(positive), ["schemaVersion", "versions", "system", "diagnostics"]);
-  assert.deepEqual(Object.keys(positive.versions), ["node", "npm", "electron", "chromium", "electronNode"]);
-  assert.equal(positive.versions.npm.value, "11.6.2");
-  assert.equal(positive.versions.electron.value, "43.2.0");
-  assert.equal(positive.versions.chromium.value, "144.0.7559.50");
-  assert.equal(positive.versions.electronNode.value, "22.21.1");
-  assert.equal(positive.system.fonts.value.fileCount, 3);
-  assert.equal(positive.system.display.value.logicalDpi, 120);
-  assert.deepEqual(positive.diagnostics, []);
+  await suite.case("正例指纹的顶层与 versions 键序固定", () => {
+    assert.deepEqual(Object.keys(positive), ["schemaVersion", "versions", "system", "diagnostics"]);
+    assert.deepEqual(Object.keys(positive.versions), ["node", "npm", "electron", "chromium", "electronNode"]);
+  });
+  await suite.case("正例指纹各版本探针取值正确", () => {
+    assert.equal(positive.versions.npm.value, "11.6.2");
+    assert.equal(positive.versions.electron.value, "43.2.0");
+    assert.equal(positive.versions.chromium.value, "144.0.7559.50");
+    assert.equal(positive.versions.electronNode.value, "22.21.1");
+  });
+  await suite.case("正例指纹的 fonts/display 探针取值正确", () => {
+    assert.equal(positive.system.fonts.value.fileCount, 3);
+    assert.equal(positive.system.display.value.logicalDpi, 120);
+  });
+  await suite.case("正例指纹零诊断项", () => {
+    assert.deepEqual(positive.diagnostics, []);
+  });
 
   const json = formatFingerprintJson(positive);
-  assert.deepEqual(JSON.parse(json), positive);
-  assert.equal(json, formatFingerprintJson(positive), "同一 JSON 格式输出应稳定");
+  await suite.case("JSON 格式输出可回读且稳定", () => {
+    assert.deepEqual(JSON.parse(json), positive);
+    assert.equal(json, formatFingerprintJson(positive), "同一 JSON 格式输出应稳定");
+  });
   const expectedText = [
     "schemaVersion=1",
     "versions.node.status=ok",
@@ -133,7 +147,9 @@ export async function run() {
     "diagnostics.count=0",
     "",
   ].join("\n");
-  assert.equal(formatFingerprintText(positive), expectedText, "文本字段顺序和序列化应稳定");
+  await suite.case("文本字段顺序和序列化稳定", () => {
+    assert.equal(formatFingerprintText(positive), expectedText, "文本字段顺序和序列化应稳定");
+  });
 
   const negative = await collectEnvironmentFingerprint({
     systemInfo,
@@ -152,23 +168,31 @@ export async function run() {
     collectFonts: async () => unavailable("installed font files", "font directory is unreadable"),
     collectDisplayDpi: async () => unavailable("Windows AppliedDPI registry value", "registry value is absent"),
   });
-  assert.equal(negative.versions.npm.status, "unavailable");
-  assert.equal(negative.versions.electron.value, "43.2.0", "二进制探针失败时仍应保留可读的包版本");
-  assert.equal(negative.versions.chromium.status, "unavailable");
-  assert.equal(negative.versions.electronNode.status, "unavailable");
-  assert.equal(negative.system.fonts.status, "unavailable");
-  assert.equal(negative.system.display.status, "unavailable");
-  assert.equal(negative.diagnostics.length, 4);
-  // 上一行已断言 diagnostics.length === 4,两个来源必然各命中一条;显式校验缺失以免静默跳过断言
-  const npmDiagnostic = negative.diagnostics.find((diagnostic) => diagnostic.source === "npm");
-  const electronDiagnostic = negative.diagnostics.find((diagnostic) => diagnostic.source === "electron-process");
-  if (!npmDiagnostic || !electronDiagnostic) {
-    throw new Error("负例指纹缺少 npm / electron-process 诊断项");
-  }
-  assert.match(npmDiagnostic.message, /npm --version.*exitCode 7.*simulated npm failure/);
-  assert.match(electronDiagnostic.message, /Electron version probe.*exitCode 9/);
-  assert.doesNotThrow(() => JSON.parse(formatFingerprintJson(negative)), "失败路径的 JSON 仍应可解析");
-  assert.match(formatFingerprintText(negative), /diagnostics\.count=4/);
+  await suite.case("负例指纹的失败探针标为 unavailable", () => {
+    assert.equal(negative.versions.npm.status, "unavailable");
+    assert.equal(negative.versions.chromium.status, "unavailable");
+    assert.equal(negative.versions.electronNode.status, "unavailable");
+    assert.equal(negative.system.fonts.status, "unavailable");
+    assert.equal(negative.system.display.status, "unavailable");
+  });
+  await suite.case("二进制探针失败时仍保留可读的包版本", () => {
+    assert.equal(negative.versions.electron.value, "43.2.0", "二进制探针失败时仍应保留可读的包版本");
+  });
+  await suite.case("负例指纹诊断项齐全(含 npm / electron-process 来源)", () => {
+    assert.equal(negative.diagnostics.length, 4);
+    // 上一行已断言 diagnostics.length === 4,两个来源必然各命中一条;显式校验缺失以免静默跳过断言
+    const npmDiagnostic = negative.diagnostics.find((diagnostic) => diagnostic.source === "npm");
+    const electronDiagnostic = negative.diagnostics.find((diagnostic) => diagnostic.source === "electron-process");
+    if (!npmDiagnostic || !electronDiagnostic) {
+      throw new Error("负例指纹缺少 npm / electron-process 诊断项");
+    }
+    assert.match(npmDiagnostic.message, /npm --version.*exitCode 7.*simulated npm failure/);
+    assert.match(electronDiagnostic.message, /Electron version probe.*exitCode 9/);
+  });
+  await suite.case("失败路径的 JSON 仍可解析,文本输出诊断计数为 4", () => {
+    assert.doesNotThrow(() => JSON.parse(formatFingerprintJson(negative)), "失败路径的 JSON 仍应可解析");
+    assert.match(formatFingerprintText(negative), /diagnostics\.count=4/);
+  });
 
   const nodeExecutable = process.env.npm_node_execpath
     || (process.platform === "win32" ? "node.exe" : "node");
@@ -176,21 +200,30 @@ export async function run() {
     "-e",
     'process.stderr.write("expected fingerprint probe failure"); process.exit(7);',
   ], { timeoutMs: 5_000 });
-  assert.equal(commandFailure.ok, false);
-  assert.equal(commandFailure.exitCode, 7);
-  assert.match(commandFailure.stderr, /expected fingerprint probe failure/);
-
-  assert.deepEqual(parseCliOptions(["--format=json", "--strict"]), {
-    format: "json",
-    strict: true,
-    help: false,
+  await suite.case("runCommand 的失败路径上报 ok=false 与退出码", () => {
+    assert.equal(commandFailure.ok, false);
+    assert.equal(commandFailure.exitCode, 7);
+    assert.match(commandFailure.stderr, /expected fingerprint probe failure/);
   });
-  assert.throws(() => parseCliOptions(["--format=yaml"]), /requires either json or text/);
-  assert.throws(() => parseCliOptions(["--json", "--text"]), /specified more than once/);
+
+  await suite.case("parseCliOptions 正常解析 --format/--strict", () => {
+    assert.deepEqual(parseCliOptions(["--format=json", "--strict"]), {
+      format: "json",
+      strict: true,
+      help: false,
+    });
+  });
+  await suite.case("parseCliOptions 拒绝非法格式与重复指定", () => {
+    assert.throws(() => parseCliOptions(["--format=yaml"]), /requires either json or text/);
+    assert.throws(() => parseCliOptions(["--json", "--text"]), /specified more than once/);
+  });
 
   const landingPage = await readFile(path.join(ROOT, "docs", "index.html"), "utf8");
-  assert.match(landingPage, /Node\.js ≥ 22\.13/);
-  assert.doesNotMatch(landingPage, /Node\.js ≥ 20\.19/);
+  await suite.case("公开页 Node 下限为 ≥ 22.13(旧下限已移除)", () => {
+    assert.match(landingPage, /Node\.js ≥ 22\.13/);
+    assert.doesNotMatch(landingPage, /Node\.js ≥ 20\.19/);
+  });
 
   console.log("[ok] env-fingerprint: 稳定 JSON/text、失败诊断、CLI 参数与 Node.js ≥22.13 文档断言通过");
+  return { cases: suite.results };
 }

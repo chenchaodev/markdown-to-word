@@ -39,6 +39,7 @@ import { resolveNode } from "../harness/node-exec.js";
 import { ROOT } from "../harness/paths.js";
 import { createTempResource, removeTree } from "../harness/temp-resource.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /**
  * 本段测哪一层(ADR-062 L4 声明通道):**convert**,判据静态看不见本段的主体 ——
@@ -130,9 +131,11 @@ function runInPureNode(srcPath) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   // 沙盒由 helper 分配(mkdtemp 建全新一次性目录),清理走 removeTree 的退避重试 ——
   // 裸 fs.rmSync 在 Windows 上撞 EBUSY/EPERM 时会整段判红(见 gates/repo/check-temp-cleanup.mjs)。
   const { path: dir } = createTempResource({ label: "convert-run-headless" });
+  // 清理留在 run() 顶层:进了 case 的话,case 失败会先抛、finally 不执行,临时目录泄漏
   try {
     // 真实 markdown:frontmatter + 各级标题 + 表格 + 代码块 + 一段 mermaid。
     // mermaid 那段是「不注入即按普通代码块渲染」的证据:不注入 resolver 时
@@ -168,39 +171,48 @@ export async function run() {
       "utf8",
     );
 
+    // 子进程一次跑出的产物事实供下列 case 共用(重跑代价高,不逐 case 重建)
     const result = runInPureNode(srcPath);
-    assert(
-      result.ok,
-      `纯 node 子进程应跑通 docx 转换(退出码 ${result.status}):\n${result.stderr || result.stdout}`,
-    );
     const outputPath = result.outputPath ?? "";
-    assert(outputPath !== "", `装配层应回传产物路径,实际 ${JSON.stringify(outputPath)}`);
-    assert(fs.existsSync(outputPath), `产物应落盘:${outputPath}`);
-    assert(
-      path.basename(outputPath) === "纯 node 装配层.docx",
-      `产物名应为源文件同名换扩展名,实际 ${path.basename(outputPath)}`,
-    );
+    await suite.case("纯 node 子进程跑通 docx 转换并回传产物路径", () => {
+      assert(
+        result.ok,
+        `纯 node 子进程应跑通 docx 转换(退出码 ${result.status}):\n${result.stderr || result.stdout}`,
+      );
+      assert(outputPath !== "", `装配层应回传产物路径,实际 ${JSON.stringify(outputPath)}`);
+      assert(fs.existsSync(outputPath), `产物应落盘:${outputPath}`);
+      assert(
+        path.basename(outputPath) === "纯 node 装配层.docx",
+        `产物名应为源文件同名换扩展名,实际 ${path.basename(outputPath)}`,
+      );
+    });
 
     // 魔数:docx 是 OOXML(ZIP)容器,首四字节 PK\\x03\\x04。这条断言「落盘的是真产物」
     // 而非「同名空文件」—— 只 exists 的断言会让空壳实现照样绿。
     const head = fs.readFileSync(outputPath).subarray(0, 4);
-    assert(
-      head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04,
-      `产物魔数应为 ZIP/OOXML(PK\\x03\\x04),实际 ${[...head].map((b) => b.toString(16).padStart(2, "0")).join(" ")}`,
-    );
+    await suite.case("产物魔数为 ZIP/OOXML", () => {
+      assert(
+        head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04,
+        `产物魔数应为 ZIP/OOXML(PK\\x03\\x04),实际 ${[...head].map((b) => b.toString(16).padStart(2, "0")).join(" ")}`,
+      );
+    });
 
     // 缺省 mermaid = 不注入:该代码块按普通围栏渲染,故**不应**出现 mermaid 失败 warning。
     const warnings = result.warnings ?? [];
-    assert(
-      !warnings.some((w) => typeof w === "object" && w !== null && "key" in w && String(w.key).startsWith("warn.mermaid")),
-      `未注入 mermaidResolver 时不应产生 mermaid 失败 warning,实际 ${JSON.stringify(warnings)}`,
-    );
+    await suite.case("未注入 mermaidResolver 时不产生 mermaid 失败 warning", () => {
+      assert(
+        !warnings.some((w) => typeof w === "object" && w !== null && "key" in w && String(w.key).startsWith("warn.mermaid")),
+        `未注入 mermaidResolver 时不应产生 mermaid 失败 warning,实际 ${JSON.stringify(warnings)}`,
+      );
+    });
 
     // 产物目录零临时文件残留(提交器 finally 清理);驱动脚本是本段自建的,单独排除。
-    const leftovers = fs
-      .readdirSync(dir)
-      .filter((name) => name !== path.basename(srcPath) && name !== "_driver.mjs" && !name.endsWith(".docx"));
-    assert(leftovers.length === 0, `装配层落盘后不应留临时文件残留,实际 ${leftovers.join(", ")}`);
+    await suite.case("落盘后产物目录零临时文件残留", () => {
+      const leftovers = fs
+        .readdirSync(dir)
+        .filter((name) => name !== path.basename(srcPath) && name !== "_driver.mjs" && !name.endsWith(".docx"));
+      assert(leftovers.length === 0, `装配层落盘后不应留临时文件残留,实际 ${leftovers.join(", ")}`);
+    });
 
     console.log(
       `[ok] convert-run-headless:纯 node(不经 electron)下装配层 docx 全链路通过 ` +
@@ -210,4 +222,5 @@ export async function run() {
   } finally {
     removeTree(dir);
   }
+  return { cases: suite.results };
 }

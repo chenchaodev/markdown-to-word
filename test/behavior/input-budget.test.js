@@ -29,6 +29,7 @@ import { MAX_MERGE_FILES, MAX_MERGE_TOTAL_BYTES, MERGE_READ_CONCURRENCY } from "
 import { formatWarning } from "../../dist/core/i18n/index.js";
 import { backupSettings } from "../harness/settings.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /**
  * 本段横跨的层(ADR-062 L6 判据要求 behavior 段显式声明):判据只校验「非空 ＋ 每个元素
@@ -57,6 +58,7 @@ function assert(cond, msg) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const dir = path.join(os.tmpdir(), `m2w-input-budget-${process.pid}`);
   const { restore: restoreSettings } = await backupSettings();
   try {
@@ -81,23 +83,32 @@ export async function run() {
         const code = /** @type {NodeJS.ErrnoException} */ (err).code;
         console.log(`[skip] junction 夹具创建失败(${code ?? "unknown"}),环保护未覆盖`);
       }
+      // 环扫描结果是共享前置(造 junction 夹具昂贵),先备好再由 case 回读下判定。
+      /** @type {{ files: string[], warnings: import("../../dist/core/i18n/warning.js").KeyedWarning[], elapsed: number } | null} */
+      let loopScan = null;
       if (junction) {
         const startedAt = Date.now();
         /** @type {import("../../dist/core/i18n/warning.js").KeyedWarning[]} */
         const warnings = [];
         const result = await collectMarkdownPaths([root], warnings);
-        const elapsed = Date.now() - startedAt;
-        assert(elapsed < 10_000, `junction 环收集耗时异常(${elapsed}ms),疑似无限递归`);
-        assert(
-          result.files.length === 2 && result.files.some((f) => f.endsWith(`${path.sep}a.md`)) && result.files.some((f) => f.endsWith(`${path.sep}b.md`)),
-          `junction 环下应恰收集 2 个文件(环内文件不重复展开),实际 ${JSON.stringify(result.files)}`,
-        );
-        assert(warnings.length === 0, `正常规模收集不应有预算警告,实际 ${JSON.stringify(warnings)}`);
+        loopScan = { files: result.files, warnings, elapsed: Date.now() - startedAt };
       }
-      // 重复传入同一目录:realpath 去重后只扫一次
-      const dup = await collectMarkdownPaths([root, root]);
-      assert(dup.files.length === 2, `重复传入同一目录应只扫一次,实际 ${JSON.stringify(dup.files)}`);
-      console.log("[ok] input-budget:collectMarkdownPaths junction 环/重复目录按 realpath 规范路径去重");
+      await suite.case("junction 环下恰收集 2 个文件且无预算警告", () => {
+        if (loopScan === null) return;
+        assert(loopScan.elapsed < 10_000, `junction 环收集耗时异常(${loopScan.elapsed}ms),疑似无限递归`);
+        assert(
+          loopScan.files.length === 2 && loopScan.files.some((f) => f.endsWith(`${path.sep}a.md`)) && loopScan.files.some((f) => f.endsWith(`${path.sep}b.md`)),
+          `junction 环下应恰收集 2 个文件(环内文件不重复展开),实际 ${JSON.stringify(loopScan.files)}`,
+        );
+        assert(loopScan.warnings.length === 0, `正常规模收集不应有预算警告,实际 ${JSON.stringify(loopScan.warnings)}`);
+      });
+
+      await suite.case("重复传入同一目录只扫一次", async () => {
+        // 重复传入同一目录:realpath 去重后只扫一次
+        const dup = await collectMarkdownPaths([root, root]);
+        assert(dup.files.length === 2, `重复传入同一目录应只扫一次,实际 ${JSON.stringify(dup.files)}`);
+        console.log("[ok] input-budget:collectMarkdownPaths junction 环/重复目录按 realpath 规范路径去重");
+      });
     }
 
     // ================= 2. 深度上限:超过 MAX_SCAN_DEPTH 的层级不展开 =================
@@ -112,11 +123,14 @@ export async function run() {
       /** @type {import("../../dist/core/i18n/warning.js").KeyedWarning[]} */
       const warnings = [];
       const result = await collectMarkdownPaths([deep], warnings);
-      assert(!result.files.some((f) => f.endsWith(`${path.sep}deep.md`)), `超深度文件不应被收集,实际 ${JSON.stringify(result.files)}`);
-      assert(
-        warnings.length === 1 && warnings[0] !== undefined && formatWarning(warnings[0]).includes(`层级上限(${MAX_SCAN_DEPTH})`),
-        `深度超限应恰一条层级警告,实际 ${JSON.stringify(warnings.map((w) => formatWarning(w)))}`,
-      );
+      await suite.case(`深度上限 ${MAX_SCAN_DEPTH} 生效并上报警告`, () => {
+        assert(!result.files.some((f) => f.endsWith(`${path.sep}deep.md`)), `超深度文件不应被收集,实际 ${JSON.stringify(result.files)}`);
+        assert(
+          warnings.length === 1 && warnings[0] !== undefined && formatWarning(warnings[0]).includes(`层级上限(${MAX_SCAN_DEPTH})`),
+          `深度超限应恰一条层级警告,实际 ${JSON.stringify(warnings.map((w) => formatWarning(w)))}`,
+        );
+      });
+
       // 未触顶的浅目录不受影响(深度闸门不是全局熔断)
       const shallow = path.join(dir, "shallow");
       await fs.mkdir(shallow, { recursive: true });
@@ -124,11 +138,13 @@ export async function run() {
       /** @type {import("../../dist/core/i18n/warning.js").KeyedWarning[]} */
       const shallowWarnings = [];
       const shallowResult = await collectMarkdownPaths([shallow], shallowWarnings);
-      assert(
-        shallowResult.files.length === 1 && shallowWarnings.length === 0,
-        `浅目录应正常收集且无警告,实际 ${JSON.stringify(shallowResult.files)}`,
-      );
-      console.log(`[ok] input-budget:collectMarkdownPaths 深度上限 ${MAX_SCAN_DEPTH} 生效并上报警告(浅目录不受影响)`);
+      await suite.case("未触顶的浅目录正常收集且无警告", () => {
+        assert(
+          shallowResult.files.length === 1 && shallowWarnings.length === 0,
+          `浅目录应正常收集且无警告,实际 ${JSON.stringify(shallowResult.files)}`,
+        );
+        console.log(`[ok] input-budget:collectMarkdownPaths 深度上限 ${MAX_SCAN_DEPTH} 生效并上报警告(浅目录不受影响)`);
+      });
     }
 
     // ================= 3. 数千路径在预算内完成 + 条目数上限 =================
@@ -144,20 +160,25 @@ export async function run() {
       const startedAt = Date.now();
       const bulkResult = await collectMarkdownPaths([bulk]);
       const elapsed = Date.now() - startedAt;
-      assert(bulkResult.files.length === bulkCount, `数千路径应全部收集,实际 ${bulkResult.files.length}/${bulkCount}`);
-      assert(elapsed < 20_000, `数千路径收集耗时异常(${elapsed}ms)`);
-      // 排序口径不变(大小写不敏感字典序)
-      assert(bulkResult.files[0]?.endsWith("p0000.md"), "排序首项异常");
-      console.log(`[ok] input-budget:collectMarkdownPaths 数千路径(${bulkCount})在 ${elapsed}ms 内完成`);
 
-      // 条目数上限:单目录塞入超过上限的条目 → 截断并上报(MAX_SCAN_ENTRIES 本身较大,
-      // 故此处不真的造 2 万文件,而是断言常量与告警文案口径,避免测试本身成为瓶颈)
-      assert(Number.isInteger(MAX_SCAN_ENTRIES) && MAX_SCAN_ENTRIES > 0, "条目数上限应为正整数常量");
-      const { pathScanLimitWarning } = await import("../../dist/convert/paths.js");
-      assert(
-        formatWarning(pathScanLimitWarning("条目数", MAX_SCAN_ENTRIES)).includes(`条目数上限(${MAX_SCAN_ENTRIES})`),
-        "条目数上限告警文案口径不符",
-      );
+      await suite.case(`数千路径(${bulkCount})在预算内完成且排序口径不变`, () => {
+        assert(bulkResult.files.length === bulkCount, `数千路径应全部收集,实际 ${bulkResult.files.length}/${bulkCount}`);
+        assert(elapsed < 20_000, `数千路径收集耗时异常(${elapsed}ms)`);
+        // 排序口径不变(大小写不敏感字典序)
+        assert(bulkResult.files[0]?.endsWith("p0000.md"), "排序首项异常");
+        console.log(`[ok] input-budget:collectMarkdownPaths 数千路径(${bulkCount})在 ${elapsed}ms 内完成`);
+      });
+
+      await suite.case("条目数上限为正整数常量且告警文案口径相符", async () => {
+        // 条目数上限:单目录塞入超过上限的条目 → 截断并上报(MAX_SCAN_ENTRIES 本身较大,
+        // 故此处不真的造 2 万文件,而是断言常量与告警文案口径,避免测试本身成为瓶颈)
+        assert(Number.isInteger(MAX_SCAN_ENTRIES) && MAX_SCAN_ENTRIES > 0, "条目数上限应为正整数常量");
+        const { pathScanLimitWarning } = await import("../../dist/convert/paths.js");
+        assert(
+          formatWarning(pathScanLimitWarning("条目数", MAX_SCAN_ENTRIES)).includes(`条目数上限(${MAX_SCAN_ENTRIES})`),
+          "条目数上限告警文案口径不符",
+        );
+      });
     }
 
     // ================= 4. 单文件体积上限:拒绝而非截断 =================
@@ -177,45 +198,48 @@ export async function run() {
       } finally {
         await handle.close();
       }
-      /** @type {Error | undefined} */
-      let error;
-      try {
-        await prepareMarkdown(big, prepareSettings);
-      } catch (err) {
-        error = /** @type {Error} */ (err);
-      }
-      assert(error instanceof Error && /超过上限/.test(error.message), `超限文件应被拒绝,实际 ${error?.message ?? error}`);
-      // 正常文件不受影响
-      const small = path.join(dir, "small.md");
-      await fs.writeFile(small, "# 小\n\n正文\n", "utf8");
-      const prepared = await prepareMarkdown(small, prepareSettings);
-      assert(prepared.markdown.includes("# 小"), "正常文件应正常准备");
-      console.log(`[ok] input-budget:prepareMarkdown 单文件上限 ${MAX_SOURCE_FILE_BYTES} 生效(拒绝不截断)`);
+      await suite.case(`prepareMarkdown 单文件上限 ${MAX_SOURCE_FILE_BYTES} 生效(拒绝不截断)`, async () => {
+        /** @type {Error | undefined} */
+        let error;
+        try {
+          await prepareMarkdown(big, prepareSettings);
+        } catch (err) {
+          error = /** @type {Error} */ (err);
+        }
+        assert(error instanceof Error && /超过上限/.test(error.message), `超限文件应被拒绝,实际 ${error?.message ?? error}`);
+        // 正常文件不受影响
+        const small = path.join(dir, "small.md");
+        await fs.writeFile(small, "# 小\n\n正文\n", "utf8");
+        const prepared = await prepareMarkdown(small, prepareSettings);
+        assert(prepared.markdown.includes("# 小"), "正常文件应正常准备");
+        console.log(`[ok] input-budget:prepareMarkdown 单文件上限 ${MAX_SOURCE_FILE_BYTES} 生效(拒绝不截断)`);
+      });
     }
 
     // ================= 5. 批量文件数上限:直接拒绝整批 =================
     {
-      assert(Number.isInteger(MAX_BATCH_FILES) && MAX_BATCH_FILES > 0, "批量文件数上限应为正整数常量");
-      const sample = path.join(dir, "small.md");
-      /** @type {Error | undefined} */
-      let error;
-      try {
-        await batchConvertImpl(Array.from({ length: MAX_BATCH_FILES + 1 }, () => sample), "docx");
-      } catch (err) {
-        error = /** @type {Error} */ (err);
-      }
-      assert(error instanceof Error && /超过上限/.test(error.message), `超限批量应被拒绝,实际 ${error?.message ?? error}`);
-      // 上限内的批量仍正常(1 份复制品即可,避免测试产物膨胀)
-      const one = await batchConvertImpl([sample], "docx");
-      assert(one.okCount === 1, "上限内批量应正常完成");
-      console.log(`[ok] input-budget:批量文件数上限 ${MAX_BATCH_FILES} 生效(超限拒绝整批)`);
+      await suite.case(`批量文件数上限 ${MAX_BATCH_FILES} 生效(超限拒绝整批)`, async () => {
+        assert(Number.isInteger(MAX_BATCH_FILES) && MAX_BATCH_FILES > 0, "批量文件数上限应为正整数常量");
+        const sample = path.join(dir, "small.md");
+        /** @type {Error | undefined} */
+        let error;
+        try {
+          await batchConvertImpl(Array.from({ length: MAX_BATCH_FILES + 1 }, () => sample), "docx");
+        } catch (err) {
+          error = /** @type {Error} */ (err);
+        }
+        assert(error instanceof Error && /超过上限/.test(error.message), `超限批量应被拒绝,实际 ${error?.message ?? error}`);
+        // 上限内的批量仍正常(1 份复制品即可,避免测试产物膨胀)
+        const one = await batchConvertImpl([sample], "docx");
+        assert(one.okCount === 1, "上限内批量应正常完成");
+        console.log(`[ok] input-budget:批量文件数上限 ${MAX_BATCH_FILES} 生效(超限拒绝整批)`);
+      });
     }
 
     // ================= 6. 合并:文件数/总体积上限 + 有界并发读取 + 保序 =================
     {
-      assert(Number.isInteger(MAX_MERGE_FILES) && MAX_MERGE_FILES > 0, "合并文件数上限应为正整数常量");
-      assert(MAX_MERGE_TOTAL_BYTES > 0, "合并源总体积上限应为正数");
       const sample = path.join(dir, "small.md");
+      // 三次合并探测(超文件数 / 超体积 / 正常合并)是共享前置,先跑完再由 case 回读。
       /** @type {Error | undefined} */
       let fileLimitError;
       try {
@@ -223,10 +247,6 @@ export async function run() {
       } catch (err) {
         fileLimitError = /** @type {Error} */ (err);
       }
-      assert(
-        fileLimitError instanceof Error && /超过上限/.test(fileLimitError.message),
-        `超文件数应被拒绝,实际 ${fileLimitError?.message ?? fileLimitError}`,
-      );
       // 体积上限:造一个超过 MAX_MERGE_TOTAL_BYTES 的稀疏文件(128MB 上限,只落头尾)
       const huge = path.join(dir, "huge.md");
       const hugeHandle = await fs.open(huge, "w");
@@ -242,54 +262,72 @@ export async function run() {
       } catch (err) {
         sizeLimitError = /** @type {Error} */ (err);
       }
-      assert(
-        sizeLimitError instanceof Error && /总体积超过上限/.test(sizeLimitError.message),
-        `超体积应被拒绝,实际 ${sizeLimitError?.message ?? sizeLimitError}`,
-      );
       // 正常合并:多文件保序合成一篇(标题顺序 = 文件顺序)
       const mergeFiles = ["m1", "m2", "m3", "m4", "m5"].map((name) => path.join(dir, `${name}.md`));
       for (const [i, file] of mergeFiles.entries()) {
         await fs.writeFile(file, `# 标题 ${i + 1}\n\n正文 ${i + 1}\n`, "utf8");
       }
       const merged = await mergeConvertImpl(mergeFiles, "docx");
-      assert(merged.ok && !!merged.outputPath, `正常合并应成功,实际 ${JSON.stringify(merged)}`);
-      await fs.stat(merged.outputPath);
-      console.log(`[ok] input-budget:合并上限生效(文件数 ${MAX_MERGE_FILES} / 体积 ${MAX_MERGE_TOTAL_BYTES});正常合并 5 篇成功`);
 
-      // 读取为有界并发(非 Promise.all 全开):经 fs.readFile 在途计数观测
-      // ——同一 ESM 内建模块对象,dist 侧与测试侧共用同一 readFile 引用
-      const manyFiles = Array.from({ length: 12 }, (_, i) => path.join(dir, `c${i}.md`));
-      for (const [i, file] of manyFiles.entries()) {
-        await fs.writeFile(file, `# 并发 ${i}\n\n正文\n`, "utf8");
-      }
-      const originalReadFile = fs.readFile;
-      let inFlight = 0;
-      let maxInFlight = 0;
-      try {
-        // 放宽理由:观测在途并发需整体替换 fs.readFile;fs.readFile 是重载签名,
-        // 无法用 rest 参数逐字复刻,故按 typeof 取同一类型(替换体语义不变:
-        // 透传参数、await 返回值、finally 递减计数),finally 一律还原。
-        fs.readFile = /** @type {typeof fs.readFile} */ (async (...args) => {
-          inFlight += 1;
-          maxInFlight = Math.max(maxInFlight, inFlight);
-          try {
-            return await originalReadFile(...args);
-          } finally {
-            inFlight -= 1;
-          }
-        });
-        await mergeConvertImpl(manyFiles, "docx");
-      } finally {
-        fs.readFile = originalReadFile;
-      }
-      assert(
-        maxInFlight > 1 && maxInFlight <= MERGE_READ_CONCURRENCY,
-        `合并读取应有界并发(2..${MERGE_READ_CONCURRENCY}),实际在途峰值 ${maxInFlight}`,
-      );
-      console.log(`[ok] input-budget:合并读取有界并发(峰值 ${maxInFlight} ≤ ${MERGE_READ_CONCURRENCY},12 个源文件)`);
+      await suite.case("合并文件数上限生效", () => {
+        assert(Number.isInteger(MAX_MERGE_FILES) && MAX_MERGE_FILES > 0, "合并文件数上限应为正整数常量");
+        assert(MAX_MERGE_TOTAL_BYTES > 0, "合并源总体积上限应为正数");
+        assert(
+          fileLimitError instanceof Error && /超过上限/.test(fileLimitError.message),
+          `超文件数应被拒绝,实际 ${fileLimitError?.message ?? fileLimitError}`,
+        );
+      });
+
+      await suite.case("合并源总体积上限生效", () => {
+        assert(
+          sizeLimitError instanceof Error && /总体积超过上限/.test(sizeLimitError.message),
+          `超体积应被拒绝,实际 ${sizeLimitError?.message ?? sizeLimitError}`,
+        );
+      });
+
+      await suite.case("上限内的正常合并成功(5 篇保序合成)", async () => {
+        assert(merged.ok && !!merged.outputPath, `正常合并应成功,实际 ${JSON.stringify(merged)}`);
+        await fs.stat(merged.outputPath);
+        console.log(`[ok] input-budget:合并上限生效(文件数 ${MAX_MERGE_FILES} / 体积 ${MAX_MERGE_TOTAL_BYTES});正常合并 5 篇成功`);
+      });
+
+      await suite.case("合并读取为有界并发", async () => {
+        // 读取为有界并发(非 Promise.all 全开):经 fs.readFile 在途计数观测
+        // ——同一 ESM 内建模块对象,dist 侧与测试侧共用同一 readFile 引用
+        const manyFiles = Array.from({ length: 12 }, (_, i) => path.join(dir, `c${i}.md`));
+        for (const [i, file] of manyFiles.entries()) {
+          await fs.writeFile(file, `# 并发 ${i}\n\n正文\n`, "utf8");
+        }
+        const originalReadFile = fs.readFile;
+        let inFlight = 0;
+        let maxInFlight = 0;
+        try {
+          // 放宽理由:观测在途并发需整体替换 fs.readFile;fs.readFile 是重载签名,
+          // 无法用 rest 参数逐字复刻,故按 typeof 取同一类型(替换体语义不变:
+          // 透传参数、await 返回值、finally 递减计数),finally 一律还原。
+          fs.readFile = /** @type {typeof fs.readFile} */ (async (...args) => {
+            inFlight += 1;
+            maxInFlight = Math.max(maxInFlight, inFlight);
+            try {
+              return await originalReadFile(...args);
+            } finally {
+              inFlight -= 1;
+            }
+          });
+          await mergeConvertImpl(manyFiles, "docx");
+        } finally {
+          fs.readFile = originalReadFile;
+        }
+        assert(
+          maxInFlight > 1 && maxInFlight <= MERGE_READ_CONCURRENCY,
+          `合并读取应有界并发(2..${MERGE_READ_CONCURRENCY}),实际在途峰值 ${maxInFlight}`,
+        );
+        console.log(`[ok] input-budget:合并读取有界并发(峰值 ${maxInFlight} ≤ ${MERGE_READ_CONCURRENCY},12 个源文件)`);
+      });
     }
   } finally {
     await restoreSettings();
     await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
   }
+  return { cases: suite.results };
 }

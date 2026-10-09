@@ -50,6 +50,7 @@ import {
   hasWebContentsOperation,
 } from "../../dist/main/windows/web-contents-registry.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /** 预设条目(契约单源) */
 /** @typedef {import("../../dist/core/settings/settings-defaults.js").CustomPreset} CustomPreset */
@@ -126,11 +127,20 @@ export const fixtures = null;
 
 /** 主进程 IPC 纯逻辑直测(纯 Node 段,零 Electron API) */
 export async function run() {
+  const suite = createCaseSuite();
   // ---------- errorMessage ----------
-  assert(errorMessage(new Error("boom")) === "boom", "Error → message");
-  assert(errorMessage("直接字符串") === "直接字符串", "字符串 → 原样");
-  assert(errorMessage(null) === "null", "null → String(null)");
-  assert(errorMessage({ a: 1 }) === "[object Object]", "对象 → String(err)");
+  await suite.case("Error → message", () => {
+    assert(errorMessage(new Error("boom")) === "boom", "Error → message");
+  });
+  await suite.case("字符串 → 原样", () => {
+    assert(errorMessage("直接字符串") === "直接字符串", "字符串 → 原样");
+  });
+  await suite.case("null → String(null)", () => {
+    assert(errorMessage(null) === "null", "null → String(null)");
+  });
+  await suite.case("对象 → String(err)", () => {
+    assert(errorMessage({ a: 1 }) === "[object Object]", "对象 → String(err)");
+  });
   console.log("[ok] errorMessage:Error/字符串/null/对象 归一断言通过");
 
   // ---------- buildRecentFileEntries ----------
@@ -141,38 +151,66 @@ export async function run() {
     "docx",
     123456,
   );
-  assert(entries.length === 3, "非字符串/空串应被过滤");
-  assert(
-    entries[0]?.path === "C:/docs/a.md" && entries[0]?.name === "a.md",
-    "name 应取 basename",
-  );
-  assert(entries[1]?.name === "b.pdf", "非 md 扩展也应取 basename");
-  assert(entries[2]?.name === "c.MD", "basename 大小写保留");
-  assert(
-    entries.every((/** @type {{ path: string, name: string, format: string, ts: number }} */ e) => e.format === "docx" && e.ts === 123456),
-    "format/ts 应透传",
-  );
-  assert(buildRecentFileEntries([], "pdf", 1).length === 0, "空列表 → 空结果");
+  await suite.case("非字符串/空串应被过滤", () => {
+    assert(entries.length === 3, "非字符串/空串应被过滤");
+  });
+  await suite.case("name 应取 basename", () => {
+    assert(
+      entries[0]?.path === "C:/docs/a.md" && entries[0]?.name === "a.md",
+      "name 应取 basename",
+    );
+  });
+  await suite.case("非 md 扩展也应取 basename", () => {
+    assert(entries[1]?.name === "b.pdf", "非 md 扩展也应取 basename");
+  });
+  await suite.case("basename 大小写保留", () => {
+    assert(entries[2]?.name === "c.MD", "basename 大小写保留");
+  });
+  await suite.case("format/ts 应透传", () => {
+    assert(
+      entries.every((/** @type {{ path: string, name: string, format: string, ts: number }} */ e) => e.format === "docx" && e.ts === 123456),
+      "format/ts 应透传",
+    );
+  });
+  await suite.case("空列表 → 空结果", () => {
+    assert(buildRecentFileEntries([], "pdf", 1).length === 0, "空列表 → 空结果");
+  });
   console.log("[ok] buildRecentFileEntries:过滤/name=basename/format-ts 透传/空列表 断言通过");
 
   // ---------- baseNameFromMdPath ----------
-  assert(baseNameFromMdPath("C:/docs/报告.md") === "报告", ".md 应去除");
-  assert(baseNameFromMdPath("C:/docs/notes.MARKDOWN") === "notes", ".MARKDOWN 大小写不敏感");
-  assert(baseNameFromMdPath("C:/docs/archive.tar.md") === "archive.tar", "仅去末尾 .md");
-  assert(baseNameFromMdPath("C:/docs/readme.txt") === "readme.txt", "其它扩展原样");
-  assert(baseNameFromMdPath("C:/docs/noext") === "noext", "无扩展原样");
+  await suite.case(".md 应去除", () => {
+    assert(baseNameFromMdPath("C:/docs/报告.md") === "报告", ".md 应去除");
+  });
+  await suite.case(".MARKDOWN 大小写不敏感", () => {
+    assert(baseNameFromMdPath("C:/docs/notes.MARKDOWN") === "notes", ".MARKDOWN 大小写不敏感");
+  });
+  await suite.case("仅去末尾 .md", () => {
+    assert(baseNameFromMdPath("C:/docs/archive.tar.md") === "archive.tar", "仅去末尾 .md");
+  });
+  await suite.case("其它扩展原样", () => {
+    assert(baseNameFromMdPath("C:/docs/readme.txt") === "readme.txt", "其它扩展原样");
+  });
+  await suite.case("无扩展原样", () => {
+    assert(baseNameFromMdPath("C:/docs/noext") === "noext", "无扩展原样");
+  });
   console.log("[ok] baseNameFromMdPath:.md/.MARKDOWN 去除/仅末尾/其它扩展/无扩展 断言通过");
 
   // ---------- importPresetsFromText ----------
   // 1. 坏 JSON → 原错误文案透传
   const r1 = importPresets("{not json!!", []);
-  assert(!r1.ok && r1.error === "文件不是有效的 JSON", "坏 JSON → 「文件不是有效的 JSON」");
+  await suite.case("坏 JSON → 「文件不是有效的 JSON」", () => {
+    assert(!r1.ok && r1.error === "文件不是有效的 JSON", "坏 JSON → 「文件不是有效的 JSON」");
+  });
   // 2. schemaVersion 非 1 → 原错误文案透传
   const r2 = importPresets(JSON.stringify({ schemaVersion: 2, presets: [preset("x")] }), []);
-  assert(!r2.ok && r2.error === "不支持的模板文件版本", "schemaVersion 非 1 → 「不支持的模板文件版本」");
+  await suite.case("schemaVersion 非 1 → 「不支持的模板文件版本」", () => {
+    assert(!r2.ok && r2.error === "不支持的模板文件版本", "schemaVersion 非 1 → 「不支持的模板文件版本」");
+  });
   // 3. 空 presets → 「文件不含有效预设」
   const r3 = importPresets("[]", []);
-  assert(!r3.ok && r3.error === "文件不含有效预设", "空 presets → 「文件不含有效预设」");
+  await suite.case("空 presets → 「文件不含有效预设」", () => {
+    assert(!r3.ok && r3.error === "文件不含有效预设", "空 presets → 「文件不含有效预设」");
+  });
   // 4. 合法:同名覆盖 + 追加,imported/overridden 计数
   const r4 = importPresets(
     JSON.stringify({
@@ -181,12 +219,18 @@ export async function run() {
     }),
     [preset("A", { bodySizePt: 10 })],
   );
-  assert(r4.ok, "合法导入应成功");
-  if (r4.ok) {
-    assert(r4.presets.map((p) => p.name).join(",") === "A,B", "合并序:incoming 在前");
-    assert(r4.presets[0]?.typography.bodySizePt === 14, "同名项取 incoming 值");
-    assert(r4.imported === 2 && r4.overridden === 1, "imported=2 / overridden=1");
-  }
+  await suite.case("合法导入应成功", () => {
+    assert(r4.ok, "合法导入应成功");
+  });
+  // 三条读的是同一份 r4 的成功分支:合进一个 case(拆开时 ok 为假会让后两条
+  // 读不到 presets 字段,报出的不是「合并结果不对」而是取字段炸掉)
+  await suite.case("合并序:incoming 在前(同名覆盖与计数同源,一并判)", () => {
+    if (r4.ok) {
+      assert(r4.presets.map((p) => p.name).join(",") === "A,B", "合并序:incoming 在前");
+      assert(r4.presets[0]?.typography.bodySizePt === 14, "同名项取 incoming 值");
+      assert(r4.imported === 2 && r4.overridden === 1, "imported=2 / overridden=1");
+    }
+  });
   console.log("[ok] importPresetsFromText:错误文案透传(坏 JSON/版本/空)/合并序/同名覆盖/计数 断言通过");
 
   // ---------- buildPresetsExportPayload ----------
@@ -202,22 +246,42 @@ export async function run() {
   ]
 }
 `;
-  assert(payload === expected, "导出载荷应精确匹配(schemaVersion:1 + 2 空格缩进 + 末尾换行)");
-  assert(
-    buildPresetsExportPayload([]) === `{\n  "schemaVersion": 1,\n  "presets": []\n}\n`,
-    "空预设导出载荷应精确匹配",
-  );
+  await suite.case("导出载荷应精确匹配(schemaVersion:1 + 2 空格缩进 + 末尾换行)", () => {
+    assert(payload === expected, "导出载荷应精确匹配(schemaVersion:1 + 2 空格缩进 + 末尾换行)");
+  });
+  await suite.case("空预设导出载荷应精确匹配", () => {
+    assert(
+      buildPresetsExportPayload([]) === `{\n  "schemaVersion": 1,\n  "presets": []\n}\n`,
+      "空预设导出载荷应精确匹配",
+    );
+  });
   console.log("[ok] buildPresetsExportPayload:序列化字符串精确断言(单条/空列表)通过");
 
   // ---------- IPC 入参类型守卫 ----------
-  assert(isString("x") === true && isString(42) === false, "isString:string/非字符串");
-  assert(isStringArray(["a", "b"]) === true, "isStringArray:纯字符串数组通过");
-  assert(isStringArray([]) === true, "isStringArray:空数组通过");
-  assert(isStringArray(["a", 42]) === false, "isStringArray:混入非字符串元素拒绝");
-  assert(isStringArray("a,b") === false, "isStringArray:非数组拒绝");
-  assert(isStringArray(null) === false, "isStringArray:null 拒绝");
-  assert(isConvertFormat("docx") && isConvertFormat("pdf"), "isConvertFormat:docx/pdf 白名单");
-  assert(!isConvertFormat("DOCX") && !isConvertFormat("html"), "isConvertFormat:大小写敏感/未知格式拒绝");
+  await suite.case("isString:string/非字符串", () => {
+    assert(isString("x") === true && isString(42) === false, "isString:string/非字符串");
+  });
+  await suite.case("isStringArray:纯字符串数组通过", () => {
+    assert(isStringArray(["a", "b"]) === true, "isStringArray:纯字符串数组通过");
+  });
+  await suite.case("isStringArray:空数组通过", () => {
+    assert(isStringArray([]) === true, "isStringArray:空数组通过");
+  });
+  await suite.case("isStringArray:混入非字符串元素拒绝", () => {
+    assert(isStringArray(["a", 42]) === false, "isStringArray:混入非字符串元素拒绝");
+  });
+  await suite.case("isStringArray:非数组拒绝", () => {
+    assert(isStringArray("a,b") === false, "isStringArray:非数组拒绝");
+  });
+  await suite.case("isStringArray:null 拒绝", () => {
+    assert(isStringArray(null) === false, "isStringArray:null 拒绝");
+  });
+  await suite.case("isConvertFormat:docx/pdf 白名单", () => {
+    assert(isConvertFormat("docx") && isConvertFormat("pdf"), "isConvertFormat:docx/pdf 白名单");
+  });
+  await suite.case("isConvertFormat:大小写敏感/未知格式拒绝", () => {
+    assert(!isConvertFormat("DOCX") && !isConvertFormat("html"), "isConvertFormat:大小写敏感/未知格式拒绝");
+  });
   console.log("[ok] IPC 入参守卫:isString/isStringArray/isConvertFormat 断言通过");
 
   // ---------- runConvertTask(自 index.ts runWithCtx 抽出,deps 注入直测) ----------
@@ -277,11 +341,15 @@ export async function run() {
   {
     const { deps, log, refs } = makeDeps();
     const result = await runConvertTask(deps, async (ctx) => `ok:${refs.indexOf(ctx) + 1}`, () => canceledOutcome, () => busyOutcome);
-    assert(result === "ok:1", `成功路径应透传任务值,实际 ${JSON.stringify(result)}`);
-    assert(
-      JSON.stringify(log) === JSON.stringify([["register", 1], ["unregister"]]),
-      `成功路径生命周期应为 register→unregister,实际 ${JSON.stringify(log)}`,
-    );
+    await suite.case("成功路径应透传任务值", () => {
+      assert(result === "ok:1", `成功路径应透传任务值,实际 ${JSON.stringify(result)}`);
+    });
+    await suite.case("成功路径生命周期应为 register→unregister", () => {
+      assert(
+        JSON.stringify(log) === JSON.stringify([["register", 1], ["unregister"]]),
+        `成功路径生命周期应为 register→unregister,实际 ${JSON.stringify(log)}`,
+      );
+    });
   }
   // 2. 取消路径:取消错误 → onCanceled() 形态原样返回(含 canceled:true 扩展字段);finally 注销
   {
@@ -298,8 +366,12 @@ export async function run() {
       () => onCanceledResult,
       () => busyOutcome,
     );
-    assert(result === onCanceledResult, "取消路径应原样返回 onCanceled() 结果");
-    assert(log[log.length - 1]?.[0] === "unregister", "取消路径 finally 也应注销引用(避免悬挂)");
+    await suite.case("取消路径应原样返回 onCanceled() 结果", () => {
+      assert(result === onCanceledResult, "取消路径应原样返回 onCanceled() 结果");
+    });
+    await suite.case("取消路径 finally 也应注销引用(避免悬挂)", () => {
+      assert(log[log.length - 1]?.[0] === "unregister", "取消路径 finally 也应注销引用(避免悬挂)");
+    });
   }
   // 3. 非取消错误归一:{ ok:false, error } 且 error 经 errorMessage(Error→message/非 Error→String)
   //    isPrecheckFailureOutcome 就是实现侧那条「非数组非 busy 即失败出口」的判定,
@@ -307,37 +379,53 @@ export async function run() {
   {
     const { deps } = makeDeps();
     const r1 = await runConvertTask(deps, () => throwing("磁盘错误"), () => failedOutcome, () => busyOutcome);
-    assert(
-      !isOperationBusyResult(r1) && r1.ok === false && r1.error === "磁盘错误",
-      `Error 应归一为 { ok:false, error:message },实际 ${JSON.stringify(r1)}`,
-    );
+    await suite.case("Error 应归一为 { ok:false, error:message }", () => {
+      assert(
+        !isOperationBusyResult(r1) && r1.ok === false && r1.error === "磁盘错误",
+        `Error 应归一为 { ok:false, error:message },实际 ${JSON.stringify(r1)}`,
+      );
+    });
     /** @returns {Promise<{ ok: false, error: string }>} */
     const throwingRaw = async () => {
       throw "裸字符串错误";
     };
     const r2 = await runConvertTask(deps, throwingRaw, () => failedOutcome, () => busyOutcome);
-    assert(
-      !isOperationBusyResult(r2) && r2.ok === false && r2.error === "裸字符串错误",
-      "非 Error 抛出值应 String 归一",
-    );
+    await suite.case("非 Error 抛出值应 String 归一", () => {
+      assert(
+        !isOperationBusyResult(r2) && r2.ok === false && r2.error === "裸字符串错误",
+        "非 Error 抛出值应 String 归一",
+      );
+    });
   }
   // 4. ctx 每次调用新建不复用(「取消后复位」语义)+ 失败不残留注册
+  //    两次调用与 ctxIds 取数都在 case 外:三条读的是同两次调用留下的
+  //    ctxIds/refs/log 三份终态,中途再插一次调用就换了三份
   {
     const { deps, log, refs } = makeDeps();
     await runConvertTask(deps, async (ctx) => refs.indexOf(ctx) + 1, () => failedOutcome, () => busyOutcome); // 第一次
     await runConvertTask(deps, async (ctx) => refs.indexOf(ctx) + 1, () => failedOutcome, () => busyOutcome); // 第二次
     const ctxIds = log.filter((e) => e[0] === "register").map((e) => e[1]);
-    assert(ctxIds.length === 2 && ctxIds[0] !== ctxIds[1], `每次调用应新建 ctx,实际 ${JSON.stringify(ctxIds)}`);
-    assert(refs.length === 2 && refs[0] !== refs[1], "两次调用应拿到两个不同的 ctx 引用");
-    assert(log.filter((e) => e[0] === "unregister").length === 2, "每次调用结束都应注销");
+    await suite.case("每次调用应新建 ctx", () => {
+      assert(ctxIds.length === 2 && ctxIds[0] !== ctxIds[1], `每次调用应新建 ctx,实际 ${JSON.stringify(ctxIds)}`);
+    });
+    await suite.case("两次调用应拿到两个不同的 ctx 引用", () => {
+      assert(refs.length === 2 && refs[0] !== refs[1], "两次调用应拿到两个不同的 ctx 引用");
+    });
+    await suite.case("每次调用结束都应注销", () => {
+      assert(log.filter((e) => e[0] === "unregister").length === 2, "每次调用结束都应注销");
+    });
   }
   // 5. 任务抛错时后续仍可正常执行(finally 先于返回值落地,无悬挂注册)
   {
     const { deps, log, refs } = makeDeps();
     await runConvertTask(deps, () => throwing("x"), () => failedOutcome, () => busyOutcome).catch(() => undefined);
     const ok = await runConvertTask(deps, async (ctx) => refs.indexOf(ctx) + 1, () => failedOutcome, () => busyOutcome);
-    assert(ok === 2, `失败后再次调用应拿到新 ctx(id=2)正常完成,实际 ${JSON.stringify(ok)}`);
-    assert(log.filter((e) => e[0] === "unregister").length === 2, "失败+成功两次调用各注销一次");
+    await suite.case("失败后再次调用应拿到新 ctx(id=2)正常完成", () => {
+      assert(ok === 2, `失败后再次调用应拿到新 ctx(id=2)正常完成,实际 ${JSON.stringify(ok)}`);
+    });
+    await suite.case("失败+成功两次调用各注销一次", () => {
+      assert(log.filter((e) => e[0] === "unregister").length === 2, "失败+成功两次调用各注销一次");
+    });
   }
   // 6. 同一 key 已有活动操作 → onBusy 返回明确 busy,task/createContext 均不执行
   {
@@ -360,97 +448,140 @@ export async function run() {
       () => failedOutcome,
       () => busy,
     );
-    assert(result === busy, "注册冲突应原样返回 onBusy 结果");
-    assert(createCount === 1 && taskCount === 0, "busy 时只构造待注册 ctx,不执行任务");
-    assert(unregisterCount === 0, "未成功注册时不应误注销已有操作");
+    // 三条读的是同一次 busy 调用留下的三个计数器,合进一个 case:「返回 busy」
+    // 「没跑任务」「没误注销」要同时成立才算同一件事
+    await suite.case("注册冲突应原样返回 onBusy 结果", () => {
+      assert(result === busy, "注册冲突应原样返回 onBusy 结果");
+      assert(createCount === 1 && taskCount === 0, "busy 时只构造待注册 ctx,不执行任务");
+      assert(unregisterCount === 0, "未成功注册时不应误注销已有操作");
+    });
   }
   console.log("[ok] runConvertTask:成功透传/取消形态/错误归一/ctx 新建不复用/finally 注序/busy 断言通过");
 
   // ---------- busy 形状单源(operationBusyResult / isOperationBusyResult) ----------
   {
     const busy = operationBusyResult("正在转换…");
-    assert(Object.keys(busy).sort().join(",") === "busy,error,ok",
-      `busy 形状应恒为三键(实际 ${Object.keys(busy).sort().join(",")})`);
-    assert(busy.ok === false && busy.busy === true && busy.error === "正在转换…", "busy 字段值不符");
+    await suite.case("busy 形状应恒为三键", () => {
+      assert(Object.keys(busy).sort().join(",") === "busy,error,ok",
+        `busy 形状应恒为三键(实际 ${Object.keys(busy).sort().join(",")})`);
+    });
+    await suite.case("busy 字段值不符", () => {
+      assert(busy.ok === false && busy.busy === true && busy.error === "正在转换…", "busy 字段值不符");
+    });
     // 每次构造均为新对象(调用方按需并接字段,如批量计数字段,互不污染)
-    assert(operationBusyResult("x") !== operationBusyResult("x"), "busy 结果不应复用同一对象引用");
-    assert(isOperationBusyResult(busy) === true, "isOperationBusyResult 应放行 busy 结果");
+    await suite.case("busy 结果不应复用同一对象引用", () => {
+      assert(operationBusyResult("x") !== operationBusyResult("x"), "busy 结果不应复用同一对象引用");
+    });
+    await suite.case("isOperationBusyResult 应放行 busy 结果", () => {
+      assert(isOperationBusyResult(busy) === true, "isOperationBusyResult 应放行 busy 结果");
+    });
+    // 逐值一个 case:被拒的那个值本身就是定位键
     for (const v of [null, undefined, [], {}, { ok: false }, { busy: false }, { busy: 1 }, "busy"]) {
-      assert(!isOperationBusyResult(v), `isOperationBusyResult 应拒绝 ${JSON.stringify(v)}`);
+      await suite.case(`isOperationBusyResult 应拒绝 ${JSON.stringify(v)}`, () => {
+        assert(!isOperationBusyResult(v), `isOperationBusyResult 应拒绝 ${JSON.stringify(v)}`);
+      });
     }
   }
 
   // ---------- 预检结果归一(警告数组 / busy / 异常三出口) ----------
+  // 三个出口的归一结果都备在 case 外:每条判定读的是自己那一次
+  // normalizePrecheckOutcome 的返回值,搬进 case 会让它重算一遍,
+  // 把「归一结果不对」变成「调用不对」
   {
     const warnings = /** @type {KeyedWarning[]} */ ([{ key: "warn.unlabeledCodeBlock", fallback: "代码块未标注语言,可能无法正确高亮排版" }]);
     const same = normalizePrecheckOutcome(warnings);
-    assert(Array.isArray(same) && same.length === 1 && same[0] === warnings[0],
-      "警告数组出口应原样透传(成功语义不变)");
-    assert(same !== warnings, "归一应返回新数组,不与调用方数组共享引用");
 
     // 多余键经中间变量投喂:新鲜字面量会触发 excess-property 判定,而本条
     // 断言的正是「归一出口把多余键丢掉」—— 故先落到变量(解除新鲜性)再传入
     const busyWithExtra = { ...operationBusyResult("忙"), extra: 1 };
     const busyOutcome = normalizePrecheckOutcome(busyWithExtra);
-    assert(isOperationBusyResult(busyOutcome) && Object.keys(busyOutcome).sort().join(",") === "busy,error,ok",
-      "busy 出口应重建为稳定三键(多余键被丢弃)");
 
     const failed = /** @type {{ ok: false, error: string }} */ ({ ok: false, error: "ENOENT: no such file" });
-    assert(isPrecheckFailureOutcome(failed) === true, "异常归一结果应判定为预检失败出口");
-    assert(isPrecheckFailureOutcome([]) === false && isPrecheckFailureOutcome(operationBusyResult("忙")) === false,
-      "警告数组/busy 不应被判为预检失败");
     const failureWarnings = /** @type {KeyedWarning[]} */ (normalizePrecheckOutcome(failed));
-    assert(Array.isArray(failureWarnings) && failureWarnings.length === 1,
-      "预检异常应转为单条失败警告(不再静默空数组)");
-    assert(
-      JSON.stringify(failureWarnings[0]) === JSON.stringify(precheckFailedWarning("ENOENT: no such file")),
-      "失败警告应与 precheckFailedWarning 同形(key+params+fallback)",
-    );
-    assert(failureWarnings[0]?.params?.error === "ENOENT: no such file", "失败警告应携带失败原因");
-    assert(failureWarnings[0]?.fallback.includes("ENOENT"), "fallback 文案应含失败原因(字典缺 key 时兜底可见)");
+    await suite.case("警告数组出口应原样透传(成功语义不变)", () => {
+      assert(Array.isArray(same) && same.length === 1 && same[0] === warnings[0],
+        "警告数组出口应原样透传(成功语义不变)");
+    });
+    await suite.case("归一应返回新数组,不与调用方数组共享引用", () => {
+      assert(same !== warnings, "归一应返回新数组,不与调用方数组共享引用");
+    });
+    await suite.case("busy 出口应重建为稳定三键(多余键被丢弃)", () => {
+      assert(isOperationBusyResult(busyOutcome) && Object.keys(busyOutcome).sort().join(",") === "busy,error,ok",
+        "busy 出口应重建为稳定三键(多余键被丢弃)");
+    });
+    await suite.case("异常归一结果应判定为预检失败出口", () => {
+      assert(isPrecheckFailureOutcome(failed) === true, "异常归一结果应判定为预检失败出口");
+    });
+    await suite.case("警告数组/busy 不应被判为预检失败", () => {
+      assert(isPrecheckFailureOutcome([]) === false && isPrecheckFailureOutcome(operationBusyResult("忙")) === false,
+        "警告数组/busy 不应被判为预检失败");
+    });
+    await suite.case("预检异常应转为单条失败警告(不再静默空数组)", () => {
+      assert(Array.isArray(failureWarnings) && failureWarnings.length === 1,
+        "预检异常应转为单条失败警告(不再静默空数组)");
+    });
+    // 三条读的是同一条 failureWarnings[0] 的三个字段:合进一个 case,
+    // 拆开会把「这条失败警告长什么样」拆成三条各自报字段缺失
+    await suite.case("失败警告应与 precheckFailedWarning 同形(key+params+fallback)", () => {
+      assert(
+        JSON.stringify(failureWarnings[0]) === JSON.stringify(precheckFailedWarning("ENOENT: no such file")),
+        "失败警告应与 precheckFailedWarning 同形(key+params+fallback)",
+      );
+      assert(failureWarnings[0]?.params?.error === "ENOENT: no such file", "失败警告应携带失败原因");
+      assert(failureWarnings[0]?.fallback.includes("ENOENT"), "fallback 文案应含失败原因(字典缺 key 时兜底可见)");
+    });
   }
   console.log("[ok] busy 形状单源 + 预检三出口归一(数组透传/busy 稳定/异常可观察) 断言通过");
 
   // ---------- webContents operation registry ----------
   // 三个 ctx 均按 ConversionHandle 真形状构造(不再挂 id/canceled 等契约外字段);
   // 「cancel 指向当前操作」改看契约自带的 cancelRequested 标志。
+  // 这段是**严格串行的状态机**(占用 → 被拒 → cancel → 释放 → 换代 → 多窗口):
+  // 每条读到的中间态只在它自己那一步之后存在,拆成多个 case 等于把
+  // 「先占用再释放」的顺序抹平,后一条会读到已经换代了的注册表。
   const firstCtx = fakeConvertCtx();
   const firstToken = beginWebContentsOperation(7001, "single", firstCtx);
-  assert(firstToken !== null, "首个操作应注册成功");
-  assert(hasWebContentsOperation(7001), "占用后 hasWebContentsOperation 应为真");
-  assert(beginWebContentsOperation(7001, "batch", fakeConvertCtx()) === null,
-    "同一 webContents 的第二个操作应拒绝");
-  assert(getWebContentsOperation(7001)?.kind === "single", "注册表应保留首个操作类型");
-  assert(getWebContentsOperation(7001)?.context === firstCtx, "被拒操作不得替换已占用 context");
-  assert(cancelWebContentsOperation(7001) === true, "存在活动操作时 cancel 应返回 true");
-  assert(firstCtx.cancelRequested === true, "cancel 应指向当前活动操作");
+  await suite.case("operation registry:single-flight/占用不被替换/current cancel/compare-and-delete/多窗口隔离", () => {
+    assert(firstToken !== null, "首个操作应注册成功");
+    assert(hasWebContentsOperation(7001), "占用后 hasWebContentsOperation 应为真");
+    assert(beginWebContentsOperation(7001, "batch", fakeConvertCtx()) === null,
+      "同一 webContents 的第二个操作应拒绝");
+    assert(getWebContentsOperation(7001)?.kind === "single", "注册表应保留首个操作类型");
+    assert(getWebContentsOperation(7001)?.context === firstCtx, "被拒操作不得替换已占用 context");
+    assert(cancelWebContentsOperation(7001) === true, "存在活动操作时 cancel 应返回 true");
+    assert(firstCtx.cancelRequested === true, "cancel 应指向当前活动操作");
 
-  assert(finishWebContentsOperation(7001, firstToken) === true, "当前 token 应先释放首个操作");
-  assert(!hasWebContentsOperation(7001), "释放后 hasWebContentsOperation 应为假");
-  assert(cancelWebContentsOperation(7001) === false, "无活动操作时 cancel 应返回 false(空操作)");
-  const secondCtx = fakeConvertCtx();
-  const secondToken = beginWebContentsOperation(7001, "precheck", secondCtx);
-  assert(secondToken !== null, "旧操作结束后同 key 应可注册新操作");
-  assert(finishWebContentsOperation(7001, firstToken) === false,
-    "旧 token 的 compare-and-delete 不应删除新操作");
-  assert(getWebContentsOperation(7001)?.context === secondCtx, "后继操作仍应保持注册");
-  assert(finishWebContentsOperation(7001, secondToken) === true, "当前 token 应可释放操作");
-  assert(getWebContentsOperation(7001) === undefined, "当前 token 释放后注册表应为空");
-  // 不同 webContents 互不干扰(多窗口隔离)
-  const otherToken = beginWebContentsOperation(7002, "merge", fakeConvertCtx());
-  assert(otherToken !== null && hasWebContentsOperation(7002), "另一 webContents 应可独立占用");
-  assert(!hasWebContentsOperation(7001), "7001 释放后不应牵连 7002");
-  finishWebContentsOperation(7002, otherToken);
+    assert(finishWebContentsOperation(7001, firstToken) === true, "当前 token 应先释放首个操作");
+    assert(!hasWebContentsOperation(7001), "释放后 hasWebContentsOperation 应为假");
+    assert(cancelWebContentsOperation(7001) === false, "无活动操作时 cancel 应返回 false(空操作)");
+    const secondCtx = fakeConvertCtx();
+    const secondToken = beginWebContentsOperation(7001, "precheck", secondCtx);
+    assert(secondToken !== null, "旧操作结束后同 key 应可注册新操作");
+    assert(finishWebContentsOperation(7001, firstToken) === false,
+      "旧 token 的 compare-and-delete 不应删除新操作");
+    assert(getWebContentsOperation(7001)?.context === secondCtx, "后继操作仍应保持注册");
+    assert(finishWebContentsOperation(7001, secondToken) === true, "当前 token 应可释放操作");
+    assert(getWebContentsOperation(7001) === undefined, "当前 token 释放后注册表应为空");
+    // 不同 webContents 互不干扰(多窗口隔离)
+    const otherToken = beginWebContentsOperation(7002, "merge", fakeConvertCtx());
+    assert(otherToken !== null && hasWebContentsOperation(7002), "另一 webContents 应可独立占用");
+    assert(!hasWebContentsOperation(7001), "7001 释放后不应牵连 7002");
+    finishWebContentsOperation(7002, otherToken);
+  });
   console.log("[ok] operation registry:single-flight/占用不被替换/current cancel/compare-and-delete/多窗口隔离 断言通过");
 
   // ---------- 依赖边界:logic.js 运行时依赖图(含传递)零 electron ----------
   // 纯逻辑层若(直接或经传递依赖)import electron,本段在纯 Node 下就无法直连产物;
   // electron 触点必须经 deps 注入(runConvertTask)或留在 register.ts 薄壳。
+  // 遍历留在 case 外:它是下面两条判定共用的取数过程,搬进 case 会把
+  // 「图触达 electron」与「图根本不可遍历」变成两次遍历
   const distRoot = path.join(ROOT, "dist");
   const electronImportRe = /(?:from|import|require\()\s*["']([^"']+)["']/g;
   const seen = new Set();
   const queue = [path.join(distRoot, "main", "ipc", "logic.js")];
-  const electronHitters = [];
+  // 显式标注:读它的断言已搬进 case 的闭包,元素类型无法靠同函数体内的 push 推出来
+/** @type {string[]} */
+const electronHitters = [];
   let visitedCount = 0;
   while (queue.length > 0) {
     const file = queue.pop();
@@ -469,10 +600,15 @@ export async function run() {
       if (spec.startsWith(".")) queue.push(path.resolve(path.dirname(file), spec));
     }
   }
-  assert(
-    electronHitters.length === 0,
-    `logic 依赖图不应触达 electron,实际触达:${[...new Set(electronHitters)].join(", ")}`,
-  );
-  assert(visitedCount > 1, `依赖图应可遍历(实际 ${visitedCount} 个模块),解析规则可能失效`);
+  await suite.case("logic 依赖图不应触达 electron", () => {
+    assert(
+      electronHitters.length === 0,
+      `logic 依赖图不应触达 electron,实际触达:${[...new Set(electronHitters)].join(", ")}`,
+    );
+  });
+  await suite.case("依赖图应可遍历(解析规则可能失效)", () => {
+    assert(visitedCount > 1, `依赖图应可遍历(实际 ${visitedCount} 个模块),解析规则可能失效`);
+  });
   console.log(`[ok] logic 依赖边界:运行时依赖图零 electron(遍历 ${visitedCount} 个模块) 断言通过`);
+  return { cases: suite.results };
 }

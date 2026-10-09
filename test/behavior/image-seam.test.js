@@ -18,6 +18,7 @@ import { formatWarning } from "../../dist/core/i18n/index.js";
 import { createImageResolver } from "../../dist/convert/image-downloader.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { prepareForConvert } from "../harness/convert-helpers.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /** 本段横跨的层(ADR-062 L6 判据要求 behavior 段显式声明):元素是仓库相对 POSIX 路径。 */
 export const covers = [
@@ -32,27 +33,35 @@ export const covers = [
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   // ---- 缺失检查并入 resolver 失败路径(单次 IO),统一警告文案 ----
   // convert 层 stat 预扫已移除:docx 侧经 imageToDocx 失败路径、pdf 侧经
   // checkLocalImages,均走本 resolver 返回 null → 警告统一为「图片加载失败: <src>」。
   const { convert } = await import("../../dist/core/convert.js");
-  const wMissing = /** @type {import("../../dist/core/i18n/warning.js").KeyedWarning[]} */ ([]);
-  await convert(prepareForConvert("![缺图](missing-xxx.png)"), "docx", {
-    baseDir: FIXTURES_DIR,
-    imageResolver: createImageResolver(FIXTURES_DIR),
-    warnings: wMissing,
+  // 两侧的 convert 各写各自的 warnings 数组(彼此不依赖),故拆成两个 case:
+  // 「缺图」判红不该掩盖「有图」是否零警告
+  await suite.case("缺失本地图片产出统一「图片加载失败:」警告并带出 src", async () => {
+    const wMissing = /** @type {import("../../dist/core/i18n/warning.js").KeyedWarning[]} */ ([]);
+    await convert(prepareForConvert("![缺图](missing-xxx.png)"), "docx", {
+      baseDir: FIXTURES_DIR,
+      imageResolver: createImageResolver(FIXTURES_DIR),
+      warnings: wMissing,
+    });
+    if (!wMissing.some((w) => formatWarning(w).includes("图片加载失败:") && formatWarning(w).includes("missing-xxx.png"))) {
+      throw new Error("image-downloader 断言失败:缺失本地图片应产生统一「图片加载失败:」警告");
+    }
   });
-  if (!wMissing.some((w) => formatWarning(w).includes("图片加载失败:") && formatWarning(w).includes("missing-xxx.png"))) {
-    throw new Error("image-downloader 断言失败:缺失本地图片应产生统一「图片加载失败:」警告");
-  }
-  const wOk = /** @type {import("../../dist/core/i18n/warning.js").KeyedWarning[]} */ ([]);
-  await convert(prepareForConvert("![有图](./input/g1-tiny.png)"), "docx", {
-    baseDir: FIXTURES_DIR,
-    imageResolver: createImageResolver(FIXTURES_DIR),
-    warnings: wOk,
+  await suite.case("存在的本地图片零警告", async () => {
+    const wOk = /** @type {import("../../dist/core/i18n/warning.js").KeyedWarning[]} */ ([]);
+    await convert(prepareForConvert("![有图](./input/g1-tiny.png)"), "docx", {
+      baseDir: FIXTURES_DIR,
+      imageResolver: createImageResolver(FIXTURES_DIR),
+      warnings: wOk,
+    });
+    if (wOk.length !== 0) {
+      throw new Error(`image-downloader 断言失败:存在的本地图片不应产生警告,实际 ${wOk.join(";")}`);
+    }
   });
-  if (wOk.length !== 0) {
-    throw new Error(`image-downloader 断言失败:存在的本地图片不应产生警告,实际 ${wOk.join(";")}`);
-  }
   console.log("[ok] image-seam:resolver 返回 null → core convert 产出统一「图片加载失败:」/ 存在图片零警告 断言通过");
+  return { cases: suite.results };
 }

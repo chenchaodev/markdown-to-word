@@ -18,6 +18,7 @@ import { docxLinkBody, pdfLinkBody } from "../harness/dual-extract.js";
 
 
 import { FIXTURES_DIR, KATEX_DIR } from "../harness/paths.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /** 警告收集器元素类型:取自产物声明(ADR-069 起 dist 带 .d.ts,契约以产物为准);
  *  裸 `const x = []` 无处可推断,须显式标注 —— 它就是 ConvertContext.warnings 的元素类型。 */
@@ -46,6 +47,7 @@ export const meta = { description: "公式编号 + 交叉引用测试:" };
 export const fixtures = { main: mainMd };
 
 export async function run() {
+  const suite = createCaseSuite();
   /** @type {ConvertWarning[]} */
   const mainWarnings = [];
   const mainDocx = (
@@ -55,25 +57,35 @@ export async function run() {
   // 回归守卫:书签 w:id 文档内唯一(公式 label 书签 eq-energy/eq-force 与标题书签
   // 共用 ctx.bookmarkNextId 自增计数,全文档不重复;曾为组件级恒为 1 导致 WPS 异常)
   const bookmarkIds = [...mainXml.matchAll(/w:bookmarkStart[^>]*w:id="(\d+)"/g)].map((m) => m[1]);
-  if (bookmarkIds.length === 0) {
-    throw new Error("断言失败:document.xml 无 w:bookmarkStart w:id");
-  }
-  if (new Set(bookmarkIds).size !== bookmarkIds.length) {
-    throw new Error(`断言失败:书签 w:id 应文档内唯一(共 ${bookmarkIds.length} 枚,去重后 ${new Set(bookmarkIds).size} 枚)`);
-  }
+  await suite.case("document.xml 有 w:bookmarkStart w:id", () => {
+    if (bookmarkIds.length === 0) {
+      throw new Error("断言失败:document.xml 无 w:bookmarkStart w:id");
+    }
+  });
+  await suite.case("书签 w:id 文档内唯一(含 eq-* 公式书签)", () => {
+    if (new Set(bookmarkIds).size !== bookmarkIds.length) {
+      throw new Error(`断言失败:书签 w:id 应文档内唯一(共 ${bookmarkIds.length} 枚,去重后 ${new Set(bookmarkIds).size} 枚)`);
+    }
+  });
   console.log(`[ok] docx 书签 w:id 文档内唯一(${bookmarkIds.length} 枚,含 eq-* 公式书签)`);
   // 公式编号静态文本 (1)(2) 存在(免更新,无域)
   for (const needle of ["(1)", "(2)"]) {
-    if (!mainXml.includes(needle)) throw new Error(`断言失败:公式编号缺失(${needle})`);
+    await suite.case(`公式编号静态文本在位: ${needle}`, () => {
+      if (!mainXml.includes(needle)) throw new Error(`断言失败:公式编号缺失(${needle})`);
+    });
   }
   // 公式段落 tab 制表位(center + right)存在(居中公式 + 右对齐编号)
-  if (!mainXml.includes('w:val="center"') || !mainXml.includes('w:val="right"')) {
-    throw new Error("断言失败:公式段缺少 center/right 制表位");
-  }
+  await suite.case("公式段含 center/right 制表位", () => {
+    if (!mainXml.includes('w:val="center"') || !mainXml.includes('w:val="right"')) {
+      throw new Error("断言失败:公式段缺少 center/right 制表位");
+    }
+  });
   // label → 书签(eq-<label> 命名,引用跳转目标)
-  if (!mainXml.includes('w:name="eq-energy"') || !mainXml.includes('w:name="eq-force"')) {
-    throw new Error("断言失败:公式 label 书签缺失(eq-energy/eq-force)");
-  }
+  await suite.case("公式 label 书签齐全(eq-energy/eq-force)", () => {
+    if (!mainXml.includes('w:name="eq-energy"') || !mainXml.includes('w:name="eq-force"')) {
+      throw new Error("断言失败:公式 label 书签缺失(eq-energy/eq-force)");
+    }
+  });
   // 交叉引用静态文本「式 (1)」「公式 (2)」+ 超链接指向书签。
   // 「命中哪一条」经 docxLinkBody 单源判(与 cross-ref / dual-pipeline-matrix 两段同口径):
   // 文本与跳转目标绑在同一条链接上,别处的同形文本不算命中(错误文案沿用旧 needle 形态,
@@ -81,16 +93,24 @@ export async function run() {
   /** @type {[string, string][]} */
   const docxXrefCases = [["eq-energy", "式 (1)"], ["eq-force", "公式 (2)"]];
   for (const [anchor, text] of docxXrefCases) {
-    if (!docxLinkBody(mainXml, anchor).includes(text)) {
-      throw new Error(`断言失败:交叉引用缺失(${text} / w:anchor="${anchor}")`);
-    }
+    await suite.case(`交叉引用命中: ${text} → w:anchor="${anchor}"`, () => {
+      if (!docxLinkBody(mainXml, anchor).includes(text)) {
+        throw new Error(`断言失败:交叉引用缺失(${text} / w:anchor="${anchor}")`);
+      }
+    });
   }
   // label 标记行不渲染;悬空引用 → 「式 (?)」+ 警告
-  if (mainXml.includes("{#eq:")) throw new Error("断言失败:label 标记行不应渲染");
-  if (!mainXml.includes("式 (?)")) throw new Error("断言失败:悬空引用应渲染为「式 (?)」");
-  if (!mainWarnings.some((w) => formatWarning(w).includes("label: unknown"))) {
-    throw new Error("断言失败:悬空引用应追加警告");
-  }
+  await suite.case("label 标记行不渲染", () => {
+    if (mainXml.includes("{#eq:")) throw new Error("断言失败:label 标记行不应渲染");
+  });
+  await suite.case("悬空引用渲染为「式 (?)」", () => {
+    if (!mainXml.includes("式 (?)")) throw new Error("断言失败:悬空引用应渲染为「式 (?)」");
+  });
+  await suite.case("悬空引用追加警告", () => {
+    if (!mainWarnings.some((w) => formatWarning(w).includes("label: unknown"))) {
+      throw new Error("断言失败:悬空引用应追加警告");
+    }
+  });
   console.log("[ok] docx 公式编号 + 交叉引用:编号/制表位/书签/引用文本/label 不渲染/悬空兜底 断言通过");
 
   // ---------- 孤立 label 警告(equations.ts:52-53) ----------
@@ -101,13 +121,17 @@ export async function run() {
   const orphanDocx = (
     await convertWithFs("{#eq:orphan}\n\n正文", "docx", { baseDir: FIXTURES_DIR, warnings: orphanWarnings })
   );
-  if (!orphanWarnings.some((w) => formatWarning(w) === "公式 label 前无公式,已忽略: {#eq:orphan}")) {
-    throw new Error("断言失败:孤立 label 应追加「公式 label 前无公式」警告");
-  }
   const orphanXml = await unzipPart(docxBufferOf(orphanDocx), "word/document.xml");
-  if (orphanXml.includes("{#eq:orphan}")) {
-    throw new Error("断言失败:孤立 label 标记行不应渲染");
-  }
+  await suite.case("孤立 label 追加「公式 label 前无公式」警告", () => {
+    if (!orphanWarnings.some((w) => formatWarning(w) === "公式 label 前无公式,已忽略: {#eq:orphan}")) {
+      throw new Error("断言失败:孤立 label 应追加「公式 label 前无公式」警告");
+    }
+  });
+  await suite.case("孤立 label 标记行不渲染", () => {
+    if (orphanXml.includes("{#eq:orphan}")) {
+      throw new Error("断言失败:孤立 label 标记行不应渲染");
+    }
+  });
   console.log("[ok] docx 孤立公式 label:警告 + 标记行不渲染 断言通过");
 
   const katexDir = KATEX_DIR;
@@ -116,27 +140,39 @@ export async function run() {
   );
   const mainHtml = pdfHtmlOf(mainPdf);
   // PDF 公式编号结构(eq-block/eq-num + 编号文本)
-  if (!mainHtml.includes('class="eq-block"') || !mainHtml.includes('class="eq-num"')) {
-    throw new Error("断言失败:PDF 缺少 eq-block/eq-num 结构");
-  }
-  if (!mainHtml.includes(">(1)<") || !mainHtml.includes(">(2)<")) {
-    throw new Error("断言失败:PDF 公式编号 (1)/(2) 缺失");
-  }
+  await suite.case("PDF 含 eq-block/eq-num 结构", () => {
+    if (!mainHtml.includes('class="eq-block"') || !mainHtml.includes('class="eq-num"')) {
+      throw new Error("断言失败:PDF 缺少 eq-block/eq-num 结构");
+    }
+  });
+  await suite.case("PDF 公式编号 (1)/(2) 在位", () => {
+    if (!mainHtml.includes(">(1)<") || !mainHtml.includes(">(2)<")) {
+      throw new Error("断言失败:PDF 公式编号 (1)/(2) 缺失");
+    }
+  });
   // label 锚点 id + 引用静态文本「式 (1)」「公式 (2)」。锚点存在与「命中哪一条」分开判:
   // 前者查 id=,后者经 pdfLinkBody 单源(docx 侧同口径)把文本绑到锚点上。
   for (const needle of ['id="eq:energy"', 'id="eq:force"']) {
-    if (!mainHtml.includes(needle)) throw new Error(`断言失败:PDF 锚点/引用缺失(${needle})`);
+    await suite.case(`PDF 锚点在位: ${needle}`, () => {
+      if (!mainHtml.includes(needle)) throw new Error(`断言失败:PDF 锚点/引用缺失(${needle})`);
+    });
   }
   /** @type {[string, string][]} */
   const pdfXrefCases = [["eq:energy", "式 (1)"], ["eq:force", "公式 (2)"]];
   for (const [anchor, text] of pdfXrefCases) {
-    if (!pdfLinkBody(mainHtml, anchor).includes(text)) {
-      throw new Error(`断言失败:PDF 锚点/引用缺失(href="#${anchor}">${text}<)`);
-    }
+    await suite.case(`PDF 交叉引用命中: ${text} → href="#${anchor}"`, () => {
+      if (!pdfLinkBody(mainHtml, anchor).includes(text)) {
+        throw new Error(`断言失败:PDF 锚点/引用缺失(href="#${anchor}">${text}<)`);
+      }
+    });
   }
   // label 标记行不渲染;悬空引用「式 (?)」
-  if (mainHtml.includes("{#eq:")) throw new Error("断言失败:PDF 不应渲染 label 标记行");
-  if (!mainHtml.includes("式 (?)")) throw new Error("断言失败:PDF 悬空引用应渲染为「式 (?)」");
+  await suite.case("PDF 不渲染 label 标记行", () => {
+    if (mainHtml.includes("{#eq:")) throw new Error("断言失败:PDF 不应渲染 label 标记行");
+  });
+  await suite.case("PDF 悬空引用渲染为「式 (?)」", () => {
+    if (!mainHtml.includes("式 (?)")) throw new Error("断言失败:PDF 悬空引用应渲染为「式 (?)」");
+  });
   // 行内公式不编号(无 eq-num 包裹在行内公式上)
   console.log("[ok] PDF 公式编号 + 交叉引用:eq-block/锚点/引用文本/label 不渲染/悬空兜底 断言通过");
 
@@ -147,18 +183,22 @@ export async function run() {
   const dupDocxWarnings = [];
   await convertWithFs(dupMd, "docx", { baseDir: FIXTURES_DIR, warnings: dupDocxWarnings });
   const dupDocxCount = dupDocxWarnings.filter((w) => formatWarning(w) === "交叉引用未找到公式 label: ghost").length;
-  if (dupDocxCount !== 1) {
-    throw new Error(`去重断言失败:docx 悬空公式引用 ×3 应只报 1 条,实际 ${dupDocxCount}`);
-  }
+  await suite.case("docx 悬空公式引用 ×3 只报 1 条", () => {
+    if (dupDocxCount !== 1) {
+      throw new Error(`去重断言失败:docx 悬空公式引用 ×3 应只报 1 条,实际 ${dupDocxCount}`);
+    }
+  });
   /** @type {ConvertWarning[]} */
   const dupPdfWarnings = [];
   await convertWithFs(dupMd, "pdf", { baseDir: FIXTURES_DIR, title: "去重", warnings: dupPdfWarnings, katexDir });
   const dupPdfCount = dupPdfWarnings.filter(
     (w) => typeof w === "object" && /** @type {{ key?: unknown }} */ (w).key === "warn.eqLabelUndefined",
   ).length;
-  if (dupPdfCount !== 1) {
-    throw new Error(`去重断言失败:pdf 悬空公式引用 ×3 应只报 1 条 warn.eqLabelUndefined,实际 ${dupPdfCount}`);
-  }
+  await suite.case("pdf 悬空公式引用 ×3 只报 1 条 warn.eqLabelUndefined", () => {
+    if (dupPdfCount !== 1) {
+      throw new Error(`去重断言失败:pdf 悬空公式引用 ×3 应只报 1 条 warn.eqLabelUndefined,实际 ${dupPdfCount}`);
+    }
+  });
   console.log("[ok] 悬空公式引用去重(docx/pdf 双侧各 1 条,共享 pushWarningOnce 键口径)断言通过");
 
   // ---------- label 口径对齐 docx(pdf 侧放宽为「整段纯文本串接」) ----------
@@ -171,25 +211,35 @@ export async function run() {
     katexDir,
   }));
   const boldLabelHtml = pdfHtmlOf(boldLabelPdf);
-  if (!boldLabelHtml.includes('id="eq:bold-lab"')) {
-    throw new Error(`断言失败:粗斜体包裹 label 未登记锚点(pdf):\n${boldLabelHtml}`);
-  }
-  if (boldLabelHtml.includes("{#eq:bold-lab}")) {
-    throw new Error("断言失败:粗斜体包裹 label 标记行不应渲染字面文本");
-  }
-  if (!pdfLinkBody(boldLabelHtml, "eq:bold-lab").includes("式 (1)")) {
-    throw new Error("断言失败:粗斜体包裹 label 的交叉引用未替换为「式 (1)」");
-  }
   const boldLabelDocx = (
     await convertWithFs(boldLabelMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] })
   );
   const boldLabelXml = await unzipPart(docxBufferOf(boldLabelDocx), "word/document.xml");
-  if (!boldLabelXml.includes('w:name="eq-bold-lab"')) {
-    throw new Error("断言失败:粗斜体包裹 label 未登记书签(docx)");
-  }
-  if (!docxLinkBody(boldLabelXml, "eq-bold-lab").includes("式 (1)")) {
-    throw new Error("断言失败:粗斜体包裹 label 的交叉引用未替换(docx)");
-  }
+  await suite.case("粗斜体包裹 label 未登记锚点字面文本(pdf)", () => {
+    if (!boldLabelHtml.includes('id="eq:bold-lab"')) {
+      throw new Error(`断言失败:粗斜体包裹 label 未登记锚点(pdf):\n${boldLabelHtml}`);
+    }
+  });
+  await suite.case("粗斜体包裹 label 标记行不渲染字面文本(pdf)", () => {
+    if (boldLabelHtml.includes("{#eq:bold-lab}")) {
+      throw new Error("断言失败:粗斜体包裹 label 标记行不应渲染字面文本");
+    }
+  });
+  await suite.case("粗斜体包裹 label 的交叉引用替换为「式 (1)」(pdf)", () => {
+    if (!pdfLinkBody(boldLabelHtml, "eq:bold-lab").includes("式 (1)")) {
+      throw new Error("断言失败:粗斜体包裹 label 的交叉引用未替换为「式 (1)」");
+    }
+  });
+  await suite.case("粗斜体包裹 label 登记书签(docx)", () => {
+    if (!boldLabelXml.includes('w:name="eq-bold-lab"')) {
+      throw new Error("断言失败:粗斜体包裹 label 未登记书签(docx)");
+    }
+  });
+  await suite.case("粗斜体包裹 label 的交叉引用替换为「式 (1)」(docx)", () => {
+    if (!docxLinkBody(boldLabelXml, "eq-bold-lab").includes("式 (1)")) {
+      throw new Error("断言失败:粗斜体包裹 label 的交叉引用未替换(docx)");
+    }
+  });
   console.log("[ok] 粗斜体包裹 {#eq:label}:pdf 放宽命中 + docx 契约锁定(双格式一致)断言通过");
 
   // ---------- 公式编号开关关闭(equationNumbering: false,docx/pdf 双格式一致) ----------
@@ -208,19 +258,27 @@ export async function run() {
   const offDocument = await unzipPart(docxBufferOf(offDocx), "word/document.xml");
   // 关开关-1:公式不编号(无 (1)/(2) 静态文本)
   for (const needle of ["(1)", "(2)"]) {
-    if (offDocument.includes(needle)) throw new Error(`断言失败:关开关后不应出现公式编号(${needle})`);
+    await suite.case(`关开关后无公式编号: ${needle}`, () => {
+      if (offDocument.includes(needle)) throw new Error(`断言失败:关开关后不应出现公式编号(${needle})`);
+    });
   }
   // 关开关-2:{#eq:label} 段不渲染(语法标记隐藏,不按普通段落显示)
-  if (offDocument.includes("{#eq:energy}") || offDocument.includes("{#eq:force}")) {
-    throw new Error("断言失败:关开关后 {#eq:label} 段不应渲染");
-  }
+  await suite.case("关开关后 {#eq:label} 段不渲染", () => {
+    if (offDocument.includes("{#eq:energy}") || offDocument.includes("{#eq:force}")) {
+      throw new Error("断言失败:关开关后 {#eq:label} 段不应渲染");
+    }
+  });
   // 关开关-3:引用保持原文本(不编号替换、不降级「(?)」、不追加警告)
-  if (offDocument.includes("式 (1)") || offDocument.includes("式 (?)")) {
-    throw new Error("断言失败:关开关后引用应保持原文本(不编号/不降级)");
-  }
-  if (offWarnings.some((w) => w.includes("label: unknown"))) {
-    throw new Error("断言失败:关开关后不应追加交叉引用警告");
-  }
+  await suite.case("关开关后引用保持原文本(不编号/不降级)", () => {
+    if (offDocument.includes("式 (1)") || offDocument.includes("式 (?)")) {
+      throw new Error("断言失败:关开关后引用应保持原文本(不编号/不降级)");
+    }
+  });
+  await suite.case("关开关后不追加交叉引用警告", () => {
+    if (offWarnings.some((w) => w.includes("label: unknown"))) {
+      throw new Error("断言失败:关开关后不应追加交叉引用警告");
+    }
+  });
   console.log("[ok] docx 公式编号开关关闭:公式不编号/label 段隐藏/引用保持原文本 断言通过");
 
   const offPdf = (await convertWithFs(mainMd, "pdf", {
@@ -232,22 +290,31 @@ export async function run() {
   }));
   const offPdfHtml = pdfHtmlOf(offPdf);
   // 关开关-4:PDF 无 eq-block/eq-num 结构、无编号文本
-  if (offPdfHtml.includes('class="eq-block"') || offPdfHtml.includes('class="eq-num"')) {
-    throw new Error("断言失败:关开关后 PDF 不应有 eq-block/eq-num 结构");
-  }
-  if (offPdfHtml.includes(">(1)<") || offPdfHtml.includes(">(2)<")) {
-    throw new Error("断言失败:关开关后 PDF 不应有公式编号 (1)/(2)");
-  }
+  await suite.case("关开关后 PDF 无 eq-block/eq-num 结构", () => {
+    if (offPdfHtml.includes('class="eq-block"') || offPdfHtml.includes('class="eq-num"')) {
+      throw new Error("断言失败:关开关后 PDF 不应有 eq-block/eq-num 结构");
+    }
+  });
+  await suite.case("关开关后 PDF 无公式编号 (1)/(2)", () => {
+    if (offPdfHtml.includes(">(1)<") || offPdfHtml.includes(">(2)<")) {
+      throw new Error("断言失败:关开关后 PDF 不应有公式编号 (1)/(2)");
+    }
+  });
   // 关开关-5:{#eq:label} 段不渲染(语法标记隐藏)
-  if (offPdfHtml.includes("{#eq:energy}") || offPdfHtml.includes("{#eq:force}")) {
-    throw new Error("断言失败:关开关后 PDF 的 {#eq:label} 段不应渲染");
-  }
+  await suite.case("关开关后 PDF 的 {#eq:label} 段不渲染", () => {
+    if (offPdfHtml.includes("{#eq:energy}") || offPdfHtml.includes("{#eq:force}")) {
+      throw new Error("断言失败:关开关后 PDF 的 {#eq:label} 段不应渲染");
+    }
+  });
   // 关开关-6:引用保持原文本(不编号替换、不降级「(?)」)
-  if (offPdfHtml.includes("式 (1)") || offPdfHtml.includes("式 (?)")) {
-    throw new Error("断言失败:关开关后 PDF 引用应保持原文本");
-  }
+  await suite.case("关开关后 PDF 引用保持原文本", () => {
+    if (offPdfHtml.includes("式 (1)") || offPdfHtml.includes("式 (?)")) {
+      throw new Error("断言失败:关开关后 PDF 引用应保持原文本");
+    }
+  });
   console.log("[ok] PDF 公式编号开关关闭:公式不编号/label 段隐藏/引用保持原文本 断言通过");
 
   const mainPdfBin = await htmlToPdf(mainHtml, asPdfArtifact(mainPdf).footerTemplate);
   await saveArtifact("eq-numbering", { docx: docxBufferOf(mainDocx), pdf: mainPdfBin });
+  return { cases: suite.results };
 }

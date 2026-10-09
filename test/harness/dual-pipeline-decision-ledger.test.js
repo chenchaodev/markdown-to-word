@@ -85,6 +85,7 @@
  * ADR-062:210 已定「矩阵/表不该被拆碎」,该红**不该靠拆段解决**。
  */
 
+import { createCaseSuite } from "./case.js";
 import {
   DUAL_PIPELINE_KEYS,
   MATRIX_ROW_IDS,
@@ -599,7 +600,21 @@ export const fixtures = null;
 
 /** 验收段入口:形状守护 + 分布打印(键覆盖守护由矩阵段调 assertKeyCoverageRegistered 触发)。 */
 export async function run() {
- assertLedgerShape(DECISION_LEDGER);
+ const suite = createCaseSuite();
+  // 段内的判定只有一条 —— 把 45 项台账交给登记册的形状判据(它一次性核:四档取值合法 /
+  // 条目 id 唯一 / 归因非空 / setting-void 项必写处置 / 矩阵行对照表与行集合逐字相符 /
+  // 每个非 null 对照指向真实条目)。
+  //
+  // 为什么是**一个** case 而不是按上面那几条拆开:它们不是几件独立的事,而是同一个判据
+  // 函数体里的几道分支。拆开只能把判据逻辑复制到段内重写一遍,而复制判定 = 把判定冻结
+  // 在调用点(同目录 dual-pipeline-key-coverage 段对 assertKeyCoverageRegistered 取的是
+  // 同款取舍:只消费、不复制)。委派本身就是一个被测行为 —— 「台账形状是否合规」正是
+  // 本段存在的理由。
+  //
+  // 下面三条 console.log 是人读回显、不是断言,留在 case 外(判红与否都照打)。
+  await suite.case("台账形状合规:四档取值合法 / 条目 id 唯一 / 归因非空 / setting-void 项必写处置 / 矩阵行对照表与行集合逐字相符", () => {
+    assertLedgerShape(DECISION_LEDGER);
+  });
  const counts = ledgerBucketCounts();
  console.log(
  `[ok] dual-pipeline-ledger:${DECISION_LEDGER.length} 项登记齐全`
@@ -611,4 +626,5 @@ export async function run() {
  `[ok] dual-pipeline-ledger:${DUAL_PIPELINE_KEYS.length} 个双管线键已登记`
  + "(逐键覆盖数由矩阵段的 assertKeyCoverageRegistered 核对)",
  );
+ return { cases: suite.results };
 }

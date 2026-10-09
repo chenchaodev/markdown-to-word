@@ -24,6 +24,7 @@ import {
 } from "../../gates/artifacts/check-asar-manifest.mjs";
 import { main as releaseMain } from "../../gates/artifacts/check-release-artifacts.mjs";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 import { removeFile, removeTree } from "../harness/temp-resource.js";
 
 const FIXTURE_VERSION = "9.9.9";
@@ -289,32 +290,38 @@ function makeReleaseFixture(tmp, { version = FIXTURE_VERSION, mutate } = {}) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   // ---------- 0. 契约常量自检:防止必备条目清单被清空后检查变成空转 ----------
-  assert(EXPECTED_TOP_LEVEL.length === 3, "顶层白名单应为 dist/node_modules/package.json 三项");
-  assert(EXPECTED_TOP_LEVEL.includes("package.json") && EXPECTED_TOP_LEVEL.includes("node_modules"), "顶层白名单须含 package.json 与 node_modules");
-  const requiredPaths = REQUIRED_ENTRIES.map((entry) => entry.path);
-  for (const mustExist of [
-    "dist/main/preload.cjs",
-    "dist/renderer/index.html",
-    "dist/core/convert.js",
-    "node_modules/katex/dist/katex.min.css",
-    "node_modules/mermaid/dist/mermaid.min.js",
-  ]) {
-    assert(requiredPaths.includes(mustExist), `必备条目清单须含 ${mustExist}(否则检查会静默放行)`);
-  }
-  assert(
-    REQUIRED_PREFIXES.some((rule) => rule.prefix.startsWith("dist/renderer/style/") && rule.atLeast >= 1),
-    "须有 renderer 样式表的前缀类要求",
-  );
-  console.log(`[ok] release-artifact-gate:ASAR 契约常量非空(${requiredPaths.length} 条必备条目 + 1 条前缀要求)`);
+  await suite.case("0. ASAR 契约常量非空(顶层白名单三项 + 必备条目 + 前缀要求)", () => {
+    assert(EXPECTED_TOP_LEVEL.length === 3, "顶层白名单应为 dist/node_modules/package.json 三项");
+    assert(EXPECTED_TOP_LEVEL.includes("package.json") && EXPECTED_TOP_LEVEL.includes("node_modules"), "顶层白名单须含 package.json 与 node_modules");
+    const requiredPaths = REQUIRED_ENTRIES.map((entry) => entry.path);
+    for (const mustExist of [
+      "dist/main/preload.cjs",
+      "dist/renderer/index.html",
+      "dist/core/convert.js",
+      "node_modules/katex/dist/katex.min.css",
+      "node_modules/mermaid/dist/mermaid.min.js",
+    ]) {
+      assert(requiredPaths.includes(mustExist), `必备条目清单须含 ${mustExist}(否则检查会静默放行)`);
+    }
+    assert(
+      REQUIRED_PREFIXES.some((rule) => rule.prefix.startsWith("dist/renderer/style/") && rule.atLeast >= 1),
+      "须有 renderer 样式表的前缀类要求",
+    );
+    console.log(`[ok] release-artifact-gate:ASAR 契约常量非空(${requiredPaths.length} 条必备条目 + 1 条前缀要求)`);
+  });
 
   // ---------- 1. ASAR 正向:结构/入口/资源/清单核对全通过 ----------
-  await withTempDir(async (tmp) => {
-    const { asarPath, manifestPath, pkgPath } = await makeAsarFixture(tmp);
-    const result = await runChecker(() => asarMain(["--asar", asarPath, "--pkg", pkgPath, "--manifest", manifestPath]));
-    assert(result.code === 0, `齐备的 asar 应通过,实际 ${result.code}\n${result.output}`);
-    assert(/app\.asar 核对通过/.test(result.output), `通过文案应可读,实际:${result.output}`);
-  });
+  // withTempDir 自带 try/finally 清理,故它整体进 case 是安全的(不依赖段级 finally)
+  await suite.case("1. ASAR 正向:齐备夹具通过结构/入口/资源/清单哈希核对", () =>
+    withTempDir(async (tmp) => {
+      const { asarPath, manifestPath, pkgPath } = await makeAsarFixture(tmp);
+      const result = await runChecker(() => asarMain(["--asar", asarPath, "--pkg", pkgPath, "--manifest", manifestPath]));
+      assert(result.code === 0, `齐备的 asar 应通过,实际 ${result.code}\n${result.output}`);
+      assert(/app\.asar 核对通过/.test(result.output), `通过文案应可读,实际:${result.output}`);
+    }),
+  );
   console.log("[ok] release-artifact-gate:ASAR 齐备夹具通过(结构 + 入口 + 资源 + 清单哈希核对)");
 
   // ---------- 2. ASAR 负向:缺/坏/旧/污染 一律非零退出 ----------
@@ -399,70 +406,88 @@ export async function run() {
       expect: /dist 清单不可用/,
     },
   ];
+  // 逐夹具一个 case:一种漂移判红不该掩盖其余漂移(只报第一条就看不出是哪条规则失守)
   for (const testCase of asarCases) {
-    await withTempDir(async (tmp) => {
-      const fixture = await testCase.build(tmp);
-      const result = await runChecker(() =>
-        asarMain(["--asar", fixture.asarPath, "--pkg", fixture.pkgPath, "--manifest", fixture.manifestPath]),
-      );
-      assert(
-        result.code === 1 && testCase.expect.test(result.output),
-        `ASAR ${testCase.name} 应以非零码且原因匹配 ${testCase.expect} 失败,实际 exit ${result.code}\n${result.output}`,
-      );
-    });
+    await suite.case(`2. ASAR 负向夹具被拦截:${testCase.name}`, () =>
+      withTempDir(async (tmp) => {
+        const fixture = await testCase.build(tmp);
+        const result = await runChecker(() =>
+          asarMain(["--asar", fixture.asarPath, "--pkg", fixture.pkgPath, "--manifest", fixture.manifestPath]),
+        );
+        assert(
+          result.code === 1 && testCase.expect.test(result.output),
+          `ASAR ${testCase.name} 应以非零码且原因匹配 ${testCase.expect} 失败,实际 exit ${result.code}\n${result.output}`,
+        );
+      }),
+    );
   }
   console.log(`[ok] release-artifact-gate:${asarCases.length} 条 ASAR 负向夹具全部被拦截`);
 
   // ---------- 3. ASAR 显式放行:--skip-manifest 放行但留痕 ----------
-  await withTempDir(async (tmp) => {
-    const { asarPath, pkgPath, manifestPath } = await makeAsarFixture(tmp);
-    removeFile(manifestPath);
-    const skipped = await runChecker(() =>
-      asarMain(["--asar", asarPath, "--pkg", pkgPath, "--manifest", manifestPath, "--skip-manifest"]),
-    );
-    assert(skipped.code === 0, `--skip-manifest 应显式放行,实际 ${skipped.code}\n${skipped.output}`);
-    assert(/已跳过 dist 清单交叉核对/.test(skipped.output), `放行须留痕,实际:${skipped.output}`);
-  });
+  await suite.case("3. --skip-manifest 显式放行但输出留痕", () =>
+    withTempDir(async (tmp) => {
+      const { asarPath, pkgPath, manifestPath } = await makeAsarFixture(tmp);
+      removeFile(manifestPath);
+      const skipped = await runChecker(() =>
+        asarMain(["--asar", asarPath, "--pkg", pkgPath, "--manifest", manifestPath, "--skip-manifest"]),
+      );
+      assert(skipped.code === 0, `--skip-manifest 应显式放行,实际 ${skipped.code}\n${skipped.output}`);
+      assert(/已跳过 dist 清单交叉核对/.test(skipped.output), `放行须留痕,实际:${skipped.output}`);
+    }),
+  );
   console.log("[ok] release-artifact-gate:--skip-manifest 放行但输出留痕");
 
   // ---------- 4. release 正向:目标齐全 + latest.yml 对齐 + SHA-256 报告 ----------
-  await withTempDir(async (tmp) => {
-    const fixture = makeReleaseFixture(tmp);
-    const reportPath = path.join(tmp, "reports", "release-artifacts.json");
-    const result = await runChecker(() =>
-      releaseMain(["--release", fixture.releaseDir, "--pkg", fixture.pkgPath, "--report", reportPath]),
-    );
-    assert(result.code === 0, `齐备的发布目录应通过,实际 ${result.code}\n${result.output}`);
-    const report = /** @type {ReleaseReport} */ (JSON.parse(fs.readFileSync(reportPath, "utf8")));
-    assert(report.version === FIXTURE_VERSION, `报告版本应为 ${FIXTURE_VERSION},实际 ${report.version}`);
-    const installerEntry = report.artifacts.find((entry) => entry.name === fixture.installerName);
-    assert(installerEntry !== undefined, "报告应含安装包条目");
-    assert(
-      installerEntry.sha256 === fixture.installerSha256,
-      `报告 SHA-256 应为测试侧独立计算值,实际 ${installerEntry.sha256}`,
-    );
-    assert(
-      installerEntry.size === fs.statSync(fixture.installerPath).size,
-      "报告 size 应与实际文件大小一致",
-    );
-    assert(report.latestYml.version === FIXTURE_VERSION && report.latestYml.path === fixture.installerName, "报告应记录 latest.yml 的 version/path");
-    assert(
-      report.artifacts.some((entry) => entry.name === "latest.yml") &&
-        report.artifacts.some((entry) => entry.name === `${fixture.installerName}.blockmap`),
-      "报告应覆盖安装包/blockmap/latest.yml 三件产物",
-    );
-    // 确定性:同一份产物重跑,报告逐字节一致(可 diff、可追溯)
-    const firstReport = fs.readFileSync(reportPath, "utf8");
-    await runChecker(() => releaseMain(["--release", fixture.releaseDir, "--pkg", fixture.pkgPath, "--report", reportPath]));
-    assert(fs.readFileSync(reportPath, "utf8") === firstReport, "重复生成的报告应逐字节一致");
-    // --no-report 只校验不落盘
-    const noReportPath = path.join(tmp, "reports", "should-not-exist.json");
-    const noReport = await runChecker(() =>
-      releaseMain(["--release", fixture.releaseDir, "--pkg", fixture.pkgPath, "--report", noReportPath, "--no-report"]),
-    );
-    assert(noReport.code === 0, `--no-report 应仍通过校验,实际 ${noReport.code}\n${noReport.output}`);
-    assert(!fs.existsSync(noReportPath), "--no-report 不应写报告");
-  });
+  await suite.case("4. release 正向:通过校验,latest.yml 四项对齐,SHA-256 报告正确", () =>
+    withTempDir(async (tmp) => {
+      const fixture = makeReleaseFixture(tmp);
+      const reportPath = path.join(tmp, "reports", "release-artifacts.json");
+      const result = await runChecker(() =>
+        releaseMain(["--release", fixture.releaseDir, "--pkg", fixture.pkgPath, "--report", reportPath]),
+      );
+      assert(result.code === 0, `齐备的发布目录应通过,实际 ${result.code}\n${result.output}`);
+      const report = /** @type {ReleaseReport} */ (JSON.parse(fs.readFileSync(reportPath, "utf8")));
+      assert(report.version === FIXTURE_VERSION, `报告版本应为 ${FIXTURE_VERSION},实际 ${report.version}`);
+      const installerEntry = report.artifacts.find((entry) => entry.name === fixture.installerName);
+      assert(installerEntry !== undefined, "报告应含安装包条目");
+      assert(
+        installerEntry.sha256 === fixture.installerSha256,
+        `报告 SHA-256 应为测试侧独立计算值,实际 ${installerEntry.sha256}`,
+      );
+      assert(
+        installerEntry.size === fs.statSync(fixture.installerPath).size,
+        "报告 size 应与实际文件大小一致",
+      );
+      assert(report.latestYml.version === FIXTURE_VERSION && report.latestYml.path === fixture.installerName, "报告应记录 latest.yml 的 version/path");
+      assert(
+        report.artifacts.some((entry) => entry.name === "latest.yml") &&
+          report.artifacts.some((entry) => entry.name === `${fixture.installerName}.blockmap`),
+        "报告应覆盖安装包/blockmap/latest.yml 三件产物",
+      );
+    }),
+  );
+  await suite.case("4. release 正向:报告可复现(重跑逐字节一致)", () =>
+    withTempDir(async (tmp) => {
+      const fixture = makeReleaseFixture(tmp);
+      const reportPath = path.join(tmp, "reports", "release-artifacts.json");
+      await runChecker(() => releaseMain(["--release", fixture.releaseDir, "--pkg", fixture.pkgPath, "--report", reportPath]));
+      // 确定性:同一份产物重跑,报告逐字节一致(可 diff、可追溯)
+      const firstReport = fs.readFileSync(reportPath, "utf8");
+      await runChecker(() => releaseMain(["--release", fixture.releaseDir, "--pkg", fixture.pkgPath, "--report", reportPath]));
+      assert(fs.readFileSync(reportPath, "utf8") === firstReport, "重复生成的报告应逐字节一致");
+    }),
+  );
+  await suite.case("4. --no-report:只校验不落盘", () =>
+    withTempDir(async (tmp) => {
+      const fixture = makeReleaseFixture(tmp);
+      const noReportPath = path.join(tmp, "reports", "should-not-exist.json");
+      const noReport = await runChecker(() =>
+        releaseMain(["--release", fixture.releaseDir, "--pkg", fixture.pkgPath, "--report", noReportPath, "--no-report"]),
+      );
+      assert(noReport.code === 0, `--no-report 应仍通过校验,实际 ${noReport.code}\n${noReport.output}`);
+      assert(!fs.existsSync(noReportPath), "--no-report 不应写报告");
+    }),
+  );
   console.log("[ok] release-artifact-gate:发布产物通过,latest.yml 四项对齐,SHA-256 报告正确且可复现");
 
   // ---------- 5. release 负向:缺/坏/空/历史产物 一律非零退出 ----------
@@ -529,41 +554,54 @@ export async function run() {
       expect: /历史产物残留\(版本 1\.0\.0/,
     },
   ];
+  // 逐夹具一个 case:一种漂移判红不该掩盖其余漂移
   for (const testCase of releaseCases) {
-    await withTempDir(async (tmp) => {
-      const fixture = makeReleaseFixture(tmp, { mutate: testCase.mutate });
-      const reportPath = path.join(tmp, "report.json");
-      const result = await runChecker(() =>
-        releaseMain(["--release", fixture.releaseDir, "--pkg", fixture.pkgPath, "--report", reportPath]),
-      );
-      assert(
-        result.code === 1 && testCase.expect.test(result.output),
-        `release ${testCase.name} 应以非零码且原因匹配 ${testCase.expect} 失败,实际 exit ${result.code}\n${result.output}`,
-      );
-      assert(!fs.existsSync(reportPath), "校验失败时不应生成报告(避免留下误导性指纹)");
-    });
+    await suite.case(`5. release 负向夹具被拦截且不生成报告:${testCase.name}`, () =>
+      withTempDir(async (tmp) => {
+        const fixture = makeReleaseFixture(tmp, { mutate: testCase.mutate });
+        const reportPath = path.join(tmp, "report.json");
+        const result = await runChecker(() =>
+          releaseMain(["--release", fixture.releaseDir, "--pkg", fixture.pkgPath, "--report", reportPath]),
+        );
+        assert(
+          result.code === 1 && testCase.expect.test(result.output),
+          `release ${testCase.name} 应以非零码且原因匹配 ${testCase.expect} 失败,实际 exit ${result.code}\n${result.output}`,
+        );
+        assert(!fs.existsSync(reportPath), "校验失败时不应生成报告(避免留下误导性指纹)");
+      }),
+    );
   }
   console.log(`[ok] release-artifact-gate:${releaseCases.length} 条发布产物负向夹具全部被拦截(缺/坏/空/历史)`);
 
   // ---------- 6. 发布目录缺失与参数写错 ----------
-  await withTempDir(async (tmp) => {
-    const pkgPath = path.join(tmp, "package.json");
-    writeJson(pkgPath, fixturePackageJson());
-    const noDir = await runChecker(() =>
-      releaseMain(["--release", path.join(tmp, "no-release"), "--pkg", pkgPath, "--report", path.join(tmp, "r.json")]),
-    );
-    assert(noDir.code === 1 && /发布目录不存在/.test(noDir.output), `发布目录缺失应失败,实际 ${noDir.code}\n${noDir.output}`);
+  // 三条各自独立(一种错不该掩盖另两种),故分列 case
+  await suite.case("6. 发布目录不存在应非零退出", () =>
+    withTempDir(async (tmp) => {
+      const pkgPath = path.join(tmp, "package.json");
+      writeJson(pkgPath, fixturePackageJson());
+      const noDir = await runChecker(() =>
+        releaseMain(["--release", path.join(tmp, "no-release"), "--pkg", pkgPath, "--report", path.join(tmp, "r.json")]),
+      );
+      assert(noDir.code === 1 && /发布目录不存在/.test(noDir.output), `发布目录缺失应失败,实际 ${noDir.code}\n${noDir.output}`);
+    }),
+  );
+  await suite.case("6. 未知选项应失败而非按默认值跑", async () => {
     const badOption = await runChecker(() => releaseMain(["--ver", "1.0.0"]));
     assert(badOption.code === 1 && /无法识别的选项/.test(badOption.output), "参数写错应失败而非按默认值跑");
-    // artifactName 模板含不支持的占位符:应报错而不是拼出不存在的文件名
-    const badTemplate = path.join(tmp, "bad-pkg.json");
-    const pkg = fixturePackageJson();
-    pkg.build.nsis.artifactName = "${name}-${version}.${ext}";
-    writeJson(badTemplate, pkg);
-    const badName = await runChecker(() =>
-      releaseMain(["--release", path.join(tmp, "r"), "--pkg", badTemplate, "--report", path.join(tmp, "r.json")]),
-    );
-    assert(badName.code === 1 && /不支持的占位符/.test(badName.output), `模板占位符不受支持应失败,实际 ${badName.code}\n${badName.output}`);
   });
+  await suite.case("6. artifactName 模板含不支持的占位符应报错", () =>
+    withTempDir(async (tmp) => {
+      // artifactName 模板含不支持的占位符:应报错而不是拼出不存在的文件名
+      const badTemplate = path.join(tmp, "bad-pkg.json");
+      const pkg = fixturePackageJson();
+      pkg.build.nsis.artifactName = "${name}-${version}.${ext}";
+      writeJson(badTemplate, pkg);
+      const badName = await runChecker(() =>
+        releaseMain(["--release", path.join(tmp, "r"), "--pkg", badTemplate, "--report", path.join(tmp, "r.json")]),
+      );
+      assert(badName.code === 1 && /不支持的占位符/.test(badName.output), `模板占位符不受支持应失败,实际 ${badName.code}\n${badName.output}`);
+    }),
+  );
   console.log("[ok] release-artifact-gate:发布目录缺失/参数写错/模板占位符不受支持均非零退出");
+  return { cases: suite.results };
 }

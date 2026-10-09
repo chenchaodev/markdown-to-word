@@ -29,6 +29,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const { assert: harnessAssert } = createAsserter("settings-controls");
 
@@ -268,6 +269,7 @@ const PROBE = process.env.M2W_PROBE ?? "";
  */
 
 export async function run() {
+  const suite = createCaseSuite();
   const indexHtml = fs.readFileSync(path.join(ROOT, "src", "renderer", "index.html"), "utf8");
   const tags = parseTags(indexHtml);
   const drawerOffset = tags.find((t) => t.attrs.id === "settingsDrawer")?.offset ?? Infinity;
@@ -747,117 +749,151 @@ export async function run() {
     assert(target, `负探针:控件表里找不到 ${probeName}`);
     target.expect = () => "__故意写错的期望值__";
   }
-  rehydrate();
-  for (const c of controls) {
-    assert(
-      deepEqual(c.get(), c.expect(BASE)),
-      `hydrate:${c.name} 回填值应为 ${JSON.stringify(c.expect(BASE))},实际 ${JSON.stringify(c.get())}`,
-    );
-  }
+  // 回填的判定对象是回填后的 DOM 值,每个控件自带一次基线回填:单控件判红不依赖前一个
+  // 控件的 case 成功(否则失败面会被前一条截断,后半个表都看不到)
+  await suite.describe("hydrate 逐控件回填", async (s) => {
+    for (const c of controls) {
+      await s.case(`hydrate:${c.name} 回填为设置值`, () => {
+        rehydrate();
+        assert(
+          deepEqual(c.get(), c.expect(BASE)),
+          `hydrate:${c.name} 回填值应为 ${JSON.stringify(c.expect(BASE))},实际 ${JSON.stringify(c.get())}`,
+        );
+      });
+    }
+  });
 
-  // templatePreset/quickPreset 追踪设置:把排版+页面对齐 business 预设后,回填应选中它
-  const business = TEMPLATE_PRESETS.find((/** @type {any} */ p) => p.id === "business");
-  assert(business, "内置预设目录缺 business(逐控件断言的追踪探针依赖它)");
-  state.settings.typography = structuredClone(business.typography);
-  state.settings.pageSetup = structuredClone(business.pageSetup);
-  state.settings.headerFooter = structuredClone(business.headerFooter ?? DEFAULT_SETTINGS.headerFooter);
-  state.settings.watermark = structuredClone(business.watermark ?? DEFAULT_SETTINGS.watermark);
-  state.settings.equationNumbering = business.equationNumbering ?? true;
-  state.settings.breakBeforeH1 = business.breakBeforeH1 ?? false;
-  panel.applySettingsToControls();
-  assert(
-    el("templatePreset").value === "business" && el("quickPreset").value === "business",
-    `templatePreset/quickPreset 应追踪设置为 business,实际 ${el("templatePreset").value}/${el("quickPreset").value}`,
-  );
+  await suite.case("hydrate:模板/快速预设下拉按设置追踪到 business", () => {
+    // templatePreset/quickPreset 追踪设置:把排版+页面对齐 business 预设后,回填应选中它
+    const business = TEMPLATE_PRESETS.find((/** @type {any} */ p) => p.id === "business");
+    assert(business, "内置预设目录缺 business(逐控件断言的追踪探针依赖它)");
+    state.settings.typography = structuredClone(business.typography);
+    state.settings.pageSetup = structuredClone(business.pageSetup);
+    state.settings.headerFooter = structuredClone(business.headerFooter ?? DEFAULT_SETTINGS.headerFooter);
+    state.settings.watermark = structuredClone(business.watermark ?? DEFAULT_SETTINGS.watermark);
+    state.settings.equationNumbering = business.equationNumbering ?? true;
+    state.settings.breakBeforeH1 = business.breakBeforeH1 ?? false;
+    panel.applySettingsToControls();
+    assert(
+      el("templatePreset").value === "business" && el("quickPreset").value === "business",
+      `templatePreset/quickPreset 应追踪设置为 business,实际 ${el("templatePreset").value}/${el("quickPreset").value}`,
+    );
+  });
 
   // =========================================================================
   /* ---------- 2) bind:逐控件 change 写回 + 持久化通道 ---------- */
   // =========================================================================
-  for (const c of controls) {
-    rehydrate(); // 每个控件从已知基线出发,互不污染
-    const before = savedCount;
-    await c.drive(c.driveValue === undefined ? c.bindValue : c.driveValue);
-    // 写回内存态
-    assert(
-      deepEqual(getPath(state.settings, c.statePath), c.bindValue),
-      `bind:${c.name} change 后 state.settings.${c.statePath.join(".")} 应为 ${JSON.stringify(c.bindValue)},实际 ${JSON.stringify(getPath(state.settings, c.statePath))}`,
-    );
-    // 走持久化通道
-    assert(savedCount === before + 1, `bind:${c.name} 应恰好触发一次 settingsSet`);
-    assert(lastPatch && c.patchKey in lastPatch, `bind:${c.name} 持久化 payload 应含 ${c.patchKey},实际 ${JSON.stringify(Object.keys(lastPatch ?? {}))}`);
-    if (c.patchField) {
-      assert(
-        deepEqual(/** @type {any} */ (lastPatch)[c.patchKey][c.patchField], c.bindValue),
-        `bind:${c.name} 持久化 payload.${c.patchKey}.${c.patchField} 应为 ${JSON.stringify(c.bindValue)},实际 ${JSON.stringify(/** @type {any} */ (lastPatch)[c.patchKey][c.patchField])}`,
-      );
-    } else {
-      assert(
-        deepEqual(lastPatch[c.patchKey], c.bindValue),
-        `bind:${c.name} 持久化 payload.${c.patchKey} 应为 ${JSON.stringify(c.bindValue)},实际 ${JSON.stringify(lastPatch[c.patchKey])}`,
-      );
+  // 每个控件的 bind 判定自带「回基线 → drive → 查写回与持久化」全链:不拆成
+  // 多个 case 是因为它们同属一次 drive 的后果,拆开会出现「前一段没过、后一段报
+  // undefined 上的 TypeError」这类盖掉真因的连带失败
+  await suite.describe("bind 逐控件 change 写回与持久化", async (s) => {
+    for (const c of controls) {
+      await s.case(`bind:${c.name} 写回 state.settings 并走一次 settingsSet`, async () => {
+        rehydrate(); // 每个控件从已知基线出发,互不污染
+        const before = savedCount;
+        await c.drive(c.driveValue === undefined ? c.bindValue : c.driveValue);
+        // 写回内存态
+        assert(
+          deepEqual(getPath(state.settings, c.statePath), c.bindValue),
+          `bind:${c.name} change 后 state.settings.${c.statePath.join(".")} 应为 ${JSON.stringify(c.bindValue)},实际 ${JSON.stringify(getPath(state.settings, c.statePath))}`,
+        );
+        // 走持久化通道
+        assert(savedCount === before + 1, `bind:${c.name} 应恰好触发一次 settingsSet`);
+        assert(lastPatch && c.patchKey in lastPatch, `bind:${c.name} 持久化 payload 应含 ${c.patchKey},实际 ${JSON.stringify(Object.keys(lastPatch ?? {}))}`);
+        if (c.patchField) {
+          assert(
+            deepEqual(/** @type {any} */ (lastPatch)[c.patchKey][c.patchField], c.bindValue),
+            `bind:${c.name} 持久化 payload.${c.patchKey}.${c.patchField} 应为 ${JSON.stringify(c.bindValue)},实际 ${JSON.stringify(/** @type {any} */ (lastPatch)[c.patchKey][c.patchField])}`,
+          );
+        } else {
+          assert(
+            deepEqual(lastPatch[c.patchKey], c.bindValue),
+            `bind:${c.name} 持久化 payload.${c.patchKey} 应为 ${JSON.stringify(c.bindValue)},实际 ${JSON.stringify(lastPatch[c.patchKey])}`,
+          );
+        }
+        await flush(); // 让权威回填落定,清掉异步尾巴
+      });
     }
-    await flush(); // 让权威回填落定,清掉异步尾巴
-  }
+  });
 
   // =========================================================================
   /* ---------- 3) reset:抽屉「恢复默认」 ---------- */
   // =========================================================================
+  // 「点恢复默认」这一次点击是 3a-3e 共同的判定对象:留在 case 外,否则 3b-3e 会
+  // 在点击那步失败时产出「读到未复位状态」的连带失败,盖掉真因
   rehydrate();
   const beforeReset = structuredClone(state.settings);
   savedCount = 0; lastPatch = null;
   fireListener(el("drawerResetBtn"), "click");
   await flush();
-  // 3a) 该重置的字段回到 DEFAULT_SETTINGS
-  for (const c of controls) {
-    if (!c.inReset || !c.resetPath) continue;
-    assert(
-      deepEqual(getPath(state.settings, c.resetPath), getPath(DEFAULT_SETTINGS, c.resetPath)),
-      `reset:${c.name} 复位后 state.settings.${c.resetPath.join(".")} 应回到默认,实际 ${JSON.stringify(getPath(state.settings, c.resetPath))}`,
-    );
-  }
-  // 3b) 刻意不重置的字段保持原值
-  for (const key of PRESERVED_KEYS) {
-    assert(
-      deepEqual(state.settings[key], beforeReset[key]),
-      `reset:字段 ${key} 属刻意保留集,复位后应保持 ${JSON.stringify(beforeReset[key])},实际 ${JSON.stringify(state.settings[key])}`,
-    );
-  }
-  // 3c) 复位后的持久化 payload 只含复位集(不含保留集)
-  const resetPatchKeys = Object.keys(lastPatch ?? {});
-  for (const key of PRESERVED_KEYS) {
-    assert(!(key in (lastPatch ?? {})), `reset:复位 payload 不应含保留字段 ${key},实际键 ${resetPatchKeys.join(",")}`);
-  }
-  for (const key of ["pageSetup", "typography", "breakBeforeH1", "toc", "tocMode", "equationNumbering", "aiCleanup", "obsidian", "afterConvert", "outputDir", "pdfCss", "headerFooter", "watermark"]) {
-    assert(resetPatchKeys.includes(key), `reset:复位 payload 应含 ${key},实际键 ${resetPatchKeys.join(",")}`);
-  }
-  // 3d) 复位后逐控件 DOM 与默认一致(该重置的控件真的回到了默认视图)
-  for (const c of controls) {
-    if (!c.inReset) continue;
-    const expected = c.expect(DEFAULT_SETTINGS);
-    // outputDir 复位为空 → chip 显示「与源文件相同目录」;其余按默认
-    assert(
-      deepEqual(c.get(), expected),
-      `reset:${c.name} 复位后 DOM 应为 ${JSON.stringify(expected)},实际 ${JSON.stringify(c.get())}`,
-    );
-  }
-  // 3e) 派生控件(无独立 reset 字段)也须随复位重算:两个预设 select 无 resetPath,
-  //     但它们是回填的产物 —— 复位后应重新解析到「默认」预设,不得停在复位前的值。
-  assert(
-    el("templatePreset").value === "default" && el("quickPreset").value === "default",
-    `reset:复位后两个预设 select 应重解析为 default,实际 ${el("templatePreset").value}/${el("quickPreset").value}`,
-  );
-  // 自定义预设被保留(不属复位集),故复位后仍应能选回它 —— 白名单的正向证据
-  const customId = `custom:${state.settings.customPresets[0].name}`;
-  el("templatePreset").value = customId;
-  panel.applySettingsToControls();
-  assert(
-    el("templatePreset").value === customId,
-    `reset:自定义预设属保留集,复位后选中它不应被弹回,实际 ${el("templatePreset").value}`,
-  );
+  await suite.describe("reset 抽屉恢复默认", async (s) => {
+    // 3a) 该重置的字段回到 DEFAULT_SETTINGS
+    for (const c of controls) {
+      if (!c.inReset || !c.resetPath) continue;
+      // 属性窄化跨不进回调边界,先取到局部常量再进 case(取值与原写法同一个属性)
+      const resetPath = c.resetPath;
+      await s.case(`reset:${c.name} 复位后回到默认`, () => {
+        assert(
+          deepEqual(getPath(state.settings, resetPath), getPath(DEFAULT_SETTINGS, resetPath)),
+          `reset:${c.name} 复位后 state.settings.${resetPath.join(".")} 应回到默认,实际 ${JSON.stringify(getPath(state.settings, resetPath))}`,
+        );
+      });
+    }
+    // 3b) 刻意不重置的字段保持原值
+    await s.case("reset:刻意保留集字段保持原值", () => {
+      for (const key of PRESERVED_KEYS) {
+        assert(
+          deepEqual(state.settings[key], beforeReset[key]),
+          `reset:字段 ${key} 属刻意保留集,复位后应保持 ${JSON.stringify(beforeReset[key])},实际 ${JSON.stringify(state.settings[key])}`,
+        );
+      }
+    });
+    // 3c) 复位后的持久化 payload 只含复位集(不含保留集)
+    await s.case("reset:持久化 payload 只含复位集", () => {
+      const resetPatchKeys = Object.keys(lastPatch ?? {});
+      for (const key of PRESERVED_KEYS) {
+        assert(!(key in (lastPatch ?? {})), `reset:复位 payload 不应含保留字段 ${key},实际键 ${resetPatchKeys.join(",")}`);
+      }
+      for (const key of ["pageSetup", "typography", "breakBeforeH1", "toc", "tocMode", "equationNumbering", "aiCleanup", "obsidian", "afterConvert", "outputDir", "pdfCss", "headerFooter", "watermark"]) {
+        assert(resetPatchKeys.includes(key), `reset:复位 payload 应含 ${key},实际键 ${resetPatchKeys.join(",")}`);
+      }
+    });
+    // 3d) 复位后逐控件 DOM 与默认一致(该重置的控件真的回到了默认视图)
+    await s.case("reset:该重置的控件 DOM 回到默认视图", () => {
+      for (const c of controls) {
+        if (!c.inReset) continue;
+        const expected = c.expect(DEFAULT_SETTINGS);
+        // outputDir 复位为空 → chip 显示「与源文件相同目录」;其余按默认
+        assert(
+          deepEqual(c.get(), expected),
+          `reset:${c.name} 复位后 DOM 应为 ${JSON.stringify(expected)},实际 ${JSON.stringify(c.get())}`,
+        );
+      }
+    });
+    // 3e) 派生控件(无独立 reset 字段)也须随复位重算:两个预设 select 无 resetPath,
+    //     但它们是回填的产物 —— 复位后应重新解析到「默认」预设,不得停在复位前的值。
+    await s.case("reset:派生控件重解析为默认预设", () => {
+      assert(
+        el("templatePreset").value === "default" && el("quickPreset").value === "default",
+        `reset:复位后两个预设 select 应重解析为 default,实际 ${el("templatePreset").value}/${el("quickPreset").value}`,
+      );
+    });
+    // 自定义预设被保留(不属复位集),故复位后仍应能选回它 —— 白名单的正向证据
+    await s.case("reset:自定义预设属保留集,选中后不被弹回", () => {
+      const customId = `custom:${state.settings.customPresets[0].name}`;
+      el("templatePreset").value = customId;
+      panel.applySettingsToControls();
+      assert(
+        el("templatePreset").value === customId,
+        `reset:自定义预设属保留集,复位后选中它不应被弹回,实际 ${el("templatePreset").value}`,
+      );
+    });
+  });
 
   // =========================================================================
   /* ---------- 4) outputDirReset:只清 outputDir ---------- */
   // =========================================================================
+  // 同上:「点清除输出目录」这一次点击是本段全部判定的共同对象,留在 case 外
   rehydrate();
   const beforeLocal = structuredClone(state.settings);
   beforeLocal.outputDir = "C:\\zzz";
@@ -867,28 +903,36 @@ export async function run() {
   savedCount = 0; lastPatch = null;
   fireListener(el("outputDirReset"), "click");
   await flush();
-  assert(state.settings.outputDir === "", `outputDirReset 应把 outputDir 清空,实际 ${JSON.stringify(state.settings.outputDir)}`);
-  assert(
-    deepEqual(lastPatch, { outputDir: "" }),
-    `outputDirReset 的持久化 payload 应恰为 {outputDir:""}(只清一项),实际 ${JSON.stringify(lastPatch)}`,
-  );
-  assert(
-    el("outputDirValue").textContent === outputDirDisplayText("") && el("quickOutputDir").textContent === outputDirDisplayText(""),
-    "outputDirReset 应同步两处 chip 为「与源文件相同目录」",
-  );
-  for (const key of PRESERVED_KEYS) {
-    if (key === "outputDir") continue;
-    assert(
-      deepEqual(state.settings[key], beforeReset[key]),
-      `outputDirReset 不应动保留字段 ${key}`,
-    );
-  }
-  assert(
-    deepEqual(state.settings.typography, beforeLocal.typography) &&
-      deepEqual(state.settings.pageSetup, beforeLocal.pageSetup) &&
-      deepEqual(state.settings.watermark, beforeLocal.watermark),
-    "outputDirReset 不应动 typography/pageSetup/watermark",
-  );
+  await suite.describe("outputDirReset 只清 outputDir", async (s) => {
+    await s.case("outputDirReset 清空 outputDir 且持久化只带这一项", () => {
+      assert(state.settings.outputDir === "", `outputDirReset 应把 outputDir 清空,实际 ${JSON.stringify(state.settings.outputDir)}`);
+      assert(
+        deepEqual(lastPatch, { outputDir: "" }),
+        `outputDirReset 的持久化 payload 应恰为 {outputDir:""}(只清一项),实际 ${JSON.stringify(lastPatch)}`,
+      );
+    });
+    await s.case("outputDirReset 同步两处 chip 为与源文件相同目录", () => {
+      assert(
+        el("outputDirValue").textContent === outputDirDisplayText("") && el("quickOutputDir").textContent === outputDirDisplayText(""),
+        "outputDirReset 应同步两处 chip 为「与源文件相同目录」",
+      );
+    });
+    await s.case("outputDirReset 不动保留字段与 typography/pageSetup/watermark", () => {
+      for (const key of PRESERVED_KEYS) {
+        if (key === "outputDir") continue;
+        assert(
+          deepEqual(state.settings[key], beforeReset[key]),
+          `outputDirReset 不应动保留字段 ${key}`,
+        );
+      }
+      assert(
+        deepEqual(state.settings.typography, beforeLocal.typography) &&
+          deepEqual(state.settings.pageSetup, beforeLocal.pageSetup) &&
+          deepEqual(state.settings.watermark, beforeLocal.watermark),
+        "outputDirReset 不应动 typography/pageSetup/watermark",
+      );
+    });
+  });
 
   // =========================================================================
   /* ---------- 5) 3 个手写门控:关闭态/开启态双向 + change/回填两条路径 ---------- */
@@ -903,61 +947,71 @@ export async function run() {
   const customShown = () => headerFields.classList.contains("show");
   const tierDisabled = () => [tidyEl.disabled === true, rewriteEl.disabled === true];
 
-  // 5a) 页眉自定义折叠 + inert(回填路径)
-  rehydrate(); // headerMode=custom
-  assert(customShown() && !customInert(), "页眉模式 custom:自定义块应展开且可聚焦");
-  state.settings.headerFooter.headerMode = "default";
-  panel.applySettingsToControls();
-  assert(!customShown() && customInert(), "页眉模式 default:自定义块应收起且 inert");
-  state.settings.headerFooter.headerMode = "custom";
-  panel.applySettingsToControls();
-  assert(customShown() && !customInert(), "页眉模式回 custom:应重新展开");
-  // 5a-change) 页眉模式 change 接线也重算显隐
-  clickRadio("headerMode", "none");
-  assert(!customShown() && customInert(), "切到 none:change 路径应同步收起自定义块");
+  // 每条门控自成一件双向判据(回填路径走一遍、change 路径走一遍),门与门之间靠
+  // 各自的 rehydrate() 复位 ⇒ 一个门判红不阻断另外两个门
+  await suite.describe("手写门控 双向(change/回填)", async (s) => {
+    // 5a) 页眉自定义折叠 + inert(回填路径)
+    await s.case("门控 · 页眉自定义折叠 + inert 双向", () => {
+      rehydrate(); // headerMode=custom
+      assert(customShown() && !customInert(), "页眉模式 custom:自定义块应展开且可聚焦");
+      state.settings.headerFooter.headerMode = "default";
+      panel.applySettingsToControls();
+      assert(!customShown() && customInert(), "页眉模式 default:自定义块应收起且 inert");
+      state.settings.headerFooter.headerMode = "custom";
+      panel.applySettingsToControls();
+      assert(customShown() && !customInert(), "页眉模式回 custom:应重新展开");
+      // 5a-change) 页眉模式 change 接线也重算显隐
+      clickRadio("headerMode", "none");
+      assert(!customShown() && customInert(), "切到 none:change 路径应同步收起自定义块");
+    });
 
-  // 5b) AI 清理分档灰禁 + 说明行(回填路径,双向)
-  rehydrate(); // aiCleanup.enabled=true
-  assert(!tierDisabled().some(Boolean) && lockedEl.classList.contains("hidden"), "总开关开:分档可操作且说明行隐藏");
-  state.settings.aiCleanup.enabled = false;
-  panel.applySettingsToControls();
-  assert(tierDisabled().every(Boolean), "总开关关:两个分档应置灰");
-  assert(!lockedEl.classList.contains("hidden"), "总开关关:应出现可见置灰说明行");
-  // 5b-change) 总开关 change 接线也重算可用性
-  el("aiCleanup").checked = true;
-  fireListener(el("aiCleanup"), "change");
-  // 同步判一次(不等落盘往返):change 侧的门控调用必须当场发生 —— 异步的落权威值
-  // 回填也会重算门控,只判 await flush 之后的状态会被它掩盖掉(change 侧漏接线照样绿)
-  assert(!tierDisabled().some(Boolean), "重开总开关:分档应**当场**恢复可操作(change 路径,未等落盘往返)");
-  assert(lockedEl.classList.contains("hidden"), "重开总开关:置灰说明行应当场消失(change 路径,未等落盘往返)");
-  await flush();
-  assert(!tierDisabled().some(Boolean), "重开总开关:分档应恢复可操作(change 路径)");
-  assert(lockedEl.classList.contains("hidden"), "重开总开关:置灰说明行应消失");
+    // 5b) AI 清理分档灰禁 + 说明行(回填路径,双向)
+    await s.case("门控 · AI 清理分档灰禁双向", async () => {
+      rehydrate(); // aiCleanup.enabled=true
+      assert(!tierDisabled().some(Boolean) && lockedEl.classList.contains("hidden"), "总开关开:分档可操作且说明行隐藏");
+      state.settings.aiCleanup.enabled = false;
+      panel.applySettingsToControls();
+      assert(tierDisabled().every(Boolean), "总开关关:两个分档应置灰");
+      assert(!lockedEl.classList.contains("hidden"), "总开关关:应出现可见置灰说明行");
+      // 5b-change) 总开关 change 接线也重算可用性
+      el("aiCleanup").checked = true;
+      fireListener(el("aiCleanup"), "change");
+      // 同步判一次(不等落盘往返):change 侧的门控调用必须当场发生 —— 异步的落权威值
+      // 回填也会重算门控,只判 await flush 之后的状态会被它掩盖掉(change 侧漏接线照样绿)
+      assert(!tierDisabled().some(Boolean), "重开总开关:分档应**当场**恢复可操作(change 路径,未等落盘往返)");
+      assert(lockedEl.classList.contains("hidden"), "重开总开关:置灰说明行应当场消失(change 路径,未等落盘往返)");
+      await flush();
+      assert(!tierDisabled().some(Boolean), "重开总开关:分档应恢复可操作(change 路径)");
+      assert(lockedEl.classList.contains("hidden"), "重开总开关:置灰说明行应消失");
+    });
 
-  // 5c) 目录模式 .hidden 整块移除(回填路径,双向)
-  rehydrate(); // toc=true
-  assert(!tocModeEl.classList.contains("hidden"), "自动目录开:目录下拉应可见");
-  state.settings.toc = false;
-  panel.applySettingsToControls();
-  assert(tocModeEl.classList.contains("hidden"), "自动目录关:目录下拉应整块移除");
-  state.settings.toc = true;
-  panel.applySettingsToControls();
-  assert(!tocModeEl.classList.contains("hidden"), "自动目录回开:目录下拉应重新出现");
-  // 5c-change) toc change 接线也重算显隐
-  // 负探针 unregister-gate:把「目录模式可见性」这条门控**从登记里摘掉**(只改输入:
-  // splice 掉 CONTROL_GATES 里的那一条,断言逻辑一行不动)—— 门控的 change 侧接缝
-  // 正是按这份登记反查的,摘掉后 change 路径不再重算显隐。期望红在下面这条断言。
-  if (PROBE === "unregister-gate") {
-    const at = table.CONTROL_GATES.findIndex((/** @type {{ id: string }} */ g) => g.id === "tocModeVisibility");
-    assert(at >= 0, "负探针 unregister-gate:CONTROL_GATES 里找不到 tocModeVisibility");
-    table.CONTROL_GATES.splice(at, 1);
-  }
-  el("toc").checked = false;
-  fireListener(el("toc"), "change");
-  // 同 5b:当场判一次,不等落盘往返(否则落权威值回填的重算会掩盖 change 侧漏接线)
-  assert(tocModeEl.classList.contains("hidden"), "关掉自动目录:change 路径应**当场**收起目录下拉(未等落盘往返)");
-  await flush();
-  assert(tocModeEl.classList.contains("hidden"), "关掉自动目录:change 路径应同步收起目录下拉");
+    // 5c) 目录模式 .hidden 整块移除(回填路径,双向)
+    await s.case("门控 · 目录模式整块移除双向", async () => {
+      rehydrate(); // toc=true
+      assert(!tocModeEl.classList.contains("hidden"), "自动目录开:目录下拉应可见");
+      state.settings.toc = false;
+      panel.applySettingsToControls();
+      assert(tocModeEl.classList.contains("hidden"), "自动目录关:目录下拉应整块移除");
+      state.settings.toc = true;
+      panel.applySettingsToControls();
+      assert(!tocModeEl.classList.contains("hidden"), "自动目录回开:目录下拉应重新出现");
+      // 5c-change) toc change 接线也重算显隐
+      // 负探针 unregister-gate:把「目录模式可见性」这条门控**从登记里摘掉**(只改输入:
+      // splice 掉 CONTROL_GATES 里的那一条,断言逻辑一行不动)—— 门控的 change 侧接缝
+      // 正是按这份登记反查的,摘掉后 change 路径不再重算显隐。期望红在下面这条断言。
+      if (PROBE === "unregister-gate") {
+        const at = table.CONTROL_GATES.findIndex((/** @type {{ id: string }} */ g) => g.id === "tocModeVisibility");
+        assert(at >= 0, "负探针 unregister-gate:CONTROL_GATES 里找不到 tocModeVisibility");
+        table.CONTROL_GATES.splice(at, 1);
+      }
+      el("toc").checked = false;
+      fireListener(el("toc"), "change");
+      // 同 5b:当场判一次,不等落盘往返(否则落权威值回填的重算会掩盖 change 侧漏接线)
+      assert(tocModeEl.classList.contains("hidden"), "关掉自动目录:change 路径应**当场**收起目录下拉(未等落盘往返)");
+      await flush();
+      assert(tocModeEl.classList.contains("hidden"), "关掉自动目录:change 路径应同步收起目录下拉");
+    });
+  });
 
   // =========================================================================
   /* ---------- 6) 控件 id 交叉校验 + radio 组零命中守护 ---------- */
@@ -969,7 +1023,11 @@ export async function run() {
   } else if (PROBE === "ref-radio") {
     refsSource = refsSource.replace('input[name="paper"]', 'input[name="paperr"]');
   }
-  assertRefContract(refsSource, indexHtml);
+  // refs 源码的取数(读盘 + 负探针改坏)留在 case 外:它是纯判定函数的输入,
+  // 不进 case 才能让「读盘失败」与「契约判红」两件事各自说得清
+  await suite.case("契约 · refs 控件 id 与 radio 组选择器零命中守护", () => {
+    assertRefContract(refsSource, indexHtml);
+  });
 
   // 负探针 · mislabel:把 theme 的复位口径**误标**成 reset(只改输入:直接改 dist 产物里
   // 的表条目,断言逻辑一行不动)。theme 属应用偏好,抽屉「恢复默认」刻意保留 ——
@@ -988,12 +1046,22 @@ export async function run() {
   // (复位口径漏登记)」,即复位块覆盖判据。
   const defaultsForContract =
     PROBE === "drop-reset" ? { ...DEFAULT_SETTINGS, 未登记的新键: true } : DEFAULT_SETTINGS;
-  assertTableContract(table, controls, indexHtml, defaultsForContract, panel);
+  await assertTableContract(
+    // 判据自身逐条登记为 case:各判据读的都是上面已算好的派生集,互不依赖,
+    // 一条判红不挡住其余判据出结果
+    (name, body) => suite.case(name, body),
+    table,
+    controls,
+    indexHtml,
+    defaultsForContract,
+    panel,
+  );
 
   dom.restore();
   console.log(
     `[ok] settings-controls:${controls.length} 个控件逐条 hydrate/bind/reset 通过 + 3 个手写门控双向(change/回填,change 侧当场判)通过 + 控件 id 交叉校验与 radio 组零命中守护通过 + 声明表与几何规格交叉校验通过 + 声明表写侧对称(每个可写条目都被 drive 过)与钩子/门控/效果登记覆盖通过`,
   );
+  return { cases: suite.results };
 }
 
 /**
@@ -1012,14 +1080,18 @@ export async function run() {
  * ⚠️ 几何规格**不得** import 生产侧的声明表 —— 那会给纯规格文件加一条 build 顺序依赖,
  * 而「判定逻辑可在无 Electron 环境下完整验证」是它的刻意设计。故本段反向读它。
  *
+ * 判据的取数(rows/byKey/各派生集)全在函数顶部算完,再逐条判据登记为 case:
+ * 派生集之间无先后依赖,故一条判红不阻断其余判据出结果。
+ *
+ * @param {(name: string, body: () => unknown) => Promise<unknown>} check 判据登记口
  * @param {any} table 生产侧声明表模块(dist 编译产物,无类型标注)
  * @param {Control[]} controls 逐控件基线表
  * @param {string} indexHtml index.html 源码
  * @param {Record<string, unknown>} defaults DEFAULT_SETTINGS(dist 编译产物)
  * @param {any} panel 生产侧 settings-panel 模块(门控/效果的实现落点核对)
- * @returns {void} 有偏差即抛
+ * @returns {Promise<void>} 有偏差即由对应 case 记失败
  */
-function assertTableContract(table, controls, indexHtml, defaults, panel) {
+async function assertTableContract(check, table, controls, indexHtml, defaults, panel) {
   /** @type {ControlRow[]} */
   const rows = table.controlTable();
   /** @type {Map<string, ControlRow>} */
@@ -1042,58 +1114,66 @@ function assertTableContract(table, controls, indexHtml, defaults, panel) {
     for (const id of row.ids) covered.add(id);
     for (const name of row.radioNames) covered.add(name);
   }
-  for (const c of controls) {
-    assert(
-      covered.has(c.name),
-      `控件 ${c.name} 在声明表里没有条目(新增控件的成本判据:1 个表条目 + 1 个 HTML 控件)`,
-    );
-  }
-
-  // 判据一 · 反向:每个表条目的 id / radio 组名都必须在 index.html 里(拼错即红)
-  for (const row of rows) {
-    for (const id of row.ids) {
-      assert(htmlIds.has(id), `声明表条目 ${row.key} 引用了 index.html 中不存在的 id "${id}"`);
-    }
-    for (const name of row.radioNames) {
+  await check("契约 · 每个控件都有声明表条目", () => {
+    for (const c of controls) {
       assert(
-        htmlRadioNames.has(name),
-        `声明表条目 ${row.key} 的 radio 组名 input[name="${name}"] 在 index.html 命中 0 个元素`,
+        covered.has(c.name),
+        `控件 ${c.name} 在声明表里没有条目(新增控件的成本判据:1 个表条目 + 1 个 HTML 控件)`,
       );
     }
-  }
+  });
+
+  // 判据一 · 反向:每个表条目的 id / radio 组名都必须在 index.html 里(拼错即红)
+  await check("契约 · 表条目引用的 id 与 radio 组名都在 index.html", () => {
+    for (const row of rows) {
+      for (const id of row.ids) {
+        assert(htmlIds.has(id), `声明表条目 ${row.key} 引用了 index.html 中不存在的 id "${id}"`);
+      }
+      for (const name of row.radioNames) {
+        assert(
+          htmlRadioNames.has(name),
+          `声明表条目 ${row.key} 的 radio 组名 input[name="${name}"] 在 index.html 命中 0 个元素`,
+        );
+      }
+    }
+  });
 
   // 判据一 · 写侧对称:每个**值控件**条目都必须被逐控件基线 drive 过一次。
   // 逐控件 drive 走的是真 change 事件,并断言 state.settings 被写 + 走了持久化通道
   // (见上文第 2 段),故这条等值于「表里每个可写条目都真的挂了监听」——
   // 只声明不挂监听(漏接线)会红在这一条,而不是静默通过。
   const drivenNames = new Set(controls.map((c) => c.name));
-  for (const row of rows) {
-    if (row.kind !== "value") continue;
-    assert(
-      drivenNames.has(row.key),
-      `值控件 ${row.key} 在声明表里可写,但逐控件基线里没有对应条目(它的 change 监听没人验证过,可能压根没挂)`,
-    );
-  }
+  await check("契约 · 每个可写条目都被逐控件基线 drive 过", () => {
+    for (const row of rows) {
+      if (row.kind !== "value") continue;
+      assert(
+        drivenNames.has(row.key),
+        `值控件 ${row.key} 在声明表里可写,但逐控件基线里没有对应条目(它的 change 监听没人验证过,可能压根没挂)`,
+      );
+    }
+  });
   // 钩子表覆盖:声明了写侧钩子的键必有实现(缺一个即编译期红;这里再判一次运行期,
   // 因为「声明了钩子却静默走通用路径」会让钳制整段失效且运行期无任何症状)。
   const hookedKeys = table.HOOKED_WRITE_KEYS;
-  assert(
-    Array.isArray(hookedKeys) && hookedKeys.length > 0,
-    "声明表应登记写侧钩子键(HOOKED_WRITE_KEYS),否则钳制类控件无挂载口径",
-  );
-  for (const row of rows) {
-    const declared = hookedKeys.includes(/** @type {string} */ (row.key));
-    assert(
-      declared === (row.hooked === true),
-      `控件 ${row.key} 的「需写侧钩子」登记与扁平视图的 hooked 标记不一致`,
-    );
-  }
-  // 扁平视图的 hooked 标记本身由 HOOKED_WRITE_KEYS 派生(controlTable 内部),
-  // 故上一条等价于「表里没有的键不会被标成需钩子」;这里再确保每个声明的键都在表内。
   const rowKeys = new Set(rows.map((r) => r.key));
-  for (const key of hookedKeys) {
-    assert(rowKeys.has(/** @type {string} */ (key)), `HOOKED_WRITE_KEYS 里的 ${key} 不在声明表中`);
-  }
+  await check("契约 · 写侧钩子登记与扁平视图一致且键都在表内", () => {
+    assert(
+      Array.isArray(hookedKeys) && hookedKeys.length > 0,
+      "声明表应登记写侧钩子键(HOOKED_WRITE_KEYS),否则钳制类控件无挂载口径",
+    );
+    for (const row of rows) {
+      const declared = hookedKeys.includes(/** @type {string} */ (row.key));
+      assert(
+        declared === (row.hooked === true),
+        `控件 ${row.key} 的「需写侧钩子」登记与扁平视图的 hooked 标记不一致`,
+      );
+    }
+    // 扁平视图的 hooked 标记本身由 HOOKED_WRITE_KEYS 派生(controlTable 内部),
+    // 故上一条等价于「表里没有的键不会被标成需钩子」;这里再确保每个声明的键都在表内。
+    for (const key of hookedKeys) {
+      assert(rowKeys.has(/** @type {string} */ (key)), `HOOKED_WRITE_KEYS 里的 ${key} 不在声明表中`);
+    }
+  });
 
   // 判据二:抽屉内控件键集合 ⇄ 几何规格。
   // 抽屉外 3 个(quickPreset / quickOutputDir 镜像 / format 顶栏)不在 DRAWER_GROUPS 内,
@@ -1104,106 +1184,124 @@ function assertTableContract(table, controls, indexHtml, defaults, panel) {
   const specDrawerKeys = new Set(DRAWER_CONTROL_KEYS);
   const onlyInTable = [...declaredDrawerKeys].filter((k) => !specDrawerKeys.has(k));
   const onlyInSpec = [...specDrawerKeys].filter((k) => !declaredDrawerKeys.has(k));
-  assert(
-    onlyInTable.length === 0 && onlyInSpec.length === 0,
-    `声明表与几何规格的抽屉内控件键集合不一致:仅表里有 ${JSON.stringify(onlyInTable)},仅规格里有 ${JSON.stringify(onlyInSpec)}`,
-  );
-  // 组归属也要一致(几何门禁按组判位置,组错了位置判据就整体失效)
-  for (const row of rows) {
-    if (row.group === "mirror") continue;
+  await check("契约 · 抽屉内控件键集合与几何规格一致", () => {
     assert(
-      DRAWER_GROUP_BY_KEY.get(row.key) === row.group,
-      `声明表条目 ${row.key} 的组归属 ${row.group} 与几何规格 ${DRAWER_GROUP_BY_KEY.get(row.key)} 不一致`,
+      onlyInTable.length === 0 && onlyInSpec.length === 0,
+      `声明表与几何规格的抽屉内控件键集合不一致:仅表里有 ${JSON.stringify(onlyInTable)},仅规格里有 ${JSON.stringify(onlyInSpec)}`,
     );
-  }
+  });
+  // 组归属也要一致(几何门禁按组判位置,组错了位置判据就整体失效)
+  await check("契约 · 非镜像条目的组归属与几何规格一致", () => {
+    for (const row of rows) {
+      if (row.group === "mirror") continue;
+      assert(
+        DRAWER_GROUP_BY_KEY.get(row.key) === row.group,
+        `声明表条目 ${row.key} 的组归属 ${row.group} 与几何规格 ${DRAWER_GROUP_BY_KEY.get(row.key)} 不一致`,
+      );
+    }
+  });
 
   // 复位口径:「有控件的块 ∪ 无控件键」必须等于 AppSettings 的全部顶层键 ——
   // 抽屉「恢复默认」的白名单是复位的真源,不能靠"表里没有它就算保留"。
   const topKeys = new Set(Object.keys(defaults));
   const coveredBlocks = new Set([...table.declaredBlockKeys(), ...table.KEYS_WITHOUT_CONTROL]);
-  for (const key of topKeys) {
-    assert(
-      coveredBlocks.has(key),
-      `顶层键 ${key} 既不在声明表的块里、也不在无控件键清单里(复位口径漏登记)`,
-    );
-  }
-  for (const key of coveredBlocks) {
-    assert(topKeys.has(key), `声明表登记了顶层键 ${key},但 DEFAULT_SETTINGS 里没有它`);
-  }
+  await check("契约 · 复位口径的块登记与设置顶层键双向闭合", () => {
+    for (const key of topKeys) {
+      assert(
+        coveredBlocks.has(key),
+        `顶层键 ${key} 既不在声明表的块里、也不在无控件键清单里(复位口径漏登记)`,
+      );
+    }
+    for (const key of coveredBlocks) {
+      assert(topKeys.has(key), `声明表登记了顶层键 ${key},但 DEFAULT_SETTINGS 里没有它`);
+    }
+  });
   // 刻意保留集双向一致:表里标 preserve 的条目 + 无控件键 = PRESERVED_KEYS。
   // 逐控件基线用**设置键**名,声明表用控件键,故经 block 换算(派生键无块)。
   const preservedBlocks = new Set(
     rows.filter((r) => r.reset === "preserve").map((r) => r.block ?? r.key),
   );
   const tablePreserved = new Set([...preservedBlocks, ...table.KEYS_WITHOUT_CONTROL]);
-  for (const key of tablePreserved) {
-    assert(
-      PRESERVED_KEYS.includes(key),
-      `声明表把 ${key} 标为刻意保留,但逐控件基线的保留集里没有它(保留口径漂移)`,
-    );
-  }
-  for (const key of PRESERVED_KEYS) {
-    assert(
-      tablePreserved.has(key),
-      `逐控件基线把 ${key} 列为保留字段,声明表里却没有登记为保留(现登记 ${JSON.stringify([...tablePreserved])})`,
-    );
-  }
+  await check("契约 · 刻意保留集与逐控件基线双向一致", () => {
+    for (const key of tablePreserved) {
+      assert(
+        PRESERVED_KEYS.includes(key),
+        `声明表把 ${key} 标为刻意保留,但逐控件基线的保留集里没有它(保留口径漂移)`,
+      );
+    }
+    for (const key of PRESERVED_KEYS) {
+      assert(
+        tablePreserved.has(key),
+        `逐控件基线把 ${key} 列为保留字段,声明表里却没有登记为保留(现登记 ${JSON.stringify([...tablePreserved])})`,
+      );
+    }
+  });
   // 复位集(标 reset 的条目)与保留集必须互补:一个控件不能两头都算,也不能两头都不算
-  for (const row of rows) {
-    if (row.reset === "derived") continue;
-    assert(
-      PRESERVED_KEYS.includes(row.block ?? "") === (row.reset === "preserve"),
-      `控件 ${row.key} 的复位口径(${row.reset})与它的设置块 ${row.block} 在保留集里的归属不一致`,
-    );
-  }
+  await check("契约 · 每条目的复位口径与保留集归属互补", () => {
+    for (const row of rows) {
+      if (row.reset === "derived") continue;
+      assert(
+        PRESERVED_KEYS.includes(row.block ?? "") === (row.reset === "preserve"),
+        `控件 ${row.key} 的复位口径(${row.reset})与它的设置块 ${row.block} 在保留集里的归属不一致`,
+      );
+    }
+  });
   // 复位集本身也判一次:表算出的 resetBlockKeys 必须恰好是「全部顶层键 − 保留集」。
   // 这条是 reset 表驱动的判据(抽屉 payload 的键集由它生成),漏一个块即复位不到默认。
   const resetBlocks = new Set(table.resetBlockKeys());
   const expectedReset = new Set([...topKeys].filter((k) => !PRESERVED_KEYS.includes(k)));
-  for (const key of expectedReset) {
-    assert(
-      resetBlocks.has(/** @type {string} */ (key)),
-      `顶层键 ${key} 既不在保留集也不在复位集(抽屉「恢复默认」将漏掉它)`,
-    );
-  }
-  for (const key of resetBlocks) {
-    assert(
-      expectedReset.has(/** @type {string} */ (key)),
-      `声明表把 ${key} 算进复位集,但它属保留集(theme/language/customPresets/version 刻意不重置)`,
-    );
-  }
+  await check("契约 · 复位集恰为顶层键减去保留集", () => {
+    for (const key of expectedReset) {
+      assert(
+        resetBlocks.has(/** @type {string} */ (key)),
+        `顶层键 ${key} 既不在保留集也不在复位集(抽屉「恢复默认」将漏掉它)`,
+      );
+    }
+    for (const key of resetBlocks) {
+      assert(
+        expectedReset.has(/** @type {string} */ (key)),
+        `声明表把 ${key} 算进复位集,但它属保留集(theme/language/customPresets/version 刻意不重置)`,
+      );
+    }
+  });
 
   // 依赖登记:门控与「设置值驱动的显隐」两处都不得漏,且引用的 id 必须真实存在。
   // 3 个手写门控逐个点名(IA 拍板的三种形态:条件字段整块移除 ×2 + 分档灰禁 ×1)。
-  for (const gate of table.CONTROL_GATES) {
-    assert(
-      byKey.has(gate.master),
-      `门控 ${gate.id} 的主控 ${gate.master} 不在声明表里`,
-    );
-    // 主控必须可写(它是「主控一动即重算从属项」的那一侧),否则门控在 change 侧无处触发
-    assert(
-      byKey.get(gate.master)?.kind === "value",
-      `门控 ${gate.id} 的主控 ${gate.master} 不是可写值控件(门控的 change 侧接不上)`,
-    );
-    for (const dep of gate.dependents) {
-      assert(byKey.has(dep), `门控 ${gate.id} 的从属项 ${dep} 不在声明表里`);
+  await check("契约 · 门控主控可写且从属项都在表内", () => {
+    for (const gate of table.CONTROL_GATES) {
+      assert(
+        byKey.has(gate.master),
+        `门控 ${gate.id} 的主控 ${gate.master} 不在声明表里`,
+      );
+      // 主控必须可写(它是「主控一动即重算从属项」的那一侧),否则门控在 change 侧无处触发
+      assert(
+        byKey.get(gate.master)?.kind === "value",
+        `门控 ${gate.id} 的主控 ${gate.master} 不是可写值控件(门控的 change 侧接不上)`,
+      );
+      for (const dep of gate.dependents) {
+        assert(byKey.has(dep), `门控 ${gate.id} 的从属项 ${dep} 不在声明表里`);
+      }
     }
-  }
-  for (const gateId of ["headerCustomVisibility", "aiCleanupTierAvailability", "tocModeVisibility"]) {
-    assert(
-      table.CONTROL_GATES.some((/** @type {{ id: string }} */ g) => g.id === gateId),
-      `手写门控 ${gateId} 未登记在 CONTROL_GATES 里(新增门控必须登记,否则同步函数无处挂载)`,
-    );
-  }
+  });
+  await check("契约 · 三个手写门控都登记在 CONTROL_GATES", () => {
+    for (const gateId of ["headerCustomVisibility", "aiCleanupTierAvailability", "tocModeVisibility"]) {
+      assert(
+        table.CONTROL_GATES.some((/** @type {{ id: string }} */ g) => g.id === gateId),
+        `手写门控 ${gateId} 未登记在 CONTROL_GATES 里(新增门控必须登记,否则同步函数无处挂载)`,
+      );
+    }
+  });
   // 门控的「实现落点」必须是 settings-panel 上真实存在的导出 —— 登记不能只是一段
   // 注释里的名字(函数改名/漏导出时这里即红)。
-  for (const gate of table.CONTROL_GATES) {
-    const fn = gate.where.split(".").pop();
-    assert(
-      typeof panel[/** @type {string} */ (fn)] === "function",
-      `门控 ${gate.id} 的实现落点 ${gate.where} 在 settings-panel 上不存在`,
-    );
-  }
+  await check("契约 · 门控的实现落点在 settings-panel 上存在", () => {
+    for (const gate of table.CONTROL_GATES) {
+      const fn = gate.where.split(".").pop();
+      assert(
+        typeof panel[/** @type {string} */ (fn)] === "function",
+        `门控 ${gate.id} 的实现落点 ${gate.where} 在 settings-panel 上不存在`,
+      );
+    }
+  });
   const effectTargets = new Set(
     table.VALUE_DRIVEN_EFFECTS.flatMap(
       (/** @type {ValueDrivenEffect} */ e) => e.sites.map((s) => s.target),
@@ -1211,48 +1309,54 @@ function assertTableContract(table, controls, indexHtml, defaults, panel) {
   );
   // 这 8 个落点就是「设置值 → 控件显隐/文案」的全部站点(6 条效果),
   // 逐个点名以免新增站点时靠"记得登记"。
-  for (const target of [
-    "templatePresetHint",
-    "outputDirValue",
-    "quickOutputDir",
-    "pdfCssStatus",
-    "pdfCssClearBtn",
-    "headerLogoClear",
-    "presetDeleteBtn",
-    "drawerSubtitle",
-  ]) {
-    assert(
-      effectTargets.has(target),
-      `展示位 ${target} 受设置值驱动,但未登记在 VALUE_DRIVEN_EFFECTS 里`,
-    );
-  }
-  for (const effect of table.VALUE_DRIVEN_EFFECTS) {
-    for (const source of effect.sources) {
-      assert(byKey.has(source), `设置值驱动效果 ${effect.id} 的来源 ${source} 不在声明表里`);
+  await check("契约 · 设置值驱动的展示位全部登记", () => {
+    for (const target of [
+      "templatePresetHint",
+      "outputDirValue",
+      "quickOutputDir",
+      "pdfCssStatus",
+      "pdfCssClearBtn",
+      "headerLogoClear",
+      "presetDeleteBtn",
+      "drawerSubtitle",
+    ]) {
+      assert(
+        effectTargets.has(target),
+        `展示位 ${target} 受设置值驱动,但未登记在 VALUE_DRIVEN_EFFECTS 里`,
+      );
     }
-    for (const site of effect.sites) {
-      assert(htmlIds.has(site.target), `设置值驱动效果 ${effect.id} 的落点 ${site.target} 不在 index.html 里`);
+  });
+  await check("契约 · 设置值驱动效果的来源/落点/实现落点都在册", () => {
+    for (const effect of table.VALUE_DRIVEN_EFFECTS) {
+      for (const source of effect.sources) {
+        assert(byKey.has(source), `设置值驱动效果 ${effect.id} 的来源 ${source} 不在声明表里`);
+      }
+      for (const site of effect.sites) {
+        assert(htmlIds.has(site.target), `设置值驱动效果 ${effect.id} 的落点 ${site.target} 不在 index.html 里`);
+      }
+      // 效果 id 逐个点名:少登记一条即红(登记是"显式例外"的载体,靠漏写不算登记)
+      const fn = effect.where.split(".").pop();
+      assert(
+        typeof panel[/** @type {string} */ (fn)] === "function",
+        `设置值驱动效果 ${effect.id} 的实现落点 ${effect.where} 在 settings-panel 上不存在`,
+      );
     }
-    // 效果 id 逐个点名:少登记一条即红(登记是"显式例外"的载体,靠漏写不算登记)
-    const fn = effect.where.split(".").pop();
-    assert(
-      typeof panel[/** @type {string} */ (fn)] === "function",
-      `设置值驱动效果 ${effect.id} 的实现落点 ${effect.where} 在 settings-panel 上不存在`,
-    );
-  }
-  for (const effectId of [
-    "presetDeletable",
-    "presetHint",
-    "pdfCssState",
-    "headerLogoState",
-    "outputDirChips",
-    "drawerSubtitle",
-  ]) {
-    assert(
-      table.VALUE_DRIVEN_EFFECTS.some((/** @type {{ id: string }} */ e) => e.id === effectId),
-      `设置值驱动效果 ${effectId} 未登记在 VALUE_DRIVEN_EFFECTS 里`,
-    );
-  }
+  });
+  await check("契约 · 六条设置值驱动效果都登记", () => {
+    for (const effectId of [
+      "presetDeletable",
+      "presetHint",
+      "pdfCssState",
+      "headerLogoState",
+      "outputDirChips",
+      "drawerSubtitle",
+    ]) {
+      assert(
+        table.VALUE_DRIVEN_EFFECTS.some((/** @type {{ id: string }} */ e) => e.id === effectId),
+        `设置值驱动效果 ${effectId} 未登记在 VALUE_DRIVEN_EFFECTS 里`,
+      );
+    }
+  });
 }
 
 /**

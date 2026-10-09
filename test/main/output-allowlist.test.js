@@ -24,6 +24,7 @@ import {
 } from "../../dist/main/services/output-allowlist.js";
 import { removeFile, removeTree } from "../harness/temp-resource.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const { assert } = createAsserter("output-allowlist");
 
@@ -32,6 +33,7 @@ export const meta = { description: "shell 产物白名单:绑定真实产物/路
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const dir = path.join(os.tmpdir(), `m2w-output-allowlist-${process.pid}`);
   await fs.mkdir(dir, { recursive: true });
   try {
@@ -39,27 +41,33 @@ export async function run() {
     const allowlist = createOutputAllowlist();
     const artifact = path.join(dir, "out.docx");
     await fs.writeFile(artifact, "docx", "utf8");
-    assert(allowlist.allow(artifact), "真实存在的产物应入白名单");
-    assert(
-      allowlist.resolveOpenable(artifact) === normalizeOutputPath(artifact),
-      "放行时应给出规范化路径",
-    );
-
-    const missing = path.join(dir, "not-yet.docx");
-    assert(allowlist.allow(missing) === false, "尚未生成的路径不得入白名单");
-    assert(allowlist.size() === 1, `未生成的路径不应占条目,当前 ${allowlist.size()}`);
-
+    // 目录入册的判定前提:先建成真目录,否则「目录被拒」会被「路径不存在被拒」顶替
     const subDir = path.join(dir, "sub");
     await fs.mkdir(subDir, { recursive: true });
-    assert(allowlist.allow(subDir) === false, "目录不得入白名单(只放行产物文件)");
 
-    // 登记后被删除:成员判定仍在,但打开前复验必须拒(否则给「等它再出现」留窗口)
-    assert(allowlist.has(artifact), "删除前应仍是白名单成员");
-    removeFile(artifact);
-    assert(allowlist.resolveOpenable(artifact) === null, "登记后被删除的路径不得放行");
-    // 登记后被换成目录:同样不得放行(防「同名目录被顶替」)
-    await fs.mkdir(artifact);
-    assert(allowlist.resolveOpenable(artifact) === null, "登记后被换成目录的路径不得放行");
+    await suite.case("绑定真实产物:真实文件放行/未生成与目录拒", () => {
+      assert(allowlist.allow(artifact), "真实存在的产物应入白名单");
+      assert(
+        allowlist.resolveOpenable(artifact) === normalizeOutputPath(artifact),
+        "放行时应给出规范化路径",
+      );
+
+      const missing = path.join(dir, "not-yet.docx");
+      assert(allowlist.allow(missing) === false, "尚未生成的路径不得入白名单");
+      assert(allowlist.size() === 1, `未生成的路径不应占条目,当前 ${allowlist.size()}`);
+
+      assert(allowlist.allow(subDir) === false, "目录不得入白名单(只放行产物文件)");
+    });
+
+    await suite.case("绑定真实产物:登记后被删除/被换成目录均拒", async () => {
+      // 登记后被删除:成员判定仍在,但打开前复验必须拒(否则给「等它再出现」留窗口)
+      assert(allowlist.has(artifact), "删除前应仍是白名单成员");
+      removeFile(artifact);
+      assert(allowlist.resolveOpenable(artifact) === null, "登记后被删除的路径不得放行");
+      // 登记后被换成目录:同样不得放行(防「同名目录被顶替」)
+      await fs.mkdir(artifact);
+      assert(allowlist.resolveOpenable(artifact) === null, "登记后被换成目录的路径不得放行");
+    });
     // 上一行刚把 artifact **换成目录**,故此处是目录树删除,走 removeTree(非 removeFile)
     const outcome70 = removeTree(artifact);
     if (!outcome70.ok) throw new Error(`同名目录清理失败:${artifact}:${outcome70.error?.message ?? ""}`);
@@ -71,51 +79,63 @@ export async function run() {
     assert(allowlist.allow(victim), "真实产物应入白名单");
     const canonical = /** @type {string} */ (normalizeOutputPath(victim));
 
-    // 非绝对路径(按 cwd 解析,cwd 不可控)→ 拒
-    assert(normalizeOutputPath("out.docx") === null, "相对路径必须被规范化拒绝");
-    assert(normalizeOutputPath("") === null, "空串必须被拒绝");
-    assert(normalizeOutputPath("   ") === null, "纯空白必须被拒绝");
-    // 穿越写法:同目录穿越归一到同一键(合法入口不因归一而自断)
-    const traversal = path.join(dir, "..", path.basename(dir), "victim.docx");
-    assert(
-      normalizeOutputPath(traversal) === canonical,
-      "同目录穿越写法应归一到同一键(否则合法入口自断)",
-    );
-    assert(
-      allowlist.resolveOpenable(traversal) === canonical,
-      "同目录穿越写法仍应放行(归一后同键)",
-    );
-    // 穿越到别处的路径:键不同 → 拒
-    const escape = path.join(dir, "..", "victim.docx");
-    assert(normalizeOutputPath(escape) !== canonical, "穿越到别处的路径不应与已登记条目同键");
-    assert(allowlist.resolveOpenable(escape) === null, "穿越到别处的路径不得放行");
+    await suite.case("路径规范化:相对/空串/穿越到别处的路径拒", () => {
+      // 非绝对路径(按 cwd 解析,cwd 不可控)→ 拒
+      assert(normalizeOutputPath("out.docx") === null, "相对路径必须被规范化拒绝");
+      assert(normalizeOutputPath("") === null, "空串必须被拒绝");
+      assert(normalizeOutputPath("   ") === null, "纯空白必须被拒绝");
+      // 穿越到别处的路径:键不同 → 拒
+      const escape = path.join(dir, "..", "victim.docx");
+      assert(normalizeOutputPath(escape) !== canonical, "穿越到别处的路径不应与已登记条目同键");
+      assert(allowlist.resolveOpenable(escape) === null, "穿越到别处的路径不得放行");
+    });
+
+    await suite.case("路径规范化:同目录穿越/冗余分隔符/win32 大小写等价写法放行", () => {
+      // 穿越写法:同目录穿越归一到同一键(合法入口不因归一而自断)
+      const traversal = path.join(dir, "..", path.basename(dir), "victim.docx");
+      assert(
+        normalizeOutputPath(traversal) === canonical,
+        "同目录穿越写法应归一到同一键(否则合法入口自断)",
+      );
+      assert(
+        allowlist.resolveOpenable(traversal) === canonical,
+        "同目录穿越写法仍应放行(归一后同键)",
+      );
+      // 等价写法(冗余分隔符)仍放行
+      const redundant = path.join(dir, ".", "victim.docx");
+      assert(allowlist.resolveOpenable(redundant) === canonical, "冗余分隔符写法应仍放行");
+      // win32:大小写不同的同一路径仍应放行(Windows 文件名本身大小写不敏感)
+      if (process.platform === "win32") {
+        const shouted = victim.toUpperCase();
+        assert(normalizeOutputPath(shouted) === canonical, "win32 下大小写不同的同一路径应归一到同一键");
+        assert(allowlist.resolveOpenable(shouted) === canonical, "win32 下大小写不同的同一路径应放行");
+      }
+    });
+
     // 前缀同名的兄弟文件不得因字符串前缀比较而搭便车
     const sibling = `${victim}.bak`;
     await fs.writeFile(sibling, "bak", "utf8");
-    assert(allowlist.allow(sibling), "兄弟产物自身入白名单");
-    assert(allowlist.resolveOpenable(victim) === canonical, "已登记产物仍应放行");
-    assert(
-      allowlist.resolveOpenable(sibling) === normalizeOutputPath(sibling),
-      "兄弟产物应各自放行",
-    );
-    // win32:大小写不同的同一路径仍应放行(Windows 文件名本身大小写不敏感)
-    if (process.platform === "win32") {
-      const shouted = victim.toUpperCase();
-      assert(normalizeOutputPath(shouted) === canonical, "win32 下大小写不同的同一路径应归一到同一键");
-      assert(allowlist.resolveOpenable(shouted) === canonical, "win32 下大小写不同的同一路径应放行");
-    }
-    // 等价写法(冗余分隔符)仍放行
-    const redundant = path.join(dir, ".", "victim.docx");
-    assert(allowlist.resolveOpenable(redundant) === canonical, "冗余分隔符写法应仍放行");
+    await suite.case("路径规范化:前缀同名的兄弟文件各自放行", () => {
+      assert(allowlist.allow(sibling), "兄弟产物自身入白名单");
+      assert(allowlist.resolveOpenable(victim) === canonical, "已登记产物仍应放行");
+      assert(
+        allowlist.resolveOpenable(sibling) === normalizeOutputPath(sibling),
+        "兄弟产物应各自放行",
+      );
+    });
+
     // 注入 isFile=false 的替身:stat 异常/非文件一律视为否(不得因异常放行)
-    const injected = createOutputAllowlist({ deps: { isFile: () => false, normalize: normalizeOutputPath } });
-    assert(injected.allow(victim) === false, "isFile 判否时不得入白名单");
-    assert(injected.size() === 0, "未入白名单不应占条目");
-    assert(injected.resolveOpenable(victim) === null, "未入白名单的路径不得放行");
+    await suite.case("路径规范化:注入 isFile=false 的替身一律拒", () => {
+      const injected = createOutputAllowlist({ deps: { isFile: () => false, normalize: normalizeOutputPath } });
+      assert(injected.allow(victim) === false, "isFile 判否时不得入白名单");
+      assert(injected.size() === 0, "未入白名单不应占条目");
+      assert(injected.resolveOpenable(victim) === null, "未入白名单的路径不得放行");
+    });
     console.log("[ok] output-allowlist:路径规范化(相对/穿越/前缀拒,等价写法与 win32 大小写放行)");
 
     // ---- 3. 有界增长:超出上限按插入序淘汰最旧 ----
     const bounded = createOutputAllowlist({ maxEntries: 3 });
+    /** @type {string[]} */
     const made = [];
     for (let i = 0; i < 6; i += 1) {
       const p = path.join(dir, `bulk-${i}.docx`);
@@ -123,29 +143,39 @@ export async function run() {
       made.push(p);
       assert(bounded.allow(p), `批量产物 ${i} 应入白名单`);
     }
-    assert(bounded.size() === 3, `条目数应被上限约束为 3,实际 ${bounded.size()}`);
-    const [oldest, secondOldest] = made;
-    assert(oldest !== undefined && bounded.resolveOpenable(oldest) === null, "最旧条目应被淘汰");
-    assert(secondOldest !== undefined && bounded.resolveOpenable(secondOldest) === null, "次旧条目应被淘汰");
-    for (const p of made.slice(3)) {
-      assert(bounded.resolveOpenable(p) !== null, `近期条目 ${path.basename(p)} 不应被淘汰`);
-    }
-    // 重复登记刷新最近使用序:老条目不会因「重复 allow」被当最旧淘汰
-    const refreshed = createOutputAllowlist({ maxEntries: 2 });
-    const a = path.join(dir, "refresh-a.docx");
-    const b = path.join(dir, "refresh-b.docx");
-    const c = path.join(dir, "refresh-c.docx");
-    for (const p of [a, b, c]) await fs.writeFile(p, "x", "utf8");
-    refreshed.allow(a);
-    refreshed.allow(b);
-    refreshed.allow(a); // 刷新 a 的最近使用序
-    refreshed.allow(c); // 触发淘汰:应淘汰 b(更旧),a 因刷新而保留
-    assert(refreshed.resolveOpenable(a) !== null, "重复登记应刷新最近使用序,不该被淘汰");
-    assert(refreshed.resolveOpenable(b) === null, "未刷新的较旧条目应被淘汰");
-    assert(refreshed.resolveOpenable(c) !== null, "最新条目不应被淘汰");
-    assert(OUTPUT_ALLOWLIST_MAX_ENTRIES > 0, "默认条目上限应为正数");
-    bounded.clear();
-    assert(bounded.size() === 0, "clear 后条目应清空");
+
+    await suite.case("条目有界:超出上限淘汰最旧,近期条目保留", () => {
+      assert(bounded.size() === 3, `条目数应被上限约束为 3,实际 ${bounded.size()}`);
+      const [oldest, secondOldest] = made;
+      assert(oldest !== undefined && bounded.resolveOpenable(oldest) === null, "最旧条目应被淘汰");
+      assert(secondOldest !== undefined && bounded.resolveOpenable(secondOldest) === null, "次旧条目应被淘汰");
+      for (const p of made.slice(3)) {
+        assert(bounded.resolveOpenable(p) !== null, `近期条目 ${path.basename(p)} 不应被淘汰`);
+      }
+    });
+
+    await suite.case("条目有界:重复登记刷新最近使用序不清最旧", async () => {
+      // 重复登记刷新最近使用序:老条目不会因「重复 allow」被当最旧淘汰
+      const refreshed = createOutputAllowlist({ maxEntries: 2 });
+      const a = path.join(dir, "refresh-a.docx");
+      const b = path.join(dir, "refresh-b.docx");
+      const c = path.join(dir, "refresh-c.docx");
+      // 三条路径须真实存在:resolveOpenable 打开前会复验 isFile
+      for (const p of [a, b, c]) await fs.writeFile(p, "x", "utf8");
+      refreshed.allow(a);
+      refreshed.allow(b);
+      refreshed.allow(a); // 刷新 a 的最近使用序
+      refreshed.allow(c); // 触发淘汰:应淘汰 b(更旧),a 因刷新而保留
+      assert(refreshed.resolveOpenable(a) !== null, "重复登记应刷新最近使用序,不该被淘汰");
+      assert(refreshed.resolveOpenable(b) === null, "未刷新的较旧条目应被淘汰");
+      assert(refreshed.resolveOpenable(c) !== null, "最新条目不应被淘汰");
+    });
+
+    await suite.case("条目有界:默认上限为正 + clear 清空", () => {
+      assert(OUTPUT_ALLOWLIST_MAX_ENTRIES > 0, "默认条目上限应为正数");
+      bounded.clear();
+      assert(bounded.size() === 0, "clear 后条目应清空");
+    });
     console.log(
       `[ok] output-allowlist:条目有界(默认上限 ${OUTPUT_ALLOWLIST_MAX_ENTRIES}/测试用 3,超出淘汰最旧,重复登记刷新次序)`,
     );
@@ -153,4 +183,5 @@ export async function run() {
     // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
     removeTree(dir);
   }
+  return { cases: suite.results };
 }

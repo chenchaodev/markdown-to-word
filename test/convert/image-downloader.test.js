@@ -27,6 +27,7 @@ import { createImageResolver } from "../../dist/convert/image-downloader.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { saveArtifact } from "../harness/artifacts.js";
 import { closeTestServer, listenFetchablePort } from "../harness/http-server.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const PNG_PATH = path.join(FIXTURES_DIR, "input", "g1-tiny.png");
 
@@ -82,43 +83,58 @@ async function startServer(status, body, delayMs = 0) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const fixtureBytes = await fs.readFile(PNG_PATH);
 
   // ---- 断言 1:本地相对路径 path.resolve(baseDir, src) ----
   const local = createImageResolver(FIXTURES_DIR);
   const rel = await local("./input/g1-tiny.png");
-  if (!rel || !rel.equals(fixtureBytes)) {
-    throw new Error("image-downloader 断言失败:本地相对路径未读到与 fixture 一致的 Buffer");
-  }
+  await suite.case("本地相对路径读到与 fixture 一致的 Buffer", () => {
+    if (!rel || !rel.equals(fixtureBytes)) {
+      throw new Error("image-downloader 断言失败:本地相对路径未读到与 fixture 一致的 Buffer");
+    }
+  });
 
   // ---- 断言 2:绝对路径与 UNC 即使指向可读文件也拒绝 ----
-  if ((await local(PNG_PATH)) !== null) {
-    throw new Error("image-downloader 断言失败:本地绝对路径应拒绝");
-  }
-  if ((await local("\\\\server\\share\\image.png")) !== null) {
-    throw new Error("image-downloader 断言失败:UNC 路径应拒绝");
-  }
+  // 两条是各自的信任边界,合成一个 case 只会让先判红的那条盖掉另一条
+  await suite.case("本地绝对路径拒绝", async () => {
+    if ((await local(PNG_PATH)) !== null) {
+      throw new Error("image-downloader 断言失败:本地绝对路径应拒绝");
+    }
+  });
+  await suite.case("UNC 路径拒绝", async () => {
+    if ((await local("\\\\server\\share\\image.png")) !== null) {
+      throw new Error("image-downloader 断言失败:UNC 路径应拒绝");
+    }
+  });
 
   // ---- 断言 2b:显式可信根内相对路径(含 ..)允许,未授予同一根则拒绝 ----
   const nestedBase = path.join(FIXTURES_DIR, "nested-source");
   const untrustedNested = createImageResolver(nestedBase);
-  if ((await untrustedNested("../input/g1-tiny.png")) !== null) {
-    throw new Error("image-downloader 断言失败:未显式授予的父目录不应成为可信根");
-  }
+  await suite.case("未显式授予的父目录不成为可信根", async () => {
+    if ((await untrustedNested("../input/g1-tiny.png")) !== null) {
+      throw new Error("image-downloader 断言失败:未显式授予的父目录不应成为可信根");
+    }
+  });
   const trustedNested = createImageResolver(nestedBase, undefined, { trustedRoots: [FIXTURES_DIR] });
   const trustedRelative = await trustedNested("../input/g1-tiny.png");
-  if (!trustedRelative || !trustedRelative.equals(fixtureBytes)) {
-    throw new Error("image-downloader 断言失败:显式可信根内相对路径未读到 fixture");
-  }
+  await suite.case("显式可信根内相对路径读到 fixture", () => {
+    if (!trustedRelative || !trustedRelative.equals(fixtureBytes)) {
+      throw new Error("image-downloader 断言失败:显式可信根内相对路径未读到 fixture");
+    }
+  });
 
   // ---- 断言 2c:可移植模拟 symlink/junction 越界(realpath 目标离开源根即拒绝) ----
   const insideCandidate = path.join(FIXTURES_DIR, "input", "g1-tiny.png");
   const linkedResolver = createImageResolver(FIXTURES_DIR, undefined, {
     realpath: async (/** @type {string} */ candidate) => (candidate === insideCandidate ? path.join(path.dirname(FIXTURES_DIR), "outside.png") : candidate),
   });
-  if ((await linkedResolver("./input/g1-tiny.png")) !== null) {
-    throw new Error("image-downloader 断言失败:realpath 指向源根外的链接目标应拒绝");
-  }
+  const linkedResult = await linkedResolver("./input/g1-tiny.png");
+  await suite.case("realpath 指向源根外的链接目标拒绝", () => {
+    if (linkedResult !== null) {
+      throw new Error("image-downloader 断言失败:realpath 指向源根外的链接目标应拒绝");
+    }
+  });
 
   // ---- 断言 2d:文件读取后链接目标变化 → 丢弃已读 Buffer(IO 前后双检) ----
   let candidateRealpathCalls = 0;
@@ -129,19 +145,26 @@ export async function run() {
       return candidateRealpathCalls === 1 ? candidate : path.join(path.dirname(FIXTURES_DIR), "outside.png");
     },
   });
-  if ((await swappedResolver("./input/g1-tiny.png")) !== null || candidateRealpathCalls < 2) {
-    throw new Error("image-downloader 断言失败:读取后链接目标变化未触发二次边界校验");
-  }
+  const swappedResult = await swappedResolver("./input/g1-tiny.png");
+  await suite.case("读取后链接目标变化触发二次边界校验", () => {
+    if (swappedResult !== null || candidateRealpathCalls < 2) {
+      throw new Error("image-downloader 断言失败:读取后链接目标变化未触发二次边界校验");
+    }
+  });
 
   // ---- 断言 3:本地缺失文件 → null ----
-  if ((await local("./missing-xxx.png")) !== null) {
-    throw new Error("image-downloader 断言失败:缺失本地文件应返回 null");
-  }
+  await suite.case("缺失本地文件返回 null", async () => {
+    if ((await local("./missing-xxx.png")) !== null) {
+      throw new Error("image-downloader 断言失败:缺失本地文件应返回 null");
+    }
+  });
 
   // ---- 断言 4:data: 等非 http 前缀 → 走 readLocal 失败分支 → null ----
-  if ((await local("data:image/png;base64,AAAA")) !== null) {
-    throw new Error("image-downloader 断言失败:data: URI 应返回 null");
-  }
+  await suite.case("data: URI 返回 null", async () => {
+    if ((await local("data:image/png;base64,AAAA")) !== null) {
+      throw new Error("image-downloader 断言失败:data: URI 应返回 null");
+    }
+  });
 
   // ---- 断言 4b:exists 轻量存在性通道(本地 fs.access,免整读) ----
   // 存在 → true;缺失(ENOENT)→ false;data: 等非本地路径退回完整解析(null → false)。
@@ -149,105 +172,159 @@ export async function run() {
   // 契约面「可缺省」在此被断言为「本实现必提供」(缺省即 resolver 未实现该通道,
   // 后面五条断言会整段失去意义),不靠 `!` 或默认值糊过去。
   const exists = local.exists;
+  // 通道缺省是后面五条断言的前提,留在 case 外:归进去后它们会报成「返回值不对」,
+  // 而真因是「这个通道压根没注入」
   if (exists === undefined) {
     throw new Error("image-downloader 断言失败:createImageResolver 应注入 exists 轻量存在性通道");
   }
-  if ((await exists("./input/g1-tiny.png")) !== true) {
-    throw new Error("image-downloader 断言失败:exists 对存在的本地图片应返回 true");
-  }
-  if ((await exists(PNG_PATH)) !== false) {
-    throw new Error("image-downloader 断言失败:exists 应拒绝存在的绝对路径");
-  }
-  if ((await exists("\\\\server\\share\\image.png")) !== false) {
-    throw new Error("image-downloader 断言失败:exists 应拒绝 UNC 路径");
-  }
-  if ((await exists("./missing-xxx.png")) !== false) {
-    throw new Error("image-downloader 断言失败:exists 对缺失本地文件应返回 false");
-  }
-  if ((await exists("data:image/png;base64,AAAA")) !== false) {
-    throw new Error("image-downloader 断言失败:exists 对 data: URI 应退回完整解析得 false");
-  }
+  await suite.case("exists 对存在的本地图片返回 true", async () => {
+    if ((await exists("./input/g1-tiny.png")) !== true) {
+      throw new Error("image-downloader 断言失败:exists 对存在的本地图片应返回 true");
+    }
+  });
+  await suite.case("exists 拒绝存在的绝对路径", async () => {
+    if ((await exists(PNG_PATH)) !== false) {
+      throw new Error("image-downloader 断言失败:exists 应拒绝存在的绝对路径");
+    }
+  });
+  await suite.case("exists 拒绝 UNC 路径", async () => {
+    if ((await exists("\\\\server\\share\\image.png")) !== false) {
+      throw new Error("image-downloader 断言失败:exists 应拒绝 UNC 路径");
+    }
+  });
+  await suite.case("exists 对缺失本地文件返回 false", async () => {
+    if ((await exists("./missing-xxx.png")) !== false) {
+      throw new Error("image-downloader 断言失败:exists 对缺失本地文件应返回 false");
+    }
+  });
+  await suite.case("exists 对 data: URI 退回完整解析得 false", async () => {
+    if ((await exists("data:image/png;base64,AAAA")) !== false) {
+      throw new Error("image-downloader 断言失败:exists 对 data: URI 应退回完整解析得 false");
+    }
+  });
 
   // ---- http server 生命周期:try/finally 保证清理 ----
+  // 显式标注类型:三个句柄要在下面的 case 闭包里读(闭包内 TS 的窄化不跨函数边界),
+  // 靠 `= null` 的初值推不出赋值后的类型
+  /** @type {TestServer | null} */
   let srv200 = null;
+  /** @type {TestServer | null} */
   let srv404 = null;
+  /** @type {TestServer | null} */
   let srvSlow = null;
   let port = 0;
   try {
     srv200 = await startServer(200, fixtureBytes);
     port = srv200.port;
     srv404 = await startServer(404, Buffer.from("NOPE"));
+    // 收进 const 供 case 闭包读(赋值处已窄化为 TestServer,窄化能随 const 传下去)
+    const srv = srv200;
+    const srvNotFound = srv404;
     const resolver = localResolver();
     const url = `http://127.0.0.1:${port}/img.png`;
 
     // ---- 断言 5a:默认拦截私网——未 opt-in 时 127.0.0.1 目标在 fetch 前被拦 ----
     // 字面量回环 IP 直接判定私网 → 返回 null 且请求不发出(server 计数保持 0);
     // 显式 allowPrivateAddresses:false 与默认行为一致(策略缺省收紧)。
-    if ((await createImageResolver("")(url)) !== null) {
-      throw new Error("image-downloader 断言失败:默认配置应拦截私网/回环地址(127.0.0.1)返回 null");
-    }
-    if (srv200.getCount() !== 0) {
-      throw new Error(`image-downloader 断言失败:私网拦截应发生在请求前(计数 0),实际 ${srv200.getCount()}`);
-    }
-    if ((await createImageResolver("", undefined, { allowPrivateAddresses: false })(url)) !== null) {
-      throw new Error("image-downloader 断言失败:显式 allowPrivateAddresses:false 应同样拦截");
-    }
+    // ⚠ srv* 的 close 在 run() 顶层的 finally:清理若进了 case,
+    // case 判红时 http server 会残留(端口不释放),而非只报本段这一条
+    await suite.case("默认配置拦截私网/回环地址(127.0.0.1)返回 null", async () => {
+      if ((await createImageResolver("")(url)) !== null) {
+        throw new Error("image-downloader 断言失败:默认配置应拦截私网/回环地址(127.0.0.1)返回 null");
+      }
+    });
+    await suite.case("私网拦截发生在请求前(计数 0)", () => {
+      if (srv.getCount() !== 0) {
+        throw new Error(`image-downloader 断言失败:私网拦截应发生在请求前(计数 0),实际 ${srv.getCount()}`);
+      }
+    });
+    await suite.case("显式 allowPrivateAddresses:false 同样拦截", async () => {
+      if ((await createImageResolver("", undefined, { allowPrivateAddresses: false })(url)) !== null) {
+        throw new Error("image-downloader 断言失败:显式 allowPrivateAddresses:false 应同样拦截");
+      }
+    });
 
     // ---- 断言 5:http 200 下载成功,内容一致(opt-in 后本地 server 可达) ----
     const buf = await resolver(url);
-    if (!buf || !buf.equals(fixtureBytes)) {
-      throw new Error(`image-downloader 断言失败:200 下载内容与 fixture 不一致(端口 ${port})`);
-    }
-    if (srv200.getCount() !== 1) {
-      throw new Error(`image-downloader 断言失败:200 下载应请求 1 次,实际 ${srv200.getCount()}(端口 ${port})`);
-    }
+    await suite.case("200 下载内容与 fixture 一致", () => {
+      if (!buf || !buf.equals(fixtureBytes)) {
+        throw new Error(`image-downloader 断言失败:200 下载内容与 fixture 不一致(端口 ${port})`);
+      }
+    });
+    await suite.case("200 下载只请求 1 次", () => {
+      if (srv.getCount() !== 1) {
+        throw new Error(`image-downloader 断言失败:200 下载应请求 1 次,实际 ${srv.getCount()}(端口 ${port})`);
+      }
+    });
 
     // ---- 断言 6:同 URL 并发去重(两次调用同一 Promise,结果同一引用) ----
     const [a, b] = await Promise.all([resolver(url), resolver(url)]);
-    // 并发去重的正向判据是「同一引用」,故 null 也要显式排除(缓存命中不会返回 null)。
-    if (a === null || b === null || a !== b || !a.equals(b)) {
-      throw new Error("image-downloader 断言失败:并发同 URL 应命中同一缓存 Promise");
-    }
-    if (srv200.getCount() !== 1) {
-      throw new Error(`image-downloader 断言失败:并发去重后应仍只请求 1 次,实际 ${srv200.getCount()}(端口 ${port})`);
-    }
+    await suite.case("并发同 URL 命中同一缓存 Promise", () => {
+      // 并发去重的正向判据是「同一引用」,故 null 也要显式排除(缓存命中不会返回 null)。
+      if (a === null || b === null || a !== b || !a.equals(b)) {
+        throw new Error("image-downloader 断言失败:并发同 URL 应命中同一缓存 Promise");
+      }
+    });
+    await suite.case("并发去重后仍只请求 1 次", () => {
+      if (srv.getCount() !== 1) {
+        throw new Error(`image-downloader 断言失败:并发去重后应仍只请求 1 次,实际 ${srv.getCount()}(端口 ${port})`);
+      }
+    });
 
     // ---- 断言 7:非 2xx(404)→ null,且失败结果不缓存(第二次重新请求,计数 2,仍 null) ----
     // 仅成功缓存——失败不缓存,一次网络抖动不导致批量期间该 URL 永久失败。
     const url404 = `http://127.0.0.1:${srv404.port}/missing.png`;
-    if ((await resolver(url404)) !== null) {
-      throw new Error("image-downloader 断言失败:404 应返回 null");
-    }
-    if ((await resolver(url404)) !== null) {
-      throw new Error("image-downloader 断言失败:失败不缓存后再次调用仍应返回 null");
-    }
-    if (srv404.getCount() !== 2) {
-      throw new Error(
-        `image-downloader 断言失败:失败不缓存,第二次调用应重新请求(计数 2),实际 ${srv404.getCount()}(端口 ${srv404.port})`,
-      );
-    }
+    const first404 = await resolver(url404);
+    const second404 = await resolver(url404);
+    await suite.case("404 返回 null", () => {
+      if (first404 !== null) {
+        throw new Error("image-downloader 断言失败:404 应返回 null");
+      }
+    });
+    await suite.case("失败不缓存后再次调用仍返回 null", () => {
+      if (second404 !== null) {
+        throw new Error("image-downloader 断言失败:失败不缓存后再次调用仍应返回 null");
+      }
+    });
+    await suite.case("失败不缓存,第二次调用重新请求(计数 2)", () => {
+      if (srvNotFound.getCount() !== 2) {
+        throw new Error(
+          `image-downloader 断言失败:失败不缓存,第二次调用应重新请求(计数 2),实际 ${srvNotFound.getCount()}(端口 ${srvNotFound.port})`,
+        );
+      }
+    });
 
     // ---- 断言 7b:超时注入点——慢响应(200ms) + timeoutMs=50 → null(AbortSignal.timeout 生效) ----
     // 默认参数行为(10s)由断言 5/6 覆盖,此处只验证注入的短超时确实中止慢响应。
     srvSlow = await startServer(200, fixtureBytes, 200);
     const slowUrl = `http://127.0.0.1:${srvSlow.port}/slow.png`;
-    if ((await localResolver(50)(slowUrl)) !== null) {
-      throw new Error("image-downloader 断言失败:慢响应应被 50ms 超时中止并返回 null");
-    }
-    if (srvSlow.getCount() !== 1) {
-      throw new Error(`image-downloader 断言失败:超时场景应请求 1 次,实际 ${srvSlow.getCount()}(端口 ${srvSlow.port})`);
-    }
+    const slowResult = await localResolver(50)(slowUrl);
+    const srvSlowReady = srvSlow;
+    await suite.case("慢响应被 50ms 超时中止并返回 null", () => {
+      if (slowResult !== null) {
+        throw new Error("image-downloader 断言失败:慢响应应被 50ms 超时中止并返回 null");
+      }
+    });
+    await suite.case("超时场景只请求 1 次", () => {
+      if (srvSlowReady.getCount() !== 1) {
+        throw new Error(`image-downloader 断言失败:超时场景应请求 1 次,实际 ${srvSlowReady.getCount()}(端口 ${srvSlowReady.port})`);
+      }
+    });
 
     // ---- 断言 8:缓存随实例隔离(每文档新建实例 → 同 URL 重新下载) ----
     const other = localResolver();
     const o = await other(url);
-    if (!o || !o.equals(fixtureBytes)) {
-      throw new Error("image-downloader 断言失败:新实例同 URL 应重新下载成功");
-    }
+    await suite.case("新实例同 URL 重新下载成功", () => {
+      if (!o || !o.equals(fixtureBytes)) {
+        throw new Error("image-downloader 断言失败:新实例同 URL 应重新下载成功");
+      }
+    });
     // srv200 至此累计 2 次:首次下载 1 次 + 新实例重新下载 1 次(同实例内去重未新增)
-    if (srv200.getCount() !== 2) {
-      throw new Error(`image-downloader 断言失败:新实例应新增 1 次请求,实际 ${srv200.getCount()}(端口 ${port})`);
-    }
+    await suite.case("新实例新增 1 次请求(计数 2)", () => {
+      if (srv.getCount() !== 2) {
+        throw new Error(`image-downloader 断言失败:新实例应新增 1 次请求,实际 ${srv.getCount()}(端口 ${port})`);
+      }
+    });
   } finally {
     if (srv200) await closeTestServer(srv200.server);
     if (srv404) await closeTestServer(srv404.server);
@@ -257,9 +334,11 @@ export async function run() {
   // ---- 断言 9:连接拒绝(server 已关闭)→ null(opt-in 放行私网,排除拦截干扰,
   //   确保失败原因确为连接拒绝而非私网过滤) ----
   const refused = await localResolver()(`http://127.0.0.1:${port}/x.png`);
-  if (refused !== null) {
-    throw new Error("image-downloader 断言失败:连接拒绝应返回 null");
-  }
+  await suite.case("连接拒绝返回 null", () => {
+    if (refused !== null) {
+      throw new Error("image-downloader 断言失败:连接拒绝应返回 null");
+    }
+  });
 
   // ---- 缺失检查并入 resolver 失败路径(单次 IO),统一警告文案 ----
   // ⚠ 这条断言已拆到 test/behavior/image-seam.test.js:它的断言对象是 **core convert 的
@@ -271,4 +350,5 @@ export async function run() {
   // ArtifactBuffers 只声明了 docx/pdf 两个可选键,而 writeBuffers 本身按 entries
   // 遍历、与格式无关,故此处按其结构投影传入,不改共享契约(不在本段写入范围)。
   await saveArtifact("image-downloader", /** @type {{ docx?: Buffer, pdf?: Buffer }} */ ({ png: fixtureBytes }));
+  return { cases: suite.results };
 }

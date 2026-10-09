@@ -43,6 +43,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const { assert: harnessAssert } = createAsserter("ui-interaction-guards");
 import { installDomStub, fireListener, makeElement, makeKeyEvent } from "./dom-stub.js";
@@ -251,6 +252,7 @@ function parseElementTree(html) {
 }
 
 export async function run() {
+  const suite = createCaseSuite();
   // ---------- 源契约:动态节点不得挂 data-i18n ----------
   const indexHtml = fs.readFileSync(path.join(ROOT, "src", "renderer", "index.html"), "utf8");
   const DYNAMIC_IDS = [
@@ -260,15 +262,18 @@ export async function run() {
     "pdfCssStatus",
     "templatePresetHint",
   ];
+  // ⚠ 每行一个 case:一枚节点漏挂不该让其余四枚的判定都不跑
   for (const id of DYNAMIC_IDS) {
-    const tag = tagOf(indexHtml, id);
-    assert(
-      !tag.includes("data-i18n"),
-      `动态状态节点 #${id} 不应带 data-i18n(applyStaticTexts 会用字典默认值覆盖真实值):${tag}`,
-    );
+    await suite.case(`源契约:动态状态节点 #${id} 不挂 data-i18n`, () => {
+      const tag = tagOf(indexHtml, id);
+      assert(
+        !tag.includes("data-i18n"),
+        `动态状态节点 #${id} 不应带 data-i18n(applyStaticTexts 会用字典默认值覆盖真实值):${tag}`,
+      );
+    });
   }
 
-  // 仍保留 data-i18n 的节点:静态回退与 zh 字典逐字一致(防止改写一处漏另一处)
+  // 取数(载入 i18n 注册表)留在 case 外:下面四条静态回退判定的期望值来自它
   const i18n = await import(distUrl("core/i18n/index.js"));
   const STATIC_KEYS = [
     "settings.presetScopeNote",
@@ -277,13 +282,15 @@ export async function run() {
     "settings.headerFooterDefaultNote",
   ];
   for (const key of STATIC_KEYS) {
-    const re = new RegExp(`data-i18n="${key}"[^>]*>([^<]*)<`, "s");
-    const m = re.exec(indexHtml);
-    assert(m, `index.html 应保留静态回退节点 ${key}`);
-    assert(
-      capture(m, 1).trim() === i18n.DICT.zh[key],
-      `${key} 静态回退与 zh 字典不一致:回退=${capture(m, 1).trim()} 字典=${i18n.DICT.zh[key]}`,
-    );
+    await suite.case(`源契约:静态回退节点 ${key} 的文案与 zh 字典逐字一致`, () => {
+      const re = new RegExp(`data-i18n="${key}"[^>]*>([^<]*)<`, "s");
+      const m = re.exec(indexHtml);
+      assert(m, `index.html 应保留静态回退节点 ${key}`);
+      assert(
+        capture(m, 1).trim() === i18n.DICT.zh[key],
+        `${key} 静态回退与 zh 字典不一致:回退=${capture(m, 1).trim()} 字典=${i18n.DICT.zh[key]}`,
+      );
+    });
   }
 
   // ---------- DOM 行为 ----------
@@ -330,15 +337,19 @@ export async function run() {
     const multiList = dom.elementFor("multiList");
     const enterEvent = makeKeyEvent("Enter", row);
     fireListener(multiList, "keydown", enterEvent);
-    assert(enterEvent.propagationStopped, "队列行 Enter 必须 stopPropagation(不穿透拖放区)");
-    assert(enterEvent.defaultPrevented, "队列行 Enter 应 preventDefault");
-    assert(openPreviewCalls === 1, `队列行 Enter 应预览该行,实际 openPreview=${openPreviewCalls}`);
+    await suite.case("(1) 队列行 Enter:stopPropagation + preventDefault,并预览该行", () => {
+      assert(enterEvent.propagationStopped, "队列行 Enter 必须 stopPropagation(不穿透拖放区)");
+      assert(enterEvent.defaultPrevented, "队列行 Enter 应 preventDefault");
+      assert(openPreviewCalls === 1, `队列行 Enter 应预览该行,实际 openPreview=${openPreviewCalls}`);
+    });
 
     const spaceEvent = makeKeyEvent(" ", row);
     fireListener(multiList, "keydown", spaceEvent);
-    assert(spaceEvent.propagationStopped, "队列行 Space 必须 stopPropagation(不穿透拖放区)");
-    assert(spaceEvent.defaultPrevented, "队列行 Space 应 preventDefault(不滚动列表)");
-    assert(openPreviewCalls === 1, "队列行 Space 只占用,不触发预览(避免误开窗口)");
+    await suite.case("(1) 队列行 Space:stopPropagation + preventDefault,只占用不误开预览", () => {
+      assert(spaceEvent.propagationStopped, "队列行 Space 必须 stopPropagation(不穿透拖放区)");
+      assert(spaceEvent.defaultPrevented, "队列行 Space 应 preventDefault(不滚动列表)");
+      assert(openPreviewCalls === 1, "队列行 Space 只占用,不触发预览(避免误开窗口)");
+    });
 
     // ---- (1b) 队列行忙碌两态:转换中不可拖拽 / 不可双击预览,结束后恢复 ----
     // 假可供性:动作栏按钮转换中已 disabled,队列行若仍给 grab 光标、仍可双击,
@@ -364,61 +375,73 @@ export async function run() {
       { draggable: true, title: "x", dataset: { index: "1" } },
     );
     fileList.updateActionButtons();
-    assert(!listEl.classList.contains("mlist--busy"), "空闲态队列容器不应挂 mlist--busy");
-    assert(
-      renderedRows.every((r) => r.draggable === true),
-      "空闲态(多文件)队列行应可拖",
-    );
-    assert(
-      renderedRows[0]?.title === previewHint.replace("${path}", "a.md") &&
-        renderedRows[1]?.title === previewHint.replace("${path}", "b.md"),
-      `空闲态悬停提示应为「路径 + 双击预览」,实际 ${JSON.stringify(renderedRows.map((r) => r.title))}`,
-    );
+    await suite.case("(1b) 空闲态:容器不挂忙碌类、行可拖、悬停提示为路径 + 双击预览", () => {
+      assert(!listEl.classList.contains("mlist--busy"), "空闲态队列容器不应挂 mlist--busy");
+      assert(
+        renderedRows.every((r) => r.draggable === true),
+        "空闲态(多文件)队列行应可拖",
+      );
+      assert(
+        renderedRows[0]?.title === previewHint.replace("${path}", "a.md") &&
+          renderedRows[1]?.title === previewHint.replace("${path}", "b.md"),
+        `空闲态悬停提示应为「路径 + 双击预览」,实际 ${JSON.stringify(renderedRows.map((r) => r.title))}`,
+      );
+    });
 
     // 转换中:draggable 置 false、容器挂忙碌类、提示收敛为纯路径
     state.mode = "batch";
     fileList.updateActionButtons();
-    assert(listEl.classList.contains("mlist--busy"), "转换中队列容器应挂 mlist--busy(可见的禁用表达)");
-    assert(
-      renderedRows.every((r) => r.draggable === false),
-      "转换中队列行必须 draggable=false(浏览器根本不发起拖拽)",
-    );
-    assert(
-      renderedRows[0]?.title === "a.md" && renderedRows[1]?.title === "b.md",
-      `转换中悬停提示应收敛为纯路径(不再承诺双击预览),实际 ${JSON.stringify(renderedRows.map((r) => r.title))}`,
-    );
+    await suite.case("(1b) 转换中:容器挂忙碌类、行 draggable=false、悬停提示收敛为纯路径", () => {
+      assert(listEl.classList.contains("mlist--busy"), "转换中队列容器应挂 mlist--busy(可见的禁用表达)");
+      assert(
+        renderedRows.every((r) => r.draggable === false),
+        "转换中队列行必须 draggable=false(浏览器根本不发起拖拽)",
+      );
+      assert(
+        renderedRows[0]?.title === "a.md" && renderedRows[1]?.title === "b.md",
+        `转换中悬停提示应收敛为纯路径(不再承诺双击预览),实际 ${JSON.stringify(renderedRows.map((r) => r.title))}`,
+      );
+    });
     // 双击预览在转换中不发起
     const previewsBeforeBusy = openPreviewCalls;
     fireListener(listEl, "dblclick", { stopPropagation() {}, target: row });
-    assert(
-      openPreviewCalls === previewsBeforeBusy,
-      "转换中双击队列行不得打开预览窗口(state.mode 守卫)",
-    );
-    // 动作栏按钮与队列读同一个 busy:按钮灰了队列就不该还能拖
-    assert(
-      dom.elementFor("batchBtn").disabled === true,
-      "转换中批量按钮应置灰(与队列忙碌同源)",
-    );
+    await suite.case("(1b) 转换中双击队列行不打开预览窗口", () => {
+      assert(
+        openPreviewCalls === previewsBeforeBusy,
+        "转换中双击队列行不得打开预览窗口(state.mode 守卫)",
+      );
+    });
+    await suite.case("(1b) 转换中批量按钮与队列忙碌同源置灰", () => {
+      // 动作栏按钮与队列读同一个 busy:按钮灰了队列就不该还能拖
+      assert(
+        dom.elementFor("batchBtn").disabled === true,
+        "转换中批量按钮应置灰(与队列忙碌同源)",
+      );
+    });
 
     // 转换结束:两态全部恢复
     state.mode = null;
     fileList.updateActionButtons();
-    assert(!listEl.classList.contains("mlist--busy"), "转换结束队列容器应摘掉 mlist--busy");
-    assert(
-      renderedRows.every((r) => r.draggable === true),
-      "转换结束队列行应恢复可拖",
-    );
-    assert(
-      renderedRows[0]?.title === previewHint.replace("${path}", "a.md") &&
-        renderedRows[1]?.title === previewHint.replace("${path}", "b.md"),
-      `转换结束悬停提示应恢复「路径 + 双击预览」,实际 ${JSON.stringify(renderedRows.map((r) => r.title))}`,
-    );
+    await suite.case("(1b) 转换结束:容器摘忙碌类、行恢复可拖、悬停提示恢复", () => {
+      assert(!listEl.classList.contains("mlist--busy"), "转换结束队列容器应摘掉 mlist--busy");
+      assert(
+        renderedRows.every((r) => r.draggable === true),
+        "转换结束队列行应恢复可拖",
+      );
+      assert(
+        renderedRows[0]?.title === previewHint.replace("${path}", "a.md") &&
+          renderedRows[1]?.title === previewHint.replace("${path}", "b.md"),
+        `转换结束悬停提示应恢复「路径 + 双击预览」,实际 ${JSON.stringify(renderedRows.map((r) => r.title))}`,
+      );
+    });
     // 恢复后双击预览照常发起
     fireListener(listEl, "dblclick", { stopPropagation() {}, target: row });
-    assert(
-      openPreviewCalls === previewsBeforeBusy + 1,
-      `转换结束双击队列行应恢复预览,实际 openPreview 增量 ${openPreviewCalls - previewsBeforeBusy}`,
-    );
+    await suite.case("(1b) 转换结束后双击队列行恢复预览", () => {
+      assert(
+        openPreviewCalls === previewsBeforeBusy + 1,
+        `转换结束双击队列行应恢复预览,实际 openPreview 增量 ${openPreviewCalls - previewsBeforeBusy}`,
+      );
+    });
     // ---- (1c) 模态关闭后动作按钮必须重算(用户实测 2026-09-29:批量转换完成后
     //      转换/批量/合并/追加/清空/选择六枚按钮永久灰态,界面像卡死)----
     // 根因是判据纯 DOM 派生:isBusy → isConvertCommandBlocked →
@@ -477,38 +500,46 @@ export async function run() {
     // ① 批量:真实 runBatch 走到「弹窗先开、endControlledRun 后置灰」那一刻
     precheckWarnings = [];
     await flow.runBatch();
-    assert(
-      !dom.elementFor("batchDialog").classList.contains("hidden"),
-      "批量转换完成后应弹出批量汇总弹窗(本小节前提)",
-    );
-    assert(
-      notGreyedYet().length === 0,
-      `弹窗可见期间六枚动作按钮应全部置灰(转换中/模态同源),实际未置灰=${JSON.stringify(notGreyedYet())}`,
-    );
+    await suite.case("(1c) ① 批量:汇总弹窗可见期间六枚动作按钮应全部置灰", () => {
+      assert(
+        !dom.elementFor("batchDialog").classList.contains("hidden"),
+        "批量转换完成后应弹出批量汇总弹窗(本小节前提)",
+      );
+      assert(
+        notGreyedYet().length === 0,
+        `弹窗可见期间六枚动作按钮应全部置灰(转换中/模态同源),实际未置灰=${JSON.stringify(notGreyedYet())}`,
+      );
+    });
     // 确定 / 点遮罩 / Esc 三种关闭方式都经 hideBatchDialog,这里直接调该唯一关闭函数
     dialogs.hideBatchDialog();
-    assert(
-      stillGreyed().length === 0,
-      `关闭批量弹窗后动作按钮必须重算为可用(多文件态 convertBtn 由 n!==1 单独置灰),实际仍灰=${JSON.stringify(stillGreyed())}`,
-    );
+    await suite.case("(1c) ① 批量:关闭汇总弹窗后动作按钮重算为可用", () => {
+      assert(
+        stillGreyed().length === 0,
+        `关闭批量弹窗后动作按钮必须重算为可用(多文件态 convertBtn 由 n!==1 单独置灰),实际仍灰=${JSON.stringify(stillGreyed())}`,
+      );
+    });
 
     // ② 单文件完成弹窗:与批量同一根因(弹窗在收尾重算之前打开);单文件态下
     //    六枚按钮都该可用,这一条把 convertBtn 也纳入判据
     state.selectedFiles = ["C:\\docs\\a.md"];
     await flow.runConvert("C:\\docs\\a.md", "docx");
-    assert(
-      !dom.elementFor("completeDialog").classList.contains("hidden"),
-      "单文件转换成功后应弹出完成弹窗(本小节前提)",
-    );
-    assert(
-      notGreyedYet().length === 0,
-      `完成弹窗可见期间六枚动作按钮应全部置灰,实际未置灰=${JSON.stringify(notGreyedYet())}`,
-    );
+    await suite.case("(1c) ② 完成弹窗:可见期间六枚动作按钮应全部置灰", () => {
+      assert(
+        !dom.elementFor("completeDialog").classList.contains("hidden"),
+        "单文件转换成功后应弹出完成弹窗(本小节前提)",
+      );
+      assert(
+        notGreyedYet().length === 0,
+        `完成弹窗可见期间六枚动作按钮应全部置灰,实际未置灰=${JSON.stringify(notGreyedYet())}`,
+      );
+    });
     dialogs.hideCompleteDialog();
-    assert(
-      stillGreyed().length === 0,
-      `关闭完成弹窗后六枚动作按钮必须重算为可用,实际仍灰=${JSON.stringify(stillGreyed())}`,
-    );
+    await suite.case("(1c) ② 完成弹窗:关闭后六枚动作按钮重算为可用(含 convertBtn)", () => {
+      assert(
+        stillGreyed().length === 0,
+        `关闭完成弹窗后六枚动作按钮必须重算为可用,实际仍灰=${JSON.stringify(stillGreyed())}`,
+      );
+    });
 
     // ③ 预检报告弹窗:关掉报告后链内续作转换并弹完成窗,关掉完成窗才回到可用态
     //    (报告期按钮灰是命令锁而非模态,这一条守的是关闭链整体不再留残态)
@@ -517,25 +548,31 @@ export async function run() {
     precheckWarnings = ["围栏未闭合"];
     const pendingConvert = flow.runConvert("C:\\docs\\a.md", "docx"); // 不 await:先关报告
     await flush();
-    assert(
-      !dom.elementFor("precheckDialog").classList.contains("hidden"),
-      "预检有告警时应弹出报告对话框(本小节前提)",
-    );
-    assert(
-      notGreyedYet().length === 0,
-      `预检报告决策期间六枚动作按钮应全部置灰(命令锁持有中),实际未置灰=${JSON.stringify(notGreyedYet())}`,
-    );
+    await suite.case("(1c) ③ 预检报告:报告弹窗可见期间六枚动作按钮应全部置灰", () => {
+      assert(
+        !dom.elementFor("precheckDialog").classList.contains("hidden"),
+        "预检有告警时应弹出报告对话框(本小节前提)",
+      );
+      assert(
+        notGreyedYet().length === 0,
+        `预检报告决策期间六枚动作按钮应全部置灰(命令锁持有中),实际未置灰=${JSON.stringify(notGreyedYet())}`,
+      );
+    });
     dialogs.closePrecheckDialog(true); // 「继续转换」→ 链内续作
     await pendingConvert;
-    assert(
-      !dom.elementFor("completeDialog").classList.contains("hidden"),
-      "预检放行后应完成转换并弹完成窗(本小节前提)",
-    );
+    await suite.case("(1c) ③ 预检放行后应完成转换并弹完成窗", () => {
+      assert(
+        !dom.elementFor("completeDialog").classList.contains("hidden"),
+        "预检放行后应完成转换并弹完成窗(本小节前提)",
+      );
+    });
     dialogs.hideCompleteDialog();
-    assert(
-      stillGreyed().length === 0,
-      `预检 → 转换 → 关闭完成弹窗后六枚动作按钮必须重算为可用,实际仍灰=${JSON.stringify(stillGreyed())}`,
-    );
+    await suite.case("(1c) ③ 预检 → 转换 → 关闭完成弹窗后六枚动作按钮重算为可用", () => {
+      assert(
+        stillGreyed().length === 0,
+        `预检 → 转换 → 关闭完成弹窗后六枚动作按钮必须重算为可用,实际仍灰=${JSON.stringify(stillGreyed())}`,
+      );
+    });
     precheckWarnings = [];
     hideAllModals(); // 收尾:不留可见模态,后续小节从干净态起算
     state.selectedFiles = ["a.md", "b.md"];
@@ -549,16 +586,20 @@ export async function run() {
     const beforeMarkdowns = openMarkdownsCalls;
     const rowOnZone = makeKeyEvent("Enter", row);
     fireListener(dropZone, "keydown", rowOnZone);
-    assert(!rowOnZone.defaultPrevented, "拖放区键盘入口不得对队列行目标生效");
-    assert(openMarkdownsCalls === beforeMarkdowns, "拖放区不得因队列行按键打开文件对话框");
+    await suite.case("(1) 拖放区键盘入口对队列行目标完全无动作", () => {
+      assert(!rowOnZone.defaultPrevented, "拖放区键盘入口不得对队列行目标生效");
+      assert(openMarkdownsCalls === beforeMarkdowns, "拖放区不得因队列行按键打开文件对话框");
+    });
 
     // 行外目标(纸面空白)仍应照常打开对话框(边界不得收得太紧)
     const paper = makeElement();
     paper.closest = () => null;
     const paperEvent = makeKeyEvent("Enter", paper);
     fireListener(dropZone, "keydown", paperEvent);
-    assert(paperEvent.defaultPrevented, "纸面空白处的 Enter 仍应打开文件对话框");
-    assert(openMarkdownsCalls === beforeMarkdowns + 1, "纸面空白 Enter 应恰好触发一次 openDialog");
+    await suite.case("(1) 行外目标(纸面空白)的 Enter 仍恰好触发一次打开对话框", () => {
+      assert(paperEvent.defaultPrevented, "纸面空白处的 Enter 仍应打开文件对话框");
+      assert(openMarkdownsCalls === beforeMarkdowns + 1, "纸面空白 Enter 应恰好触发一次 openDialog");
+    });
 
     // (3) 复制反馈:只切显隐,不改写标签
     const label = dom.elementFor("completeDialogCopyLabel");
@@ -566,9 +607,11 @@ export async function run() {
     label.classList.remove("hidden");
     ok.classList.add("hidden");
     dialogs.showCopyFeedback();
-    assert(label.classList.contains("hidden"), "复制反馈期间标签应隐藏");
-    assert(!ok.classList.contains("hidden"), "复制反馈期间「已复制」应显示");
-    assert(label.textContent === "", "复制反馈不得改写标签文案(会抹掉 data-i18n)");
+    await suite.case("(3) 复制反馈:标签与「已复制」切显隐,且不改写标签文案", () => {
+      assert(label.classList.contains("hidden"), "复制反馈期间标签应隐藏");
+      assert(!ok.classList.contains("hidden"), "复制反馈期间「已复制」应显示");
+      assert(label.textContent === "", "复制反馈不得改写标签文案(会抹掉 data-i18n)");
+    });
 
     // (3b) 读屏播报位:常驻 live region 承接「已复制」。
     // 按钮内的显隐互换靠不住(反馈节点文本不变,live region 收不到变更),
@@ -578,25 +621,31 @@ export async function run() {
     // 本段只守「写入 + 复位清空」这两个可断言面。
     const copyLive = dom.elementFor("copyLive");
     dialogs.showCopyFeedback();
-    assert(
-      copyLive.textContent === i18n.DICT.zh["common.copied"],
-      `复制成功应写读屏播报位「${i18n.DICT.zh["common.copied"]}」,实际 ${JSON.stringify(copyLive.textContent)}`,
-    );
+    await suite.case("(3b) 复制成功应写常驻 live region #copyLive", () => {
+      assert(
+        copyLive.textContent === i18n.DICT.zh["common.copied"],
+        `复制成功应写读屏播报位「${i18n.DICT.zh["common.copied"]}」,实际 ${JSON.stringify(copyLive.textContent)}`,
+      );
+    });
     dialogs.showCopyFeedback();
-    assert(
-      copyLive.textContent === i18n.DICT.zh["common.copied"],
-      "连续复制后播报位仍应持有最新文案(不得被后一次调用清空)",
-    );
+    await suite.case("(3b) 连续复制后播报位仍持有最新文案", () => {
+      assert(
+        copyLive.textContent === i18n.DICT.zh["common.copied"],
+        "连续复制后播报位仍应持有最新文案(不得被后一次调用清空)",
+      );
+    });
 
     // 弹窗打开即复位(不得跨弹窗残留)
     dialogs.showCopyFeedback();
     dialogs.showCompleteDialog("C:\\out\\a.docx");
-    assert(!label.classList.contains("hidden"), "完成弹窗打开应复位复制反馈(标签恢复)");
-    assert(ok.classList.contains("hidden"), "完成弹窗打开应复位复制反馈(反馈消失)");
-    assert(
-      copyLive.textContent === "",
-      `完成弹窗打开应清空复制播报位(不得跨弹窗残留),实际 ${JSON.stringify(copyLive.textContent)}`,
-    );
+    await suite.case("(3b) 完成弹窗打开即复位复制反馈与播报位(不跨弹窗残留)", () => {
+      assert(!label.classList.contains("hidden"), "完成弹窗打开应复位复制反馈(标签恢复)");
+      assert(ok.classList.contains("hidden"), "完成弹窗打开应复位复制反馈(反馈消失)");
+      assert(
+        copyLive.textContent === "",
+        `完成弹窗打开应清空复制播报位(不得跨弹窗残留),实际 ${JSON.stringify(copyLive.textContent)}`,
+      );
+    });
 
     // (4) 取消态:中性、不挂 ok/fail
     const resultSummary = dom.elementFor("resultSummary");
@@ -611,33 +660,43 @@ export async function run() {
     const iconD = () => iconPath.attrs.d;
 
     dialogs.showSummary({ kind: "canceled", title: "已取消" });
-    assert(resultSummary.classList.contains("result-summary--canceled"), "取消态应挂 canceled 修饰类");
-    assert(!resultSummary.classList.contains("result-summary--ok"), "取消态不得显示成功绿态");
-    assert(!resultSummary.classList.contains("result-summary--fail"), "取消态不得显示失败红态");
-    assert(iconD() === "M6 12h12", `取消态图标应为中性横杠,实际 ${iconD()}`);
+    await suite.case("(4) 取消态:挂 canceled 修饰类、图标为中性横杠、不显示成功/失败态", () => {
+      assert(resultSummary.classList.contains("result-summary--canceled"), "取消态应挂 canceled 修饰类");
+      assert(!resultSummary.classList.contains("result-summary--ok"), "取消态不得显示成功绿态");
+      assert(!resultSummary.classList.contains("result-summary--fail"), "取消态不得显示失败红态");
+      assert(iconD() === "M6 12h12", `取消态图标应为中性横杠,实际 ${iconD()}`);
+    });
 
     dialogs.showSummary({ kind: "ok", title: "完成" });
-    assert(resultSummary.classList.contains("result-summary--ok"), "成功态应挂 ok 修饰类");
-    assert(!resultSummary.classList.contains("result-summary--canceled"), "成功态不得残留 canceled 修饰类");
-    assert(iconD() === "M20 6L9 17l-5-5", "成功态图标应为对勾");
+    await suite.case("(4) 成功态:挂 ok 修饰类、图标为对勾、不残留 canceled", () => {
+      assert(resultSummary.classList.contains("result-summary--ok"), "成功态应挂 ok 修饰类");
+      assert(!resultSummary.classList.contains("result-summary--canceled"), "成功态不得残留 canceled 修饰类");
+      assert(iconD() === "M20 6L9 17l-5-5", "成功态图标应为对勾");
+    });
 
     // (4b) 完成态收束重放:汇总条常驻、不再回 hidden,动画默认只播首帧,
     // showSummary 必须摘挂重放,否则第二次转换起就再也看不到收束。
-    assert(
-      resultSummary.classList.contains("res-beat"),
-      "showSummary 应给汇总条挂 res-beat(完成态收束的触发类)",
-    );
+    await suite.case("(4b) showSummary 应给汇总条挂 res-beat(完成态收束的触发类)", () => {
+      assert(
+        resultSummary.classList.contains("res-beat"),
+        "showSummary 应给汇总条挂 res-beat(完成态收束的触发类)",
+      );
+    });
     // 手动摘掉模拟「首帧已播完」,再调一次必须重新挂上
     resultSummary.classList.remove("res-beat");
     dialogs.showSummary({ kind: "ok", title: "完成" });
-    assert(
-      resultSummary.classList.contains("res-beat"),
-      "第二次完成也应重新挂 res-beat(收束须每次转换都播,不能只在会话首帧播一次)",
-    );
+    await suite.case("(4b) 第二次完成也应重新挂 res-beat(收束每次转换都播)", () => {
+      assert(
+        resultSummary.classList.contains("res-beat"),
+        "第二次完成也应重新挂 res-beat(收束须每次转换都播,不能只在会话首帧播一次)",
+      );
+    });
 
     dialogs.showSummary({ kind: "fail", title: "失败", error: "x" });
-    assert(resultSummary.classList.contains("result-summary--fail"), "失败态应挂 fail 修饰类");
-    assert(!resultSummary.classList.contains("result-summary--ok"), "失败态不得残留 ok 修饰类");
+    await suite.case("(4) 失败态:挂 fail 修饰类且不残留 ok", () => {
+      assert(resultSummary.classList.contains("result-summary--fail"), "失败态应挂 fail 修饰类");
+      assert(!resultSummary.classList.contains("result-summary--ok"), "失败态不得残留 ok 修饰类");
+    });
 
     // (4) 批量弹窗标题按结果取语义
     const titleEl = dom.elementFor("batchDialogTitle");
@@ -653,20 +712,26 @@ export async function run() {
       ...over,
     });
     dialogs.showBatchDialog(batchResult({ okCount: 2 }));
-    assert(
-      titleEl.textContent === i18n.DICT.zh["dialog.batch.title"],
-      `全成功标题应为「${i18n.DICT.zh["dialog.batch.title"]}」,实际 ${titleEl.textContent}`,
-    );
+    await suite.case("(4) 批量弹窗标题:全成功取完成标题", () => {
+      assert(
+        titleEl.textContent === i18n.DICT.zh["dialog.batch.title"],
+        `全成功标题应为「${i18n.DICT.zh["dialog.batch.title"]}」,实际 ${titleEl.textContent}`,
+      );
+    });
     dialogs.showBatchDialog(batchResult({ okCount: 1, failCount: 1 }));
-    assert(
-      titleEl.textContent === i18n.DICT.zh["convert.batch.failedTitle"],
-      `含失败标题应为失败标题,实际 ${titleEl.textContent}`,
-    );
+    await suite.case("(4) 批量弹窗标题:含失败取失败标题", () => {
+      assert(
+        titleEl.textContent === i18n.DICT.zh["convert.batch.failedTitle"],
+        `含失败标题应为失败标题,实际 ${titleEl.textContent}`,
+      );
+    });
     dialogs.showBatchDialog(batchResult({ canceledCount: 2 }));
-    assert(
-      titleEl.textContent === i18n.DICT.zh["common.canceled"],
-      `全取消标题应为中性取消标题,实际 ${titleEl.textContent}`,
-    );
+    await suite.case("(4) 批量弹窗标题:全取消取中性取消标题(不恒写完成)", () => {
+      assert(
+        titleEl.textContent === i18n.DICT.zh["common.canceled"],
+        `全取消标题应为中性取消标题,实际 ${titleEl.textContent}`,
+      );
+    });
 
     // (5) 转换忙碌态:进度区启停同时把消息槽标 aria-busy。
     // 百分比之外读屏还需要一个「正在转换」的整体状态位 —— 挂在消息槽上,
@@ -674,36 +739,46 @@ export async function run() {
     const utils = await import(distUrl("renderer/ui/dom-ops.js"));
     const messageSlot = dom.elementFor("messageSlot");
     utils.showProgress();
-    assert(
-      messageSlot.getAttribute("aria-busy") === "true",
-      `showProgress 应把消息槽标 aria-busy=true,实际 ${JSON.stringify(messageSlot.getAttribute("aria-busy"))}`,
-    );
+    await suite.case("(5) showProgress 把消息槽标 aria-busy=true", () => {
+      assert(
+        messageSlot.getAttribute("aria-busy") === "true",
+        `showProgress 应把消息槽标 aria-busy=true,实际 ${JSON.stringify(messageSlot.getAttribute("aria-busy"))}`,
+      );
+    });
     utils.hideProgress();
-    assert(
-      messageSlot.getAttribute("aria-busy") === "false",
-      `hideProgress 应把消息槽写回 aria-busy=false,实际 ${JSON.stringify(messageSlot.getAttribute("aria-busy"))}`,
-    );
+    await suite.case("(5) hideProgress 把消息槽写回 aria-busy=false", () => {
+      assert(
+        messageSlot.getAttribute("aria-busy") === "false",
+        `hideProgress 应把消息槽写回 aria-busy=false,实际 ${JSON.stringify(messageSlot.getAttribute("aria-busy"))}`,
+      );
+    });
     // 显式写回 "false" 而非摘除属性:摘除依赖 removeAttribute,而段内自建的
     // 最小元素 stub 未必提供该方法(见 dom-stub.js 契约注记)
 
     // (2) 动态节点重算入口存在
-    assert(
-      typeof panel.refreshDynamicSettingsText === "function",
-      "settings-panel 应导出 refreshDynamicSettingsText(语言切换后重算动态节点)",
-    );
-    assert(
-      typeof panel.syncOutputDirDisplay === "function" &&
-        typeof panel.syncPdfCssState === "function" &&
-        typeof panel.syncHeaderLogoDisplay === "function",
-      "settings-panel 应导出三个动态节点同步函数(单一来源)",
-    );
+    await suite.case("(2) settings-panel 导出 refreshDynamicSettingsText(语言切换后重算动态节点)", () => {
+      assert(
+        typeof panel.refreshDynamicSettingsText === "function",
+        "settings-panel 应导出 refreshDynamicSettingsText(语言切换后重算动态节点)",
+      );
+    });
+    await suite.case("(2) settings-panel 导出三个动态节点同步函数(单一来源)", () => {
+      assert(
+        typeof panel.syncOutputDirDisplay === "function" &&
+          typeof panel.syncPdfCssState === "function" &&
+          typeof panel.syncHeaderLogoDisplay === "function",
+        "settings-panel 应导出三个动态节点同步函数(单一来源)",
+      );
+    });
 
     // (6) AI 清理两个分档:置灰跟随总开关(行为)+ 落在转换组总开关之下(源契约)
     //     可用性不只靠颜色:控件 disabled(移出焦点序)+ 一行可见文字说明。
-    assert(
-      typeof panel.syncAiCleanupTierAvailability === "function",
-      "settings-panel 应导出 syncAiCleanupTierAvailability(分档可用性单一来源)",
-    );
+    await suite.case("(6) settings-panel 导出 syncAiCleanupTierAvailability(分档可用性单一来源)", () => {
+      assert(
+        typeof panel.syncAiCleanupTierAvailability === "function",
+        "settings-panel 应导出 syncAiCleanupTierAvailability(分档可用性单一来源)",
+      );
+    });
     const aiCleanupEl = dom.elementFor("aiCleanup");
     const tidyEl = dom.elementFor("aiCleanupTidy");
     const rewriteEl = dom.elementFor("aiCleanupRewrite");
@@ -715,59 +790,71 @@ export async function run() {
     lockedEl.classList.add("hidden");
     aiCleanupEl.checked = false;
     panel.syncAiCleanupTierAvailability();
-    assert(
-      tierDisabled().every(Boolean),
-      `总开关关闭时两个分档都应置灰(不可操作),实际 ${JSON.stringify(tierDisabled())}`,
-    );
-    assert(
-      !lockedEl.classList.contains("hidden"),
-      "总开关关闭时应出现可见的置灰说明(可用性不只靠颜色表达)",
-    );
+    await suite.case("(6) 总开关关闭:两个分档都置灰,并出现可见的置灰说明行", () => {
+      assert(
+        tierDisabled().every(Boolean),
+        `总开关关闭时两个分档都应置灰(不可操作),实际 ${JSON.stringify(tierDisabled())}`,
+      );
+      assert(
+        !lockedEl.classList.contains("hidden"),
+        "总开关关闭时应出现可见的置灰说明(可用性不只靠颜色表达)",
+      );
+    });
     // 重新打开总开关:两个分档恢复可操作,各自上次的选择原样保留
     tidyEl.checked = false;
     rewriteEl.checked = true;
     aiCleanupEl.checked = true;
     panel.syncAiCleanupTierAvailability();
-    assert(
-      tierDisabled().every((flag) => !flag),
-      `总开关重新打开后两个分档应恢复可操作,实际 ${JSON.stringify(tierDisabled())}`,
-    );
-    assert(lockedEl.classList.contains("hidden"), "总开关打开后置灰说明应消失");
-    assert(
-      tidyEl.checked === false && rewriteEl.checked === true,
-      "重新打开总开关后,两个分档应保留各自上次的选择(不重置)",
-    );
+    await suite.case("(6) 总开关重新打开:两档恢复可操作、说明消失、各自上次选择不重置", () => {
+      assert(
+        tierDisabled().every((flag) => !flag),
+        `总开关重新打开后两个分档应恢复可操作,实际 ${JSON.stringify(tierDisabled())}`,
+      );
+      assert(lockedEl.classList.contains("hidden"), "总开关打开后置灰说明应消失");
+      assert(
+        tidyEl.checked === false && rewriteEl.checked === true,
+        "重新打开总开关后,两个分档应保留各自上次的选择(不重置)",
+      );
+    });
 
     // ---- 层级从属(结构断言):分档是总开关的下属项,不是别的分组的平级功能 ----
     // 判据是「元素树」而不是「源码文本」:在解析出的标签树上问「最近祖先后代是谁」
     // 与「谁在谁前面」。正则切段依赖字面形态(属性书写顺序 / 换行 / 嵌套 </section>
     // 的位置),改一次排版就假红;结构断言只依赖父子与序,排版变更不该判红。
     const tree = parseElementTree(indexHtml);
-    for (const id of ["aiCleanup", "aiCleanupTidy", "aiCleanupRewrite", "aiCleanupTiersLocked"]) {
-      assert(tree.byId(id) !== undefined, `index.html 未解析到 #${id}(元素树构建有缺口)`);
-    }
-    for (const id of ["aiCleanupTidy", "aiCleanupRewrite", "aiCleanupTiersLocked"]) {
+    await suite.case("(6) 结构:元素树能解析到 AI 清理四枚节点", () => {
+      for (const id of ["aiCleanup", "aiCleanupTidy", "aiCleanupRewrite", "aiCleanupTiersLocked"]) {
+        assert(tree.byId(id) !== undefined, `index.html 未解析到 #${id}(元素树构建有缺口)`);
+      }
+    });
+    await suite.case("(6) 结构:三个细分项都落在 05 转换组内(不是别的分组的平级功能)", () => {
+      for (const id of ["aiCleanupTidy", "aiCleanupRewrite", "aiCleanupTiersLocked"]) {
+        assert(
+          tree.groupOf(id) === "convert",
+          `#${id} 应落在 05 转换组内(最近 data-group 祖先为 convert),实际 ${
+            String(tree.groupOf(id))
+          };AI 清理的细分项不是别的分组的平级功能`,
+        );
+      }
+    });
+    await suite.case("(6) 结构:分档排在总开关之后、置灰说明排在两档之后", () => {
       assert(
-        tree.groupOf(id) === "convert",
-        `#${id} 应落在 05 转换组内(最近 data-group 祖先为 convert),实际 ${
-          String(tree.groupOf(id))
-        };AI 清理的细分项不是别的分组的平级功能`,
+        tree.orderOf("aiCleanupTidy") > tree.orderOf("aiCleanup"),
+        "分档控件在 DOM 上应排在总开关 aiCleanup 之后(层级从属靠位置表达,不只靠 class)",
       );
-    }
-    assert(
-      tree.orderOf("aiCleanupTidy") > tree.orderOf("aiCleanup"),
-      "分档控件在 DOM 上应排在总开关 aiCleanup 之后(层级从属靠位置表达,不只靠 class)",
-    );
-    assert(
-      tree.orderOf("aiCleanupTiersLocked") > tree.orderOf("aiCleanupRewrite"),
-      "置灰说明行应排在两个分档之后(说明的是分档,不是总开关)",
-    );
-    // 初始 disabled 同样走结构判据(元素自身属性),不读原始标签串
-    assert(
-      tree.byId("aiCleanupTidy")?.attrs.disabled !== undefined &&
-        tree.byId("aiCleanupRewrite")?.attrs.disabled !== undefined,
-      "两个分档的初始态应随总开关默认关(静态 HTML 即带 disabled,不靠 JS 补)",
-    );
+      assert(
+        tree.orderOf("aiCleanupTiersLocked") > tree.orderOf("aiCleanupRewrite"),
+        "置灰说明行应排在两个分档之后(说明的是分档,不是总开关)",
+      );
+    });
+    await suite.case("(6) 结构:两个分档的初始态在静态 HTML 即带 disabled", () => {
+      // 初始 disabled 同样走结构判据(元素自身属性),不读原始标签串
+      assert(
+        tree.byId("aiCleanupTidy")?.attrs.disabled !== undefined &&
+          tree.byId("aiCleanupRewrite")?.attrs.disabled !== undefined,
+        "两个分档的初始态应随总开关默认关(静态 HTML 即带 disabled,不靠 JS 补)",
+      );
+    });
     // 「总开关 change 与回填两条路径都重算分档可用性」此前由两条源码正则守护;
     // 已改为**行为断言**(真跑 change 事件与 applySettingsToControls 后读置灰态),
     // 落在 settings-controls 段(逐控件基线 + 3 个手写门控双向),正则本身不再作护栏。
@@ -775,10 +862,12 @@ export async function run() {
     // (7) 目录模式下拉 tocMode:随自动目录开关整块移除(行为)+ 两处接线齐全(源契约)
     //     灰禁会留下一个可点、但不生效的下拉(用户能选一个不会生效的模式),
     //     故按 settings-ia §3 走「模式不满足即整块移除」那一路。
-    assert(
-      typeof panel.syncTocModeVisibility === "function",
-      "settings-panel 应导出 syncTocModeVisibility(目录下拉显隐单一来源)",
-    );
+    await suite.case("(7) settings-panel 导出 syncTocModeVisibility(目录下拉显隐单一来源)", () => {
+      assert(
+        typeof panel.syncTocModeVisibility === "function",
+        "settings-panel 应导出 syncTocModeVisibility(目录下拉显隐单一来源)",
+      );
+    });
     const tocEl = dom.elementFor("toc");
     const tocModeEl = dom.elementFor("tocMode");
     // stub 元素的 classList 初值带 hidden,先摘掉以免正态断言测的是 stub 而非本函数
@@ -786,24 +875,28 @@ export async function run() {
     tocModeEl.value = "field";
     tocEl.checked = false;
     panel.syncTocModeVisibility();
-    assert(
-      tocModeEl.classList.contains("hidden"),
-      "自动目录关闭时目录模式下拉应整块移除(display:none ⇒ 既不可见也不可聚焦/交互)",
-    );
-    assert(
-      tocModeEl.value === "field",
-      "收起不得丢掉上次选的目录模式(重新打开自动目录即恢复)",
-    );
+    await suite.case("(7) 自动目录关闭:目录下拉整块移除,但不丢上次选的模式", () => {
+      assert(
+        tocModeEl.classList.contains("hidden"),
+        "自动目录关闭时目录模式下拉应整块移除(display:none ⇒ 既不可见也不可聚焦/交互)",
+      );
+      assert(
+        tocModeEl.value === "field",
+        "收起不得丢掉上次选的目录模式(重新打开自动目录即恢复)",
+      );
+    });
     tocEl.checked = true;
     panel.syncTocModeVisibility();
-    assert(
-      !tocModeEl.classList.contains("hidden"),
-      "自动目录开启后目录模式下拉应重新出现",
-    );
-    assert(
-      tocModeEl.value === "field",
-      "展开后目录模式应仍是收起前那次选择(不重置)",
-    );
+    await suite.case("(7) 自动目录开启:目录下拉重新出现,选择不重置", () => {
+      assert(
+        !tocModeEl.classList.contains("hidden"),
+        "自动目录开启后目录模式下拉应重新出现",
+      );
+      assert(
+        tocModeEl.value === "field",
+        "展开后目录模式应仍是收起前那次选择(不重置)",
+      );
+    });
 
     // 「两条接线路径(总开关 change / 回填)都重算显隐」此前由两条源码正则守护;
     // 已改为**行为断言**(真跑 toc change 与 applySettingsToControls 后读 .hidden),
@@ -817,11 +910,13 @@ export async function run() {
     // 本段这条只守「被守护的机制真被用上了」:该 select 必须仍带行内 display,
     // 否则 !important 那一层压力根本不存在,几何门禁也就无从判红(压力源不能被悄悄拆掉)。
     const tocModeTag = tagOf(indexHtml, "tocMode");
-    assert(
-      /style="[^"]*display:\s*block/.test(tocModeTag),
-      `#tocMode 应仍带行内 display:block —— 它是 .hidden 必须靠 !important 压过的压力源;` +
-        `拆掉它等于拆掉这条门禁的判据前提(几何门禁将无从判红)。实际标签:${tocModeTag}`,
-    );
+    await suite.case("(7) #tocMode 仍带行内 display:block —— .hidden 的 !important 是被它逼出来的", () => {
+      assert(
+        /style="[^"]*display:\s*block/.test(tocModeTag),
+        `#tocMode 应仍带行内 display:block —— 它是 .hidden 必须靠 !important 压过的压力源;` +
+          `拆掉它等于拆掉这条门禁的判据前提(几何门禁将无从判红)。实际标签:${tocModeTag}`,
+      );
+    });
 
     // ======================================================================
     // (8) 语言切换:静态文案与动态节点**都**必须落到新语言(行为断言)
@@ -871,32 +966,37 @@ export async function run() {
       /** @type {any} */ ({ value: "en", checked: false, valueAsNumber: Number.NaN }),
       (/** @type {unknown} */ value) => { writtenLang = value; },
     );
-    assert(writtenLang === "en", `语言钩子应落值 en,实际 ${JSON.stringify(writtenLang)}`);
-
     // 动态节点:必须已是 en 文案(哨兵被覆盖 = 钩子确实重算过它们)
     const enDict = i18n.DICT.en;
-    assert(
-      outputDirEl.textContent === enDict["settings.outputDirDefault"],
-      `语言切到 en 后输出目录 chip 应重算为英文文案,实际 ${JSON.stringify(outputDirEl.textContent)}`,
-    );
-    assert(
-      pdfCssEl.textContent === enDict["settings.pdfCssNone"],
-      `语言切到 en 后 PDF CSS 状态行应重算为英文文案,实际 ${JSON.stringify(pdfCssEl.textContent)}`,
-    );
-    assert(
-      logoEl.textContent === enDict["settings.headerLogoNone"],
-      `语言切到 en 后页眉 Logo 回显应重算为英文文案,实际 ${JSON.stringify(logoEl.textContent)}`,
-    );
-    // 静态节点:applyStaticTexts 那一路
-    assert(
-      staticLabel.textContent === enDict["settings.presetScopeNote"],
-      `语言切到 en 后静态 data-i18n 节点应刷为英文文案,实际 ${JSON.stringify(staticLabel.textContent)}`,
-    );
-    // <html lang> 同步(applyStaticTexts 的另一半职责:BCP 47 映射)
-    assert(
-      fakeDoc.documentElement.lang === i18n.htmlLangOf("en"),
-      `语言切到 en 后 <html lang> 应为 en-US,实际 ${JSON.stringify(fakeDoc.documentElement.lang)}`,
-    );
+    await suite.case("(8) 语言钩子落值 en", () => {
+      assert(writtenLang === "en", `语言钩子应落值 en,实际 ${JSON.stringify(writtenLang)}`);
+    });
+    await suite.case("(8) 语言切到 en:三处动态节点(输出目录 / PDF CSS / Logo)都重算为英文文案", () => {
+      assert(
+        outputDirEl.textContent === enDict["settings.outputDirDefault"],
+        `语言切到 en 后输出目录 chip 应重算为英文文案,实际 ${JSON.stringify(outputDirEl.textContent)}`,
+      );
+      assert(
+        pdfCssEl.textContent === enDict["settings.pdfCssNone"],
+        `语言切到 en 后 PDF CSS 状态行应重算为英文文案,实际 ${JSON.stringify(pdfCssEl.textContent)}`,
+      );
+      assert(
+        logoEl.textContent === enDict["settings.headerLogoNone"],
+        `语言切到 en 后页眉 Logo 回显应重算为英文文案,实际 ${JSON.stringify(logoEl.textContent)}`,
+      );
+    });
+    await suite.case("(8) 语言切到 en:静态 data-i18n 节点刷为英文,<html lang> 同步为 BCP 47", () => {
+      // 静态节点:applyStaticTexts 那一路
+      assert(
+        staticLabel.textContent === enDict["settings.presetScopeNote"],
+        `语言切到 en 后静态 data-i18n 节点应刷为英文文案,实际 ${JSON.stringify(staticLabel.textContent)}`,
+      );
+      // <html lang> 同步(applyStaticTexts 的另一半职责:BCP 47 映射)
+      assert(
+        fakeDoc.documentElement.lang === i18n.htmlLangOf("en"),
+        `语言切到 en 后 <html lang> 应为 en-US,实际 ${JSON.stringify(fakeDoc.documentElement.lang)}`,
+      );
+    });
     fakeDoc.querySelectorAll = realQuerySelectorAll;
     // 复位语言,免得后续小节(及 dist 模块单例)停在 en
     i18nLogic.setLanguage("zh");
@@ -914,6 +1014,8 @@ export async function run() {
     // 本段不再有任何 dialogs.css 源文本断言。
 
     console.log("[ok] ui-interaction-guards:队列行键盘边界与忙碌两态 / 模态关闭后动作按钮重算 / 动态节点不被覆盖 / 复制反馈复位与读屏播报 / 完成态收束重放 / 取消中性态与批量标题 / aria-busy / AI 清理分档置灰跟随总开关(行为 + 层级从属结构) / 目录模式下拉随总开关收起 / 语言切换后静态与动态节点同刷新语言 断言通过");
+
+    return { cases: suite.results };
   } finally {
     dom.restore();
   }

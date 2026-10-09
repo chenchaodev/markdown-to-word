@@ -165,95 +165,104 @@ function requireSinglyCoveredKey(coversByRow) {
 }
 
 export async function run() {
+  // 三组各自完整自洽(每组内都是「注入故障 ⇒ 判红 + 撤销 ⇒ 判绿」的成对结构),组与组之间
+  // 不共享判据,故每组内嵌一个 case 承载结算:case 失败只记该 case,后续 case 照跑。
+  // describe 保留在外层只为报告按主题聚类(它只给 case 名加前缀,无额外语义)。
   await suite.describe("正向锚点:真矩阵数据当前满足键覆盖交叉核对", async () => {
-    const coversByRow = readMatrixCoversByRow();
-    // 判定本体必须**不抛**。这一格是全部负向的前提:一个「无论什么输入都抛」的退化实现
-    // 能让下面两条负向全绿。
-    const failure = await captureAssertionFailure(() => {
-      assertKeyCoverageRegistered(coversByRow);
+    await suite.case("真实矩阵的 covers 满足键覆盖交叉核对,且每个登记键至少被一行覆盖", async () => {
+      const coversByRow = readMatrixCoversByRow();
+      // 判定本体必须**不抛**。这一格是全部负向的前提:一个「无论什么输入都抛」的退化实现
+      // 能让下面两条负向全绿。
+      const failure = await captureAssertionFailure(() => {
+        assertKeyCoverageRegistered(coversByRow);
+      });
+      assert(!failure.threw, `真实矩阵的 covers 应满足键覆盖交叉核对,实际抛:${failure.message}`);
+      // 逐键覆盖数:每个登记的键都至少有一行(与上面同一事实的人读回显;数字不是断言阈值)
+      const perKey = keyCoverageCounts(coversByRow);
+      for (const key of DUAL_PIPELINE_KEYS) {
+        assert((perKey[key.id] ?? 0) > 0, `双管线键 ${key.id} 应至少被一行覆盖,实际 ${String(perKey[key.id])}`);
+      }
+      console.log(
+        `[ok] dual-key-coverage:真实矩阵 ${Object.keys(coversByRow).length} 行的 covers 满足`
+        + `${DUAL_PIPELINE_KEYS.length} 个双管线键的覆盖交叉核对`
+        + `(其中恰被一行覆盖的键 ${singlyCoveredKeys(coversByRow).length} 个,供下面的负向取用)`,
+      );
     });
-    assert(!failure.threw, `真实矩阵的 covers 应满足键覆盖交叉核对,实际抛:${failure.message}`);
-    // 逐键覆盖数:每个登记的键都至少有一行(与上面同一事实的人读回显;数字不是断言阈值)
-    const perKey = keyCoverageCounts(coversByRow);
-    for (const key of DUAL_PIPELINE_KEYS) {
-      assert((perKey[key.id] ?? 0) > 0, `双管线键 ${key.id} 应至少被一行覆盖,实际 ${String(perKey[key.id])}`);
-    }
-    console.log(
-      `[ok] dual-key-coverage:真实矩阵 ${Object.keys(coversByRow).length} 行的 covers 满足`
-      + `${DUAL_PIPELINE_KEYS.length} 个双管线键的覆盖交叉核对`
-      + `(其中恰被一行覆盖的键 ${singlyCoveredKeys(coversByRow).length} 个,供下面的负向取用)`,
-    );
   });
 
   await suite.describe("负向一:删掉一行的 covers 标记 ⇒ 该键零覆盖", async () => {
-    const coversByRow = readMatrixCoversByRow();
-    // 取一个「恰被一行覆盖」的键:只有这种键,删掉那一行的 covers 才真的造成零覆盖
-    const target = requireSinglyCoveredKey(coversByRow);
+    await suite.case("covers 改空数组 / 整行移出覆盖表两种形态均判红并点名该键,撤销后判绿", async () => {
+      const coversByRow = readMatrixCoversByRow();
+      // 取一个「恰被一行覆盖」的键:只有这种键,删掉那一行的 covers 才真的造成零覆盖
+      const target = requireSinglyCoveredKey(coversByRow);
 
-    // 故障形态一:那一行仍在,`covers` 被改成空数组(探针原先注入的就是这一形态)
-    const emptied = { ...coversByRow, [target.row]: [] };
-    const failure = await captureAssertionFailure(() => {
-      assertKeyCoverageRegistered(emptied);
-    });
-    assert(failure.threw, `把 ${target.row} 行的 covers 改成 [] 后应判红(键 ${target.key} 零覆盖),实际不抛`);
-    assertIncludes(failure.message, "双管线键无任何矩阵行覆盖", "零覆盖的诊断前缀");
-    // 点名:诊断必须说出是哪个键零覆盖。「抛了个错」不等于「这个键漏写会被抓住」
-    assertIncludes(failure.message, target.key, "零覆盖诊断里被点名的键");
+      // 故障形态一:那一行仍在,`covers` 被改成空数组(探针原先注入的就是这一形态)
+      const emptied = { ...coversByRow, [target.row]: [] };
+      const failure = await captureAssertionFailure(() => {
+        assertKeyCoverageRegistered(emptied);
+      });
+      assert(failure.threw, `把 ${target.row} 行的 covers 改成 [] 后应判红(键 ${target.key} 零覆盖),实际不抛`);
+      assertIncludes(failure.message, "双管线键无任何矩阵行覆盖", "零覆盖的诊断前缀");
+      // 点名:诊断必须说出是哪个键零覆盖。「抛了个错」不等于「这个键漏写会被抓住」
+      assertIncludes(failure.message, target.key, "零覆盖诊断里被点名的键");
 
-    // 故障形态二:那一行整个从覆盖表里消失(行被删 / covers 字段被整段删掉)
-    const removed = { ...coversByRow };
-    delete removed[target.row];
-    const failureRemoved = await captureAssertionFailure(() => {
-      assertKeyCoverageRegistered(removed);
-    });
-    assert(failureRemoved.threw, `把 ${target.row} 行整个移出覆盖表后应判红,实际不抛`);
-    assertIncludes(failureRemoved.message, target.key, "零覆盖诊断里被点名的键(行被移除形态)");
+      // 故障形态二:那一行整个从覆盖表里消失(行被删 / covers 字段被整段删掉)
+      const removed = { ...coversByRow };
+      delete removed[target.row];
+      const failureRemoved = await captureAssertionFailure(() => {
+        assertKeyCoverageRegistered(removed);
+      });
+      assert(failureRemoved.threw, `把 ${target.row} 行整个移出覆盖表后应判红,实际不抛`);
+      assertIncludes(failureRemoved.message, target.key, "零覆盖诊断里被点名的键(行被移除形态)");
 
-    // 撤销 ⇒ 回到判绿(与「注入 ⇒ 红」成对:只做前者时,恒红实现能让本段全绿)
-    const restored = await captureAssertionFailure(() => {
-      assertKeyCoverageRegistered(coversByRow);
+      // 撤销 ⇒ 回到判绿(与「注入 ⇒ 红」成对:只做前者时,恒红实现能让本段全绿)
+      const restored = await captureAssertionFailure(() => {
+        assertKeyCoverageRegistered(coversByRow);
+      });
+      assert(!restored.threw, `撤销故障后应回到判绿,实际抛:${restored.message}`);
+      console.log(`[ok] dual-key-coverage:负向一 —— 删 ${target.row} 行的 covers ⇒ 键 ${target.key} 零覆盖判红(两种形态),撤销后判绿`);
     });
-    assert(!restored.threw, `撤销故障后应回到判绿,实际抛:${restored.message}`);
-    console.log(`[ok] dual-key-coverage:负向一 —— 删 ${target.row} 行的 covers ⇒ 键 ${target.key} 零覆盖判红(两种形态),撤销后判绿`);
   });
 
   await suite.describe("负向二:给某行的 covers 塞一个未登记的键 ⇒ 登记漂移", async () => {
-    const coversByRow = readMatrixCoversByRow();
-    // 未登记键取一个**当前不在登记册里**的名字(动态取:写死一个名字的话,将来有人把它
-    // 登记进 DUAL_PIPELINE_KEYS,本负向就会从「漂移」变成「合法」而恒绿)
-    const registered = new Set(DUAL_PIPELINE_KEYS.map((key) => key.id));
-    const driftKey = "dualCoverageDriftProbeKey";
-    assert(!registered.has(driftKey), `负向二用的键名 ${driftKey} 不得已在登记册里(否则这一格不再是负向)`);
-    const row = Object.keys(coversByRow)[0] ?? "";
-    assert(row !== "", "矩阵应有至少一行");
-    const originalKeys = coversByRow[row] ?? [];
-    const drifted = { ...coversByRow, [row]: [...originalKeys, driftKey] };
+    await suite.case("塞未登记键判红并点名行与键、与负向一诊断不同,撤销后判绿", async () => {
+      const coversByRow = readMatrixCoversByRow();
+      // 未登记键取一个**当前不在登记册里**的名字(动态取:写死一个名字的话,将来有人把它
+      // 登记进 DUAL_PIPELINE_KEYS,本负向就会从「漂移」变成「合法」而恒绿)
+      const registered = new Set(DUAL_PIPELINE_KEYS.map((key) => key.id));
+      const driftKey = "dualCoverageDriftProbeKey";
+      assert(!registered.has(driftKey), `负向二用的键名 ${driftKey} 不得已在登记册里(否则这一格不再是负向)`);
+      const row = Object.keys(coversByRow)[0] ?? "";
+      assert(row !== "", "矩阵应有至少一行");
+      const originalKeys = coversByRow[row] ?? [];
+      const drifted = { ...coversByRow, [row]: [...originalKeys, driftKey] };
 
-    const failure = await captureAssertionFailure(() => {
-      assertKeyCoverageRegistered(drifted);
-    });
-    assert(failure.threw, `给 ${row} 行塞未登记键 ${driftKey} 后应判红,实际不抛`);
-    assertIncludes(failure.message, "声明覆盖未登记的键", "登记漂移的诊断前缀");
-    // 点名:诊断必须说出是哪一行、塞的是哪个键(两个方向都要能归因)
-    assertIncludes(failure.message, driftKey, "登记漂移诊断里被点名的新键");
-    assertIncludes(failure.message, row, "登记漂移诊断里被点名的矩阵行");
+      const failure = await captureAssertionFailure(() => {
+        assertKeyCoverageRegistered(drifted);
+      });
+      assert(failure.threw, `给 ${row} 行塞未登记键 ${driftKey} 后应判红,实际不抛`);
+      assertIncludes(failure.message, "声明覆盖未登记的键", "登记漂移的诊断前缀");
+      // 点名:诊断必须说出是哪一行、塞的是哪个键(两个方向都要能归因)
+      assertIncludes(failure.message, driftKey, "登记漂移诊断里被点名的新键");
+      assertIncludes(failure.message, row, "登记漂移诊断里被点名的矩阵行");
 
-    // 与负向一是**不同的**判红:否则「删 covers」与「塞未登记键」共用一条诊断时,
-    // 少实现一个方向也可能全绿
-    const firstRow = requireSinglyCoveredKey(coversByRow);
-    const other = await captureAssertionFailure(() => {
-      assertKeyCoverageRegistered({ ...coversByRow, [firstRow.row]: [] });
-    });
-    assert(
-      other.threw && other.message !== failure.message,
-      `两个方向应各自判红且诊断不同(负向二:${failure.message} / 负向一:${other.message})`,
-    );
+      // 与负向一是**不同的**判红:否则「删 covers」与「塞未登记键」共用一条诊断时,
+      // 少实现一个方向也可能全绿
+      const firstRow = requireSinglyCoveredKey(coversByRow);
+      const other = await captureAssertionFailure(() => {
+        assertKeyCoverageRegistered({ ...coversByRow, [firstRow.row]: [] });
+      });
+      assert(
+        other.threw && other.message !== failure.message,
+        `两个方向应各自判红且诊断不同(负向二:${failure.message} / 负向一:${other.message})`,
+      );
 
-    const restored = await captureAssertionFailure(() => {
-      assertKeyCoverageRegistered(coversByRow);
+      const restored = await captureAssertionFailure(() => {
+        assertKeyCoverageRegistered(coversByRow);
+      });
+      assert(!restored.threw, `撤销故障后应回到判绿,实际抛:${restored.message}`);
+      console.log(`[ok] dual-key-coverage:负向二 —— 给 ${row} 行塞未登记键 ${driftKey} ⇒ 登记漂移判红,撤销后判绿`);
     });
-    assert(!restored.threw, `撤销故障后应回到判绿,实际抛:${restored.message}`);
-    console.log(`[ok] dual-key-coverage:负向二 —— 给 ${row} 行塞未登记键 ${driftKey} ⇒ 登记漂移判红,撤销后判绿`);
   });
 
   return { cases: suite.results };

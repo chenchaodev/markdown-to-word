@@ -1,5 +1,6 @@
 // @ts-check
 import { TEMPLATE_PRESETS } from "../../dist/core/settings/presets.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /**
  * 按 id 取预设:缺失即显式抛错(find 的返回是「可能不存在」,断言层需要确定项)。
@@ -16,27 +17,39 @@ function presetById(id) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const ids = TEMPLATE_PRESETS.map((p) => p.id);
+  // case 名逐字复用报错里的 id:原先三种缺预设的报错文本以 id 区分,拆成 case 后沿用同一名字,
+  // 避免「名字一处、报错另一处」两份清单漂移
   for (const id of ["official-cn", "cn-reader", "cn-minimal"]) {
-    if (!ids.includes(id)) throw new Error(`缺少中文场景预设: ${id}`);
+    await suite.case(`中文场景预设 ${id} 存在`, () => {
+      if (!ids.includes(id)) throw new Error(`缺少中文场景预设: ${id}`);
+    });
   }
   console.log("[ok] chinese-presets: 三个中文场景预设存在");
 
-  // 上方已逐个断言 id 存在,presetById 缺失即抛(等价断言,附可定位信息)
-  const official = presetById("official-cn");
-  if (official.typography.fontEastAsia !== "仿宋_GB2312") {
-    throw new Error(`公文正文字体错误: ${official.typography.fontEastAsia}`);
-  }
-  if (official.pageSetup.marginTop !== 37) throw new Error("公文上边距错误");
+  await suite.case("公文预设 official-cn 字段正确（仿宋 + GB 页边距）", () => {
+    // 上方已逐个断言 id 存在,presetById 缺失即抛(等价断言,附可定位信息)
+    const official = presetById("official-cn");
+    if (official.typography.fontEastAsia !== "仿宋_GB2312") {
+      throw new Error(`公文正文字体错误: ${official.typography.fontEastAsia}`);
+    }
+    if (official.pageSetup.marginTop !== 37) throw new Error("公文上边距错误");
+  });
   console.log("[ok] chinese-presets: 公文预设字段正确（仿宋 + GB 页边距）");
 
-  const reader = presetById("cn-reader");
-  if (reader.typography.lineSpacing !== 1.75) throw new Error("长文行距错误");
-  if (reader.typography.firstLineIndent !== true) throw new Error("长文首行缩进错误");
+  await suite.case("长文预设 cn-reader 字段正确（宋体 + 1.75 行距）", () => {
+    const reader = presetById("cn-reader");
+    if (reader.typography.lineSpacing !== 1.75) throw new Error("长文行距错误");
+    if (reader.typography.firstLineIndent !== true) throw new Error("长文首行缩进错误");
+  });
   console.log("[ok] chinese-presets: 长文预设字段正确（宋体 + 1.75 行距）");
 
-  const minimal = presetById("cn-minimal");
-  if (minimal.typography.firstLineIndent !== false) throw new Error("极简首行缩进错误");
-  if (minimal.typography.align !== "left") throw new Error("极简对齐错误");
+  await suite.case("极简预设 cn-minimal 字段正确（无缩进 + 左对齐）", () => {
+    const minimal = presetById("cn-minimal");
+    if (minimal.typography.firstLineIndent !== false) throw new Error("极简首行缩进错误");
+    if (minimal.typography.align !== "left") throw new Error("极简对齐错误");
+  });
   console.log("[ok] chinese-presets: 极简预设字段正确（无缩进 + 左对齐）");
+  return { cases: suite.results };
 }

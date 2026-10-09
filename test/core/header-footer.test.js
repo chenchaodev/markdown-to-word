@@ -17,6 +17,7 @@ import { headerLogoLoadFailedWarning } from "../../dist/core/image/image-warning
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const { assert } = createAsserter("header-footer");
 
@@ -83,6 +84,7 @@ export const fixtures = {
 const md = fixtures.main;
 
 export async function run() {
+  const suite = createCaseSuite();
   // ---- 1. docx custom 居中:文字入 header XML 且居中 ----
   // headerMode / headerLayout 是字面量联合,裸对象字面量会推成 string —— 整对象标注
   /** @type {import("../../dist/core/settings/settings-defaults.js").HeaderFooterSettings} */
@@ -99,21 +101,25 @@ export async function run() {
   }));
   const customHeaders = await headerXmls(docxBufferOf(customDocx));
   const customXml = customHeaders.texts.join("\n");
-  assert(customHeaders.names.length > 0, "custom 模式应生成 header part");
-  assert(customXml.includes("机密文档 · 内部资料"), "custom 页眉文字应写入 header XML");
-  assert(customXml.includes('w:jc w:val="center"'), "center 布局应为居中对齐");
-  assert(!customXml.includes("标题占位"), "custom 模式不应再显示文档标题");
+  await suite.case("docx custom 居中:文字入 header XML 且不显示文档标题", () => {
+    assert(customHeaders.names.length > 0, "custom 模式应生成 header part");
+    assert(customXml.includes("机密文档 · 内部资料"), "custom 页眉文字应写入 header XML");
+    assert(customXml.includes('w:jc w:val="center"'), "center 布局应为居中对齐");
+    assert(!customXml.includes("标题占位"), "custom 模式不应再显示文档标题");
+  });
 
   // ---- 2. docx leftRight:右对齐制表位(TabStopType.RIGHT),非居中 ----
-  const lrDocx = (await convertWithFs(md, "docx", {
-    baseDir: FIXTURES_DIR,
-    warnings: [],
-    title: "标题占位",
-    headerFooter: { ...hfCustom, headerLayout: "leftRight" },
-  }));
-  const lrXml = (await headerXmls(docxBufferOf(lrDocx))).texts.join("\n");
-  assert(lrXml.includes('w:tab w:val="right"'), "leftRight 布局应有右对齐制表位");
-  assert(!lrXml.includes('w:jc w:val="center"'), "leftRight 布局不应居中");
+  await suite.case("docx leftRight:右对齐制表位且不居中", async () => {
+    const lrDocx = (await convertWithFs(md, "docx", {
+      baseDir: FIXTURES_DIR,
+      warnings: [],
+      title: "标题占位",
+      headerFooter: { ...hfCustom, headerLayout: "leftRight" },
+    }));
+    const lrXml = (await headerXmls(docxBufferOf(lrDocx))).texts.join("\n");
+    assert(lrXml.includes('w:tab w:val="right"'), "leftRight 布局应有右对齐制表位");
+    assert(!lrXml.includes('w:jc w:val="center"'), "leftRight 布局不应居中");
+  });
 
   // ---- 3. docx logo:png 数据 → w:drawing + media part;webp → 警告降级 ----
   const logoDocx = (await convertWithFs(md, "docx", {
@@ -125,45 +131,53 @@ export async function run() {
   }));
   const logoZip = await JSZip.loadAsync(docxBufferOf(logoDocx));
   const logoHeader = (await headerXmls(docxBufferOf(logoDocx))).texts.join("\n");
-  assert(logoHeader.includes("<w:drawing>"), "logo 应以 w:drawing 写入 header XML");
-  assert(
-    Object.keys(logoZip.files).some((n) => n.startsWith("word/media/")),
-    "logo 图片字节应进入 word/media/",
-  );
-  /** @type {unknown[]} */
-  const webpWarnings = [];
-  const webpDocx = (await convertWithFs(md, "docx", {
-    baseDir: FIXTURES_DIR,
-    warnings: webpWarnings,
-    title: "标题占位",
-    headerFooter: hfCustom,
-    headerLogo: { data: WEBP_BYTES, extension: "webp" },
-  }));
-  const webpHeader = (await headerXmls(docxBufferOf(webpDocx))).texts.join("\n");
-  assert(!webpHeader.includes("<w:drawing>"), "webp logo 应降级为无 logo(无 w:drawing)");
-  assert(
-    webpWarnings.some((w) => typeof w === "object" && /** @type {{ key?: unknown }} */ (w).key === "warn.webpSkipped"),
-    "webp logo 降级应产生 warn.webpSkipped keyed 警告",
-  );
+  await suite.case("docx png logo:w:drawing 入 header XML 且字节进 word/media/", () => {
+    assert(logoHeader.includes("<w:drawing>"), "logo 应以 w:drawing 写入 header XML");
+    assert(
+      Object.keys(logoZip.files).some((n) => n.startsWith("word/media/")),
+      "logo 图片字节应进入 word/media/",
+    );
+  });
+  await suite.case("docx webp logo:降级为无 logo 并留 warn.webpSkipped keyed 警告", async () => {
+    /** @type {unknown[]} */
+    const webpWarnings = [];
+    const webpDocx = (await convertWithFs(md, "docx", {
+      baseDir: FIXTURES_DIR,
+      warnings: webpWarnings,
+      title: "标题占位",
+      headerFooter: hfCustom,
+      headerLogo: { data: WEBP_BYTES, extension: "webp" },
+    }));
+    const webpHeader = (await headerXmls(docxBufferOf(webpDocx))).texts.join("\n");
+    assert(!webpHeader.includes("<w:drawing>"), "webp logo 应降级为无 logo(无 w:drawing)");
+    assert(
+      webpWarnings.some((w) => typeof w === "object" && /** @type {{ key?: unknown }} */ (w).key === "warn.webpSkipped"),
+      "webp logo 降级应产生 warn.webpSkipped keyed 警告",
+    );
+  });
 
   // ---- 4. docx none:无页眉部件 ----
-  const noneDocx = (await convertWithFs(md, "docx", {
-    baseDir: FIXTURES_DIR,
-    warnings: [],
-    title: "标题占位",
-    headerFooter: { ...DEFAULT_HEADER_FOOTER, headerMode: "none" },
-  }));
-  const noneHeaders = await headerXmls(docxBufferOf(noneDocx));
-  assert(noneHeaders.names.length === 0, "none 模式不应生成任何 header part");
+  await suite.case("docx none 模式不生成任何 header part", async () => {
+    const noneDocx = (await convertWithFs(md, "docx", {
+      baseDir: FIXTURES_DIR,
+      warnings: [],
+      title: "标题占位",
+      headerFooter: { ...DEFAULT_HEADER_FOOTER, headerMode: "none" },
+    }));
+    const noneHeaders = await headerXmls(docxBufferOf(noneDocx));
+    assert(noneHeaders.names.length === 0, "none 模式不应生成任何 header part");
+  });
 
   // ---- 5. docx footerEnabled=false:无页脚部件 ----
-  const noFooterDocx = (await convertWithFs(md, "docx", {
-    baseDir: FIXTURES_DIR,
-    warnings: [],
-    title: "标题占位",
-    headerFooter: { ...DEFAULT_HEADER_FOOTER, footerEnabled: false },
-  }));
-  assert((await footerNames(docxBufferOf(noFooterDocx))).length === 0, "footerEnabled=false 不应生成 footer part");
+  await suite.case("docx footerEnabled=false 不生成 footer part", async () => {
+    const noFooterDocx = (await convertWithFs(md, "docx", {
+      baseDir: FIXTURES_DIR,
+      warnings: [],
+      title: "标题占位",
+      headerFooter: { ...DEFAULT_HEADER_FOOTER, footerEnabled: false },
+    }));
+    assert((await footerNames(docxBufferOf(noFooterDocx))).length === 0, "footerEnabled=false 不应生成 footer part");
+  });
 
   // ---- 6. default 行为回归:标题居中 + 页码页脚存在 ----
   const defDocx = (await convertWithFs(md, "docx", {
@@ -174,9 +188,11 @@ export async function run() {
   }));
   const defHeaders = await headerXmls(docxBufferOf(defDocx));
   const defXml = defHeaders.texts.join("\n");
-  assert(defHeaders.names.length > 0, "default 模式应有标题页眉");
-  assert(defXml.includes("回归标题") && defXml.includes('w:jc w:val="center"'), "default 页眉应为文档标题居中");
-  assert((await footerNames(docxBufferOf(defDocx))).length > 0, "默认应有页码页脚 part");
+  await suite.case("docx default 回归:文档标题居中页眉 + 默认页码页脚 part", async () => {
+    assert(defHeaders.names.length > 0, "default 模式应有标题页眉");
+    assert(defXml.includes("回归标题") && defXml.includes('w:jc w:val="center"'), "default 页眉应为文档标题居中");
+    assert((await footerNames(docxBufferOf(defDocx))).length > 0, "默认应有页码页脚 part");
+  });
 
   // ---- 7. pdf 模板:custom 渲染文字/logo/布局,default 与 none 空模板 ----
   const customPdf = (await convertWithFs(md, "pdf", {
@@ -185,42 +201,55 @@ export async function run() {
     headerFooter: hfCustom,
     headerLogo: { data: PNG_1X1, extension: "png" },
   }));
-  assert(customPdf.kind === "pdf", "pdf 分支产物类型");
   const customPdfArtifact = asPdfArtifact(customPdf);
   const customHeader = customPdfArtifact.headerTemplate;
-  assert(customHeader.includes("机密文档 · 内部资料"), "PDF 自定义页眉应含转义后文字");
-  assert(customHeader.includes("font-size:7pt"), "PDF 页眉字号应与 docx 对齐(7pt)");
-  assert(customHeader.includes("#888888"), "PDF 页眉灰度应与 docx MUTED_TEXT_GRAY 一致(#888888)");
-  assert(customHeader.includes("data:image/png;base64,"), "PDF logo 应内嵌为 data URI");
-  assert(customPdfArtifact.footerTemplate === PDF_FOOTER_TEMPLATE, "默认页脚模板不变");
-  const lrPdf = buildPdfHeaderTemplate({ ...hfCustom, headerLayout: "leftRight" }, undefined, { data: PNG_1X1, extension: "png" });
-  assert(lrPdf.includes("float:left") && lrPdf.includes("float:right"), "leftRight 布局应为 float 左右分栏");
-  const lrNoLogo = buildPdfHeaderTemplate({ ...hfCustom, headerLayout: "leftRight" }, undefined);
-  assert(lrNoLogo.includes("text-align:left"), "leftRight 无 logo 时文字应靠左");
+  await suite.case("pdf custom 模板:文字 / 7pt 字号 / #888888 灰度 / logo data URI", () => {
+    assert(customPdf.kind === "pdf", "pdf 分支产物类型");
+    assert(customHeader.includes("机密文档 · 内部资料"), "PDF 自定义页眉应含转义后文字");
+    assert(customHeader.includes("font-size:7pt"), "PDF 页眉字号应与 docx 对齐(7pt)");
+    assert(customHeader.includes("#888888"), "PDF 页眉灰度应与 docx MUTED_TEXT_GRAY 一致(#888888)");
+    assert(customHeader.includes("data:image/png;base64,"), "PDF logo 应内嵌为 data URI");
+    assert(customPdfArtifact.footerTemplate === PDF_FOOTER_TEMPLATE, "默认页脚模板不变");
+  });
+  await suite.case("pdf leftRight 布局:有 logo 时 float 左右分栏、无 logo 时文字靠左", () => {
+    const lrPdf = buildPdfHeaderTemplate({ ...hfCustom, headerLayout: "leftRight" }, undefined, { data: PNG_1X1, extension: "png" });
+    assert(lrPdf.includes("float:left") && lrPdf.includes("float:right"), "leftRight 布局应为 float 左右分栏");
+    const lrNoLogo = buildPdfHeaderTemplate({ ...hfCustom, headerLayout: "leftRight" }, undefined);
+    assert(lrNoLogo.includes("text-align:left"), "leftRight 无 logo 时文字应靠左");
+  });
   // default 模式:自 adr-030 6-B3 起与 docx 侧统一为「文档标题居中页眉」
   // (此前为空模板,标题只进页面 title —— 即 pdf 侧的页眉功能整体静默失效)
-  const defHf = buildPdfHeaderTemplate(DEFAULT_HEADER_FOOTER, "回归标题");
-  assert(defHf.includes("回归标题"), "default 模式 PDF 页眉应含文档标题(与 docx 侧同口径)");
-  assert(defHf.includes("text-align:center"), "default 模式 PDF 页眉应居中");
-  assert(defHf.includes("font-size:7pt"), "default 模式 PDF 页眉字号应与 docx 对齐(7pt)");
-  const defNoTitle = buildPdfHeaderTemplate(DEFAULT_HEADER_FOOTER, undefined);
-  assert(defNoTitle === PDF_EMPTY_CHROME_TEMPLATE, "default 模式无标题时应为空模板(与 docx 侧不装配页眉同口径)");
-  const defBlankTitle = buildPdfHeaderTemplate(DEFAULT_HEADER_FOOTER, "   ");
-  assert(defBlankTitle === PDF_EMPTY_CHROME_TEMPLATE, "default 模式标题仅空白时应为空模板");
-  const noneHf = buildPdfHeaderTemplate({ ...DEFAULT_HEADER_FOOTER, headerMode: "none" }, "回归标题");
-  assert(noneHf === PDF_EMPTY_CHROME_TEMPLATE, "none 模式 PDF 空页眉模板(无标题也不装配)");
-  const noFooterPdf = (await convertWithFs(md, "pdf", {
-    baseDir: FIXTURES_DIR,
-    warnings: [],
-    headerFooter: { ...DEFAULT_HEADER_FOOTER, footerEnabled: false },
-  }));
-  assert(asPdfArtifact(noFooterPdf).footerTemplate === PDF_EMPTY_CHROME_TEMPLATE, "footerEnabled=false 页脚为空模板");
+  await suite.case("pdf default 模式:含文档标题居中页眉、7pt 字号", () => {
+    const defHf = buildPdfHeaderTemplate(DEFAULT_HEADER_FOOTER, "回归标题");
+    assert(defHf.includes("回归标题"), "default 模式 PDF 页眉应含文档标题(与 docx 侧同口径)");
+    assert(defHf.includes("text-align:center"), "default 模式 PDF 页眉应居中");
+    assert(defHf.includes("font-size:7pt"), "default 模式 PDF 页眉字号应与 docx 对齐(7pt)");
+  });
+  await suite.case("pdf 空模板:无标题 / 纯空白标题 / none 模式", () => {
+    const defNoTitle = buildPdfHeaderTemplate(DEFAULT_HEADER_FOOTER, undefined);
+    assert(defNoTitle === PDF_EMPTY_CHROME_TEMPLATE, "default 模式无标题时应为空模板(与 docx 侧不装配页眉同口径)");
+    const defBlankTitle = buildPdfHeaderTemplate(DEFAULT_HEADER_FOOTER, "   ");
+    assert(defBlankTitle === PDF_EMPTY_CHROME_TEMPLATE, "default 模式标题仅空白时应为空模板");
+    const noneHf = buildPdfHeaderTemplate({ ...DEFAULT_HEADER_FOOTER, headerMode: "none" }, "回归标题");
+    assert(noneHf === PDF_EMPTY_CHROME_TEMPLATE, "none 模式 PDF 空页眉模板(无标题也不装配)");
+  });
+  await suite.case("pdf footerEnabled=false 页脚为空模板", async () => {
+    const noFooterPdf = (await convertWithFs(md, "pdf", {
+      baseDir: FIXTURES_DIR,
+      warnings: [],
+      headerFooter: { ...DEFAULT_HEADER_FOOTER, footerEnabled: false },
+    }));
+    assert(asPdfArtifact(noFooterPdf).footerTemplate === PDF_EMPTY_CHROME_TEMPLATE, "footerEnabled=false 页脚为空模板");
+  });
 
   // ---- 8. keyed 警告工厂:读取失败文案形状 ----
-  const w = headerLogoLoadFailedWarning("C:\\img\\logo.png");
-  assert(w.key === "warn.headerLogoLoadFailed", "警告 key 应为 warn.headerLogoLoadFailed");
-  assert(w.params && w.params.src === "C:\\img\\logo.png", "警告应携带 src 参数");
-  assert(typeof w.fallback === "string" && w.fallback.includes("logo.png"), "fallback 应含路径便于定位");
+  await suite.case("keyed 警告工厂:key / src 参数 / 含路径的 fallback", () => {
+    const w = headerLogoLoadFailedWarning("C:\\img\\logo.png");
+    assert(w.key === "warn.headerLogoLoadFailed", "警告 key 应为 warn.headerLogoLoadFailed");
+    assert(w.params && w.params.src === "C:\\img\\logo.png", "警告应携带 src 参数");
+    assert(typeof w.fallback === "string" && w.fallback.includes("logo.png"), "fallback 应含路径便于定位");
+  });
 
   console.log("[ok] header-footer:docx custom/leftRight/logo/none/footer 开关/default 回归 + pdf 模板 + keyed 警告 断言通过");
+  return { cases: suite.results };
 }

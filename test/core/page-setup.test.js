@@ -26,6 +26,7 @@ import {
   validatePageSetup,
 } from "../../dist/core/settings/settings-defaults.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const md = `页面设置验收:纸张与边距参数化。\n`;
 
@@ -74,27 +75,48 @@ const M1_PDF = "margin: 20mm 40mm 30mm 15mm;";
 
 /** 页面设置验收 */
 export async function run() {
+  const suite = createCaseSuite();
   // 1. 五种纸张(纵向)+ 边距组 1:docx pgSz/pgMar 与 pdf @page 精确断言
+  // 转换留在循环内、case 之前:三条断言读的都是**本次迭代**转换出来的 docx/pdf
+  // (逐行独立产物),提到所有迭代之前会让后几行的 case 读到别的纸张的产物
+  // 标注不可省:两者的赋值都发生在 for 循环体内,而 TS 的「evolving let」推断跨不过
+  // 循环/闭包边界 —— 不写标注就是隐式 any。类型从 helper 返回值派生,helper 改签名时
+  // 这里会失配报错,而不是悄悄退化成 any。
+  // `| undefined` 不是偷懒:纸张循环可能一次都不执行,此时两者确实未赋值,段末尾那道
+  // `if (!lastDocx || !lastPdf) throw` 正是在守这个分支。写成不带 undefined 的类型会让
+  // TS 的确定性赋值分析报「使用前未赋值」。
+  /** @type {Awaited<ReturnType<typeof convertWithFs>> | undefined} */
   let lastDocx;
+  /** @type {ReturnType<typeof asPdfArtifact> | undefined} */
   let lastPdf;
   for (const [paper, [w, h]] of Object.entries(PAPERS_TWIPS)) {
     const pageSetup = { paper, orientation: "portrait", ...M1 };
     lastDocx = await convertWithFs(md, "docx", { baseDir: FIXTURES_DIR, warnings: [], pageSetup });
     const xml = await unzipPart(docxBufferOf(lastDocx), "word/document.xml");
     const pgSz = `<w:pgSz w:w="${w}" w:h="${h}" w:orient="portrait"`;
-    if (!xml.includes(pgSz)) {
-      throw new Error(`页面设置断言失败:${paper} 纵向缺少 ${pgSz}(PAPER_SIZES_MM × 56.6929 取整)`);
-    }
-    if (!xml.includes(M1_PGMAR)) {
-      throw new Error(`页面设置断言失败:${paper} 缺少 ${M1_PGMAR}(边距 20/40/30/15 mm → twips)`);
-    }
-    lastPdf = asPdfArtifact(
+    await suite.case(`${paper}:docx pgSz 纵向`, () => {
+      if (!xml.includes(pgSz)) {
+        throw new Error(`页面设置断言失败:${paper} 纵向缺少 ${pgSz}(PAPER_SIZES_MM × 56.6929 取整)`);
+      }
+    });
+    await suite.case(`${paper}:docx pgMar 边距组 1`, () => {
+      if (!xml.includes(M1_PGMAR)) {
+        throw new Error(`页面设置断言失败:${paper} 缺少 ${M1_PGMAR}(边距 20/40/30/15 mm → twips)`);
+      }
+    });
+    const pdfOfThisPaper = asPdfArtifact(
       await convertWithFs(md, "pdf", { baseDir: FIXTURES_DIR, warnings: [], pageSetup }),
     );
+    // 循环内局部量供紧随其后的 case 读(逐行独立产物,本就该读本次迭代那一份);
+    // lastPdf 只当「最后一次」的载体,给循环之后的保存段用。case 闭包跨不过 TS 的
+    // 赋值分析,直接让 case 读 lastPdf 会被判 possibly-undefined。
+    lastPdf = pdfOfThisPaper;
     const pageCss = `size: ${paper}; ${M1_PDF}`;
-    if (!lastPdf.html.includes(pageCss)) {
-      throw new Error(`页面设置断言失败:${paper} PDF 模板缺少 ${pageCss}`);
-    }
+    await suite.case(`${paper}:pdf @page size 与 margin`, () => {
+      if (!pdfOfThisPaper.html.includes(pageCss)) {
+        throw new Error(`页面设置断言失败:${paper} PDF 模板缺少 ${pageCss}`);
+      }
+    });
     console.log(`[ok] 页面设置:${paper} 纵向 docx pgSz ${w}×${h}/pgMar + pdf @page 断言通过`);
   }
 
@@ -103,39 +125,57 @@ export async function run() {
   const docx2 = await convertWithFs(md, "docx", { baseDir: FIXTURES_DIR, warnings: [], pageSetup: pageSetup2 });
   const xml2 = await unzipPart(docxBufferOf(docx2), "word/document.xml");
   const pgMar2 = '<w:pgMar w:top="1417" w:right="1814" w:bottom="1417" w:left="1814"';
-  if (!xml2.includes(pgMar2)) {
-    throw new Error(`页面设置断言失败:边距 25/32 mm 缺少 ${pgMar2}`);
-  }
+  await suite.case("docx pgMar 边距组 2", () => {
+    if (!xml2.includes(pgMar2)) {
+      throw new Error(`页面设置断言失败:边距 25/32 mm 缺少 ${pgMar2}`);
+    }
+  });
   const pdf2 = asPdfArtifact(
     await convertWithFs(md, "pdf", { baseDir: FIXTURES_DIR, warnings: [], pageSetup: pageSetup2 }),
   );
-  if (!pdf2.html.includes("margin: 25mm 32mm 25mm 32mm;")) {
-    throw new Error("页面设置断言失败:PDF 模板缺少默认边距 margin: 25mm 32mm 25mm 32mm;");
-  }
+  await suite.case("pdf margin 边距组 2", () => {
+    if (!pdf2.html.includes("margin: 25mm 32mm 25mm 32mm;")) {
+      throw new Error("页面设置断言失败:PDF 模板缺少默认边距 margin: 25mm 32mm 25mm 32mm;");
+    }
+  });
   console.log("[ok] 页面设置:边距参数化(20/40/30/15 vs 25/32)docx+pdf 输出不同,断言通过");
 
   // 3. landscape + 非 A4(docx 库自动交换:landscape 下 w:w=纸高、w:h=纸宽,勿手动交换)
   for (const paper of /** @type {readonly Paper[]} */ (["Legal", "A5"])) {
+    await suite.case(`${paper}:landscape 纸张尺寸表有该行`, () => {
+      const size = PAPERS_TWIPS[paper];
+      if (!size) throw new Error(`页面设置断言失败:纸张尺寸表缺少 ${paper}`);
+    });
     const size = PAPERS_TWIPS[paper];
-    if (!size) throw new Error(`页面设置断言失败:纸张尺寸表缺少 ${paper}`);
+    if (!size) continue;
     const [w, h] = size;
     const pageSetup = /** @type {PageSetup} */ ({ paper, orientation: "landscape", ...M1 });
     lastDocx = await convertWithFs(md, "docx", { baseDir: FIXTURES_DIR, warnings: [], pageSetup });
     const xml = await unzipPart(docxBufferOf(lastDocx), "word/document.xml");
     const pgSz = `<w:pgSz w:w="${h}" w:h="${w}" w:orient="landscape"`;
-    if (!xml.includes(pgSz)) {
-      throw new Error(`页面设置断言失败:${paper} landscape 缺少 ${pgSz}(docx 库自动交换宽高)`);
-    }
-    if (!xml.includes(M1_PGMAR)) {
-      throw new Error(`页面设置断言失败:${paper} landscape 缺少 ${M1_PGMAR}`);
-    }
-    lastPdf = asPdfArtifact(
+    await suite.case(`${paper}:landscape docx pgSz 宽高交换`, () => {
+      if (!xml.includes(pgSz)) {
+        throw new Error(`页面设置断言失败:${paper} landscape 缺少 ${pgSz}(docx 库自动交换宽高)`);
+      }
+    });
+    await suite.case(`${paper}:landscape docx pgMar 边距组 1`, () => {
+      if (!xml.includes(M1_PGMAR)) {
+        throw new Error(`页面设置断言失败:${paper} landscape 缺少 ${M1_PGMAR}`);
+      }
+    });
+    const pdfOfThisPaper = asPdfArtifact(
       await convertWithFs(md, "pdf", { baseDir: FIXTURES_DIR, warnings: [], pageSetup }),
     );
+    // 循环内局部量供紧随其后的 case 读(逐行独立产物,本就该读本次迭代那一份);
+    // lastPdf 只当「最后一次」的载体,给循环之后的保存段用。case 闭包跨不过 TS 的
+    // 赋值分析,直接让 case 读 lastPdf 会被判 possibly-undefined。
+    lastPdf = pdfOfThisPaper;
     const pageCss = `size: ${paper} landscape; ${M1_PDF}`;
-    if (!lastPdf.html.includes(pageCss)) {
-      throw new Error(`页面设置断言失败:${paper} landscape PDF 模板缺少 ${pageCss}`);
-    }
+    await suite.case(`${paper}:landscape pdf @page size`, () => {
+      if (!pdfOfThisPaper.html.includes(pageCss)) {
+        throw new Error(`页面设置断言失败:${paper} landscape PDF 模板缺少 ${pageCss}`);
+      }
+    });
     console.log(`[ok] 页面设置:${paper} landscape docx 宽高交换 + pdf size 断言通过`);
   }
 
@@ -145,106 +185,124 @@ export async function run() {
     of /** @type {Array<[Paper, [number, number]]>} */ (Object.entries(PAPERS_MM))) {
     // orientation 收成字面量联合:裸数组会推成 string[] 而与 PageSetup.orientation 不兼容
     for (const orientation of /** @type {readonly Orientation[]} */ (["portrait", "landscape"])) {
-      const pageSetup = /** @type {PageSetup} */ ({ paper, orientation, ...M1 });
-      const geometry = validatePageSetup(pageSetup);
-      const expectedWidth = orientation === "landscape" ? portraitHeight : portraitWidth;
-      const expectedHeight = orientation === "landscape" ? portraitWidth : portraitHeight;
-      const expectedContentWidth = expectedWidth - M1.marginLeft - M1.marginRight;
-      const expectedContentHeight = expectedHeight - M1.marginTop - M1.marginBottom;
-      if (
-        geometry.pageWidthMm !== expectedWidth ||
-        geometry.pageHeightMm !== expectedHeight ||
-        geometry.contentWidthMm !== expectedContentWidth ||
-        geometry.contentHeightMm !== expectedContentHeight
-      ) {
-        throw new Error(`页面几何 validator 失败:${paper} ${orientation}`);
-      }
+      await suite.case(`validatePageSetup ${paper} ${orientation} 页面/内容宽高`, () => {
+        const pageSetup = /** @type {PageSetup} */ ({ paper, orientation, ...M1 });
+        const geometry = validatePageSetup(pageSetup);
+        const expectedWidth = orientation === "landscape" ? portraitHeight : portraitWidth;
+        const expectedHeight = orientation === "landscape" ? portraitWidth : portraitHeight;
+        const expectedContentWidth = expectedWidth - M1.marginLeft - M1.marginRight;
+        const expectedContentHeight = expectedHeight - M1.marginTop - M1.marginBottom;
+        if (
+          geometry.pageWidthMm !== expectedWidth ||
+          geometry.pageHeightMm !== expectedHeight ||
+          geometry.contentWidthMm !== expectedContentWidth ||
+          geometry.contentHeightMm !== expectedContentHeight
+        ) {
+          throw new Error(`页面几何 validator 失败:${paper} ${orientation}`);
+        }
+      });
     }
   }
-  const zeroMargin = validatePageSetup({
-    paper: "A4",
-    orientation: "portrait",
-    marginTop: 0,
-    marginBottom: 0,
-    marginLeft: 0,
-    marginRight: 0,
+  await suite.case("validatePageSetup 0 边距内容区等于纸张尺寸", () => {
+    const zeroMargin = validatePageSetup({
+      paper: "A4",
+      orientation: "portrait",
+      marginTop: 0,
+      marginBottom: 0,
+      marginLeft: 0,
+      marginRight: 0,
+    });
+    if (zeroMargin.contentWidthMm !== 210 || zeroMargin.contentHeightMm !== 297) {
+      throw new Error("页面几何 validator:0 边距应是合法边界且内容区等于纸张尺寸");
+    }
   });
-  if (zeroMargin.contentWidthMm !== 210 || zeroMargin.contentHeightMm !== 297) {
-    throw new Error("页面几何 validator:0 边距应是合法边界且内容区等于纸张尺寸");
-  }
   console.log("[ok] 页面几何 validator:五纸张×两方向/0 边距/内容宽高计算断言通过");
 
   // 3.1.1 core 单一纠正策略:合法值原样、双边超限按固定最小修正规则确定性收敛。
-  const legalCorrection = correctPageSetup({
-    paper: "A4", orientation: "portrait", marginTop: 20, marginBottom: 30, marginLeft: 15, marginRight: 40,
+  await suite.case("correctPageSetup 合法值原样通过", () => {
+    const legalCorrection = correctPageSetup({
+      paper: "A4", orientation: "portrait", marginTop: 20, marginBottom: 30, marginLeft: 15, marginRight: 40,
+    });
+    if (legalCorrection.corrected || JSON.stringify(legalCorrection.pageSetup) !== JSON.stringify({
+      paper: "A4", orientation: "portrait", marginTop: 20, marginBottom: 30, marginLeft: 15, marginRight: 40,
+    })) {
+      throw new Error("合法页面设置应原样通过 core 纠正策略");
+    }
   });
-  if (legalCorrection.corrected || JSON.stringify(legalCorrection.pageSetup) !== JSON.stringify({
-    paper: "A4", orientation: "portrait", marginTop: 20, marginBottom: 30, marginLeft: 15, marginRight: 40,
-  })) {
-    throw new Error("合法页面设置应原样通过 core 纠正策略");
-  }
-  const bothVertical = correctPageSetup({
-    paper: "A4", orientation: "portrait", marginTop: 200, marginBottom: 200, marginLeft: 10, marginRight: 10,
+  await suite.case("correctPageSetup 双边纵向超限最小修正", () => {
+    const bothVertical = correctPageSetup({
+      paper: "A4", orientation: "portrait", marginTop: 200, marginBottom: 200, marginLeft: 10, marginRight: 10,
+    });
+    if (
+      bothVertical.pageSetup.marginTop !== 96 ||
+      bothVertical.pageSetup.marginBottom !== 200 ||
+      !bothVertical.reasons.includes("insufficient-content")
+    ) {
+      throw new Error(`双边纵向超限应仅削减溢出总量,保留 top=96/bottom=200:${JSON.stringify(bothVertical)}`);
+    }
   });
-  if (
-    bothVertical.pageSetup.marginTop !== 96 ||
-    bothVertical.pageSetup.marginBottom !== 200 ||
-    !bothVertical.reasons.includes("insufficient-content")
-  ) {
-    throw new Error(`双边纵向超限应仅削减溢出总量,保留 top=96/bottom=200:${JSON.stringify(bothVertical)}`);
-  }
-  const bothHorizontal = correctPageSetup({
-    paper: "A4", orientation: "portrait", marginTop: 10, marginBottom: 10, marginLeft: 200, marginRight: 200,
+  await suite.case("correctPageSetup 双边横向超限最小修正", () => {
+    const bothHorizontal = correctPageSetup({
+      paper: "A4", orientation: "portrait", marginTop: 10, marginBottom: 10, marginLeft: 200, marginRight: 200,
+    });
+    if (
+      bothHorizontal.pageSetup.marginLeft !== 9 ||
+      bothHorizontal.pageSetup.marginRight !== 200
+    ) {
+      throw new Error(`双边横向超限应仅削减溢出总量,保留 left=9/right=200:${JSON.stringify(bothHorizontal)}`);
+    }
   });
-  if (
-    bothHorizontal.pageSetup.marginLeft !== 9 ||
-    bothHorizontal.pageSetup.marginRight !== 200
-  ) {
-    throw new Error(`双边横向超限应仅削减溢出总量,保留 left=9/right=200:${JSON.stringify(bothHorizontal)}`);
-  }
-  const firstOverCapacity = correctPageSetup({
-    paper: "A4", orientation: "portrait", marginTop: 400, marginBottom: 400, marginLeft: 0, marginRight: 0,
+  await suite.case("correctPageSetup 第一边不足以独自吸收溢出", () => {
+    const firstOverCapacity = correctPageSetup({
+      paper: "A4", orientation: "portrait", marginTop: 400, marginBottom: 400, marginLeft: 0, marginRight: 0,
+    });
+    if (
+      firstOverCapacity.pageSetup.marginTop !== 0 ||
+      firstOverCapacity.pageSetup.marginBottom !== 296
+    ) {
+      throw new Error("第一边不足以独自吸收溢出时应归零并从第二边扣除剩余量");
+    }
   });
-  if (
-    firstOverCapacity.pageSetup.marginTop !== 0 ||
-    firstOverCapacity.pageSetup.marginBottom !== 296
-  ) {
-    throw new Error("第一边不足以独自吸收溢出时应归零并从第二边扣除剩余量");
-  }
-  const minimalOverflow = correctPageSetup({
-    paper: "A4", orientation: "portrait", marginTop: 150, marginBottom: 200, marginLeft: 10, marginRight: 10,
+  await suite.case("correctPageSetup 150/200 双边超限仅削减溢出量", () => {
+    const minimalOverflow = correctPageSetup({
+      paper: "A4", orientation: "portrait", marginTop: 150, marginBottom: 200, marginLeft: 10, marginRight: 10,
+    });
+    if (minimalOverflow.pageSetup.marginTop !== 96 || minimalOverflow.pageSetup.marginBottom !== 200) {
+      throw new Error(`150/200 双边超限应仅削减 54mm，不应无谓清零:${JSON.stringify(minimalOverflow)}`);
+    }
   });
-  if (minimalOverflow.pageSetup.marginTop !== 96 || minimalOverflow.pageSetup.marginBottom !== 200) {
-    throw new Error(`150/200 双边超限应仅削减 54mm，不应无谓清零:${JSON.stringify(minimalOverflow)}`);
-  }
-  const invalidEnums = correctPageSetup({
-    paper: "B5", orientation: "sideways", marginTop: "bad", marginBottom: -1, marginLeft: 0, marginRight: 0,
+  await suite.case("correctPageSetup 非法枚举/边距逐字段回退并报原因", () => {
+    const invalidEnums = correctPageSetup({
+      paper: "B5", orientation: "sideways", marginTop: "bad", marginBottom: -1, marginLeft: 0, marginRight: 0,
+    });
+    if (
+      invalidEnums.pageSetup.paper !== "A4" ||
+      invalidEnums.pageSetup.orientation !== "portrait" ||
+      invalidEnums.pageSetup.marginTop !== 25 ||
+      invalidEnums.pageSetup.marginBottom !== 0 ||
+      !invalidEnums.reasons.includes("invalid-paper") ||
+      !invalidEnums.reasons.includes("invalid-orientation") ||
+      !invalidEnums.reasons.includes("invalid-margin")
+    ) {
+      throw new Error(`非法枚举/边距应逐字段回退并报告原因:${JSON.stringify(invalidEnums)}`);
+    }
   });
-  if (
-    invalidEnums.pageSetup.paper !== "A4" ||
-    invalidEnums.pageSetup.orientation !== "portrait" ||
-    invalidEnums.pageSetup.marginTop !== 25 ||
-    invalidEnums.pageSetup.marginBottom !== 0 ||
-    !invalidEnums.reasons.includes("invalid-paper") ||
-    !invalidEnums.reasons.includes("invalid-orientation") ||
-    !invalidEnums.reasons.includes("invalid-margin")
-  ) {
-    throw new Error(`非法枚举/边距应逐字段回退并报告原因:${JSON.stringify(invalidEnums)}`);
-  }
   console.log("[ok] core 页面纠正策略:合法原样/双边超限确定性最小修正/非法字段原因断言通过");
 
   // 3.2 最小内容区:恰好达到下限通过，略低、零/负内容区与越界边距拒绝
-  const atMinimum = validatePageSetup({
-    paper: "A5",
-    orientation: "portrait",
-    marginTop: 0,
-    marginBottom: 0,
-    marginLeft: (148 - MIN_PAGE_CONTENT_MM) / 2,
-    marginRight: (148 - MIN_PAGE_CONTENT_MM) / 2,
+  await suite.case("validatePageSetup 内容区恰好等于最小值应通过", () => {
+    const atMinimum = validatePageSetup({
+      paper: "A5",
+      orientation: "portrait",
+      marginTop: 0,
+      marginBottom: 0,
+      marginLeft: (148 - MIN_PAGE_CONTENT_MM) / 2,
+      marginRight: (148 - MIN_PAGE_CONTENT_MM) / 2,
+    });
+    if (atMinimum.contentWidthMm !== MIN_PAGE_CONTENT_MM) {
+      throw new Error("页面几何 validator:内容区恰好等于最小值应通过");
+    }
   });
-  if (atMinimum.contentWidthMm !== MIN_PAGE_CONTENT_MM) {
-    throw new Error("页面几何 validator:内容区恰好等于最小值应通过");
-  }
   // 这批**故意非法**的 pageSetup 正是被测输入(未知纸张/未知方向/内容区为零或负/
   // 边距越界)。字段名与边距仍取自 PageSetup(打错字段名即判红),而 paper/orientation
   // 刻意放宽成 string —— 它们必须能承载「不在 PageSetup 联合内的值」,否则这批
@@ -332,18 +390,21 @@ export async function run() {
       },
     },
   ];
+  // 每行一个 case:矩阵行的 name 就是「判红时该看哪一条」的定位键
   for (const { name, value } of invalidPageSetups) {
-    let rejected = false;
-    try {
-      // validatePageSetup 的入参类型是「**已合法**的 PageSetup」(它自己不校验,
-      // 校验正是被测行为),故这里必须把上面的非法夹具收敛回该类型 —— 这是本段
-      // 唯一一处类型与运行期事实不符,且它记述的就是「运行期事实:非法的 PageSetup
-      // 会被拒收」。unknown 中转不抹掉字段级检查(上面那份标注已经在做那件事)。
-      validatePageSetup(/** @type {PageSetup} */ (/** @type {unknown} */ (value)));
-    } catch (error) {
-      rejected = error instanceof RangeError;
-    }
-    if (!rejected) throw new Error(`页面几何 validator 应拒绝:${name}`);
+    await suite.case(`validatePageSetup 应拒绝:${name}`, () => {
+      let rejected = false;
+      try {
+        // validatePageSetup 的入参类型是「**已合法**的 PageSetup」(它自己不校验,
+        // 校验正是被测行为),故这里必须把上面的非法夹具收敛回该类型 —— 这是本段
+        // 唯一一处类型与运行期事实不符,且它记述的就是「运行期事实:非法的 PageSetup
+        // 会被拒收」。unknown 中转不抹掉字段级检查(上面那份标注已经在做那件事)。
+        validatePageSetup(/** @type {PageSetup} */ (/** @type {unknown} */ (value)));
+      } catch (error) {
+        rejected = error instanceof RangeError;
+      }
+      if (!rejected) throw new Error(`页面几何 validator 应拒绝:${name}`);
+    });
   }
   console.log("[ok] 页面几何 validator:最小内容区/0·负值/1000·越界边距拒绝断言通过");
 
@@ -352,20 +413,25 @@ export async function run() {
   if (!zeroContentCase) throw new Error("页面几何 validator 用例缺少「内容区为零」项");
   const invalidRenderSetup = zeroContentCase.value;
   for (const format of /** @type {("docx" | "pdf")[]} */ (["docx", "pdf"])) {
-    let rejected = false;
-    try {
-      await convertWithFs(md, format, {
-        baseDir: FIXTURES_DIR,
-        warnings: [],
-        pageSetup: invalidRenderSetup,
-      });
-    } catch (error) {
-      rejected = error instanceof RangeError;
-    }
-    if (!rejected) throw new Error(`${format} core 渲染边界应拒绝零内容区页面设置`);
+    await suite.case(`${format} 渲染边界应拒绝零内容区页面设置`, async () => {
+      let rejected = false;
+      try {
+        await convertWithFs(md, format, {
+          baseDir: FIXTURES_DIR,
+          warnings: [],
+          pageSetup: invalidRenderSetup,
+        });
+      } catch (error) {
+        rejected = error instanceof RangeError;
+      }
+      if (!rejected) throw new Error(`${format} core 渲染边界应拒绝零内容区页面设置`);
+    });
   }
   console.log("[ok] 页面几何 validator:docx/pdf 独立渲染边界一致拒绝断言通过");
 
+  // 两条错误消息要在同一次收集之后比对(契约:PDF 复用 DOCX 的 validator 错误)⇒
+  // 收集留在 case 之外,比对进 case;否则后一条拿不到另一条的错误。
+  /** @type {unknown[]} */
   const invalidPaperErrors = [];
   for (const format of /** @type {("docx" | "pdf")[]} */ (["docx", "pdf"])) {
     try {
@@ -378,14 +444,16 @@ export async function run() {
       invalidPaperErrors.push(error);
     }
   }
-  if (
-    invalidPaperErrors.length !== 2 ||
-    !(invalidPaperErrors[0] instanceof RangeError) ||
-    !(invalidPaperErrors[1] instanceof RangeError) ||
-    invalidPaperErrors[0].message !== invalidPaperErrors[1].message
-  ) {
-    throw new Error(`PDF 必须在纸张尺寸计算前复用 DOCX validator 错误契约:${JSON.stringify(invalidPaperErrors.map((error) => String(error)))}`);
-  }
+  await suite.case("invalidPaperErrors", () => {
+    if (
+      invalidPaperErrors.length !== 2 ||
+      !(invalidPaperErrors[0] instanceof RangeError) ||
+      !(invalidPaperErrors[1] instanceof RangeError) ||
+      invalidPaperErrors[0].message !== invalidPaperErrors[1].message
+    ) {
+      throw new Error(`PDF 必须在纸张尺寸计算前复用 DOCX validator 错误契约:${JSON.stringify(invalidPaperErrors.map((error) => String(error)))}`);
+    }
+  });
   console.log("[ok] PDF 渲染边界:validatePageSetup 先于纸张计算且 DOCX/PDF 错误契约一致");
 
   // 4. 分页符产物(pdf 侧中间 html):
@@ -397,13 +465,22 @@ export async function run() {
       pageSetup: { paper: "A4", orientation: "portrait", marginTop: 25, marginBottom: 25, marginLeft: 32, marginRight: 32 },
     }),
   );
-  if (!pbArtifact.html.includes('<div class="page-break"></div>')) {
-    throw new Error("分页符断言失败:pdf 中间 html 缺少 page-break div");
-  }
+  await suite.case('pbArtifact.html 包含 <div class="page-break"></div>', () => {
+    if (!pbArtifact.html.includes('<div class="page-break"></div>')) {
+      throw new Error("分页符断言失败:pdf 中间 html 缺少 page-break div");
+    }
+  });
   console.log("[ok] 分页符:pdf 中间 html 含 page-break div 断言通过");
 
-  // 产物落盘用最后一次纸张循环的产物(表非空,循环必然赋值;显式校验避免静默落空)
-  if (!lastDocx || !lastPdf) throw new Error("页面设置断言失败:纸张循环未产出产物");
-  const lastPdfBin = await htmlToPdf(lastPdf.html, lastPdf.footerTemplate);
-  await saveArtifact("page-setup", { docx: docxBufferOf(lastDocx), pdf: lastPdfBin });
+  await suite.case("lastDocx / lastPdf 非空", () => {
+    // 产物落盘用最后一次纸张循环的产物(表非空,循环必然赋值;显式校验避免静默落空)
+    if (!lastDocx || !lastPdf) throw new Error("页面设置断言失败:纸张循环未产出产物");
+  });
+  // 显式收窄在 case 之后:上面的 case 只判「非空」,真正建 PDF 二进制的读值放在
+  // 判过之后(产物落盘不在断言面内,不该由 case 承担)
+  const docxToSave = /** @type {NonNullable<typeof lastDocx>} */ (lastDocx);
+  const pdfToSave = /** @type {NonNullable<typeof lastPdf>} */ (lastPdf);
+  const lastPdfBin = await htmlToPdf(pdfToSave.html, pdfToSave.footerTemplate);
+  await saveArtifact("page-setup", { docx: docxBufferOf(docxToSave), pdf: lastPdfBin });
+  return { cases: suite.results };
 }

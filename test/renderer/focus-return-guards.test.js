@@ -22,6 +22,7 @@ import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
 import { installDomStub, makeElement } from "./dom-stub.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 // 真值断言取公共单源(收敛重复面,口径见 assert.js 文件头)
 const { assert } = createAsserter("focus-return-guards");
@@ -69,6 +70,7 @@ const batchResult = (okCount) => ({
 });
 
 export async function run() {
+  const suite = createCaseSuite();
   const dom = installDomStub({
     api: {
       uiStateSet: async () => ({}),
@@ -102,122 +104,137 @@ export async function run() {
     for (let i = 0; i < 8; i += 1) dialogs.hideCompleteDialog();
 
     // ---- 1. 完成弹窗:开 → 焦点落默认操作钮;关 → 回触发元素 ----
-    // 选中数按各条用例的触发按钮给:关闭弹窗时 dialogs 会重算动作按钮可用性
-    // (isBusy 的判据含「恰好一个文件」与「≥2 个文件」两条可见性规则),归还焦点
-    // 只落在**未 disabled**的候选上 —— 选中数不给对,期望的触发按钮就是灰的,
-    // 焦点按浏览器语义压根落不上去(此前本段靠「弹窗开着却零选中」这个够不到
-    // 的前提才成立:真实流程里完成/批量弹窗必在有选中项时打开)。
-    state.selectedFiles = ["C:\\docs\\a.md"];
-    el("convertBtn").classList.remove("hidden");
-    dom.document.activeElement = el("convertBtn");
-    dialogs.showCompleteDialog("C:\\out\\a.docx");
-    assert(
-      dom.document.activeElement === completeDialogOk,
-      `完成弹窗打开后焦点应落「确定」${idOf(completeDialogOk)},实际 ${idOf(dom.document.activeElement)}`,
-    );
-    dialogs.hideCompleteDialog();
-    assert(
-      dom.document.activeElement === el("convertBtn"),
-      `完成弹窗关闭后焦点应回触发元素 #convertBtn,实际 ${idOf(dom.document.activeElement)}`,
-    );
+    await suite.case("完成弹窗默认落点与关闭归还", async () => {
+      // 选中数按各条用例的触发按钮给:关闭弹窗时 dialogs 会重算动作按钮可用性
+      // (isBusy 的判据含「恰好一个文件」与「≥2 个文件」两条可见性规则),归还焦点
+      // 只落在**未 disabled**的候选上 —— 选中数不给对,期望的触发按钮就是灰的,
+      // 焦点按浏览器语义压根落不上去(此前本段靠「弹窗开着却零选中」这个够不到
+      // 的前提才成立:真实流程里完成/批量弹窗必在有选中项时打开)。
+      state.selectedFiles = ["C:\\docs\\a.md"];
+      el("convertBtn").classList.remove("hidden");
+      dom.document.activeElement = el("convertBtn");
+      dialogs.showCompleteDialog("C:\\out\\a.docx");
+      assert(
+        dom.document.activeElement === completeDialogOk,
+        `完成弹窗打开后焦点应落「确定」${idOf(completeDialogOk)},实际 ${idOf(dom.document.activeElement)}`,
+      );
+      dialogs.hideCompleteDialog();
+      assert(
+        dom.document.activeElement === el("convertBtn"),
+        `完成弹窗关闭后焦点应回触发元素 #convertBtn,实际 ${idOf(dom.document.activeElement)}`,
+      );
+    });
 
     // ---- 2. 批量弹窗:同链,触发元素换成批量钮 ----
-    state.selectedFiles = ["C:\\docs\\a.md", "C:\\docs\\b.md"];
-    el("batchBtn").classList.remove("hidden");
-    dom.document.activeElement = el("batchBtn");
-    dialogs.showBatchDialog(batchResult(2));
-    assert(
-      dom.document.activeElement === batchDialogOk,
-      `批量弹窗打开后焦点应落「确定」${idOf(batchDialogOk)},实际 ${idOf(dom.document.activeElement)}`,
-    );
-    dialogs.hideBatchDialog();
-    assert(
-      dom.document.activeElement === el("batchBtn"),
-      `批量弹窗关闭后焦点应回触发元素 #batchBtn,实际 ${idOf(dom.document.activeElement)}`,
-    );
+    await suite.case("批量弹窗默认落点与关闭归还", () => {
+      state.selectedFiles = ["C:\\docs\\a.md", "C:\\docs\\b.md"];
+      el("batchBtn").classList.remove("hidden");
+      dom.document.activeElement = el("batchBtn");
+      dialogs.showBatchDialog(batchResult(2));
+      assert(
+        dom.document.activeElement === batchDialogOk,
+        `批量弹窗打开后焦点应落「确定」${idOf(batchDialogOk)},实际 ${idOf(dom.document.activeElement)}`,
+      );
+      dialogs.hideBatchDialog();
+      assert(
+        dom.document.activeElement === el("batchBtn"),
+        `批量弹窗关闭后焦点应回触发元素 #batchBtn,实际 ${idOf(dom.document.activeElement)}`,
+      );
+    });
 
     // ---- 3. 预检弹窗:焦点落「继续转换」(肯定动作),关闭回发起转换的元素 ----
-    state.selectedFiles = ["C:\\docs\\a.md", "C:\\docs\\b.md"];
-    el("mergeBtn").classList.remove("hidden");
-    dom.document.activeElement = el("mergeBtn");
-    const decided = dialogs.showPrecheckDialog([]);
-    assert(
-      dom.document.activeElement === precheckContinue,
-      `预检弹窗打开后焦点应落「继续转换」${idOf(precheckContinue)},实际 ${idOf(dom.document.activeElement)}`,
-    );
-    dialogs.closePrecheckDialog(false);
-    assert(await decided === false, "预检关闭应按 false 结算(用户取消)");
-    assert(
-      dom.document.activeElement === el("mergeBtn"),
-      `预检弹窗关闭后焦点应回发起元素 #mergeBtn,实际 ${idOf(dom.document.activeElement)}`,
-    );
+    await suite.case("预检弹窗落肯定动作且关闭按取消结算", async () => {
+      state.selectedFiles = ["C:\\docs\\a.md", "C:\\docs\\b.md"];
+      el("mergeBtn").classList.remove("hidden");
+      dom.document.activeElement = el("mergeBtn");
+      const decided = dialogs.showPrecheckDialog([]);
+      assert(
+        dom.document.activeElement === precheckContinue,
+        `预检弹窗打开后焦点应落「继续转换」${idOf(precheckContinue)},实际 ${idOf(dom.document.activeElement)}`,
+      );
+      dialogs.closePrecheckDialog(false);
+      assert(await decided === false, "预检关闭应按 false 结算(用户取消)");
+      assert(
+        dom.document.activeElement === el("mergeBtn"),
+        `预检弹窗关闭后焦点应回发起元素 #mergeBtn,实际 ${idOf(dom.document.activeElement)}`,
+      );
+    });
 
     // ---- 4. 另存为预设弹窗:焦点进输入框,关闭回抽屉内那一枚钮 ----
-    el("presetSaveBtn").classList.remove("hidden");
-    dom.document.activeElement = el("presetSaveBtn");
-    presetActions.openPresetSaveDialog();
-    assert(
-      dom.document.activeElement === presetNameInput,
-      `另存为弹窗打开后焦点应进名称输入框 ${idOf(presetNameInput)},实际 ${idOf(dom.document.activeElement)}`,
-    );
-    presetActions.closePresetSaveDialog();
-    assert(
-      dom.document.activeElement === el("presetSaveBtn"),
-      `另存为弹窗关闭后焦点应回 #presetSaveBtn,实际 ${idOf(dom.document.activeElement)}`,
-    );
+    await suite.case("另存为预设弹窗焦点进输入框并归还", () => {
+      el("presetSaveBtn").classList.remove("hidden");
+      dom.document.activeElement = el("presetSaveBtn");
+      presetActions.openPresetSaveDialog();
+      assert(
+        dom.document.activeElement === presetNameInput,
+        `另存为弹窗打开后焦点应进名称输入框 ${idOf(presetNameInput)},实际 ${idOf(dom.document.activeElement)}`,
+      );
+      presetActions.closePresetSaveDialog();
+      assert(
+        dom.document.activeElement === el("presetSaveBtn"),
+        `另存为弹窗关闭后焦点应回 #presetSaveBtn,实际 ${idOf(dom.document.activeElement)}`,
+      );
+    });
 
     // ---- 5. 设置抽屉:初始焦点落当前激活分组 Tab,关闭回顶栏 ⚙ ----
-    dom.document.activeElement = el("settingsOpenBtn");
-    drawer.openSettingsDrawer();
-    assert(
-      dom.document.activeElement === activeTab,
-      `抽屉打开后焦点应落当前激活分组 Tab(${idOf(activeTab)}),实际 ${idOf(dom.document.activeElement)}`,
-    );
-    drawer.closeSettingsDrawer();
-    assert(
-      dom.document.activeElement === el("settingsOpenBtn"),
-      `抽屉关闭后焦点应回 #settingsOpenBtn,实际 ${idOf(dom.document.activeElement)}`,
-    );
+    await suite.case("设置抽屉初始落激活分组 Tab 并归还顶栏", () => {
+      dom.document.activeElement = el("settingsOpenBtn");
+      drawer.openSettingsDrawer();
+      assert(
+        dom.document.activeElement === activeTab,
+        `抽屉打开后焦点应落当前激活分组 Tab(${idOf(activeTab)}),实际 ${idOf(dom.document.activeElement)}`,
+      );
+      drawer.closeSettingsDrawer();
+      assert(
+        dom.document.activeElement === el("settingsOpenBtn"),
+        `抽屉关闭后焦点应回 #settingsOpenBtn,实际 ${idOf(dom.document.activeElement)}`,
+      );
+    });
 
     // ---- 6. 叠层:抽屉开着时开预设弹窗,逐层归还(来源按栈记,不按单值) ----
-    dom.document.activeElement = el("settingsOpenBtn");
-    drawer.openSettingsDrawer();
-    // 抽屉内点「另存为预设」:焦点此时在该钮上
-    el("presetSaveBtn").classList.remove("hidden");
-    dom.document.activeElement = el("presetSaveBtn");
-    presetActions.openPresetSaveDialog();
-    presetActions.closePresetSaveDialog();
-    assert(
-      dom.document.activeElement === el("presetSaveBtn"),
-      `叠层关闭内层弹窗后焦点应回抽屉内触发钮,实际 ${idOf(dom.document.activeElement)}`,
-    );
-    drawer.closeSettingsDrawer();
-    assert(
-      dom.document.activeElement === el("settingsOpenBtn"),
-      `叠层再关抽屉后焦点才回 #settingsOpenBtn,实际 ${idOf(dom.document.activeElement)}`,
-    );
+    await suite.case("叠层浮层逐层归还焦点", () => {
+      dom.document.activeElement = el("settingsOpenBtn");
+      drawer.openSettingsDrawer();
+      // 抽屉内点「另存为预设」:焦点此时在该钮上
+      el("presetSaveBtn").classList.remove("hidden");
+      dom.document.activeElement = el("presetSaveBtn");
+      presetActions.openPresetSaveDialog();
+      presetActions.closePresetSaveDialog();
+      assert(
+        dom.document.activeElement === el("presetSaveBtn"),
+        `叠层关闭内层弹窗后焦点应回抽屉内触发钮,实际 ${idOf(dom.document.activeElement)}`,
+      );
+      drawer.closeSettingsDrawer();
+      assert(
+        dom.document.activeElement === el("settingsOpenBtn"),
+        `叠层再关抽屉后焦点才回 #settingsOpenBtn,实际 ${idOf(dom.document.activeElement)}`,
+      );
+    });
 
     // ---- 7. 兜底:触发元素已失效时不硬按,退到可见主操作钮 ----
-    // 触发元素 disabled(disabled 的元素按下去不会有焦点,按上去等于丢焦点)
-    el("mergeBtn").classList.add("hidden");
-    const trigger = el("convertBtn");
-    dom.document.activeElement = trigger;
-    trigger.disabled = true;
-    // 兜底落点 #batchBtn 要既可见又可用:多文件态(≥2)正是批量/合并接棒、转换钮
-    // 单独置灰的那一档,选中数按此给(关闭时的重算会照这条规则落 disabled)
-    state.selectedFiles = ["C:\\docs\\a.md", "C:\\docs\\b.md"];
-    dialogs.showCompleteDialog("C:\\out\\b.docx");
-    dialogs.hideCompleteDialog();
-    const landed = dom.document.activeElement;
-    assert(
-      landed === el("batchBtn"),
-      `触发元素 disabled 时应退到可见主操作钮 #batchBtn,实际 ${idOf(landed)}`,
-    );
-    assert(landed !== trigger, "触发元素已失效时不得把焦点按回它(按上去等于丢焦点)");
+    await suite.case("触发元素已失效时退到可见主操作钮", () => {
+      // 触发元素 disabled(disabled 的元素按下去不会有焦点,按上去等于丢焦点)
+      el("mergeBtn").classList.add("hidden");
+      const trigger = el("convertBtn");
+      dom.document.activeElement = trigger;
+      trigger.disabled = true;
+      // 兜底落点 #batchBtn 要既可见又可用:多文件态(≥2)正是批量/合并接棒、转换钮
+      // 单独置灰的那一档,选中数按此给(关闭时的重算会照这条规则落 disabled)
+      state.selectedFiles = ["C:\\docs\\a.md", "C:\\docs\\b.md"];
+      dialogs.showCompleteDialog("C:\\out\\b.docx");
+      dialogs.hideCompleteDialog();
+      const landed = dom.document.activeElement;
+      assert(
+        landed === el("batchBtn"),
+        `触发元素 disabled 时应退到可见主操作钮 #batchBtn,实际 ${idOf(landed)}`,
+      );
+      assert(landed !== trigger, "触发元素已失效时不得把焦点按回它(按上去等于丢焦点)");
+    });
 
     console.log(
       "[ok] focus-return-guards:弹窗/抽屉默认落点 + 四类关闭归还具体元素 + 叠层栈序 + 失效兜底 断言通过",
     );
+    return { cases: suite.results };
   } finally {
     dom.restore();
   }

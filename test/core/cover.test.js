@@ -16,6 +16,7 @@ import { htmlToPdf } from "../harness/pdf-utils.js";
 import { saveArtifact } from "../harness/artifacts.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /**
  * 本段测哪一层(ADR-062 L4 声明通道):**core**,判据静态看不见本段的主体 —— 全链路经
@@ -47,9 +48,26 @@ export const meta = { description: "封面页测试(双格式,新段):" };
 export const fixtures = { main: coverMd };
 
 export async function run() {
+  const suite = createCaseSuite();
+  // 有封面与无封面两组产物都在 case 之外备好:反例那组是独立转换,
+  // 与正例判红与否无关
   const coverDocx = await convertWithFs(coverMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
   const coverDocument = await unzipPart(docxBufferOf(coverDocx), "word/document.xml");
+  const coverPdf = asPdfArtifact(
+    await convertWithFs(coverMd, "pdf", { baseDir: FIXTURES_DIR, warnings: [] }),
+  );
+  // 断言 6(反例):无 frontmatter 时双格式均不产出封面(context.title 不触发封面)。
+  // 注意:封面标记用 author/date 灰字(808080)+ 作者文本——不可用 w:sz=44 判别,
+  // 正文 h1(standard 档 22pt)同样产出 44 half-points 的标题 run
+  const noCoverMd = "# 无封面标题\n\n正文内容。";
+  const noCoverDocx = await convertWithFs(noCoverMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
+  const noCoverDocument = await unzipPart(docxBufferOf(noCoverDocx), "word/document.xml");
+  const noCoverPdf = asPdfArtifact(
+    await convertWithFs(noCoverMd, "pdf", { title: "无封面标题", baseDir: FIXTURES_DIR, warnings: [] }),
+  );
+
   // 断言 1:封面标题居中加粗 22pt(44 half-points,docx 库 size = pt × 2)
+  // 断言表逐项一个 case:label 是该 XML 片段的稳定标识
   /** @type {[string, string][]} 断言表 [XML 片段, 中文标签] */
   const titleChecks = [
     ['<w:sz w:val="44"/>', "标题字号 44(22pt)"],
@@ -58,7 +76,9 @@ export async function run() {
     ["封面验收文档", "标题文本"],
   ];
   for (const [needle, label] of titleChecks) {
-    if (!coverDocument.includes(needle)) throw new Error(`封面断言失败:document.xml 缺少 ${label}(${needle})`);
+    await suite.case(`docx 封面标题:${label}`, () => {
+      if (!coverDocument.includes(needle)) throw new Error(`封面断言失败:document.xml 缺少 ${label}(${needle})`);
+    });
   }
   // 断言 2:author/date 居中灰字(22 half-points = 11pt,color 808080)
   /** @type {[string, string][]} 断言表 [XML 片段, 中文标签] */
@@ -69,27 +89,34 @@ export async function run() {
     ["2026-08-10", "date 文本"],
   ];
   for (const [needle, label] of metaChecks) {
-    if (!coverDocument.includes(needle)) throw new Error(`封面断言失败:document.xml 缺少 ${label}(${needle})`);
+    await suite.case(`docx 封面 ${label}`, () => {
+      if (!coverDocument.includes(needle)) throw new Error(`封面断言失败:document.xml 缺少 ${label}(${needle})`);
+    });
   }
   // 断言 3:封面末尾显式分页(w:br w:type="page")独占一页
-  if (!coverDocument.includes('w:type="page"')) {
-    throw new Error("封面断言失败:document.xml 缺少封面后分页符(w:br w:type=page)");
-  }
+  await suite.case("docx 封面末尾有显式分页符独占一页", () => {
+    if (!coverDocument.includes('w:type="page"')) {
+      throw new Error("封面断言失败:document.xml 缺少封面后分页符(w:br w:type=page)");
+    }
+  });
   console.log("[ok] docx 封面:标题 44/加粗/居中 + author/date 灰字 + 分页符 断言通过");
 
-  const coverPdf = asPdfArtifact(
-    await convertWithFs(coverMd, "pdf", { baseDir: FIXTURES_DIR, warnings: [] }),
-  );
   // 断言 4:cover HTML 结构 + author/date 行(metaLine = [author, date].join(" · "))
-  if (!coverPdf.html.includes('<div class="cover">')) {
-    throw new Error('封面断言失败:PDF 缺少 class="cover" 容器');
-  }
-  if (!coverPdf.html.includes('<div class="cover-title">封面验收文档</div>')) {
-    throw new Error("封面断言失败:PDF 缺少 cover-title 标题结构");
-  }
-  if (!coverPdf.html.includes('<div class="cover-meta">测试作者 · 2026-08-10</div>')) {
-    throw new Error("封面断言失败:PDF 缺少 cover-meta(author · date)行");
-  }
+  await suite.case("PDF 含 class=cover 容器", () => {
+    if (!coverPdf.html.includes('<div class="cover">')) {
+      throw new Error('封面断言失败:PDF 缺少 class="cover" 容器');
+    }
+  });
+  await suite.case("PDF 含 cover-title 标题结构", () => {
+    if (!coverPdf.html.includes('<div class="cover-title">封面验收文档</div>')) {
+      throw new Error("封面断言失败:PDF 缺少 cover-title 标题结构");
+    }
+  });
+  await suite.case("PDF 含 cover-meta(author · date)行", () => {
+    if (!coverPdf.html.includes('<div class="cover-meta">测试作者 · 2026-08-10</div>')) {
+      throw new Error("封面断言失败:PDF 缺少 cover-meta(author · date)行");
+    }
+  });
   // 断言 5:封面 CSS 精确值(28pt 标题 / 灰字 meta / 顶部留白)
   /** @type {[string, string][]} 断言表 [CSS 片段, 中文标签] */
   const cssChecks = [
@@ -98,27 +125,25 @@ export async function run() {
     [".cover { text-align: center; padding-top: 80mm;", ".cover 居中 + 顶部留白"],
   ];
   for (const [needle, label] of cssChecks) {
-    if (!coverPdf.html.includes(needle)) throw new Error(`封面断言失败:PDF CSS 缺少 ${label}(${needle})`);
+    await suite.case(`PDF 封面 CSS:${label}`, () => {
+      if (!coverPdf.html.includes(needle)) throw new Error(`封面断言失败:PDF CSS 缺少 ${label}(${needle})`);
+    });
   }
   console.log("[ok] PDF 封面:cover/cover-title/cover-meta 结构 + CSS 精确值 断言通过");
 
-  // 断言 6(反例):无 frontmatter 时双格式均不产出封面(context.title 不触发封面)。
-  // 注意:封面标记用 author/date 灰字(808080)+ 作者文本——不可用 w:sz=44 判别,
-  // 正文 h1(standard 档 22pt)同样产出 44 half-points 的标题 run
-  const noCoverMd = "# 无封面标题\n\n正文内容。";
-  const noCoverDocx = await convertWithFs(noCoverMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] });
-  const noCoverDocument = await unzipPart(docxBufferOf(noCoverDocx), "word/document.xml");
-  if (noCoverDocument.includes('<w:color w:val="808080"/>') || noCoverDocument.includes("测试作者")) {
-    throw new Error("封面断言失败:无 frontmatter 时 docx 不应产出封面(作者灰字/作者文本)");
-  }
-  const noCoverPdf = asPdfArtifact(
-    await convertWithFs(noCoverMd, "pdf", { title: "无封面标题", baseDir: FIXTURES_DIR, warnings: [] }),
-  );
-  if (noCoverPdf.html.includes('class="cover"')) {
-    throw new Error("封面断言失败:无 frontmatter 时 PDF 不应产出封面(class=cover)");
-  }
+  await suite.case("反例:无 frontmatter 时 docx 不产出封面", () => {
+    if (noCoverDocument.includes('<w:color w:val="808080"/>') || noCoverDocument.includes("测试作者")) {
+      throw new Error("封面断言失败:无 frontmatter 时 docx 不应产出封面(作者灰字/作者文本)");
+    }
+  });
+  await suite.case("反例:无 frontmatter 时 PDF 不产出封面", () => {
+    if (noCoverPdf.html.includes('class="cover"')) {
+      throw new Error("封面断言失败:无 frontmatter 时 PDF 不应产出封面(class=cover)");
+    }
+  });
   console.log("[ok] 封面反例:无 frontmatter 双格式均无封面(context.title 不触发)");
 
   const coverPdfBin = await htmlToPdf(coverPdf.html, coverPdf.footerTemplate);
   await saveArtifact("cover", { docx: docxBufferOf(coverDocx), pdf: coverPdfBin });
+  return { cases: suite.results };
 }

@@ -27,6 +27,7 @@ import { convertPdfJob, resolvePdfHostKatexDir } from "../../dist/main/cli-pdf-h
 import { exitCodes, readJobResult, writeJobResult } from "../../dist/convert/cli-pdf-job.js";
 import { cloneDefaultSettings } from "../../dist/core/settings/settings-defaults.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /**
  * 本段横跨的层(ADR-062 L6 判据要求 behavior 段显式声明):判据只校验「非空 ＋ 每个元素
@@ -89,41 +90,52 @@ function writeJob(dir, overrides) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const { path: dir } = createTempResource({ label: "cli-pdf-host" });
   try {
+    // 三次真实转换是多 case 共享的昂贵前置(每次走完 printPdf → pdf-lib 两遍法 →
+    // 提交器),故在 case 之前一次跑完:case 内只回读结果文件下判定,某条判红不必重跑转换。
     // ---------- 一、真 pdf 产出 ----------
     const src = path.join(dir, "样例.md");
     fs.writeFileSync(src, SAMPLE_MD, "utf8");
     const jobPath = writeJob(dir, { input: src, baseDir: dir });
     const resultPath = path.join(dir, "result-ok.json");
-
     const code = await convertPdfJob(jobPath, resultPath);
-    assert(code === exitCodes.ok, `pdf 转换应退出 0,实际 ${code}`);
     const ok = readJobResult(resultPath);
-    assert(ok.ok === true, "结果文件 ok 应为真");
-    assert(typeof ok.outputPath === "string" && fs.existsSync(ok.outputPath), `结果应给出已落盘的产物路径:${String(ok.outputPath)}`);
-    assert(isPdfMagic(ok.outputPath), "产物魔数应为 %PDF");
-    assert(Array.isArray(ok.warnings), "结果应带 warnings 数组");
-    assert(typeof ok.elapsedMs === "number" && ok.elapsedMs >= 0, "结果应带耗时 elapsedMs");
+
+    await suite.case("真 pdf 产出:退出 0 且结果字段形状完整", () => {
+      assert(code === exitCodes.ok, `pdf 转换应退出 0,实际 ${code}`);
+      assert(ok.ok === true, "结果文件 ok 应为真");
+      assert(typeof ok.outputPath === "string" && fs.existsSync(ok.outputPath), `结果应给出已落盘的产物路径:${String(ok.outputPath)}`);
+      assert(isPdfMagic(ok.outputPath), "产物魔数应为 %PDF");
+      assert(Array.isArray(ok.warnings), "结果应带 warnings 数组");
+      assert(typeof ok.elapsedMs === "number" && ok.elapsedMs >= 0, "结果应带耗时 elapsedMs");
+    });
 
     // ---------- 二、pinOutputPath:逐字落盘 + 禁避让 ----------
     const pinned = path.join(dir, "钉住.pdf");
     const pinResult = path.join(dir, "result-pin.json");
     const pinCode = await convertPdfJob(writeJob(dir, { input: src, baseDir: dir, outputPath: pinned }), pinResult);
-    assert(pinCode === exitCodes.ok, `pdf 钉死路径应成功,实际 ${pinCode}`);
-    assert(readJobResult(pinResult).outputPath === pinned, "pdf 路径应逐字落盘到指定路径");
-    assert(fs.existsSync(pinned), "钉死的 pdf 应真实存在");
+
+    await suite.case("pinOutputPath 逐字落盘到指定路径", () => {
+      assert(pinCode === exitCodes.ok, `pdf 钉死路径应成功,实际 ${pinCode}`);
+      assert(readJobResult(pinResult).outputPath === pinned, "pdf 路径应逐字落盘到指定路径");
+      assert(fs.existsSync(pinned), "钉死的 pdf 应真实存在");
+    });
 
     // 再跑一次同一路径:必须失败,且不得产出「钉住 (2).pdf」
     const pinAgain = path.join(dir, "result-pin2.json");
     const pinCode2 = await convertPdfJob(writeJob(dir, { input: src, baseDir: dir, outputPath: pinned }), pinAgain);
-    assert(pinCode2 === exitCodes.convertFailed, `产物路径已存在应判失败,实际 ${pinCode2}`);
     const failed = readJobResult(pinAgain);
-    assert(failed.ok === false && typeof failed.error === "string", "失败结果应带 error 文案");
-    assert(
-      !fs.existsSync(path.join(dir, "钉住 (2).pdf")),
-      "禁避让语义下不得产出「钉住 (2).pdf」(pdf 路径同样受 pinOutputPath 约束)",
-    );
+
+    await suite.case("pinOutputPath 已存在即失败且禁避让", () => {
+      assert(pinCode2 === exitCodes.convertFailed, `产物路径已存在应判失败,实际 ${pinCode2}`);
+      assert(failed.ok === false && typeof failed.error === "string", "失败结果应带 error 文案");
+      assert(
+        !fs.existsSync(path.join(dir, "钉住 (2).pdf")),
+        "禁避让语义下不得产出「钉住 (2).pdf」(pdf 路径同样受 pinOutputPath 约束)",
+      );
+    });
 
     // ---------- 三、失败形态:输入不存在 ----------
     const badResult = path.join(dir, "result-bad.json");
@@ -131,29 +143,38 @@ export async function run() {
       writeJob(dir, { input: path.join(dir, "不存在.md"), baseDir: dir }),
       badResult,
     );
-    assert(badCode === exitCodes.convertFailed, `输入不存在应判失败,实际 ${badCode}`);
-    assert(readJobResult(badResult).ok === false, "失败结果 ok 应为假");
+
+    await suite.case("输入不存在判失败且结果 ok 为假", () => {
+      assert(badCode === exitCodes.convertFailed, `输入不存在应判失败,实际 ${badCode}`);
+      assert(readJobResult(badResult).ok === false, "失败结果 ok 应为假");
+    });
 
     // ---------- 四、结果契约自身 ----------
     // 往返:write → read 逐字段一致
     const roundTrip = path.join(dir, "result-rt.json");
     writeJobResult(roundTrip, { ok: true, outputPath: "x.pdf", warnings: ["warn.a"], elapsedMs: 7 });
     const readBack = readJobResult(roundTrip);
-    assert(readBack.outputPath === "x.pdf" && readBack.elapsedMs === 7, "结果契约往返应逐字段一致");
+
+    await suite.case("结果契约往返逐字段一致", () => {
+      assert(readBack.outputPath === "x.pdf" && readBack.elapsedMs === 7, "结果契约往返应逐字段一致");
+    });
+
     // 宿主没跑完(文件不存在)→ 抛错,不返回「成功的空结果」
-    let thrown = /** @type {unknown} */ (undefined);
-    try {
-      readJobResult(path.join(dir, "根本没有这个文件.json"));
-    } catch (error) {
-      thrown = error;
-    }
-    assert(thrown instanceof Error, "结果文件缺失应抛错(否则会被当成成功的空结果)");
+    await suite.case("结果文件缺失即抛(不返回成功的空结果)", () => {
+      let thrown = /** @type {unknown} */ (undefined);
+      try {
+        readJobResult(path.join(dir, "根本没有这个文件.json"));
+      } catch (error) {
+        thrown = error;
+      }
+      assert(thrown instanceof Error, "结果文件缺失应抛错(否则会被当成成功的空结果)");
+    });
 
     // ---------- katex 资源定位:两种启动形态各断言一次 ----------
     // 抽出 resolvePdfHostKatexDir 就是为了这条:两种形态加载的是**同一段编译产物**,只是前缀
     // 不同(dev 是 <repo>/dist/main,安装版是 …/app.asar/dist/main),而 app.getAppPath()
     // 那条候选路径只在 dev 的脚本路径启动形态下才分叉(见宿主文件头那张对照表)。
-    {
+    await suite.case("katex 资源定位:dev 形态解到项目根且目录下真实存在", () => {
       const devDir = resolvePdfHostKatexDir(path.join(ROOT, "dist", "main"));
       assert(
         devDir === path.join(ROOT, "node_modules", "katex", "dist"),
@@ -163,6 +184,9 @@ export async function run() {
         fs.existsSync(path.join(devDir, "katex.min.css")),
         "dev 形态解出的目录下应有 katex.min.css(否则公式样式静默不加载)",
       );
+    });
+
+    await suite.case("katex 资源定位:安装形态不落在 dist/main 下", () => {
       // 安装形态:上溯两级落在 app.asar **根**,故另一条候选路径(dev 那条会落到
       // app.asar/dist/main/node_modules —— 不存在)在这里本就不成立,两条同答案。
       const asarRoot = path.join(
@@ -177,9 +201,10 @@ export async function run() {
         !packagedDir.includes(path.join("dist", "main")),
         "安装形态不得停在 dist/main 下(那是只有脚本路径启动才会出现的错位)",
       );
-    }
+    });
 
     console.log("[ok] cli-pdf-host:pdf 宿主直测通过(真 pdf 魔数 + 结果契约字段 / pinOutputPath 逐字落盘且禁避让 / 失败形态带 error / 结果契约往返与缺失即抛 / katex 资源定位的两种启动形态各断言一次(dev 解出的目录真实存在,安装形态不落在 dist/main 下))");
+    return { cases: suite.results };
   } finally {
     removeTree(dir);
   }

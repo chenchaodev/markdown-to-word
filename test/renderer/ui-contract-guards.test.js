@@ -25,6 +25,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { ROOT } from "../harness/paths.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const { assert: harnessAssert } = createAsserter("ui-contract-guards");
 
@@ -277,8 +278,10 @@ function definedVarNames(css) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   /* ---------- 1. 令牌完整性:引用了就得定义 ---------- */
-  // 1a. 主窗三份样式:每个 var(--x) 要么在 base.css 定义,要么自带兜底值
+  // 各组的正则取件(baseCss/dialogsCss/dropCss 上的规则体与 keyframes)是多 case 共享的
+  // 前置,故在 case 之前一次备好:case 内只引用取到的片段下判定,某条判红不必重跑取件。
   const baseVars = definedVarNames(baseCss);
   /** @type {[string, string][]} */
   const STYLE_SOURCES = [
@@ -286,6 +289,13 @@ export async function run() {
     ["drop.css", dropCss],
     ["dialogs.css", dialogsCss],
   ];
+  const aboutStyleRaw = aboutHtml.slice(0, aboutHtml.indexOf("</style>"));
+  const aboutStyle = stripComments(aboutStyleRaw);
+  const aboutDefined = definedVarNames(aboutStyle);
+  const aboutUsed = new Set([...aboutStyle.matchAll(/var\((--[a-z0-9-]+)([^)]*)\)/g)].map((m) => capture(m, 1)));
+
+  // 1a. 主窗三份样式:每个 var(--x) 要么在 base.css 定义,要么自带兜底值
+  await suite.case("主窗三份样式引用的令牌都有定义", () => {
   for (const [name, css] of STYLE_SOURCES) {
     for (const m of css.matchAll(/var\((--[a-z0-9-]+)([^)]*)\)/g)) {
       const token = capture(m, 1);
@@ -296,44 +306,49 @@ export async function run() {
       );
     }
   }
+  });
+
   // 1b. about.html 不引样式表:引用的令牌必须在自己页面里定义
-  const aboutStyleRaw = aboutHtml.slice(0, aboutHtml.indexOf("</style>"));
-  const aboutStyle = stripComments(aboutStyleRaw);
-  const aboutDefined = definedVarNames(aboutStyle);
-  const aboutUsed = new Set([...aboutStyle.matchAll(/var\((--[a-z0-9-]+)([^)]*)\)/g)].map((m) => capture(m, 1)));
+  await suite.case("about.html 引用的令牌都有在本页定义", () => {
   for (const token of aboutUsed) {
     assert(
       aboutDefined.has(token),
       `about.html 引用了未在本页定义的令牌 var(${token})(about 窗不引样式表,不会继承主窗令牌)`,
     );
   }
+  });
+
+  await suite.case("全仓不得残留未定义的 var(--text-2)", () => {
   assert(
     !/var\(--text-2\)/.test([baseCss, dropCss, dialogsCss, aboutHtml].join("\n")),
     "仍存在 var(--text-2):该令牌从未定义,行内单位等处会静默回落为继承色",
   );
+  });
 
   /* ---------- 2. 固定消息槽 ---------- */
   const rootTokens = tokensIn(baseCss, ":root");
-  assert(rootTokens.get("--feed-h") === "96px", `--feed-h 常规档应为 96px,实际 ${rootTokens.get("--feed-h")}`);
   const shortFeed = tokensInMedia(baseCss, "(max-height: 640px)", ":root");
+  const feedBody = ruleBody(baseCss, ".feed");
+
+  await suite.case("固定消息槽 --feed-h 两档取值符合规格", () => {
+  assert(rootTokens.get("--feed-h") === "96px", `--feed-h 常规档应为 96px,实际 ${rootTokens.get("--feed-h")}`);
   assert(
     shortFeed.get("--feed-h") === "86px",
     `--feed-h 矮窗档(≤640)应为 86px,实际 ${shortFeed.get("--feed-h")}`,
   );
-  const feedBody = ruleBody(baseCss, ".feed");
+  });
+
+  await suite.case(".feed 用 --feed-h 锁高且不回退 height:auto", () => {
   assert(/height:\s*var\(--feed-h\)/.test(feedBody), `.feed 必须用 --feed-h 锁高,实际规则体:${feedBody}`);
   assert(
     !/height:\s*auto/.test(feedBody),
     ".feed 不得回退 height:auto(固定槽是几何恒定契约:状态行/结果汇总增减不得改写舞台与历史条预算)",
   );
+  });
 
   /* ---------- 3. 对比度(实算,两套主题) ---------- */
   const darkExplicit = tokensIn(baseCss, 'html[data-theme="dark"]');
   const darkSystem = tokensInMedia(baseCss, "(prefers-color-scheme: dark)", 'html:not([data-theme="light"])');
-  assert(
-    darkExplicit.get("--acc-ink") !== undefined && darkSystem.get("--acc-ink") !== undefined,
-    "--acc-ink(朱砂文字色)必须在两处深色令牌块都定义",
-  );
   /** @type {[string, Map<string, string>][]} */
   const THEMES = [
     ["light", rootTokens],
@@ -351,6 +366,15 @@ export async function run() {
     ["--acc-ink", "--card-2"],
     ["--ok", "--card"],
   ];
+
+  await suite.case("朱砂文字色 --acc-ink 在两处深色令牌块都有定义", () => {
+  assert(
+    darkExplicit.get("--acc-ink") !== undefined && darkSystem.get("--acc-ink") !== undefined,
+    "--acc-ink(朱砂文字色)必须在两处深色令牌块都定义",
+  );
+  });
+
+  await suite.case("三套主题的关键配对对比度均不低于 4.5:1", () => {
   for (const [themeName, tokens] of THEMES) {
     for (const [fg, bg] of PAIRS) {
       const fgValue = tokens.get(fg);
@@ -362,6 +386,11 @@ export async function run() {
         `${themeName} 主题 ${fg}(${fgValue}) 对 ${bg}(${bgValue}) 仅 ${ratio.toFixed(2)}:1,低于 4.5:1`,
       );
     }
+  }
+  });
+
+  await suite.case("朱砂文字对 --acc-soft 软底对比度不低于 4.5:1", () => {
+  for (const [themeName, tokens] of THEMES) {
     // 朱砂文字落到 --acc-soft 软底上(错误块的真实底色):先合成再算
     const softBg = over(
       colorOf(tokens.get("--acc-soft"), `${themeName} --acc-soft`),
@@ -374,12 +403,42 @@ export async function run() {
       `${themeName} 主题 --acc-ink 对 --acc-soft 软底(${softHex})仅 ${softRatio.toFixed(2)}:1,低于 4.5:1`,
     );
   }
+  });
 
   /* ---------- 4. 视觉债回归 ---------- */
   // 4a. 脉冲只属唯一付印主按钮(双脉冲:合并按钮也带光环 → 红不再专属付印)。
   // 光环挂在伪元素上而非按钮本体:动画按钮自身的 box-shadow 会与主按钮的静置
   // 投影(0 5px 14px var(--acc-ring))及 hover 抬升投影抢同一条声明,动画期间
   // 整条投影被顶掉(按钮看着在闪而不是在呼吸),hover 抬升也永久失效。
+  const ringLayer = /\.btn-primary\.pulse:not\(:disabled\)::after\s*\{([^}]*)\}/.exec(baseCss);
+  const ringBody = ringLayer === null ? "" : capture(ringLayer, 1);
+  const ringFrames = /@keyframes btn-pulse\s*\{([\s\S]*?)\n\}/.exec(baseCss);
+  const ringFramesBody = ringFrames === null ? "" : capture(ringFrames, 1);
+  const pulseReduce = /@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\}/.exec(baseCss);
+  const pulseReduceBody = pulseReduce === null ? "" : capture(pulseReduce, 1);
+  const okDot = /\.status--ok::before\s*\{([^}]*)\}/.exec(baseCss);
+  const okDotBody = okDot === null ? "" : capture(okDot, 1);
+  const resBeat = /\.result-summary\.res-beat\s*\{([^}]*)\}/.exec(dialogsCss);
+  const resBeatBody = resBeat === null ? "" : capture(resBeat, 1);
+  const resInFrames = /@keyframes res-in\s*\{([\s\S]*?)\n\}/.exec(dialogsCss);
+  const resInBody = resInFrames === null ? "" : capture(resInFrames, 1);
+  const listcardBody = ruleBody(dropCss, ".listcard");
+  /** @type {string[]} */
+  const busySelectors = [".mlist--busy .multi-item", ".mlist--busy .multi-grip"];
+  /** @type {Map<string, string>} */
+  const busyBodies = new Map();
+  for (const selector of busySelectors) {
+    const busyRule = new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`).exec(
+      dropCss,
+    );
+    busyBodies.set(selector, busyRule === null ? "" : capture(busyRule, 1));
+  }
+  const wizardRow = /\.wizard-body \.mlist \.multi-item\s*\{([^}]*)\}/.exec(dialogsCss);
+  const wizardRowBody = wizardRow === null ? "" : capture(wizardRow, 1);
+  const switchDisabled = /\.switch-input:disabled\s*\{([^}]*)\}/.exec(baseCss);
+  const switchDisabledBody = switchDisabled === null ? "" : capture(switchDisabled, 1);
+
+  await suite.case("脉冲光环只属唯一付印主按钮且不吃点击", () => {
   assert(
     /\.btn-primary\.pulse:not\(:disabled\)::after\s*\{[^}]*animation:\s*btn-pulse/.test(baseCss),
     "脉冲光环应限定在 .btn-primary.pulse 的 ::after(主按钮),不得回到 .btn.pulse 全局",
@@ -392,44 +451,46 @@ export async function run() {
     !/\.btn-primary\.pulse:not\(:disabled\)\s*\{[^}]*animation:/.test(baseCss),
     "脉冲动画不得挂在按钮本体(会顶掉静置/hover 投影),应落在 ::after 伪元素",
   );
-  const ringLayer = /\.btn-primary\.pulse:not\(:disabled\)::after\s*\{([^}]*)\}/.exec(baseCss);
   assert(ringLayer, "找不到 .btn-primary.pulse:not(:disabled)::after 光环层规则");
-  const ringBody = capture(ringLayer, 1);
   assert(
     /pointer-events:\s*none/.test(ringBody),
     `脉冲光环必须 pointer-events:none(不吃点击,脉冲不阻塞主按钮),实际:${ringBody}`,
   );
+  });
+
   // 4a-2. keyframes 同时动 opacity 与 box-shadow:一次性扩散淡出,不是原地呼吸
   // (原地呼吸读起来像「还在加载」,与「已就绪、可点」的语义相反)
-  const ringFrames = /@keyframes btn-pulse\s*\{([\s\S]*?)\n\}/.exec(baseCss);
+  await suite.case("btn-pulse 同时动 opacity 与 box-shadow(扩散淡出)", () => {
   assert(ringFrames, "找不到 @keyframes btn-pulse");
-  const ringFramesBody = capture(ringFrames, 1);
   assert(
     /opacity:/.test(ringFramesBody) && /box-shadow:/.test(ringFramesBody),
     `btn-pulse 应同时动 opacity 与 box-shadow(扩散并淡出),实际:${ringFramesBody}`,
   );
+  });
+
   // 4a-3. 降动效:光环是伪元素,必须一并点名,否则只关了按钮本体、环仍在扩散
-  const pulseReduce = /@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\}/.exec(baseCss);
+  await suite.case("降动效块一并点名光环伪元素并置 animation:none", () => {
   assert(pulseReduce, "base.css 缺 prefers-reduced-motion 块");
-  const pulseReduceBody = capture(pulseReduce, 1);
   assert(
     /\.btn-primary\.pulse:not\(:disabled\)::after/.test(pulseReduceBody) &&
       /animation:\s*none/.test(pulseReduceBody),
     `降动效块应点名光环伪元素并置 animation:none(否则只关按钮本体),实际:${pulseReduceBody}`,
   );
+  });
+
   // 4b. 完成态是确定结果:静态圆点,不呼吸(呼吸会被读成「还没结束」)
-  const okDot = /\.status--ok::before\s*\{([^}]*)\}/.exec(baseCss);
+  await suite.case("完成态圆点不带动画(确定结果)", () => {
   assert(okDot, "找不到 .status--ok::before 规则");
-  const okDotBody = capture(okDot, 1);
   assert(
     !/animation/.test(okDotBody),
     `.status--ok::before 不应带动画(完成态确定),实际:${okDotBody}`,
   );
+  });
+
   // 4b-2. 完成态收束(res-beat):只动 opacity/transform —— 消息区是 --feed-h
   // 锁高的固定槽,完成反馈一旦改写盒模型就会把槽顶开(几何恒定契约的另一半)
-  const resBeat = /\.result-summary\.res-beat\s*\{([^}]*)\}/.exec(dialogsCss);
+  await suite.case("res-beat 挂 res-in 动画且不改写盒模型属性", () => {
   assert(resBeat, "dialogs.css 缺少 .result-summary.res-beat 完成态收束规则");
-  const resBeatBody = capture(resBeat, 1);
   assert(
     /animation:\s*res-in/.test(resBeatBody),
     `.result-summary.res-beat 应挂 res-in 动画,实际:${resBeatBody}`,
@@ -440,30 +501,30 @@ export async function run() {
       `.result-summary.res-beat 不得改写 ${boxProp}(固定消息槽会被顶开),实际:${resBeatBody}`,
     );
   }
-  const resInFrames = /@keyframes res-in\s*\{([\s\S]*?)\n\}/.exec(dialogsCss);
+  });
+
+  await suite.case("res-in 只淡入,不带动效位移或盒模型", () => {
   assert(resInFrames, "dialogs.css 缺少 @keyframes res-in");
-  const resInBody = capture(resInFrames, 1);
   assert(
     /opacity:/.test(resInBody) && !/transform|height|width|top|left/.test(resInBody),
     `res-in 只应淡入(不得带动效位移或盒模型),实际:${resInBody}`,
   );
+  });
+
   // 4c. 队列不再套卡壳(纸面上再嵌一张卡,层级多一层)
-  const listcardBody = ruleBody(dropCss, ".listcard");
+  await suite.case("队列行不再自带边线/圆角", () => {
   assert(
     !/border(-radius)?\s*:/.test(listcardBody),
     `.listcard 不应再自带边线/圆角(队列行直接排在纸面上),实际:${listcardBody}`,
   );
+  });
+
   // 4c-2. 队列忙碌态(转换中/预检持链):行必须给出「用不了」的可见表达,
   // 复用既有 --mut/--line 语汇即可,不得为禁用态另开色板
-  for (const selector of [
-    ".mlist--busy .multi-item",
-    ".mlist--busy .multi-grip",
-  ]) {
-    const busyRule = new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{([^}]*)\\}`).exec(
-      dropCss,
-    );
-    assert(busyRule, `drop.css 缺少忙碌态规则 ${selector}(转换中队列行须有可见的禁用表达)`);
-    const busyBody = capture(busyRule, 1);
+  await suite.case("队列忙碌态撤掉可拖光标且不硬编码颜色", () => {
+  for (const selector of busySelectors) {
+    const busyBody = busyBodies.get(selector) ?? "";
+    assert(busyBody !== "", `drop.css 缺少忙碌态规则 ${selector}(转换中队列行须有可见的禁用表达)`);
     assert(
       /cursor:\s*default/.test(busyBody),
       `${selector} 应撤掉 grab/pointer 光标(忙碌态不该像可拖),实际:${busyBody}`,
@@ -473,20 +534,22 @@ export async function run() {
       `${selector} 不得硬编码颜色(禁用态复用既有语义变量),实际:${busyBody}`,
     );
   }
+  });
+
   // 4d. 向导合并源行是三列(直接套主队列四列会把文件名挤进序号列)
-  const wizardRow = /\.wizard-body \.mlist \.multi-item\s*\{([^}]*)\}/.exec(dialogsCss);
+  await suite.case("向导合并源行收敛为三列网格", () => {
   assert(wizardRow, "dialogs.css 缺少 .wizard-body .mlist .multi-item 三列网格规则");
-  const wizardRowBody = capture(wizardRow, 1);
   assert(
     /grid-template-columns:\s*22px minmax\(0, 1fr\) auto/.test(wizardRowBody),
     `向导源行应收敛为三列(序号 + 文件名 + 操作),实际:${wizardRowBody}`,
   );
+  });
+
   // 4e. 开关置灰态(AI 清理两档随总开关灰禁):须有可见的不可用表达,且复用
   //     既有禁用语汇(--mut/透明/not-allowed),不得为置灰另开色板或硬编码颜色。
   //     背景色刻意不动:留 --line-2 才不会与「已开启=关」的常态混淆。
-  const switchDisabled = /\.switch-input:disabled\s*\{([^}]*)\}/.exec(baseCss);
+  await suite.case("开关置灰态复用禁用语汇且不改底色", () => {
   assert(switchDisabled, "base.css 缺少 .switch-input:disabled 规则(置灰开关将与常态开关无法区分)");
-  const switchDisabledBody = capture(switchDisabled, 1);
   assert(
     /cursor:\s*not-allowed/.test(switchDisabledBody),
     `.switch-input:disabled 应给出 not-allowed 光标(禁用语汇与 .btn-ghost:disabled 同款),实际:${switchDisabledBody}`,
@@ -503,11 +566,14 @@ export async function run() {
     !/background(-color)?\s*:/.test(switchDisabledBody),
     `.switch-input:disabled 不应改底色(留 --line-2,免与「已开启=关」的常态混淆),实际:${switchDisabledBody}`,
   );
+  });
 
   /* ---------- 5. 无障碍静态契约(index.html) ---------- */
-  // 5a. 设置分组 = 标准 tablist/tab/tabpanel,双向关联
-  assert(/<nav class="settings-tabs"[^>]*role="tablist"/s.test(indexHtml), "设置分组导航缺 role=tablist");
   const tabs = [...indexHtml.matchAll(/<button[^>]*class="settings-tab[^"]*"[^>]*>/g)].map((m) => m[0]);
+
+  // 5a. 设置分组 = 标准 tablist/tab/tabpanel,双向关联
+  await suite.case("设置分组 tablist/tab/tabpanel 双向关联完整", () => {
+  assert(/<nav class="settings-tabs"[^>]*role="tablist"/s.test(indexHtml), "设置分组导航缺 role=tablist");
   assert(tabs.length === 6, `设置分组应为 6 个 tab(抽屉六组),实际 ${tabs.length}`);
   const tabIds = new Set();
   for (const tag of tabs) {
@@ -533,6 +599,8 @@ export async function run() {
     (indexHtml.match(/role="tabpanel"/g) ?? []).length === 6,
     "设置面板应恰有 6 个 role=tabpanel",
   );
+  });
+
   // 5b. 字段错误:就地可见 + 可被读屏关联
   /** @type {[string, string | null][]} */
   const ERROR_NODES = [
@@ -542,6 +610,8 @@ export async function run() {
     ["bodySizeError", "bodySizePt"],
     ["lineSpacingError", "lineSpacing"],
   ];
+
+  await suite.case("字段错误节点就地可见且可被读屏关联", () => {
   for (const [id, controls] of ERROR_NODES) {
     const re = new RegExp(`<p id="${id}"[^>]*>`, "s");
     const m = re.exec(indexHtml);
@@ -564,7 +634,10 @@ export async function run() {
       `控件 #${controls} 应静态指向 aria-describedby="${id}"`,
     );
   }
+  });
+
   // 5c. 开关:标签与说明都是 span,必须显式关联(否则读屏只报「复选框」)
+  await suite.case("开关的标签与说明都显式关联到存在的元素", () => {
   for (const m of indexHtml.matchAll(/<input type="checkbox" id="([A-Za-z0-9]+)" class="switch-input"([^>]*)\/?>/g)) {
     const switchId = capture(m, 1);
     const labelled = /aria-labelledby="([^"]+)"/.exec(capture(m, 2));
@@ -581,33 +654,49 @@ export async function run() {
       );
     }
   }
+  });
+
   // 5d. 进度:进度条须有可读文本(纯百分比无信息量)并指向阶段播报位
   const track = /<div[^>]*id="progressTrack"[^>]*>/s.exec(indexHtml);
+  const trackTag = track === null ? "" : capture(track, 0);
+
+  await suite.case("进度条有可读文本并指向阶段播报位", () => {
   assert(track, "index.html 未找到 #progressTrack");
-  const trackTag = capture(track, 0);
   assert(/\brole="progressbar"/.test(trackTag), "#progressTrack 缺 role=progressbar");
   assert(/\baria-valuetext="/.test(trackTag), "#progressTrack 缺 aria-valuetext(百分比对读屏无信息量)");
   assert(
     /aria-describedby="status"/.test(trackTag),
     "#progressTrack 应经 aria-describedby 指向 #status(阶段文案播报位)",
   );
+  });
+
   // 5e. 状态行:错误走 alert(打断)、整句播报
   const status = /<p id="status"[^>]*>/.exec(indexHtml);
+  const statusTag = status === null ? "" : capture(status, 0);
+
+  await suite.case("状态行整句播报并可按语义切 alert", () => {
   assert(status, "index.html 未找到 #status");
-  const statusTag = capture(status, 0);
   assert(/\brole="status"/.test(statusTag), "#status 缺 role=status(setStatus 按语义切 alert)");
   assert(/\baria-atomic="true"/.test(statusTag), "#status 缺 aria-atomic(整句播报,避免半截更新被漏读)");
+  });
+
   // 5f. 消息槽:转换期间标 aria-busy(百分比之外的整体「正在转换」状态位)
   const messageSlotTag = /<div[^>]*id="messageSlot"[^>]*>/s.exec(indexHtml);
+
+  await suite.case("消息槽声明 aria-busy 转换忙碌态", () => {
   assert(messageSlotTag, "index.html 未找到 #messageSlot");
   assert(
     /\baria-busy="/.test(capture(messageSlotTag, 0)),
     "#messageSlot 应声明 aria-busy(showProgress/hideProgress 据此切换转换忙碌态)",
   );
+  });
+
   // 5g. 复制反馈的读屏播报位:常驻 live region(视觉隐藏但留在无障碍树内)
   const copyLive = /<p[^>]*id="copyLive"[^>]*>/s.exec(indexHtml);
+  const copyLiveTag = copyLive === null ? "" : capture(copyLive, 0);
+
+  await suite.case("复制反馈位是常驻 live region 且不带静态回退文案", () => {
   assert(copyLive, "index.html 未找到 #copyLive");
-  const copyLiveTag = capture(copyLive, 0);
   assert(/\bclass="[^"]*\bsr-only\b/.test(copyLiveTag), "#copyLive 应挂 .sr-only(视觉隐藏不占位)");
   assert(/\brole="status"/.test(copyLiveTag), "#copyLive 缺 role=status");
   assert(/\baria-live="polite"/.test(copyLiveTag), "#copyLive 缺 aria-live=polite");
@@ -616,8 +705,13 @@ export async function run() {
     !/data-i18n=/.test(copyLiveTag),
     "#copyLive 不得带 data-i18n(文案在写入时刻取自字典,静态回退应留空)",
   );
+  });
+
   // 5h. about 窗:版本必须有可见标签(含义不靠 tooltip 承担)
   const aboutVerLabel = /<span[^>]*data-i18n="about\.version"[^>]*>/.exec(aboutHtml);
+  const aboutSource = read("src", "renderer", "about.ts");
+
+  await suite.case("about 窗版本有可见标签,不借应用名当说明", () => {
   assert(aboutVerLabel, 'about.html 缺少 data-i18n="about.version" 的可见版本标签');
   assert(
     /about-ver-label/.test(capture(aboutVerLabel, 0)),
@@ -629,7 +723,6 @@ export async function run() {
     !/data-i18n(?:-title)?="app\.versionTitle"/.test(aboutHtml),
     "about 窗不应把 app.versionTitle 绑到任何节点(那是应用名字符串,当版本说明属语义错配)",
   );
-  const aboutSource = read("src", "renderer", "about.ts");
   assert(
     !/t\(\s*"app\.versionTitle"/.test(aboutSource),
     "about.ts 不应再取 app.versionTitle 作版本说明(应交给可见标签 about.version)",
@@ -638,6 +731,7 @@ export async function run() {
     /id="version"/.test(aboutHtml),
     "about.html 应保留 #version 版本号节点(mono 数据层)",
   );
+  });
 
   /* ---------- 6. index.html / about.html 的 label[for] 与 id 自洽 ---------- */
   /** @type {[string, string][]} */
@@ -645,13 +739,21 @@ export async function run() {
     ["index.html", indexHtml],
     ["about.html", aboutHtml],
   ];
+
+  await suite.case("两页的 label[for] 均指向真实存在的控件 id", () => {
   for (const [name, html] of PAGES) {
     const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => capture(m, 1)));
     for (const m of html.matchAll(/\bfor="([^"]+)"/g)) {
       const target = capture(m, 1);
       assert(ids.has(target), `${name} 的 label[for="${target}"]没有对应控件(id 不存在)`);
     }
+  }
+  });
+
+  await suite.case("两页的 aria 引用完整性成立", () => {
+  for (const [name, html] of PAGES) {
     // 引用完整性:aria-labelledby / describedby / controls 指向的 id 必须存在
+    const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => capture(m, 1)));
     for (const attr of ["aria-labelledby", "aria-describedby", "aria-controls"]) {
       for (const m of html.matchAll(new RegExp(`${attr}="([^"]+)"`, "g"))) {
         for (const ref of capture(m, 1).split(/\s+/).filter(Boolean)) {
@@ -660,8 +762,12 @@ export async function run() {
       }
     }
   }
+  });
 
   /* ---------- 7. about 窗:主题与动效 ---------- */
+  const reduceBlock = /@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n {4}\}/.exec(aboutStyle);
+
+  await suite.case("about 窗跟随主窗主题(显式深色 + 系统兜底)", () => {
   assert(
     /html\[data-theme="dark"\] \.about-root/.test(aboutStyle),
     "about.html 缺显式深色块(宿主写 data-theme 时应即刻跟随主窗主题)",
@@ -670,12 +776,17 @@ export async function run() {
     /@media \(prefers-color-scheme: dark\)[\s\S]*\.about-root:not\(\[data-theme="light"\]\)/.test(aboutStyle),
     "about.html 缺系统深色兜底块(与主窗双来源口径一致)",
   );
-  const reduceBlock = /@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n {4}\}/.exec(aboutStyle);
+  });
+
+  await suite.case("about 窗降动效块覆盖全局过渡", () => {
   assert(reduceBlock, "about.html 缺降低动效块");
   assert(
     /transition-duration:\s*0\.01ms\s*!important/.test(capture(reduceBlock, 1)),
     "about.html 的降动效块只关了钤印动画,未覆盖全局过渡(按钮/链接仍有动效)",
   );
+  });
+
+  await suite.case("令牌与主窗同源:同名令牌两窗取值一致", () => {
   // 令牌与主窗同源:同名令牌值必须一致(冷灰纸 + 朱砂身份不得两窗分叉)
   const aboutLight = tokensIn(aboutStyle, ".about-root");
   for (const token of ["--canvas", "--card", "--ink", "--ink-2", "--mut", "--line", "--acc"]) {
@@ -687,16 +798,22 @@ export async function run() {
       `${token} 两窗取值不一致(base.css ${main} / about.html ${about});改色必须两边同改`,
     );
   }
+  });
 
   /* ---------- 8. geometry 规格:固定槽锁高已登记 ---------- */
   const { CONSTANT_GROUPS, SLOT_INVARIANTS } = await import("../../shared/geometry/geometry-spec.mjs");
   const feedSlot = SLOT_INVARIANTS.find((s) => s.node === "feed");
+
+  await suite.case("geometry 规格登记了消息区固定槽的上下限", () => {
   assert(feedSlot, "geometry 规格缺少消息区固定槽不变量");
   assert(feedSlot.minHeight > 30, "消息区固定槽下限过松(30px 拦不住塌陷)");
   assert(
     feedSlot.maxHeight !== undefined,
     "消息区固定槽缺上限:退化为 height:auto(撑高)时门禁不会判红",
   );
+  });
+
+  await suite.case("三个断点的恒定组都只锁高度且至少含两个状态", () => {
   for (const id of ["feed-slot-960", "feed-slot-880", "feed-slot-640"]) {
     const group = CONSTANT_GROUPS.find((g) => g.id === id);
     assert(group, `geometry 规格缺少恒定组 ${id}`);
@@ -707,4 +824,7 @@ export async function run() {
     );
     assert(group.members.length >= 2, `${id} 至少要含两个状态,才能谈「恒定」`);
   }
+  });
+
+  return { cases: suite.results };
 }

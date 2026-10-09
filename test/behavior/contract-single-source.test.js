@@ -47,6 +47,7 @@ import {
 } from "../../shared/test-common-surface.js";
 import { ROOT } from "../harness/paths.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /**
  * 本段横跨的层(ADR-062 L6 判据要求 behavior 段显式声明):判据只校验「非空 ＋ 每个元素
@@ -103,6 +104,7 @@ function makeFixtureTree(dirs, filesPerDir = 1) {
 }
 
 export async function run() {
+  const suite = createCaseSuite();
   // ---- 恒等性:docx/pdf 两侧导入同源(同一对象引用) ----
   const { CROSS_REF_KINDS: docxKinds } = await import("../../dist/core/docx/render.js");
   const { CROSS_REF_KINDS: pdfKinds } = await import("../../dist/core/pdf/render.js");
@@ -227,13 +229,34 @@ export async function run() {
     /** @type {string[]} 夹具根,末尾统一清理(不留残:临时目录残留在系统临时区谁也看不出) */
     const sandboxes = [];
     try {
-      // 1. 正向:真实仓库等式成立 + 满足下限(否则下面所有负向夹具的「绿」都没意义)
+      // 各夹具树(mkdtemp + 建树)是多 case 共享的昂贵前置,先全部备好,case 内只回读判定结果。
       const real = checkSurfaceEquality(repoRoot);
+      const realFiles = listScanFiles(repoRoot).length;
+      const aligned = makeFixtureTree(SCAN_TARGETS.map((t) => t.dir), 1);
+      sandboxes.push(aligned);
+      const alignedResult = checkSurfaceEquality(aligned);
+      const leaky = makeFixtureTree([...SCAN_TARGETS.map((t) => t.dir), "test/perf"], 20);
+      sandboxes.push(leaky);
+      const leakyResult = checkSurfaceEquality(leaky);
+      const leakyFiles = listScanFiles(leaky).length;
+      const leakyText = formatSurfaceMismatch(leakyResult);
+      const short = makeFixtureTree(["test/core", "test/main", "test/renderer", "test/convert", "test/cli", "test/mcp", "test/harness", "test/shared", "test/behavior"], 1);
+      sandboxes.push(short);
+      const shortResult = checkSurfaceEquality(short);
+      const drawer = makeFixtureTree([...SCAN_TARGETS.map((t) => t.dir), "test/pending"], 1);
+      sandboxes.push(drawer);
+      const drawerResult = checkSurfaceEquality(drawer);
+      const nope = makeFixtureTree(["test/nope"], 1);
+      sandboxes.push(nope);
+      const nopeResult = checkSegmentMirrors(nope, ["nope"]);
+      const collapsed = makeFixtureTree(SCAN_TARGETS.map((t) => t.dir), 1);
+      sandboxes.push(collapsed);
+      const collapsedEquality = checkSurfaceEquality(collapsed);
+      const collapsedFiles = listScanFiles(collapsed).length;
+
+      // 1. 正向:真实仓库等式成立 + 满足下限(否则下面所有负向夹具的「绿」都没意义)
+      await suite.case("扫描面等式正向(真实仓库等式成立且满足下限)", () => {
       assertEq(real.ok, true, `真实仓库的扫描面等式须成立:${formatSurfaceMismatch(real)}`);
-      // 声明面恰好是七个段目录 + harness(fixtures 虽有源文件,但按显式理由排除)。
-      // 刻意钉成字面量而非从 SEGMENT_DIRS 派生:派生会让它恒真,检测力归零 ——
-      // 这条断言的职责就是「声明面多了或少了目录就红」,新增测试段必须在此显式登记。
-      // 同一约束另有两处副本:两个 selftest 的 BASE_SHAPE(那边是跟随声明面走,性质相反)。
       assertEq(
         real.declared.join(","),
         "test/behavior,test/cli,test/convert,test/core,test/gates,test/harness,test/main,test/mcp,test/renderer,test/shared",
@@ -243,47 +266,39 @@ export async function run() {
         !real.measured.includes("samples"),
         `排除清单里的 samples 不得出现在实测面(它是样例数据):${real.measured.join(", ")}`,
       );
-      const realFiles = listScanFiles(repoRoot).length;
       assertEq(
         judgeScanFloor(realFiles).ok,
         true,
         `真实仓库扫描文件数须满足下限(实测 ${realFiles},下限 ${MIN_SCAN_FILES})`,
       );
       console.log(`[ok] contract:扫描面等式正向(真实仓库声明 ${real.declared.length} 个 == 实测 ${real.measured.length} 个,扫描 ${realFiles} 个文件 ≥ 下限 ${MIN_SCAN_FILES};各段目录各镜像一棵顶层树)`);
+      });
 
       // 2. 正向对照:声明 5 个 / 磁盘 5 个 → 等式成立(否则下面的负向可能只是「恒红」)
-      const aligned = makeFixtureTree(SCAN_TARGETS.map((t) => t.dir), 1);
-      sandboxes.push(aligned);
-      const alignedResult = checkSurfaceEquality(aligned);
+      await suite.case("正向对照:声明与磁盘一致的夹具树判绿", () => {
       assertEq(alignedResult.ok, true, `声明与磁盘一致的夹具树应判绿:${formatSurfaceMismatch(alignedResult)}`);
+      });
 
       // 3. 负向 A(本泳道要修的真缺陷):磁盘 6 个、声明 5 个 —— 漏扫一个测试子目录
-      const leaky = makeFixtureTree([...SCAN_TARGETS.map((t) => t.dir), "test/perf"], 20);
-      sandboxes.push(leaky);
-      const leakyResult = checkSurfaceEquality(leaky);
+      await suite.case("负向 A:漏扫一个子目录时等式判红并点名", () => {
       assertEq(leakyResult.ok, false, "声明 5 个、磁盘 6 个时等式必须判红(漏扫的目录正是这条要抓的)");
       assertEq(leakyResult.extra.join(","), "test/perf", "须点名那个漏登记的目录");
       assertEq(leakyResult.missing.length, 0, "这一侧不该有缺失目录");
-      const leakyText = formatSurfaceMismatch(leakyResult);
       assert(leakyText.includes("test/perf"), `诊断须点名 test/perf,实际:${leakyText}`);
-      // 关键对照:同一个夹具树的文件数远超下限 → 下限判据**照样绿**。这就是「下限不是
-      // 唯一判据」的实证:只保留下限,这个漏扫会静默通过。
-      const leakyFiles = listScanFiles(leaky).length;
       assert(
         leakyFiles > MIN_SCAN_FILES,
         `对照前提:漏扫夹具的文件数应远超下限(实际 ${leakyFiles},下限 ${MIN_SCAN_FILES}),否则证明不了下限抓不到漏扫`,
       );
       assertEq(judgeScanFloor(leakyFiles).ok, true, "下限判据对「漏一个子目录」必须无能为力(它只管 walker 整体失效)");
       console.log(`[ok] contract:扫描面等式负向(声明 6 / 实测 7 → 判红并点名 test/perf;同树下 ${leakyFiles} 个文件远超下限,下限判绿 —— 证明下限替代不了等式)`);
+      });
 
       // 4. 负向 B:声明 8 个、磁盘只建成 7 个 —— 登记过的目录被删/改名,声明成了空头支票。
       // 替身用 test/pending:它历史上真存在过(被删掉的暂存区),与「某个段目录曾经登记过
       // 后来整目录取消」是同一失效形态。
       // 刻意只让 test/gates 缺失:本夹具要验的是「点名那个缺失目录」,缺两个会让断言
       // 退化成验排序。新增段目录时要把它补进下面的建树清单,别动断言。
-      const short = makeFixtureTree(["test/core", "test/main", "test/renderer", "test/convert", "test/cli", "test/mcp", "test/harness", "test/shared", "test/behavior"], 1);
-      sandboxes.push(short);
-      const shortResult = checkSurfaceEquality(short);
+      await suite.case("负向 B:登记过的目录被删时等式判红并点名", () => {
       assertEq(shortResult.ok, false, "声明 8 个、磁盘 7 个时等式必须判红");
       assertEq(shortResult.missing.join(","), "test/gates", "须点名磁盘上已经没有测试源文件的那个目录");
       assertEq(shortResult.extra.length, 0, "这一侧不该有多出目录");
@@ -292,22 +307,20 @@ export async function run() {
         `诊断须点名 test/gates,实际:${formatSurfaceMismatch(shortResult)}`,
       );
       console.log("[ok] contract:扫描面等式负向(声明 8 / 实测 7 → 判红并点名 test/gates)");
+      });
 
       // 4b. 暂存区不许开回来:替身用 test/pending —— 它历史上真存在过(ADR-038 删掉的那个
       // 暂存区),把它原样摆回磁盘上,等式必须点名判红。
-      const drawer = makeFixtureTree([...SCAN_TARGETS.map((t) => t.dir), "test/pending"], 1);
-      sandboxes.push(drawer);
-      const drawerResult = checkSurfaceEquality(drawer);
+      await suite.case("负向:暂存区 test/pending 摆回磁盘即判红", () => {
       assertEq(drawerResult.ok, false, "磁盘上多出 test/pending 这个暂存区时等式必须判红");
       assertEq(drawerResult.extra.join(","), "test/pending", "须点名 test/pending(勿另开暂存区)");
       console.log("[ok] contract:扫描面等式负向(实测多出 test/pending → 判红并点名,抽屉不许开回来)");
+      });
 
       // 4c. 镜像判据的双向锚点:它管的是**声明本身合法**(段目录须镜像顶层一棵被断言的树),
       // 与等式正交 —— 等式只认「声明 == 磁盘」。替身 test/nope:磁盘上不存在同名树,
       // 正是「随手往枚举里加一行杂物抽屉」那个形态。
-      const nope = makeFixtureTree(["test/nope"], 1);
-      sandboxes.push(nope);
-      const nopeResult = checkSegmentMirrors(nope, ["nope"]);
+      await suite.case("镜像判据负向:不镜像的段目录判红并点名", () => {
       assertEq(nopeResult.ok, false, "段目录不镜像任何顶层树时必须判红(否则枚举可无限膨胀)");
       assertEq(nopeResult.offenders.join(","), "test/nope", "须点名那个不镜像的段目录");
       assert(
@@ -316,21 +329,18 @@ export async function run() {
       );
       // `fixtures` / `acceptance` 两个名字显式禁止当段目录:它们是数据区与入口,
       // 即便顶层真有同名树也不许往里塞段。
-      //
-      // ⚠ **本段原先在这里断的是 `harness`,T3 步 6 起它不再是禁止项** —— harness 已
-      // 登记为**自指层**段目录(被测主体就是 `test/harness/**` 自己),豁免「必须镜像」
-      // 的依据从「禁止表」搬到了 `NON_MIRROR_SEGMENT_DIRS`。故禁止表少一项、豁免表多一项,
-      // 两处必须同批改(否则「以为豁免了、实际被禁止」)。下面两格分别断这两张表的新形状。
       for (const banned of ["fixtures", "acceptance"]) {
         const rejected = checkSegmentMirrors(nope, [banned]);
         assertEq(rejected.ok, false, `${banned} 是数据区/入口名,登记成段目录必须判红`);
-        // 诊断文案里的三字诀是**一张**表的共称(「harness/数据区/入口名」,harness 如今
-        // 已不在表内,但共称沿用未改),故这里按共称断言而非按被点名的那一项。
         assert(
           formatMirrorMismatch(rejected).includes("harness/数据区/入口名"),
           `镜像诊断须点明 ${banned} 被排除的理由,实际:${formatMirrorMismatch(rejected)}`,
         );
       }
+      console.log("[ok] contract:段目录镜像判据负向(声明 test/nope、test/fixtures、test/acceptance → 判红并点名;harness 自指层豁免镜像;等式判不出的那一侧由它兜住)");
+      });
+
+      await suite.case("harness 是自指层段目录,豁免镜像义务", () => {
       // harness 是**段目录**(自指层)且豁免镜像义务 —— 这一格与上面那两格方向相反,
       // 两张表语义相近而相反,分开断才不会被「混用后恰好判红」蒙过去。
       assertEq(
@@ -338,18 +348,17 @@ export async function run() {
         true,
         "harness 是自指层段目录(主体 = test/harness/**),豁免镜像义务而非被禁止",
       );
-      console.log("[ok] contract:段目录镜像判据负向(声明 test/nope、test/fixtures、test/acceptance → 判红并点名;harness 自指层豁免镜像;等式判不出的那一侧由它兜住)");
+      });
 
       // 5. 下限的分工:目录集合与磁盘一致、但文件数塌到下限以下 —— 等式判绿,只有下限判红
-      const collapsed = makeFixtureTree(SCAN_TARGETS.map((t) => t.dir), 1);
-      sandboxes.push(collapsed);
+      await suite.case("下限判据分工:等式绿 / 下限红", () => {
       assertEq(
-        checkSurfaceEquality(collapsed).ok,
+        collapsedEquality.ok,
         true,
         "walker 整体失效时目录集合仍与磁盘一致(等式理应判绿 —— 它管不了文件数)",
       );
       assertEq(
-        judgeScanFloor(listScanFiles(collapsed).length).ok,
+        judgeScanFloor(collapsedFiles).ok,
         false,
         "walker 整体失效(文件数塌到下限以下)必须由下限判红",
       );
@@ -361,6 +370,7 @@ export async function run() {
         `下限诊断须写明下限值,实际:${floorText}`,
       );
       console.log(`[ok] contract:下限判据分工(等式绿 / 下限红;下限 ${MIN_SCAN_FILES} 处为界,文案含下限值)`);
+      });
     } finally {
       for (const dir of sandboxes) {
         const outcome = removeTree(dir, { retryDelay: 200 });
@@ -368,4 +378,6 @@ export async function run() {
       }
     }
   }
+
+  return { cases: suite.results };
 }

@@ -13,6 +13,7 @@
  */
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { asPdfArtifact, convertWithFs } from "../harness/convert-helpers.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /**
  * 本段测哪一层(ADR-062 L4 声明通道):**core**,判据静态看不见本段的主体 —— 全链路经
@@ -41,58 +42,76 @@ export const fixtures = null;
 
 export async function run() {
   // ---- 1. 传 pdfCss → 用户 CSS 注入且位于默认 CSS 之后(后加载覆盖) ----
+  const suite = createCaseSuite();
+  // 四份产物都在 case 之外备好:五个断言互不依赖,搬进 case 会让「先跑哪份转换」也变成
+  // 失败传播的载体
   const withCss = asPdfArtifact(
     await convertWithFs(md, "pdf", { baseDir: FIXTURES_DIR, pdfCss: USER_CSS }),
   );
-  const userIdx = withCss.html.indexOf(USER_CSS);
-  if (userIdx === -1) {
-    throw new Error("pdfCss 断言失败:输出 HTML 应包含用户 CSS");
-  }
-  // 默认 CSS 的 body 规则(模板 CSS 首条 body 规则)须在用户 CSS 之前
-  const defaultBodyIdx = withCss.html.indexOf("body {");
-  if (defaultBodyIdx === -1 || userIdx <= defaultBodyIdx) {
-    throw new Error("pdfCss 断言失败:用户 CSS 应位于默认 CSS 之后(后加载覆盖)");
-  }
-  // 用户 CSS 须位于默认样式同一 <style> 内(追加到默认 CSS 末尾,非独立 style 块)
-  const styleEndIdx = withCss.html.indexOf("</style>");
-  if (styleEndIdx === -1 || userIdx > styleEndIdx) {
-    throw new Error("pdfCss 断言失败:用户 CSS 应位于默认样式同一 <style> 内");
-  }
-  console.log("[ok] pdfCss:用户 CSS 追加到默认 CSS 之后(同一 <style> 内后声明覆盖)");
-
-  // ---- 2. 回归:不传 pdfCss → 输出不含用户 CSS(默认行为不变) ----
   const withoutCss = asPdfArtifact(await convertWithFs(md, "pdf", { baseDir: FIXTURES_DIR }));
-  if (withoutCss.html.includes(USER_CSS)) {
-    throw new Error("pdfCss 断言失败:不传 pdfCss 时输出不应包含用户 CSS(回归)");
-  }
-  console.log("[ok] pdfCss:不传 pdfCss 不注入(回归)");
-
-  // ---- 3. 回归:空串 pdfCss → 等价于不传(不注入) ----
   const emptyCss = asPdfArtifact(
     await convertWithFs(md, "pdf", { baseDir: FIXTURES_DIR, pdfCss: "" }),
   );
-  if (emptyCss.html.includes(USER_CSS)) {
-    throw new Error("pdfCss 断言失败:空串 pdfCss 不应注入用户 CSS(回归)");
-  }
-  console.log("[ok] pdfCss:空串 pdfCss 不注入(回归)");
-
-  // ---- 4. 注入防护:含 </style> 的用户 CSS 被剥离,不提前闭合 <style> ----
   const malicious = 'body { color: red; } </style><img src=x onerror=alert(1)>';
   const sanitized = asPdfArtifact(
     await convertWithFs(md, "pdf", { baseDir: FIXTURES_DIR, pdfCss: malicious }),
   );
-  const firstStyleEnd = sanitized.html.indexOf("</style>");
-  // 净化成功:注入标记作为文本留在 <style> 内部(位于合法 </style> 之前);
-  // 若被提前闭合,注入标记会出现在第一个 </style> 之后成为真实元素
-  const injectedImg = sanitized.html.indexOf("<img src=x");
-  if (firstStyleEnd === -1 || injectedImg === -1 || injectedImg > firstStyleEnd) {
-    throw new Error("pdfCss 断言失败:</style> 序列应被剥离,注入标记不得逃逸出 <style>");
-  }
+
+  // ---- 1. 传 pdfCss → 用户 CSS 注入且位于默认 CSS 之后(后加载覆盖) ----
+  // 三条判位置/边界的判定合成一个 case:它们共用同一个 userIdx,
+  // 「用户 CSS 没被注入」会让后面两条退化成对 -1 的位置比较,报出与真因无关的消息
+  await suite.case("传 pdfCss:用户 CSS 被注入、位于默认 CSS 之后且在同一 <style> 内", () => {
+    const userIdx = withCss.html.indexOf(USER_CSS);
+    if (userIdx === -1) {
+      throw new Error("pdfCss 断言失败:输出 HTML 应包含用户 CSS");
+    }
+    // 默认 CSS 的 body 规则(模板 CSS 首条 body 规则)须在用户 CSS 之前
+    const defaultBodyIdx = withCss.html.indexOf("body {");
+    if (defaultBodyIdx === -1 || userIdx <= defaultBodyIdx) {
+      throw new Error("pdfCss 断言失败:用户 CSS 应位于默认 CSS 之后(后加载覆盖)");
+    }
+    // 用户 CSS 须位于默认样式同一 <style> 内(追加到默认 CSS 末尾,非独立 style 块)
+    const styleEndIdx = withCss.html.indexOf("</style>");
+    if (styleEndIdx === -1 || userIdx > styleEndIdx) {
+      throw new Error("pdfCss 断言失败:用户 CSS 应位于默认样式同一 <style> 内");
+    }
+  });
+  console.log("[ok] pdfCss:用户 CSS 追加到默认 CSS 之后(同一 <style> 内后声明覆盖)");
+
+  // ---- 2. 回归:不传 pdfCss → 输出不含用户 CSS(默认行为不变) ----
+  await suite.case("回归:不传 pdfCss 时输出不含用户 CSS", () => {
+    if (withoutCss.html.includes(USER_CSS)) {
+      throw new Error("pdfCss 断言失败:不传 pdfCss 时输出不应包含用户 CSS(回归)");
+    }
+  });
+  console.log("[ok] pdfCss:不传 pdfCss 不注入(回归)");
+
+  // ---- 3. 回归:空串 pdfCss → 等价于不传(不注入) ----
+  await suite.case("回归:空串 pdfCss 等价于不传(不注入用户 CSS)", () => {
+    if (emptyCss.html.includes(USER_CSS)) {
+      throw new Error("pdfCss 断言失败:空串 pdfCss 不应注入用户 CSS(回归)");
+    }
+  });
+  console.log("[ok] pdfCss:空串 pdfCss 不注入(回归)");
+
+  // ---- 4. 注入防护:含 </style> 的用户 CSS 被剥离,不提前闭合 <style> ----
+  await suite.case("注入防护:</style> 序列被剥离,注入标记不逃逸出 <style>", () => {
+    const firstStyleEnd = sanitized.html.indexOf("</style>");
+    // 净化成功:注入标记作为文本留在 <style> 内部(位于合法 </style> 之前);
+    // 若被提前闭合,注入标记会出现在第一个 </style> 之后成为真实元素
+    const injectedImg = sanitized.html.indexOf("<img src=x");
+    if (firstStyleEnd === -1 || injectedImg === -1 || injectedImg > firstStyleEnd) {
+      throw new Error("pdfCss 断言失败:</style> 序列应被剥离,注入标记不得逃逸出 <style>");
+    }
+  });
   console.log("[ok] pdfCss:</style> 注入序列被剥离(sanitizeStyleCss)");
 
   // ---- 5. CSP meta:预览/打印 HTML 基线 ----
-  if (!withCss.html.includes('http-equiv="Content-Security-Policy"')) {
-    throw new Error("pdfCss 断言失败:输出 HTML 应包含 CSP meta");
-  }
+  await suite.case("输出 HTML 带 CSP meta(预览/打印窗口安全基线)", () => {
+    if (!withCss.html.includes('http-equiv="Content-Security-Policy"')) {
+      throw new Error("pdfCss 断言失败:输出 HTML 应包含 CSP meta");
+    }
+  });
   console.log("[ok] pdfCss:CSP meta 存在(预览/打印窗口安全基线)");
+  return { cases: suite.results };
 }

@@ -24,6 +24,7 @@ import {
 import { evaluateFreshness, main as buildFreshMain } from "../../gates/smoke/check-build-fresh.mjs";
 import { copyRenderer } from "../../tools/copy-renderer.mjs";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 import { ROOT } from "../harness/paths.js";
 import { removeFile, removeTree } from "../harness/temp-resource.js";
 
@@ -137,47 +138,52 @@ function independentManifest(distDir) {
 export const fixtures = null;
 
 export async function run() {
-  await withTempDir(async (tmp) => {
-    // ---------- 1. 正向:生成 → 校验,清单规范化且可被独立实现复现 ----------
-    const distDir = path.join(tmp, "dist");
-    const manifestPath = path.join(tmp, "dist-manifest.json");
-    makeDist(distDir);
+  const suite = createCaseSuite();
+  // withTempDir 自带 try/finally 清理,故整体进 case 是安全的(不依赖段级 finally)
+  await suite.case("1. 正向:生成清单,规范化且可被独立实现复现", () =>
+    withTempDir(async (tmp) => {
+      // ---------- 1. 正向:生成 → 校验,清单规范化且可被独立实现复现 ----------
+      const distDir = path.join(tmp, "dist");
+      const manifestPath = path.join(tmp, "dist-manifest.json");
+      makeDist(distDir);
 
-    const generated = await runChecker(() => distManifestMain(["--dist", distDir, "--output", manifestPath]));
-    assert(generated.code === 0, `生成模式应通过,实际 ${generated.code}:${generated.output}`);
+      const generated = await runChecker(() => distManifestMain(["--dist", distDir, "--output", manifestPath]));
+      assert(generated.code === 0, `生成模式应通过,实际 ${generated.code}:${generated.output}`);
 
-    const manifest = /** @type {Manifest} */ (parseManifest(fs.readFileSync(manifestPath, "utf8")));
-    assert(manifest.schema === MANIFEST_SCHEMA, `schema 应为 ${MANIFEST_SCHEMA},实际 ${manifest.schema}`);
-    assert(manifest.fileCount === 5, `fileCount 应为 5,实际 ${manifest.fileCount}`);
-    assert(
-      manifest.files.map((entry) => entry.path).join(",") ===
-        "core/convert.js,main/index.js,main/preload.cjs,renderer/index.html,renderer/style/base.css",
-      `清单路径应为 POSIX 相对路径且字典序,实际 ${manifest.files.map((e) => e.path).join(",")}`,
-    );
-    assert(
-      manifest.files.every((entry) => Number.isInteger(entry.size) && /^[0-9a-f]{64}$/.test(entry.sha256)),
-      "每条须含整数 size 与 64 位十六进制 sha256",
-    );
-    assert(
-      JSON.stringify(manifest.files) === JSON.stringify(independentManifest(distDir)),
-      "清单应与独立实现(测试侧现算)逐字段一致",
-    );
-    assert(
-      manifest.totalSize === independentManifest(distDir).reduce((sum, entry) => sum + entry.size, 0),
-      "totalSize 应为各文件字节数之和",
-    );
+      const manifest = /** @type {Manifest} */ (parseManifest(fs.readFileSync(manifestPath, "utf8")));
+      assert(manifest.schema === MANIFEST_SCHEMA, `schema 应为 ${MANIFEST_SCHEMA},实际 ${manifest.schema}`);
+      assert(manifest.fileCount === 5, `fileCount 应为 5,实际 ${manifest.fileCount}`);
+      assert(
+        manifest.files.map((entry) => entry.path).join(",") ===
+          "core/convert.js,main/index.js,main/preload.cjs,renderer/index.html,renderer/style/base.css",
+        `清单路径应为 POSIX 相对路径且字典序,实际 ${manifest.files.map((e) => e.path).join(",")}`,
+      );
+      assert(
+        manifest.files.every((entry) => Number.isInteger(entry.size) && /^[0-9a-f]{64}$/.test(entry.sha256)),
+        "每条须含整数 size 与 64 位十六进制 sha256",
+      );
+      assert(
+        JSON.stringify(manifest.files) === JSON.stringify(independentManifest(distDir)),
+        "清单应与独立实现(测试侧现算)逐字段一致",
+      );
+      assert(
+        manifest.totalSize === independentManifest(distDir).reduce((sum, entry) => sum + entry.size, 0),
+        "totalSize 应为各文件字节数之和",
+      );
 
-    // 重复生成幂等:同一份 dist 逐字节产出同一清单(可 diff、可复现)
-    const firstText = fs.readFileSync(manifestPath, "utf8");
-    const regenerated = await runChecker(() => distManifestMain(["--dist", distDir, "--output", manifestPath]));
-    assert(regenerated.code === 0, "重复生成应通过");
-    assert(fs.readFileSync(manifestPath, "utf8") === firstText, "重复生成应逐字节一致");
+      // 重复生成幂等:同一份 dist 逐字节产出同一清单(可 diff、可复现)
+      const firstText = fs.readFileSync(manifestPath, "utf8");
+      const regenerated = await runChecker(() => distManifestMain(["--dist", distDir, "--output", manifestPath]));
+      assert(regenerated.code === 0, "重复生成应通过");
+      assert(fs.readFileSync(manifestPath, "utf8") === firstText, "重复生成应逐字节一致");
 
-    const checked = await runChecker(() =>
-      distManifestMain(["--dist", distDir, "--output", manifestPath, "--check"]),
-    );
-    assert(checked.code === 0, `校验模式应通过,实际 ${checked.code}:${checked.output}`);
-    console.log("[ok] dist-manifest-gate:生成/幂等/校验三态通过,清单与独立实现一致(5 个文件)");
+      const checked = await runChecker(() =>
+        distManifestMain(["--dist", distDir, "--output", manifestPath, "--check"]),
+      );
+      assert(checked.code === 0, `校验模式应通过,实际 ${checked.code}:${checked.output}`);
+      console.log("[ok] dist-manifest-gate:生成/幂等/校验三态通过,清单与独立实现一致(5 个文件)");
+    }),
+  );
 
     // ---------- 2. 负向:三类漂移 + 清单自身损坏 + 参数/输入异常 ----------
     /** @type {{ name: string; arrange: (target: string, manifestFile: string) => void; expect: RegExp }[]} */
@@ -226,142 +232,193 @@ export async function run() {
       },
     ];
 
+    // 逐夹具一个 case:一种漂移判红不该掩盖其余漂移
     for (const testCase of negative) {
-      // 每条负向用例从「一致状态」重新造夹具,避免相互污染
-      const caseTmp = fs.mkdtempSync(path.join(os.tmpdir(), "m2w-dist-gate-case-"));
-      try {
-        const caseDist = path.join(caseTmp, "dist");
-        const caseManifest = path.join(caseTmp, "dist-manifest.json");
-        makeDist(caseDist);
-        const seed = await runChecker(() => distManifestMain(["--dist", caseDist, "--output", caseManifest]));
-        assert(seed.code === 0, "负向用例的基线生成应先通过");
-        testCase.arrange(caseDist, caseManifest);
-        const result = await runChecker(() =>
-          distManifestMain(["--dist", caseDist, "--output", caseManifest, "--check"]),
-        );
-        assert(
-          result.code === 1 && testCase.expect.test(result.output),
-          `${testCase.name} 应以非零码且原因匹配 ${testCase.expect} 失败,实际 exit ${result.code}\n${result.output}`,
-        );
-      } finally {
-        const outcome = removeTree(caseTmp);
-        if (!outcome.ok) throw new Error(`临时目录清理失败:${caseTmp}:${outcome.error?.message ?? "删除后目录仍存在"}`);
-      }
+      await suite.case(`2. 负向夹具被拦截:${testCase.name}`, () => {
+        // 每条负向用例从「一致状态」重新造夹具,避免相互污染
+        const caseTmp = fs.mkdtempSync(path.join(os.tmpdir(), "m2w-dist-gate-case-"));
+        return (async () => {
+          const caseDist = path.join(caseTmp, "dist");
+          const caseManifest = path.join(caseTmp, "dist-manifest.json");
+          makeDist(caseDist);
+          const seed = await runChecker(() => distManifestMain(["--dist", caseDist, "--output", caseManifest]));
+          assert(seed.code === 0, "负向用例的基线生成应先通过");
+          testCase.arrange(caseDist, caseManifest);
+          const result = await runChecker(() =>
+            distManifestMain(["--dist", caseDist, "--output", caseManifest, "--check"]),
+          );
+          assert(
+            result.code === 1 && testCase.expect.test(result.output),
+            `${testCase.name} 应以非零码且原因匹配 ${testCase.expect} 失败,实际 exit ${result.code}\n${result.output}`,
+          );
+        })().finally(() => {
+          const outcome = removeTree(caseTmp);
+          if (!outcome.ok) throw new Error(`临时目录清理失败:${caseTmp}:${outcome.error?.message ?? "删除后目录仍存在"}`);
+        });
+      });
     }
     console.log(`[ok] dist-manifest-gate:${negative.length} 条负向夹具全部被拦截(stale/缺失/篡改/坏清单/空 dist)`);
 
     // 校验模式缺清单、dist 目录不存在、参数写错:同样是可操作报错而非静默通过
-    const missingManifest = await runChecker(() =>
-      distManifestMain(["--dist", distDir, "--output", path.join(tmp, "nope.json"), "--check"]),
+    await suite.case("2. 校验模式缺清单应可操作报错", () =>
+      withTempDir(async (caseTmp) => {
+        const caseDist = path.join(caseTmp, "dist");
+        makeDist(caseDist);
+        const missingManifest = await runChecker(() =>
+          distManifestMain(["--dist", caseDist, "--output", path.join(caseTmp, "nope.json"), "--check"]),
+        );
+        assert(missingManifest.code === 1 && /缺少清单/.test(missingManifest.output), `缺清单应失败,实际 ${missingManifest.code}`);
+      }),
     );
-    assert(missingManifest.code === 1 && /缺少清单/.test(missingManifest.output), `缺清单应失败,实际 ${missingManifest.code}`);
-    const missingDist = await runChecker(() =>
-      distManifestMain(["--dist", path.join(tmp, "no-such-dist"), "--output", path.join(tmp, "x.json")]),
+    await suite.case("2. dist 目录不存在应可操作报错", () =>
+      withTempDir(async (caseTmp) => {
+        const missingDist = await runChecker(() =>
+          distManifestMain(["--dist", path.join(caseTmp, "no-such-dist"), "--output", path.join(caseTmp, "x.json")]),
+        );
+        assert(missingDist.code === 1 && /dist 目录不存在/.test(missingDist.output), `缺 dist 应失败,实际 ${missingDist.code}`);
+      }),
     );
-    assert(missingDist.code === 1 && /dist 目录不存在/.test(missingDist.output), `缺 dist 应失败,实际 ${missingDist.code}`);
-    const badOption = await runChecker(() => distManifestMain(["--distt", distDir]));
-    assert(badOption.code === 1 && /无法识别的选项/.test(badOption.output), `参数写错应失败,实际 ${badOption.code}`);
+    await suite.case("2. 参数写错应失败而非按默认值跑", () =>
+      withTempDir(async (caseTmp) => {
+        const caseDist = path.join(caseTmp, "dist");
+        makeDist(caseDist);
+        const badOption = await runChecker(() => distManifestMain(["--distt", caseDist]));
+        assert(badOption.code === 1 && /无法识别的选项/.test(badOption.output), `参数写错应失败,实际 ${badOption.code}`);
+      }),
+    );
     console.log("[ok] dist-manifest-gate:缺清单/缺 dist/参数写错均非零退出且文案可操作");
 
     // ---------- 3. 真实 dist:清单可用 + 进程级 CLI 退出码 ----------
-    const realDist = path.join(ROOT, "dist");
-    assert(fs.existsSync(realDist), "真实 dist 应存在(验收链先于测试执行 build)");
-    const realManifest = await runChecker(() => distManifestMain(["--dist", realDist, "--output", manifestPath]));
-    assert(realManifest.code === 0, `真实 dist 应能生成清单,实际 ${realManifest.code}:${realManifest.output}`);
-    const realParsed = /** @type {Manifest} */ (parseManifest(fs.readFileSync(manifestPath, "utf8")));
-    assert(realParsed.fileCount > 100, `真实 dist 文件数应远大于夹具,实际 ${realParsed.fileCount}`);
-    assert(
-      realParsed.files.some((entry) => entry.path === "main/index.js") &&
-        realParsed.files.some((entry) => entry.path === "renderer/index.html") &&
-        realParsed.files.some((entry) => entry.path.startsWith("renderer/style/")),
-      "真实清单应含主进程入口、renderer 入口与样式表",
+    await suite.case("3. 真实 dist:清单可生成且含主进程/renderer/样式表入口", () =>
+      withTempDir(async (caseTmp) => {
+        const realDist = path.join(ROOT, "dist");
+        const realManifestPath = path.join(caseTmp, "dist-manifest.json");
+        assert(fs.existsSync(realDist), "真实 dist 应存在(验收链先于测试执行 build)");
+        const realManifest = await runChecker(() => distManifestMain(["--dist", realDist, "--output", realManifestPath]));
+        assert(realManifest.code === 0, `真实 dist 应能生成清单,实际 ${realManifest.code}:${realManifest.output}`);
+        const realParsed = /** @type {Manifest} */ (parseManifest(fs.readFileSync(realManifestPath, "utf8")));
+        assert(realParsed.fileCount > 100, `真实 dist 文件数应远大于夹具,实际 ${realParsed.fileCount}`);
+        assert(
+          realParsed.files.some((entry) => entry.path === "main/index.js") &&
+            realParsed.files.some((entry) => entry.path === "renderer/index.html") &&
+            realParsed.files.some((entry) => entry.path.startsWith("renderer/style/")),
+          "真实清单应含主进程入口、renderer 入口与样式表",
+        );
+        console.log(`[ok] dist-manifest-gate:真实 dist(${realParsed.fileCount} 个文件)清单可生成可校验`);
+      }),
     );
-    removeFile(manifestPath);
-    // 进程级退出码契约:Electron 宿主下用 ELECTRON_RUN_AS_NODE 走真实 CLI
-    const cli = spawnSync(
-      process.execPath,
-      ["gates/artifacts/check-dist-manifest.mjs", "--dist", realDist, "--output", manifestPath],
-      { cwd: ROOT, encoding: "utf8", windowsHide: true, env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } },
-    );
-    assert(cli.status === 0, `CLI 生成模式应 exit 0,实际 ${cli.status}:${cli.stdout}${cli.stderr}`);
-    const cliCheck = spawnSync(
-      process.execPath,
-      ["gates/artifacts/check-dist-manifest.mjs", "--dist", realDist, "--output", manifestPath, "--check"],
-      { cwd: ROOT, encoding: "utf8", windowsHide: true, env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } },
-    );
-    assert(cliCheck.status === 0, `CLI 校验模式应 exit 0,实际 ${cliCheck.status}:${cliCheck.stdout}${cliCheck.stderr}`);
-    console.log(`[ok] dist-manifest-gate:真实 dist(${realParsed.fileCount} 个文件)清单可生成可校验,CLI 退出码 0`);
-  });
+    await suite.case("3. 真实 dist:进程级 CLI 生成与校验均 exit 0", () => {
+      // 进程级退出码契约:Electron 宿主下用 ELECTRON_RUN_AS_NODE 走真实 CLI
+      const realDist = path.join(ROOT, "dist");
+      const manifestPath = path.join(os.tmpdir(), `m2w-dist-cli-${process.pid}.json`);
+      try {
+        const cli = spawnSync(
+          process.execPath,
+          ["gates/artifacts/check-dist-manifest.mjs", "--dist", realDist, "--output", manifestPath],
+          { cwd: ROOT, encoding: "utf8", windowsHide: true, env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } },
+        );
+        assert(cli.status === 0, `CLI 生成模式应 exit 0,实际 ${cli.status}:${cli.stdout}${cli.stderr}`);
+        const cliCheck = spawnSync(
+          process.execPath,
+          ["gates/artifacts/check-dist-manifest.mjs", "--dist", realDist, "--output", manifestPath, "--check"],
+          { cwd: ROOT, encoding: "utf8", windowsHide: true, env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } },
+        );
+        assert(cliCheck.status === 0, `CLI 校验模式应 exit 0,实际 ${cliCheck.status}:${cliCheck.stdout}${cliCheck.stderr}`);
+      } finally {
+        removeFile(manifestPath);
+      }
+    });
 
-  // ---------- 4. build-fresh:新鲜度判定(纯函数) ----------
-  await withTempDir(async (tmp) => {
-    const srcDir = path.join(tmp, "src");
-    const distDir = path.join(tmp, "dist");
-    writeFileIn(srcDir, "main/index.ts", "export const a = 1;\n");
-    writeFileIn(distDir, "main/index.js", "export const a = 1;\n");
-    const older = new Date(Date.now() - 60_000);
-    const newer = new Date();
-    const later = new Date(Date.now() + 60_000);
-    fs.utimesSync(path.join(srcDir, "main", "index.ts"), older, older);
-    fs.utimesSync(path.join(distDir, "main", "index.js"), newer, newer);
-    assert(
-      evaluateFreshness({ srcDir, distDir }).length === 0,
-      "src 早于 dist 时应判定新鲜(mtime 比较按文件最大值递归)",
-    );
+  // 四态各自独立(修掉一种不该掩盖另三种);新鲜度判定共享同一组 utimes,故前置在 case 外备好
+  await suite.case("4. build-fresh:src 早于 dist 判新鲜,src 晚于 dist 判过期", () =>
+    withTempDir(async (tmp) => {
+      // ---------- 4. build-fresh:新鲜度判定(纯函数) ----------
+      const srcDir = path.join(tmp, "src");
+      const distDir = path.join(tmp, "dist");
+      writeFileIn(srcDir, "main/index.ts", "export const a = 1;\n");
+      writeFileIn(distDir, "main/index.js", "export const a = 1;\n");
+      const older = new Date(Date.now() - 60_000);
+      const newer = new Date();
+      const later = new Date(Date.now() + 60_000);
+      fs.utimesSync(path.join(srcDir, "main", "index.ts"), older, older);
+      fs.utimesSync(path.join(distDir, "main", "index.js"), newer, newer);
+      assert(
+        evaluateFreshness({ srcDir, distDir }).length === 0,
+        "src 早于 dist 时应判定新鲜(mtime 比较按文件最大值递归)",
+      );
 
-    fs.utimesSync(path.join(srcDir, "main", "index.ts"), later, later);
-    const stale = evaluateFreshness({ srcDir, distDir });
-    assert(
-      stale.length === 1 && /存在晚于 dist 的 src 改动/.test(/** @type {string} */ (stale[0])),
-      `src 晚于 dist 应判过期,实际 ${stale[0]}`,
-    );
+      fs.utimesSync(path.join(srcDir, "main", "index.ts"), later, later);
+      const stale = evaluateFreshness({ srcDir, distDir });
+      assert(
+        stale.length === 1 && /存在晚于 dist 的 src 改动/.test(/** @type {string} */ (stale[0])),
+        `src 晚于 dist 应判过期,实际 ${stale[0]}`,
+      );
+    }),
+  );
+  await suite.case("4. build-fresh:dist 缺失判过期,源码目录不存在非零退出", () =>
+    withTempDir(async (tmp) => {
+      const srcDir = path.join(tmp, "src");
+      writeFileIn(srcDir, "main/index.ts", "export const a = 1;\n");
+      const absent = evaluateFreshness({ srcDir, distDir: path.join(tmp, "no-dist") });
+      assert(
+        absent.length === 1 && /dist 为空或不存在/.test(/** @type {string} */ (absent[0])),
+        `dist 缺失应判过期,实际 ${absent[0]}`,
+      );
 
-    const absent = evaluateFreshness({ srcDir, distDir: path.join(tmp, "no-dist") });
-    assert(
-      absent.length === 1 && /dist 为空或不存在/.test(/** @type {string} */ (absent[0])),
-      `dist 缺失应判过期,实际 ${absent[0]}`,
-    );
-
-    const missingSrc = await runChecker(() => buildFreshMain(["--src", path.join(tmp, "no-src")]));
-    assert(missingSrc.code === 1 && /源码目录不存在/.test(missingSrc.output), "源码目录不存在应非零退出");
-    console.log("[ok] dist-manifest-gate:build-fresh 新鲜/过期/dist 缺失/源码缺失四态判定正确");
-  });
+      const missingSrc = await runChecker(() => buildFreshMain(["--src", path.join(tmp, "no-src")]));
+      assert(missingSrc.code === 1 && /源码目录不存在/.test(missingSrc.output), "源码目录不存在应非零退出");
+      console.log("[ok] dist-manifest-gate:build-fresh 新鲜/过期/dist 缺失/源码缺失四态判定正确");
+    }),
+  );
 
   // ---------- 5. copy-renderer:静态资源拷贝与陈旧清理(含空目录) ----------
-  await withTempDir((tmp) => {
-    const srcDir = path.join(tmp, "src-renderer");
-    const outDir = path.join(tmp, "dist-renderer");
-    // 源端:html + css(style 子目录) + 语言引导脚本;没有 about-preload.cjs
-    writeFileIn(srcDir, "index.html", "<!doctype html>\n");
-    writeFileIn(srcDir, "style/app.css", "body { color: #111 }\n");
-    writeFileIn(srcDir, "lang-bootstrap.js", "// bootstrap\n");
-    // 目标端预置:tsc 编译产物(须保留)、陈旧 css、陈旧 html(所在目录清理后为空)、
-    // 源端已删的引导脚本副本
-    writeFileIn(outDir, "state/pure.js", "export const pure = 1;\n");
-    writeFileIn(outDir, "style/base.css", "body { color: #000 }\n");
-    writeFileIn(outDir, "removed/index.html", "<!doctype html>\n");
-    writeFileIn(outDir, "lang-bootstrap.js", "// stale\n");
+  await suite.case("5. copy-renderer:拷贝正确、陈旧文件与空目录清理、编译产物保留", () =>
+    withTempDir((tmp) => {
+      const srcDir = path.join(tmp, "src-renderer");
+      const outDir = path.join(tmp, "dist-renderer");
+      // 源端:html + css(style 子目录) + 语言引导脚本;没有 about-preload.cjs
+      writeFileIn(srcDir, "index.html", "<!doctype html>\n");
+      writeFileIn(srcDir, "style/app.css", "body { color: #111 }\n");
+      writeFileIn(srcDir, "lang-bootstrap.js", "// bootstrap\n");
+      // 目标端预置:tsc 编译产物(须保留)、陈旧 css、陈旧 html(所在目录清理后为空)、
+      // 源端已删的引导脚本副本
+      writeFileIn(outDir, "state/pure.js", "export const pure = 1;\n");
+      writeFileIn(outDir, "style/base.css", "body { color: #000 }\n");
+      writeFileIn(outDir, "removed/index.html", "<!doctype html>\n");
+      writeFileIn(outDir, "lang-bootstrap.js", "// stale\n");
 
-    const report = copyRenderer({ srcDir, outDir });
-    assert(!fs.existsSync(path.join(outDir, "style", "base.css")), "陈旧 css 应被清理");
-    assert(
-      fs.readFileSync(path.join(outDir, "lang-bootstrap.js"), "utf8") === "// bootstrap\n",
-      "引导脚本应被最新内容覆盖",
-    );
-    assert(!fs.existsSync(path.join(outDir, "removed")), "清理后残留的空目录应被剪除");
-    assert(fs.existsSync(path.join(outDir, "state", "pure.js")), "tsc 编译产物不在本脚本管辖范围,须保留");
-    assert(fs.readFileSync(path.join(outDir, "index.html"), "utf8") === "<!doctype html>\n", "html 应被拷贝");
-    assert(fs.readFileSync(path.join(outDir, "style", "app.css"), "utf8") === "body { color: #111 }\n", "css 应被拷贝并保持子目录结构");
-    assert(report.prunedDirs.includes("removed"), `空目录应记入报告,实际 ${JSON.stringify(report.prunedDirs)}`);
-    assert(report.removed.includes("style/base.css"), `陈旧文件应记入报告,实际 ${JSON.stringify(report.removed)}`);
+      const report = copyRenderer({ srcDir, outDir });
+      assert(!fs.existsSync(path.join(outDir, "style", "base.css")), "陈旧 css 应被清理");
+      assert(
+        fs.readFileSync(path.join(outDir, "lang-bootstrap.js"), "utf8") === "// bootstrap\n",
+        "引导脚本应被最新内容覆盖",
+      );
+      assert(!fs.existsSync(path.join(outDir, "removed")), "清理后残留的空目录应被剪除");
+      assert(fs.existsSync(path.join(outDir, "state", "pure.js")), "tsc 编译产物不在本脚本管辖范围,须保留");
+      assert(fs.readFileSync(path.join(outDir, "index.html"), "utf8") === "<!doctype html>\n", "html 应被拷贝");
+      assert(fs.readFileSync(path.join(outDir, "style", "app.css"), "utf8") === "body { color: #111 }\n", "css 应被拷贝并保持子目录结构");
+      assert(report.prunedDirs.includes("removed"), `空目录应记入报告,实际 ${JSON.stringify(report.prunedDirs)}`);
+      assert(report.removed.includes("style/base.css"), `陈旧文件应记入报告,实际 ${JSON.stringify(report.removed)}`);
+      console.log("[ok] dist-manifest-gate:copy-renderer 拷贝正确、陈旧文件与空目录清理、编译产物不受影响");
+    }),
+  );
+  await suite.case("5. copy-renderer:源端已删的引导脚本同步清理,重跑不误删编译产物", () =>
+    withTempDir((tmp) => {
+      const srcDir = path.join(tmp, "src-renderer");
+      const outDir = path.join(tmp, "dist-renderer");
+      writeFileIn(srcDir, "index.html", "<!doctype html>\n");
+      writeFileIn(srcDir, "lang-bootstrap.js", "// bootstrap\n");
+      writeFileIn(outDir, "state/pure.js", "export const pure = 1;\n");
+      copyRenderer({ srcDir, outDir });
 
-    // 源端删掉引导脚本后重跑:目标端旧副本应被对称清掉
-    removeFile(path.join(srcDir, "lang-bootstrap.js"));
-    copyRenderer({ srcDir, outDir });
-    assert(!fs.existsSync(path.join(outDir, "lang-bootstrap.js")), "源端已删的引导脚本应同步清理");
-    assert(fs.existsSync(path.join(outDir, "state", "pure.js")), "重跑仍不得误删编译产物");
-    console.log("[ok] dist-manifest-gate:copy-renderer 拷贝正确、陈旧文件与空目录清理、编译产物不受影响");
-  });
+      // 源端删掉引导脚本后重跑:目标端旧副本应被对称清掉
+      removeFile(path.join(srcDir, "lang-bootstrap.js"));
+      copyRenderer({ srcDir, outDir });
+      assert(!fs.existsSync(path.join(outDir, "lang-bootstrap.js")), "源端已删的引导脚本应同步清理");
+      assert(fs.existsSync(path.join(outDir, "state", "pure.js")), "重跑仍不得误删编译产物");
+    }),
+  );
+  return { cases: suite.results };
 }
 
 /**

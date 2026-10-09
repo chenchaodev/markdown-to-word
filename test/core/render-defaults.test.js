@@ -32,6 +32,7 @@ import {
 import { asDocxArtifact, asPdfArtifact, HOST_FS, prepareForConvert } from "../harness/convert-helpers.js";
 import { ROOT } from "../harness/paths.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /** 契约类型的只读引用(编译期擦除) */
 /** @typedef {import("../../dist/core/i18n/index.js").ConvertWarning} Warning */
@@ -83,6 +84,7 @@ const EXPECTED_DEFAULTS = {
 };
 
 export async function run() {
+  const suite = createCaseSuite();
   // ---- 1. 空输入:8 个键逐键落回期望默认值 ----
   const empty = resolveRenderSwitches({});
   // EXPECTED_DEFAULTS 的键是动态的(`Object.entries` 出 string),而 ResolvedRenderSwitches
@@ -90,25 +92,32 @@ export async function run() {
   // 为什么走 unknown 中转:interface 不能直接断言成 Record<string, unknown>(两者无足够重叠),
   // 而 unknown 中转不会丢检查 —— 断言目标仍是 Record<string, unknown>。
   const emptyView = /** @type {Record<string, unknown>} */ (/** @type {unknown} */ (empty));
+  // 逐键一个 case:某一键默认值漂移不该掩盖其余七键的同类问题
   for (const [key, expected] of Object.entries(EXPECTED_DEFAULTS)) {
-    assert(
-      deepEqual(emptyView[key], expected),
-      `空输入时 ${key} 应解析为默认值(实际 ${JSON.stringify(emptyView[key])})`,
-    );
+    await suite.case(`1. 空输入时 ${key} 解析为期望默认值`, () => {
+      assert(
+        deepEqual(emptyView[key], expected),
+        `空输入时 ${key} 应解析为默认值(实际 ${JSON.stringify(emptyView[key])})`,
+      );
+    });
   }
   // 键集合本身也要锁:新增键忘了在此登记即判红(默认值台账的机械化守卫)
-  assert(
-    Object.keys(empty).sort().join(",") === Object.keys(EXPECTED_DEFAULTS).sort().join(","),
-    `resolveRenderSwitches 的键集合应与逐键断言表一致(实际 ${Object.keys(empty).sort().join(",")})`,
-  );
+  await suite.case("1. resolveRenderSwitches 的键集合与逐键断言表一致", () => {
+    assert(
+      Object.keys(empty).sort().join(",") === Object.keys(EXPECTED_DEFAULTS).sort().join(","),
+      `resolveRenderSwitches 的键集合应与逐键断言表一致(实际 ${Object.keys(empty).sort().join(",")})`,
+    );
+  });
 
   // ---- 2. 空输入 + 关掉 typography 里的两个编号开关:那两个键应跟随 typography ----
   // 这一条单独断言的原因:headingNumbering/captionNumbering 的默认值**不是字面量**
   // 而是 typography 的同名键,「逐键断言默认值」若只断言结果值,发现不了「改成硬编码
   // true」这类改动 —— 故同时断言来源。
   const withTypo = resolveRenderSwitches({ typography: { ...DEFAULT_TYPOGRAPHY, headingNumbering: false, captionNumbering: false } });
-  assert(withTypo.headingNumbering === false, "headingNumbering 应跟随 typography.headingNumbering");
-  assert(withTypo.captionNumbering === false, "captionNumbering 应跟随 typography.captionNumbering");
+  await suite.case("2. headingNumbering/captionNumbering 默认值跟随 typography 同名键", () => {
+    assert(withTypo.headingNumbering === false, "headingNumbering 应跟随 typography.headingNumbering");
+    assert(withTypo.captionNumbering === false, "captionNumbering 应跟随 typography.captionNumbering");
+  });
 
   // ---- 3. 显式值逐键原样透传(含优先级:显式项压过 typography) ----
   const explicit = resolveRenderSwitches({
@@ -121,14 +130,20 @@ export async function run() {
     equationNumbering: false,
     watermark: { ...DEFAULT_WATERMARK, text: "机密" },
   });
-  assert(explicit.pageSetup.paper === "A5", "pageSetup 显式值应原样透传");
-  assert(explicit.typography === EXPLICIT_TYPOGRAPHY, "typography 显式值应原样透传");
-  assert(explicit.breakBeforeH1 === true, "breakBeforeH1 显式值应原样透传");
-  assert(explicit.headingNumbering === true, "headingNumbering 显式项应压过 typography");
-  assert(explicit.captionNumbering === true, "captionNumbering 显式项应压过 typography");
-  assert(explicit.toc === false, "toc 显式值应原样透传");
-  assert(explicit.equationNumbering === false, "equationNumbering 显式值应原样透传");
-  assert(explicit.watermark.text === "机密", "watermark 显式值应原样透传");
+  await suite.case("3. 显式值逐键原样透传(数值/对象类)", () => {
+    assert(explicit.pageSetup.paper === "A5", "pageSetup 显式值应原样透传");
+    assert(explicit.typography === EXPLICIT_TYPOGRAPHY, "typography 显式值应原样透传");
+    assert(explicit.watermark.text === "机密", "watermark 显式值应原样透传");
+  });
+  await suite.case("3. 显式项压过 typography 的同名键", () => {
+    assert(explicit.headingNumbering === true, "headingNumbering 显式项应压过 typography");
+    assert(explicit.captionNumbering === true, "captionNumbering 显式项应压过 typography");
+  });
+  await suite.case("3. 布尔类显式值原样透传", () => {
+    assert(explicit.breakBeforeH1 === true, "breakBeforeH1 显式值应原样透传");
+    assert(explicit.toc === false, "toc 显式值应原样透传");
+    assert(explicit.equationNumbering === false, "equationNumbering 显式值应原样透传");
+  });
 
   // ---- 4. 水印的部分字段:缺省字段补默认,给定字段不被覆盖 ----
   // 契约上 SharedRenderOptions.watermark 是 WatermarkSettings(四字段全必填),
@@ -139,58 +154,67 @@ export async function run() {
   const partial = resolveRenderSwitches({
     watermark: /** @type {never} */ ({ text: "仅文字" }),
   });
-  assert(partial.watermark.text === "仅文字", "水印给定字段应保留");
-  assert(
-    partial.watermark.angle === DEFAULT_WATERMARK.angle,
-    `水印缺省角度应补 ${DEFAULT_WATERMARK.angle}`,
-  );
-  assert(
-    partial.watermark.opacity === DEFAULT_WATERMARK.opacity,
-    `水印缺省不透明度应补 ${DEFAULT_WATERMARK.opacity}`,
-  );
-  assert(partial.watermark.gray === DEFAULT_WATERMARK.gray, "水印缺省配色应补默认值");
+  await suite.case("4. 水印给定字段保留、缺省字段补默认", () => {
+    assert(partial.watermark.text === "仅文字", "水印给定字段应保留");
+    assert(
+      partial.watermark.angle === DEFAULT_WATERMARK.angle,
+      `水印缺省角度应补 ${DEFAULT_WATERMARK.angle}`,
+    );
+    assert(
+      partial.watermark.opacity === DEFAULT_WATERMARK.opacity,
+      `水印缺省不透明度应补 ${DEFAULT_WATERMARK.opacity}`,
+    );
+    assert(partial.watermark.gray === DEFAULT_WATERMARK.gray, "水印缺省配色应补默认值");
+  });
 
   // ---- 5. 页眉页脚与目录模式的解析单源 ----
   const hf = resolveHeaderFooter(undefined);
-  assert(deepEqual(hf, DEFAULT_HEADER_FOOTER), "页眉页脚缺省应等于 DEFAULT_HEADER_FOOTER");
   const hfPartial = resolveHeaderFooter(/** @type {never} */ ({ headerMode: "none" }));
-  assert(hfPartial.headerMode === "none", "页眉页脚显式字段应保留");
-  assert(
-    hfPartial.headerText === DEFAULT_HEADER_FOOTER.headerText,
-    "页眉页脚缺省字段应补默认",
-  );
-  assert(resolveTocMode(undefined) === DEFAULT_TOC_MODE, `目录模式缺省应为 ${DEFAULT_TOC_MODE}`);
-  assert(resolveTocMode("field") === "field", "目录模式显式值应原样透传");
+  await suite.case("5. 页眉页脚:缺省等于 DEFAULT_HEADER_FOOTER,显式字段保留、缺省补默认", () => {
+    assert(deepEqual(hf, DEFAULT_HEADER_FOOTER), "页眉页脚缺省应等于 DEFAULT_HEADER_FOOTER");
+    assert(hfPartial.headerMode === "none", "页眉页脚显式字段应保留");
+    assert(
+      hfPartial.headerText === DEFAULT_HEADER_FOOTER.headerText,
+      "页眉页脚缺省字段应补默认",
+    );
+  });
+  await suite.case("5. 目录模式:缺省取 DEFAULT_TOC_MODE、显式值原样透传", () => {
+    assert(resolveTocMode(undefined) === DEFAULT_TOC_MODE, `目录模式缺省应为 ${DEFAULT_TOC_MODE}`);
+    assert(resolveTocMode("field") === "field", "目录模式显式值应原样透传");
+  });
 
   // ---- 6. 两侧渲染层不再自带默认值字面量(源码级守护) ----
   // 这是 6-D1 的真正约束:解析收进一个纯函数之后,渲染层里若还留着
   // `options.X ?? 字面量`,就等于默认值又有了第二个来源,而类型系统不会报。
+  // 三个源文件各自一条:一处残留不该掩盖另两处的同类问题
   for (const relPath of ["src/core/docx/render.ts", "src/core/pdf/render.ts", "src/core/convert.ts"]) {
-    const src = fs.readFileSync(path.join(ROOT, relPath), "utf8");
-    // 去掉注释行再看:注释里允许讨论默认值(它们解释的正是这个约定)
-    const code = src
-      .split(/\r?\n/)
-      .filter((line) => !line.trimStart().startsWith("//") && !line.trimStart().startsWith("*") && !line.trimStart().startsWith("/*"))
-      .join("\n");
-    for (const opt of [
-      "breakBeforeH1",
-      "headingNumbering",
-      "captionNumbering",
-      "equationNumbering",
-      "tocMode",
-      "headerFooter",
-      "watermark",
-    ]) {
+    await suite.case(`6. ${relPath} 不再自带默认值字面量`, () => {
+      const src = fs.readFileSync(path.join(ROOT, relPath), "utf8");
+      // 去掉注释行再看:注释里允许讨论默认值(它们解释的正是这个约定)
+      const code = src
+        .split(/\r?\n/)
+        .filter((line) => !line.trimStart().startsWith("//") && !line.trimStart().startsWith("*") && !line.trimStart().startsWith("/*"))
+        .join("\n");
+      for (const opt of [
+        "breakBeforeH1",
+        "headingNumbering",
+        "captionNumbering",
+        "equationNumbering",
+        "tocMode",
+        "headerFooter",
+        "watermark",
+      ]) {
+        assert(
+          !new RegExp(`options\\.${opt}\\s*\\?\\?`).test(code),
+          `${relPath} 仍出现 options.${opt} ?? ... —— 默认值解析应统一走 resolveRenderSwitches/resolveHeaderFooter/resolveTocMode`,
+        );
+      }
+      // 显式解构后的本地变量( switches.toc 等)不算,只拦「直接读 options 再兜默认」
       assert(
-        !new RegExp(`options\\.${opt}\\s*\\?\\?`).test(code),
-        `${relPath} 仍出现 options.${opt} ?? ... —— 默认值解析应统一走 resolveRenderSwitches/resolveHeaderFooter/resolveTocMode`,
+        !/context\.(headerFooter|watermark|tocMode)\s*\?\?/.test(code),
+        `${relPath} 仍出现 context.X ?? ... —— convert 层的默认补全也应走 render-options 单源`,
       );
-    }
-    // 显式解构后的本地变量( switches.toc 等)不算,只拦「直接读 options 再兜默认」
-    assert(
-      !/context\.(headerFooter|watermark|tocMode)\s*\?\?/.test(code),
-      `${relPath} 仍出现 context.X ?? ... —— convert 层的默认补全也应走 render-options 单源`,
-    );
+    });
   }
 
   // ---- 7. 产物级:两侧在「不传任何开关」时产出的形态一致(证明默认值真的一致) ----
@@ -204,24 +228,37 @@ export async function run() {
   // (裸扫只有部件名可见 —— 那正是 docx-utils.zipContains 唯一能判的事)
   const docxXml = await unzipPart(docx.buffer, "word/document.xml");
   // breakBeforeH1 缺省 false → 两侧都不分页;toc 缺省 true → 两侧都出目录
-  assert(!docxXml.includes("<w:pageBreakBefore/>"), "docx 缺省不应有 h1 前分页");
-  assert(!pdf.html.includes("h1 { break-before: page; }"), "PDF 缺省不应有 h1 前分页");
-  assert(docxXml.includes('w:dirty="false"'), "docx 缺省 toc=true 应出静态目录(dirty=false)");
-  assert(pdf.html.includes('<li class="toc-l1">'), "PDF 缺省 toc=true 应出目录");
+  await suite.case("7. breakBeforeH1 缺省 false:两侧都不分页", () => {
+    assert(!docxXml.includes("<w:pageBreakBefore/>"), "docx 缺省不应有 h1 前分页");
+    assert(!pdf.html.includes("h1 { break-before: page; }"), "PDF 缺省不应有 h1 前分页");
+  });
+  await suite.case("7. toc 缺省 true:两侧都出目录", () => {
+    assert(docxXml.includes('w:dirty="false"'), "docx 缺省 toc=true 应出静态目录(dirty=false)");
+    assert(pdf.html.includes('<li class="toc-l1">'), "PDF 缺省 toc=true 应出目录");
+  });
   // equationNumbering 缺省 true → 两侧都编号
-  assert(docxXml.includes("<m:oMath"), "docx 缺省应输出公式 MathML");
-  assert(pdf.html.includes('class="eq-num"'), "PDF 缺省应输出公式编号");
+  await suite.case("7. equationNumbering 缺省 true:两侧都输出公式/编号", () => {
+    assert(docxXml.includes("<m:oMath"), "docx 缺省应输出公式 MathML");
+    assert(pdf.html.includes('class="eq-num"'), "PDF 缺省应输出公式编号");
+  });
   // watermark 缺省 text 空 → 两侧都零渲染
-  assert(!docxXml.includes("wps:wsp"), "docx 缺省水印应零渲染");
-  assert(!pdf.html.includes('class="wm"'), "PDF 缺省水印应零渲染");
+  await suite.case("7. watermark 缺省 text 空:两侧都零渲染", () => {
+    assert(!docxXml.includes("wps:wsp"), "docx 缺省水印应零渲染");
+    assert(!pdf.html.includes('class="wm"'), "PDF 缺省水印应零渲染");
+  });
   // headerFooter 缺省 default + 有标题 → 两侧都出「文档标题」页眉(6-B3 统一后的形态)
   const headerXml = await unzipPart(docx.buffer, "word/header1.xml");
-  assert(headerXml.includes("标题"), "docx 缺省页眉应含文档标题");
-  assert(headerXml.includes('<w:jc w:val="center"/>'), "docx 缺省页眉应居中");
-  assert(pdf.headerTemplate.includes("标题"), "PDF 缺省页眉应含文档标题(与 docx 同口径)");
-  assert(pdf.footerTemplate.includes("pageNumber"), "PDF 缺省应有页码页脚");
+  await suite.case("7. headerFooter 缺省:两侧都出「文档标题」页眉", () => {
+    assert(headerXml.includes("标题"), "docx 缺省页眉应含文档标题");
+    assert(headerXml.includes('<w:jc w:val="center"/>'), "docx 缺省页眉应居中");
+    assert(pdf.headerTemplate.includes("标题"), "PDF 缺省页眉应含文档标题(与 docx 同口径)");
+  });
+  await suite.case("7. footerEnabled 缺省:PDF 缺省应有页码页脚", () => {
+    assert(pdf.footerTemplate.includes("pageNumber"), "PDF 缺省应有页码页脚");
+  });
 
   console.log(
     "[ok] render-defaults:8 个共有开关 + 页眉页脚 + 目录模式逐键默认值断言通过,两侧渲染层无自带默认值字面量",
   );
+  return { cases: suite.results };
 }

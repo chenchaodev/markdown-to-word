@@ -17,6 +17,7 @@ import { PDFDocument } from "pdf-lib";
 import { htmlToPdf } from "../harness/pdf-utils.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf, HOST_FS } from "../harness/convert-helpers.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const fileA = `# 第一章 A
 
@@ -69,6 +70,9 @@ export async function run() {
     { content: fileA, baseDir: FIXTURES_DIR },
     { content: fileB, baseDir: FIXTURES_DIR },
   ]);
+  const suite = createCaseSuite();
+  // 分页符校验是「跨文件页码」那条判定的前提,留在 case 外:
+  // 前提不成立时报「页码顺序错误」会把真因(合并没插分页)盖掉
   if (!mergedMd.includes("page-break")) {
     throw new Error("合并总目录 断言失败:合并未插入文件间分页符(跨文件页码断言前提)");
   }
@@ -76,9 +80,14 @@ export async function run() {
   // docx:合并产物含总目录且覆盖两个文件全部标题
   const docx = await convertWithFs(mergedMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], toc: true });
   const docXml = await unzipPart(docxBufferOf(docx), "word/document.xml");
-  if (!docXml.includes("TOC")) throw new Error("合并总目录 断言失败:合并 docx 缺少 TOC 指令");
+  await suite.case("合并 docx 含 TOC 指令", () => {
+    if (!docXml.includes("TOC")) throw new Error("合并总目录 断言失败:合并 docx 缺少 TOC 指令");
+  });
+  // 标题逐条一个 case:某一标题没进总目录不该掩盖其余七条
   for (const t of ALL_TITLES) {
-    if (!docXml.includes(t)) throw new Error(`合并总目录 断言失败:合并 docx 总目录/正文缺少标题「${t}」`);
+    await suite.case(`合并 docx 总目录覆盖标题「${t}」`, () => {
+      if (!docXml.includes(t)) throw new Error(`合并总目录 断言失败:合并 docx 总目录/正文缺少标题「${t}」`);
+    });
   }
   console.log("[ok] 合并 docx 总目录覆盖全部源文件标题(A+B 共 8) 断言通过");
 
@@ -92,9 +101,13 @@ export async function run() {
       tocMode: "field",
     }),
   );
-  if (!pdfArt.html.includes('class="toc"')) throw new Error("合并总目录 断言失败:合并 pdf 缺少总目录");
+  await suite.case("合并 pdf 含总目录", () => {
+    if (!pdfArt.html.includes('class="toc"')) throw new Error("合并总目录 断言失败:合并 pdf 缺少总目录");
+  });
   for (const t of ALL_TITLES) {
-    if (!pdfArt.html.includes(t)) throw new Error(`合并总目录 断言失败:合并 pdf 总目录/正文缺少标题「${t}」`);
+    await suite.case(`合并 pdf 总目录覆盖标题「${t}」`, () => {
+      if (!pdfArt.html.includes(t)) throw new Error(`合并总目录 断言失败:合并 pdf 总目录/正文缺少标题「${t}」`);
+    });
   }
   console.log("[ok] 合并 pdf 总目录覆盖全部源文件标题(A+B 共 8) 断言通过");
 
@@ -109,48 +122,67 @@ export async function run() {
     )
   );
   // 文档顺序标题 → 页码,校验单调非降
+  // ordered 取数备在 case 外:pageOf 助手按它查页码,拆进 case 就得在 case 里重算
   const ordered = headings.map((h) => ({ text: h.text, page: pageNumbers[h.id] }));
-  let prev = 0;
+  // 逐条判页码非空
   for (const o of ordered) {
-    if (o.page == null) throw new Error(`合并总目录 断言失败:合并标题「${o.text}」未解析到页码`);
-    if (o.page < prev) throw new Error("合并总目录 断言失败:合并页码未随文档顺序单调非降");
-    prev = o.page;
+    await suite.case(`合并标题「${o.text}」解析到页码`, () => {
+      if (o.page == null) throw new Error(`合并总目录 断言失败:合并标题「${o.text}」未解析到页码`);
+    });
   }
+  await suite.case("合并页码随文档顺序单调非降", () => {
+    let prev = 0;
+    for (const o of ordered) {
+      if (o.page == null) throw new Error(`合并总目录 断言失败:合并标题「${o.text}」未解析到页码`);
+      if (o.page < prev) throw new Error("合并总目录 断言失败:合并页码未随文档顺序单调非降");
+      prev = o.page;
+    }
+  });
   // 跨文件:B 文件首个标题页码应严格大于 A 文件末个标题页码(page-break 起新页)
+  // pageOf 自身抛错即「该标题没解析到页码」,取数性质,留在 case 外
   const aPages = A_TITLES.map((t) => pageOf(ordered, t));
   const bPages = B_TITLES.map((t) => pageOf(ordered, t));
   const maxA = Math.max(...aPages);
   const minB = Math.min(...bPages);
-  if (!(minB > maxA)) {
-    throw new Error(`合并总目录 断言失败:跨文件页码顺序错误(A 最大页 ${maxA} 应 < B 最小页 ${minB})`);
-  }
+  await suite.case("跨文件页码顺序正确(B 最小页 > A 最大页)", () => {
+    if (!(minB > maxA)) {
+      throw new Error(`合并总目录 断言失败:跨文件页码顺序错误(A 最大页 ${maxA} 应 < B 最小页 ${minB})`);
+    }
+  });
   const injected = injectTocPageNumbers(pdfArt.html, pageNumbers);
-  if (!injected.includes('<span class="toc-page">')) {
-    throw new Error("合并总目录 断言失败:合并页码未注入 .toc-page");
-  }
+  await suite.case("合并页码已注入 .toc-page", () => {
+    if (!injected.includes('<span class="toc-page">')) {
+      throw new Error("合并总目录 断言失败:合并页码未注入 .toc-page");
+    }
+  });
   console.log("[ok] 合并 PDF 跨文件页码准确(A<B)且已注入 断言通过");
 
   // 结构化目录数据:与合并后 HTML 同一次渲染产出,覆盖 A+B 全部 8 个标题、id 跨文件唯一
-  {
-    const { html: structuredHtml, headings } = await renderPdfDocument(mergedMd, {
-      baseDir: FIXTURES_DIR,
-      title: "合并样例",
-      toc: true,
-      fs: HOST_FS,
-    });
-    if (JSON.stringify(headings.map((h) => h.text)) !== JSON.stringify(ALL_TITLES)) {
+  const { html: structuredHtml, headings: structuredHeadings } = await renderPdfDocument(mergedMd, {
+    baseDir: FIXTURES_DIR,
+    title: "合并样例",
+    toc: true,
+    fs: HOST_FS,
+  });
+  await suite.case("合并结构化标题序列与 A+B 标题一致", () => {
+    if (JSON.stringify(structuredHeadings.map((h) => h.text)) !== JSON.stringify(ALL_TITLES)) {
       throw new Error(
-        `合并总目录 断言失败:合并结构化标题序列异常,texts=${JSON.stringify(headings.map((h) => h.text))}`,
+        `合并总目录 断言失败:合并结构化标题序列异常,texts=${JSON.stringify(structuredHeadings.map((h) => h.text))}`,
       );
     }
-    const ids = headings.map((h) => h.id);
+  });
+  await suite.case("合并结构化标题 id 跨文件唯一", () => {
+    const ids = structuredHeadings.map((h) => h.id);
     if (new Set(ids).size !== ALL_TITLES.length) {
       throw new Error(`合并总目录 断言失败:合并结构化标题 id 应跨文件唯一,ids=${JSON.stringify(ids)}`);
     }
-    // 与旧兼容层逐字一致(渐进替换不改行为)
-    if (JSON.stringify(extractHeadings(structuredHtml)) !== JSON.stringify(headings)) {
+  });
+  // 与旧兼容层逐字一致(渐进替换不改行为)
+  await suite.case("合并结构化标题与兼容层提取一致", () => {
+    if (JSON.stringify(extractHeadings(structuredHtml)) !== JSON.stringify(structuredHeadings)) {
       throw new Error("合并总目录 断言失败:合并结构化标题与兼容层提取不一致");
     }
-    console.log("[ok] 合并 PDF 结构化目录数据(A+B 共 8 条、id 唯一、与兼容层一致)断言通过");
-  }
+  });
+  console.log("[ok] 合并 PDF 结构化目录数据(A+B 共 8 条、id 唯一、与兼容层一致)断言通过");
+  return { cases: suite.results };
 }

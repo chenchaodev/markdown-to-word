@@ -8,39 +8,53 @@
  */
 import iconv from "iconv-lite";
 import { decodeMarkdown } from "../../dist/core/text/encoding.js";
+import { createCaseSuite } from "../harness/case.js";
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
 export async function run() {
-  const utf8NoBom = decodeMarkdown(Buffer.from("中文正文 hello", "utf8"));
-  if (utf8NoBom.encoding !== "utf-8" || !utf8NoBom.text.includes("中文正文")) {
-    throw new Error("编码预检断言失败:无 BOM UTF-8 未正确解码/标记");
-  }
-  const utf8Bom = decodeMarkdown(
-    Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("中文正文", "utf8")]),
-  );
-  if (utf8Bom.encoding !== "utf-8" || utf8Bom.text.includes("\uFEFF")) {
-    throw new Error("编码预检断言失败:UTF-8 BOM 未剥离");
-  }
-  const utf16leBom = decodeMarkdown(
-    Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("中文正文", "utf16le")]),
-  );
-  if (utf16leBom.encoding !== "utf-16" || !utf16leBom.text.includes("中文正文")) {
-    throw new Error("编码预检断言失败:UTF-16LE BOM 未正确解码/标记(utf-16)");
-  }
-  // UTF-16 BE(FE FF)此前不识别 → gb18030 乱码;现按 utf16-be 解码
-  // (iconv encode 可能自带 BOM,拼接后即便双 BOM 也只影响首字符前的 U+FEFF)
-  const utf16beBom = decodeMarkdown(
-    Buffer.concat([Buffer.from([0xfe, 0xff]), iconv.encode("中文正文", "utf16-be")]),
-  );
-  if (utf16beBom.encoding !== "utf-16" || !utf16beBom.text.includes("中文正文")) {
-    throw new Error("编码预检断言失败:UTF-16BE BOM 未正确解码/标记(utf-16be)");
-  }
-  const gbkBuf = iconv.encode("GBK 中文正文 hello", "gbk");
-  const gbk = decodeMarkdown(gbkBuf);
-  if (gbk.encoding !== "gbk" || !gbk.text.includes("中文正文")) {
-    throw new Error("编码预检断言失败:GBK 文件未按 gb18030 解码/标记");
-  }
+  const suite = createCaseSuite();
+  // 各编码分支互不依赖,逐条一个 case:一种 BOM 判红不该掩盖其余三种的同类问题
+  await suite.case("无 BOM UTF-8 解码与标记", () => {
+    const utf8NoBom = decodeMarkdown(Buffer.from("中文正文 hello", "utf8"));
+    if (utf8NoBom.encoding !== "utf-8" || !utf8NoBom.text.includes("中文正文")) {
+      throw new Error("编码预检断言失败:无 BOM UTF-8 未正确解码/标记");
+    }
+  });
+  await suite.case("UTF-8 BOM 剥离", () => {
+    const utf8Bom = decodeMarkdown(
+      Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from("中文正文", "utf8")]),
+    );
+    if (utf8Bom.encoding !== "utf-8" || utf8Bom.text.includes("\uFEFF")) {
+      throw new Error("编码预检断言失败:UTF-8 BOM 未剥离");
+    }
+  });
+  await suite.case("UTF-16LE BOM 解码与标记", () => {
+    const utf16leBom = decodeMarkdown(
+      Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("中文正文", "utf16le")]),
+    );
+    if (utf16leBom.encoding !== "utf-16" || !utf16leBom.text.includes("中文正文")) {
+      throw new Error("编码预检断言失败:UTF-16LE BOM 未正确解码/标记(utf-16)");
+    }
+  });
+  await suite.case("UTF-16BE BOM 解码与标记", () => {
+    // UTF-16 BE(FE FF)此前不识别 → gb18030 乱码;现按 utf16-be 解码
+    // (iconv encode 可能自带 BOM,拼接后即便双 BOM 也只影响首字符前的 U+FEFF)
+    const utf16beBom = decodeMarkdown(
+      Buffer.concat([Buffer.from([0xfe, 0xff]), iconv.encode("中文正文", "utf16-be")]),
+    );
+    if (utf16beBom.encoding !== "utf-16" || !utf16beBom.text.includes("中文正文")) {
+      throw new Error("编码预检断言失败:UTF-16BE BOM 未正确解码/标记(utf-16be)");
+    }
+  });
+  await suite.case("GBK 按 gb18030 解码与标记", () => {
+    const gbkBuf = iconv.encode("GBK 中文正文 hello", "gbk");
+    const gbk = decodeMarkdown(gbkBuf);
+    if (gbk.encoding !== "gbk" || !gbk.text.includes("中文正文")) {
+      throw new Error("编码预检断言失败:GBK 文件未按 gb18030 解码/标记");
+    }
+  });
   console.log("[ok] 编码预检:UTF-8(无 BOM/带 BOM)/UTF-16LE/UTF-16BE/GBK 解码与标记全部正确");
+  return { cases: suite.results };
 }

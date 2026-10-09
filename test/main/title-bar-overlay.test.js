@@ -20,6 +20,7 @@ import {
   TITLE_BAR_OVERLAY_HEIGHT,
 } from "../../dist/main/windows/title-bar-overlay.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const { assert } = createAsserter("title-bar-overlay");
 
@@ -36,38 +37,50 @@ const asBrowserWindow = (win) => /** @type {import("electron").BrowserWindow} */
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
+
   // ---- 常量契约(与 docs/design/ui-mockup.html 视觉基准一致;改动须双侧同步) ----
-  assert(TITLE_BAR_OVERLAY_HEIGHT === 44, `height 应为 44,实际 ${TITLE_BAR_OVERLAY_HEIGHT}`);
-  assert(TITLE_BAR_OVERLAY_COLORS.light.color === "#F7F7F4", "light.color 漂移");
-  assert(TITLE_BAR_OVERLAY_COLORS.light.symbolColor === "#1E2126", "light.symbolColor 漂移");
-  assert(TITLE_BAR_OVERLAY_COLORS.dark.color === "#191D23", "dark.color 漂移");
-  assert(TITLE_BAR_OVERLAY_COLORS.dark.symbolColor === "#E9E7E1", "dark.symbolColor 漂移");
-  console.log("[ok] title-bar-overlay:overlay 色值/高度常量契约 断言通过");
+  await suite.case("overlay 色值/高度常量契约", () => {
+    assert(TITLE_BAR_OVERLAY_HEIGHT === 44, `height 应为 44,实际 ${TITLE_BAR_OVERLAY_HEIGHT}`);
+    assert(TITLE_BAR_OVERLAY_COLORS.light.color === "#F7F7F4", "light.color 漂移");
+    assert(TITLE_BAR_OVERLAY_COLORS.light.symbolColor === "#1E2126", "light.symbolColor 漂移");
+    assert(TITLE_BAR_OVERLAY_COLORS.dark.color === "#191D23", "dark.color 漂移");
+    assert(TITLE_BAR_OVERLAY_COLORS.dark.symbolColor === "#E9E7E1", "dark.symbolColor 漂移");
+    console.log("[ok] title-bar-overlay:overlay 色值/高度常量契约 断言通过");
+  });
 
   // ---- IPC 入参守卫 ----
-  for (const v of ["system", "light", "dark"]) {
-    assert(isThemePreference(v), `isThemePreference 应放行 "${v}"`);
-  }
-  for (const v of [null, undefined, 42, "auto", "", "Light"]) {
-    assert(!isThemePreference(v), `isThemePreference 应拒绝 ${JSON.stringify(v)}`);
-  }
-  console.log("[ok] title-bar-overlay:isThemePreference 入参守卫 断言通过");
+  await suite.case("isThemePreference 入参守卫", () => {
+    for (const v of ["system", "light", "dark"]) {
+      assert(isThemePreference(v), `isThemePreference 应放行 "${v}"`);
+    }
+    for (const v of [null, undefined, 42, "auto", "", "Light"]) {
+      assert(!isThemePreference(v), `isThemePreference 应拒绝 ${JSON.stringify(v)}`);
+    }
+    console.log("[ok] title-bar-overlay:isThemePreference 入参守卫 断言通过");
+  });
 
   // ---- 主题解析:显式透传 + system 按 nativeTheme 解析 ----
-  assert(resolveEffectiveTheme("light") === "light", "显式 light 应透传");
-  assert(resolveEffectiveTheme("dark") === "dark", "显式 dark 应透传");
-  // nativeTheme.shouldUseDarkMode 不在 Electron 的 NativeTheme 类型声明里
-  // (运行时存在,类型未收录):按该成员读取当前生效主题,供 system 解析断言比对。
-  const shouldUseDarkMode = /** @type {{ shouldUseDarkMode?: boolean }} */ (
-    /** @type {unknown} */ (nativeTheme)
-  ).shouldUseDarkMode;
-  const expected = shouldUseDarkMode ? "dark" : "light";
-  assert(resolveEffectiveTheme("system") === expected, "system 应解析为 nativeTheme 实际生效主题");
-  console.log("[ok] title-bar-overlay:resolveEffectiveTheme 主题解析 断言通过");
+  await suite.case("resolveEffectiveTheme 主题解析", () => {
+    assert(resolveEffectiveTheme("light") === "light", "显式 light 应透传");
+    assert(resolveEffectiveTheme("dark") === "dark", "显式 dark 应透传");
+    // nativeTheme.shouldUseDarkMode 不在 Electron 的 NativeTheme 类型声明里
+    // (运行时存在,类型未收录):按该成员读取当前生效主题,供 system 解析断言比对。
+    const shouldUseDarkMode = /** @type {{ shouldUseDarkMode?: boolean }} */ (
+      /** @type {unknown} */ (nativeTheme)
+    ).shouldUseDarkMode;
+    const expected = shouldUseDarkMode ? "dark" : "light";
+    assert(resolveEffectiveTheme("system") === expected, "system 应解析为 nativeTheme 实际生效主题");
+    console.log("[ok] title-bar-overlay:resolveEffectiveTheme 主题解析 断言通过");
+  });
 
   // ---- 空安全:不抛错即通过(setTitleBarOverlay 失败路径由警告留痕,不中断) ----
-  syncTitleBarOverlay(null, "dark");
-  const fakeDestroyed = asBrowserWindow({ isDestroyed: () => true });
-  syncTitleBarOverlay(fakeDestroyed, "light");
-  console.log("[ok] title-bar-overlay:syncTitleBarOverlay 空引用/已销毁安全 断言通过");
+  await suite.case("syncTitleBarOverlay 空引用/已销毁安全", () => {
+    syncTitleBarOverlay(null, "dark");
+    const fakeDestroyed = asBrowserWindow({ isDestroyed: () => true });
+    syncTitleBarOverlay(fakeDestroyed, "light");
+    console.log("[ok] title-bar-overlay:syncTitleBarOverlay 空引用/已销毁安全 断言通过");
+  });
+
+  return { cases: suite.results };
 }

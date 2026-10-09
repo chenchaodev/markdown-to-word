@@ -62,6 +62,7 @@ import { unzipPart } from "../harness/docx-utils.js";
 import { saveArtifact } from "../harness/artifacts.js";
 import { docxBufferOf, prepareForConvert } from "../harness/convert-helpers.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
+import { createCaseSuite } from "../harness/case.js";
 
 // 本段只断言公式结构与容器内降级的产物形态,不产出人工实测样例(公式常规渲染与
 // 列表/引用块常规排版分别由 segments/formula.test.js、segments/eq-numbering.test.js、
@@ -219,54 +220,61 @@ async function assertFormulaDegraded(mode, tex, sourceNeedle, label) {
 }
 
 export async function run() {
+  const suite = createCaseSuite();
   // ================= 第一部分:公式结构映射 =================
 
   // ---------- mroot:`\sqrt[3]{x}` → MathRadical(degree) ----------
   // 结构断言锁定 OOXML 序列化名(docx 9.7.1 实证):<m:rad><m:radPr/><m:deg>…</m:deg>
   // <m:e>…</m:e></m:rad>。次数/根值位置错位(如 degree 取反)会立即改写这两段文本。
   const root = await renderDocxXml("$$\n\\sqrt[3]{x}\n$$\n");
-  expectPresent(
-    root.xml,
-    [
-      "<m:oMath>",
-      "<m:rad>",
-      "<m:deg><m:r><m:t>3</m:t></m:r></m:deg>",
-      "<m:e><m:r><m:t>x</m:t></m:r></m:e>",
-      // display 公式走「居中公式 + 右对齐编号」排版:两个制表位 + 静态编号 (1)
-      'w:val="center"',
-      'w:val="right"',
-      "(1)",
-    ],
-    "mroot(三次根号)",
-  );
-  if (root.warns.length > 0) {
-    throw new Error(`docx 公式/容器降级断言失败:mroot 不应产生警告,实际 ${JSON.stringify(root.warns)}`);
-  }
+  await suite.case("mroot 三次根号 → <m:rad>+<m:deg>3</m:deg>+两个制表位+编号 (1),且零警告", () => {
+    expectPresent(
+      root.xml,
+      [
+        "<m:oMath>",
+        "<m:rad>",
+        "<m:deg><m:r><m:t>3</m:t></m:r></m:deg>",
+        "<m:e><m:r><m:t>x</m:t></m:r></m:e>",
+        // display 公式走「居中公式 + 右对齐编号」排版:两个制表位 + 静态编号 (1)
+        'w:val="center"',
+        'w:val="right"',
+        "(1)",
+      ],
+      "mroot(三次根号)",
+    );
+    if (root.warns.length > 0) {
+      throw new Error(`docx 公式/容器降级断言失败:mroot 不应产生警告,实际 ${JSON.stringify(root.warns)}`);
+    }
+  });
   console.log("[ok] docx 公式 mroot:\\sqrt[3]{x} → <m:rad> + <m:deg>3</m:deg> + 居中/右对齐制表位 + 编号 (1)");
 
   // ---------- mover / munder:`\overline{AB}` / `\underline{x}` ----------
   // MathLimitUpper → <m:limUpp>(<m:e> 基 + <m:lim> 上),MathLimitLower → <m:limLow>。
   // 两者与 msub/msup 走不同分支,错配会变成 <m:sSubSup>,故整体锁定标签与次序。
   const limits = await renderDocxXml("$\\overline{AB}$ 与 $\\underline{x}$。\n");
-  expectPresent(
-    limits.xml,
-    [
-      "<m:limUpp><m:e><m:r><m:t>A</m:t></m:r><m:r><m:t>B</m:t></m:r></m:e>" +
-        "<m:lim><m:r><m:t>‾</m:t></m:r></m:lim></m:limUpp>",
-      "<m:limLow><m:e><m:r><m:t>x</m:t></m:r></m:e>" +
-        "<m:lim><m:r><m:t>‾</m:t></m:r></m:lim></m:limLow>",
-    ],
-    "mover/munder(上下限)",
-  );
-  expectAbsent(limits.xml, ["<m:sSubSup>"], "mover/munder(不应退化成普通下标 msub/msup)");
+  await suite.case("mover/munder 上下限 → <m:limUpp>/<m:limLow>,不退回普通下标形态", () => {
+    expectPresent(
+      limits.xml,
+      [
+        "<m:limUpp><m:e><m:r><m:t>A</m:t></m:r><m:r><m:t>B</m:t></m:r></m:e>" +
+          "<m:lim><m:r><m:t>‾</m:t></m:r></m:lim></m:limUpp>",
+        "<m:limLow><m:e><m:r><m:t>x</m:t></m:r></m:e>" +
+          "<m:lim><m:r><m:t>‾</m:t></m:r></m:lim></m:limLow>",
+      ],
+      "mover/munder(上下限)",
+    );
+    expectAbsent(limits.xml, ["<m:sSubSup>"], "mover/munder(不应退化成普通下标 msub/msup)");
+  });
   console.log("[ok] docx 公式 mover/munder:\\overline{AB} → <m:limUpp>,\\underline{x} → <m:limLow>");
 
   // ---------- mspace / mtext:`\pmod{n}`(自闭合 mspace)、`\text{中文混排}` ----------
   // mspace 无文本贡献、直接跳过(不产生空 MathRun、不降级);mtext 为文本叶。
   // 断言「不降级」(无等宽灰字)+ 关键文本成文,锁住 mspace 分支不被误判为未覆盖节点。
   const spacing = await renderDocxXml("$\\pmod{n}$ 与 $\\text{中文混排}$。\n");
-  expectPresent(spacing.xml, ["<m:t>(</m:t>", "<m:t>n</m:t>", "<m:t>中文混排</m:t>"], "mspace/mtext");
-  expectAbsent(spacing.xml, [MONO_GRAY_COLOR, "<m:t>  </m:t>"], "mspace/mtext(不应降级且不吐空白 run)");
+  await suite.case("mspace/mtext → 括号与中文成文,不降级且不吐空白 run", () => {
+    expectPresent(spacing.xml, ["<m:t>(</m:t>", "<m:t>n</m:t>", "<m:t>中文混排</m:t>"], "mspace/mtext");
+    expectAbsent(spacing.xml, [MONO_GRAY_COLOR, "<m:t>  </m:t>"], "mspace/mtext(不应降级且不吐空白 run)");
+  });
   console.log("[ok] docx 公式 mspace(\\pmod{n} 自闭合标签跳过)/mtext(\\text 中文成文,不降级)");
 
   // ---------- displayMode 双路径:同一 TeX 在 display / 行内产出结构不同 ----------
@@ -279,47 +287,53 @@ export async function run() {
   //   munderoverToNary 的注释。此前传空数组 → <m:e/> 空基 + 被加数漏成兄弟
   //   run,WPS 整式显示方框 □,而只查 <m:nary> 查不出这个)
   const sumDisplay = await renderDocxXml("$$\n\\sum_{i=1}^{n} i\n$$\n");
-  expectPresent(
-    sumDisplay.xml,
-    [
-      "<m:nary>",
-      '<m:chr m:val="∑"/>',
-      // 上下限在 naryPr 之后依次为 <m:sub>/<m:sup>(上下方排布的 OOXML 形态),
-      // 末位是被加数槽 <m:e>:被加数 i 必须在 m:e 内,不能是 m:nary 的兄弟节点
-      '<m:naryPr><m:chr m:val="∑"/><m:limLoc m:val="undOvr"/></m:naryPr>' +
-        "<m:sub><m:r><m:t>i</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>1</m:t></m:r></m:sub>" +
-        "<m:sup><m:r><m:t>n</m:t></m:r></m:sup>" +
-        "<m:e><m:r><m:t>i</m:t></m:r></m:e></m:nary>",
-    ],
-    "display ∑ 结构(MathSum/<m:nary> + <m:e> 被加数)",
-  );
-  expectAbsent(
-    sumDisplay.xml,
-    ["<m:sSubSup>", "<m:e/>", "</m:nary><m:r>"],
-    "display ∑(不退回行内形态;<m:e> 不得为空;被加数不得漏成 m:nary 的兄弟 run)",
-  );
+  await suite.case("display ∑ → <m:nary> 上下方排布,<m:e> 装被加数(非行内形态/非空基)", () => {
+    expectPresent(
+      sumDisplay.xml,
+      [
+        "<m:nary>",
+        '<m:chr m:val="∑"/>',
+        // 上下限在 naryPr 之后依次为 <m:sub>/<m:sup>(上下方排布的 OOXML 形态),
+        // 末位是被加数槽 <m:e>:被加数 i 必须在 m:e 内,不能是 m:nary 的兄弟节点
+        '<m:naryPr><m:chr m:val="∑"/><m:limLoc m:val="undOvr"/></m:naryPr>' +
+          "<m:sub><m:r><m:t>i</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>1</m:t></m:r></m:sub>" +
+          "<m:sup><m:r><m:t>n</m:t></m:r></m:sup>" +
+          "<m:e><m:r><m:t>i</m:t></m:r></m:e></m:nary>",
+      ],
+      "display ∑ 结构(MathSum/<m:nary> + <m:e> 被加数)",
+    );
+    expectAbsent(
+      sumDisplay.xml,
+      ["<m:sSubSup>", "<m:e/>", "</m:nary><m:r>"],
+      "display ∑(不退回行内形态;<m:e> 不得为空;被加数不得漏成 m:nary 的兄弟 run)",
+    );
+  });
   console.log(
     "[ok] docx 公式 display ∑ → <m:nary>(<m:chr ∑> + limLoc undOvr + <m:sub>/<m:sup> + <m:e> 被加数 i),无 <m:e/>、无兄弟 run、无 <m:sSubSup>",
   );
 
   // ①b 只消费一个兄弟:`∑_{i=1}^{n} i = …` 的等号与分式必须仍留在 m:nary 之外
   const sumThenMore = await renderDocxXml("$$\n\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\n$$\n");
-  expectPresent(
-    sumThenMore.xml,
-    [
-      "<m:sup><m:r><m:t>n</m:t></m:r></m:sup><m:e><m:r><m:t>i</m:t></m:r></m:e></m:nary>" +
-        '<m:r><m:t>=</m:t></m:r><m:f>',
-    ],
-    "display ∑ 只把紧邻的一个兄弟当被加数,后续项留在 m:nary 外",
-  );
+  await suite.case("display ∑ 后接等式/分式:被加数只取紧邻一项,其余留作 <m:nary> 的兄弟", () => {
+    expectPresent(
+      sumThenMore.xml,
+      [
+        "<m:sup><m:r><m:t>n</m:t></m:r></m:sup><m:e><m:r><m:t>i</m:t></m:r></m:e></m:nary>" +
+          '<m:r><m:t>=</m:t></m:r><m:f>',
+      ],
+      "display ∑ 只把紧邻的一个兄弟当被加数,后续项留在 m:nary 外",
+    );
+  });
   console.log("[ok] docx 公式 display ∑ 后接等式/分式:被加数只取紧邻一项,其余留作兄弟");
 
   // ①c 无被加数(公式以 ∑ 结尾)→ 无法构造合法 <m:e>,整式降级而非留空基
-  await assertFormulaDegraded(
-    "display",
-    "\\sum_{i=1}^{n}",
-    "\\sum_{i=1}^{n}",
-    "display ∑ 无被加数降级(不产空 <m:e/>)",
+  await suite.case("display ∑ 无被加数 → 整式降级(不产空 <m:e/>)", () =>
+    assertFormulaDegraded(
+      "display",
+      "\\sum_{i=1}^{n}",
+      "\\sum_{i=1}^{n}",
+      "display ∑ 无被加数降级(不产空 <m:e/>)",
+    ),
   );
   console.log("[ok] docx 公式 display ∑ 无被加数 → 整式降级为 TeX 源码(不产空 <m:e/> 显示方框)");
 
@@ -327,53 +341,77 @@ export async function run() {
   //   (∑ 以 MathRun 文本进 base,上下限为兄弟节点)——行内形态保持不变
   //   (行内是 m:sSubSup 而非 m:nary,<m:e> 装的是运算符本身、非空,不受本轮修正影响)
   const sumInline = await renderDocxXml("行内 $\\sum_{i=1}^{n} i$。\n");
-  expectPresent(
-    sumInline.xml,
-    [
-      "<m:sSubSup><m:sSubSupPr/><m:e><m:r><m:t>∑</m:t></m:r></m:e>" +
-        "<m:sub><m:r><m:t>i</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>1</m:t></m:r></m:sub>" +
-        "<m:sup><m:r><m:t>n</m:t></m:r></m:sup></m:sSubSup>",
-    ],
-    "行内 ∑ 结构(MathSubSuperScript/<m:sSubSup>)",
-  );
-  expectAbsent(
-    sumInline.xml,
-    ["<m:nary"],
-    "行内 ∑(上下限在右侧,不应被改成 display 的 <m:nary>)",
-  );
+  await suite.case("行内 ∑ → <m:sSubSup>(∑ 进 base + 右侧上下限),不产出 <m:nary>", () => {
+    expectPresent(
+      sumInline.xml,
+      [
+        "<m:sSubSup><m:sSubSupPr/><m:e><m:r><m:t>∑</m:t></m:r></m:e>" +
+          "<m:sub><m:r><m:t>i</m:t></m:r><m:r><m:t>=</m:t></m:r><m:r><m:t>1</m:t></m:r></m:sub>" +
+          "<m:sup><m:r><m:t>n</m:t></m:r></m:sup></m:sSubSup>",
+      ],
+      "行内 ∑ 结构(MathSubSuperScript/<m:sSubSup>)",
+    );
+    expectAbsent(
+      sumInline.xml,
+      ["<m:nary"],
+      "行内 ∑(上下限在右侧,不应被改成 display 的 <m:nary>)",
+    );
+  });
   console.log("[ok] docx 公式行内 ∑ → <m:sSubSup>(∑ 进 base + <m:sub>/<m:sup>),无 <m:nary>");
 
   // ③ 第二组判别式 \lim:display 侧 <munder> → MathLimitLower(<m:limLow>);
   //   行内侧 <msub> → MathSubScript(<m:sSub>)。排除「只对 ∑ 特判」的实现。
   const limDisplay = await renderDocxXml("$$\n\\lim_{x \\to 0} f(x)\n$$\n");
-  expectPresent(limDisplay.xml, ["<m:limLow>", "<m:lim><m:r><m:t>x</m:t></m:r>"], "display \\lim 结构");
-  expectAbsent(limDisplay.xml, ["<m:sSub>"], "display \\lim(应为 <m:limLow>,不应退化成行内 <m:sSub>)");
+  await suite.case("display \\lim → <m:limLow>(不退回行内 <m:sSub>)", () => {
+    expectPresent(limDisplay.xml, ["<m:limLow>", "<m:lim><m:r><m:t>x</m:t></m:r>"], "display \\lim 结构");
+    expectAbsent(limDisplay.xml, ["<m:sSub>"], "display \\lim(应为 <m:limLow>,不应退化成行内 <m:sSub>)");
+  });
   const limInline = await renderDocxXml("行内 $\\lim_{x \\to 0} f(x)$。\n");
-  expectPresent(limInline.xml, ["<m:sSub><m:sSubPr/>"], "行内 \\lim 结构");
-  expectAbsent(limInline.xml, ["<m:limLow>"], "行内 \\lim(应为 <m:sSub>,不应被改成 display 的 <m:limLow>)");
+  await suite.case("行内 \\lim → <m:sSub>(不被改成 display 的 <m:limLow>)", () => {
+    expectPresent(limInline.xml, ["<m:sSub><m:sSubPr/>"], "行内 \\lim 结构");
+    expectAbsent(limInline.xml, ["<m:limLow>"], "行内 \\lim(应为 <m:sSub>,不应被改成 display 的 <m:limLow>)");
+  });
   console.log("[ok] docx 公式 \\lim:display → <m:limLow>,行内 → <m:sSub>(非 ∑ 路径同样按 displayMode 分流)");
 
   // ---------- 未覆盖节点 → 整式降级(mtable / menclose / mstyle / mphantom) ----------
   // 逐个单式文档:断言「无 m:oMath」才说明整式降级(同文档混多式会互相干扰)。
-  await assertFormulaDegraded("display", "\\begin{matrix}a & b\\\\c & d\\end{matrix}", "\\begin{matrix}", "mtable 降级");
-  await assertFormulaDegraded("inline", "\\cancel{x}", "\\cancel{x}", "menclose 降级");
-  await assertFormulaDegraded("inline", "\\displaystyle x", "\\displaystyle x", "mstyle 降级");
-  await assertFormulaDegraded("inline", "\\phantom{x}", "\\phantom{x}", "mphantom 降级");
+  await suite.case("未覆盖节点 mtable → 整式降级", () =>
+    assertFormulaDegraded("display", "\\begin{matrix}a & b\\\\c & d\\end{matrix}", "\\begin{matrix}", "mtable 降级"),
+  );
+  await suite.case("未覆盖节点 menclose → 整式降级", () =>
+    assertFormulaDegraded("inline", "\\cancel{x}", "\\cancel{x}", "menclose 降级"),
+  );
+  await suite.case("未覆盖节点 mstyle → 整式降级", () =>
+    assertFormulaDegraded("inline", "\\displaystyle x", "\\displaystyle x", "mstyle 降级"),
+  );
+  await suite.case("未覆盖节点 mphantom → 整式降级", () =>
+    assertFormulaDegraded("inline", "\\phantom{x}", "\\phantom{x}", "mphantom 降级"),
+  );
   console.log("[ok] docx 公式未覆盖节点(mtable/menclose/mstyle/mphantom)→ 整式降级为 TeX 源码等宽灰字 + 警告");
 
   // ---------- 不可信 TeX → 提前拦截降级,且外部引用不进产物 ----------
   // 依据(handlers/math.ts 头注 + resource-limits.ts):KaTeX trust=false 只把
   // \href/\includegraphics 渲染成红色 mstyle,不进 katex-error 通道;渲染层因此在
   // 交给 KaTeX 前用单源 hasUntrustedTexCommand 拦下,使双管线降级形态一致。
-  await assertFormulaDegraded("inline", "\\href{http://example.com/a}{y}", "\\href{http://example.com/a}{y}", "href 拦截");
-  await assertFormulaDegraded("display", "\\includegraphics{logo.png}", "\\includegraphics{logo.png}", "includegraphics 拦截");
+  await suite.case("不可信 TeX \\href → 提前拦截整式降级", () =>
+    assertFormulaDegraded("inline", "\\href{http://example.com/a}{y}", "\\href{http://example.com/a}{y}", "href 拦截"),
+  );
+  await suite.case("不可信 TeX \\includegraphics → 提前拦截整式降级", () =>
+    assertFormulaDegraded("display", "\\includegraphics{logo.png}", "\\includegraphics{logo.png}", "includegraphics 拦截"),
+  );
   const untrusted = await renderDocxXml("$\\href{http://example.com/a}{y}$\n");
-  expectAbsent(untrusted.xml, ["<w:hyperlink"], "不可信 TeX 不得产出超链接");
+  await suite.case("不可信 TeX 的外部引用不进产物(无 w:hyperlink)", () => {
+    expectAbsent(untrusted.xml, ["<w:hyperlink"], "不可信 TeX 不得产出超链接");
+  });
   console.log("[ok] docx 公式不可信 TeX(\\href/\\includegraphics)→ 拦截降级 + 外部引用不进产物(无 w:hyperlink)");
 
   // ---------- katex-error(throwOnError:false 的解析失败产物)→ 整式降级 ----------
-  await assertFormulaDegraded("inline", "\\frac{1}{", "\\frac{1}{", "katex-error 行内降级");
-  await assertFormulaDegraded("display", "\\frac{1}{", "\\frac{1}{", "katex-error display 降级");
+  await suite.case("katex-error 行内未闭合分组 → 整式降级", () =>
+    assertFormulaDegraded("inline", "\\frac{1}{", "\\frac{1}{", "katex-error 行内降级"),
+  );
+  await suite.case("katex-error display 未闭合分组 → 整式降级", () =>
+    assertFormulaDegraded("display", "\\frac{1}{", "\\frac{1}{", "katex-error display 降级"),
+  );
   console.log("[ok] docx 公式解析失败(katex-error)行内/display 双路径均整式降级 + 警告");
 
   // ================= 第二部分:容器内块级内容 =================
@@ -384,53 +422,59 @@ export async function run() {
   // 本组断言钉「真的成公式」:<m:oMath> + <m:f> 分子分母齐全,且 TeX 源码
   // (`\frac{1}{2}`)不得以任何形态出现在产物里(此前走的正是这条降级文本路径)。
   const listMath = await renderDocxXml("- 列表项公式\n\n  $$\n  \\frac{1}{2}\n  $$\n");
-  expectPresent(
-    listMath.xml,
-    [
-      "<m:oMath>",
-      "<m:f><m:num><m:r><m:t>1</m:t></m:r></m:num>" +
-        "<m:den><m:r><m:t>2</m:t></m:r></m:den></m:f>",
-      // 居中排版(与顶层无编号 display 公式、pdf 侧 .katex-display 同一语义)
-      '<w:jc w:val="center"/>',
-    ],
-    "列表内公式渲染为 Office MathML 分式",
-  );
-  expectAbsent(
-    listMath.xml,
-    ["\\frac{1}{2}", MONO_GRAY_FONT, MONO_GRAY_COLOR],
-    "列表内公式不得退化为 TeX 源码文本",
-  );
-  expectNoWarning(listMath.warns, UNSUPPORTED_IN_CONTAINER, "列表内公式正常渲染不应报「暂不支持」");
+  await suite.case("列表内 display 公式 → <m:oMath><m:f> 分式(不退化为 TeX 源码、不报暂不支持)", () => {
+    expectPresent(
+      listMath.xml,
+      [
+        "<m:oMath>",
+        "<m:f><m:num><m:r><m:t>1</m:t></m:r></m:num>" +
+          "<m:den><m:r><m:t>2</m:t></m:r></m:den></m:f>",
+        // 居中排版(与顶层无编号 display 公式、pdf 侧 .katex-display 同一语义)
+        '<w:jc w:val="center"/>',
+      ],
+      "列表内公式渲染为 Office MathML 分式",
+    );
+    expectAbsent(
+      listMath.xml,
+      ["\\frac{1}{2}", MONO_GRAY_FONT, MONO_GRAY_COLOR],
+      "列表内公式不得退化为 TeX 源码文本",
+    );
+    expectNoWarning(listMath.warns, UNSUPPORTED_IN_CONTAINER, "列表内公式正常渲染不应报「暂不支持」");
+  });
   // 公式必须自带列表内容栏的缩进:它不挂 numbering,拿不到编号定义里的 indent,
   // 不自带则 jc=center 按整页文本宽居中、公式飘到列表栏之外。列表文字的缩进在
   // numbering.xml 里(不在 document.xml),故此处命中即公式段落自身。
-  expectPresent(
-    listMath.xml,
-    ['<w:ind w:left="720"/>', 'w:jc w:val="center"'],
-    "列表内公式缩进对齐列表内容栏(与编号定义同源)",
-  );
+  await suite.case("列表内公式缩进对齐列表内容栏(与编号定义同源)", () => {
+    expectPresent(
+      listMath.xml,
+      ['<w:ind w:left="720"/>', 'w:jc w:val="center"'],
+      "列表内公式缩进对齐列表内容栏(与编号定义同源)",
+    );
+  });
   console.log("[ok] docx 列表项内 display 公式 → <m:oMath><m:f>(分子 1 / 分母 2),无 TeX 源码文本、无降级警告,缩进对齐列表栏");
 
   const quoteMath = await renderDocxXml("> $$\n> \\frac{1}{2}\n> $$\n");
-  expectPresent(
-    quoteMath.xml,
-    [
-      "<m:oMath>",
-      "<m:f><m:num><m:r><m:t>1</m:t></m:r></m:num>" +
-        "<m:den><m:r><m:t>2</m:t></m:r></m:den></m:f>",
-      // 沿用引用段落装饰(与同块普通段落同一份 QUOTE_PARAGRAPH_PROPS)
-      'w:fill="F2F2F2"',
-      'w:ind w:left="720"',
-      '<w:jc w:val="center"/>',
-    ],
-    "引用块内公式渲染为 Office MathML 分式",
-  );
-  expectAbsent(
-    quoteMath.xml,
-    ["\\frac{1}{2}", MONO_GRAY_FONT, MONO_GRAY_COLOR],
-    "引用块内公式不得退化为 TeX 源码文本",
-  );
-  expectNoWarning(quoteMath.warns, UNSUPPORTED_IN_CONTAINER, "引用块内公式正常渲染不应报「暂不支持」");
+  await suite.case("引用块内 display 公式 → <m:oMath><m:f> + 引用底纹/缩进,不报暂不支持", () => {
+    expectPresent(
+      quoteMath.xml,
+      [
+        "<m:oMath>",
+        "<m:f><m:num><m:r><m:t>1</m:t></m:r></m:num>" +
+          "<m:den><m:r><m:t>2</m:t></m:r></m:den></m:f>",
+        // 沿用引用段落装饰(与同块普通段落同一份 QUOTE_PARAGRAPH_PROPS)
+        'w:fill="F2F2F2"',
+        'w:ind w:left="720"',
+        '<w:jc w:val="center"/>',
+      ],
+      "引用块内公式渲染为 Office MathML 分式",
+    );
+    expectAbsent(
+      quoteMath.xml,
+      ["\\frac{1}{2}", MONO_GRAY_FONT, MONO_GRAY_COLOR],
+      "引用块内公式不得退化为 TeX 源码文本",
+    );
+    expectNoWarning(quoteMath.warns, UNSUPPORTED_IN_CONTAINER, "引用块内公式正常渲染不应报「暂不支持」");
+  });
   console.log("[ok] docx 引用块内 display 公式 → <m:oMath><m:f> + 引用段落底纹/缩进,无 TeX 源码文本");
 
   // ---------- 容器内公式 displayMode 仍为 true(不随容器降级为行内) ----------
@@ -438,12 +482,14 @@ export async function run() {
   // 容器内 \sum_{i=1}^{n} 的大运算符上下限排在上下方(<m:nary> + limLoc undOvr),
   // 与行内同 TeX 的 <m:sSubSup> 形态不同。若被误传 displayMode=false 即变红。
   const listSum = await renderDocxXml("- 列表内求和\n\n  $$\n  \\sum_{i=1}^{n} i\n  $$\n");
-  expectPresent(
-    listSum.xml,
-    ["<m:nary>", '<m:chr m:val="∑"/>', '<m:limLoc m:val="undOvr"/>'],
-    "容器内公式 displayMode=true(∑ 走 <m:nary> 上下方排布)",
-  );
-  expectAbsent(listSum.xml, ["<m:sSubSup>"], "容器内 display 公式不应走行内 <m:sSubSup> 形态");
+  await suite.case("容器内 display 公式 displayMode 仍为 true(<m:nary> 上下方,非行内 <m:sSubSup>)", () => {
+    expectPresent(
+      listSum.xml,
+      ["<m:nary>", '<m:chr m:val="∑"/>', '<m:limLoc m:val="undOvr"/>'],
+      "容器内公式 displayMode=true(∑ 走 <m:nary> 上下方排布)",
+    );
+    expectAbsent(listSum.xml, ["<m:sSubSup>"], "容器内 display 公式不应走行内 <m:sSubSup> 形态");
+  });
   console.log("[ok] docx 容器内 display 公式 displayMode 仍为 true(<m:nary> + limLoc undOvr,无 <m:sSubSup>)");
 
   // ---------- 容器内公式不编号(编号仅顶层;pdf 侧同一契约) ----------
@@ -453,17 +499,21 @@ export async function run() {
   // 避免被同列表项正文段自身的编号干扰。
   const containerOnly = await renderDocxXml("- 列表项公式\n\n  $$\n  \\frac{1}{2}\n  $$\n");
   const formulaPara = paragraphContaining(containerOnly.xml, "<m:oMath>");
-  expectAbsent(
-    formulaPara,
-    ["<w:tabs>", "(1)", "<w:numPr>"],
-    "容器内公式段不编号(无制表位/无编号文本/不挂列表编号)",
-  );
-  expectPresent(formulaPara, ['<w:jc w:val="center"/>'], "容器内公式段居中");
+  await suite.case("容器内公式段不编号(无制表位/无编号文本/不挂列表编号)但仍居中", () => {
+    expectAbsent(
+      formulaPara,
+      ["<w:tabs>", "(1)", "<w:numPr>"],
+      "容器内公式段不编号(无制表位/无编号文本/不挂列表编号)",
+    );
+    expectPresent(formulaPara, ['<w:jc w:val="center"/>'], "容器内公式段居中");
+  });
   const mixedNumbering = await renderDocxXml(
     "顶层公式:\n\n$$\n\\frac{1}{2}\n$$\n\n- 列表项公式\n\n  $$\n  \\frac{3}{4}\n  $$\n",
   );
-  expectCount(mixedNumbering.xml, "(1)", 1, "顶层公式仍编号 (1),容器内公式不占号");
-  expectAbsent(mixedNumbering.xml, ["(2)"], "容器内公式不占第二个编号");
+  await suite.case("同文档顶层公式仍编号 (1),容器内公式不占号", () => {
+    expectCount(mixedNumbering.xml, "(1)", 1, "顶层公式仍编号 (1),容器内公式不占号");
+    expectAbsent(mixedNumbering.xml, ["(2)"], "容器内公式不占第二个编号");
+  });
   console.log("[ok] docx 容器内公式不编号(公式段无 <w:tabs>/无编号文本/不挂 <w:numPr>;同文档顶层公式仍为 (1))");
 
   // ---------- 容器内公式的解析失败兜底仍保留(与「容器支不支持」是两回事) ----------
@@ -473,80 +523,96 @@ export async function run() {
   const listDegrade = await renderDocxXml(
     "- 列表内未覆盖节点\n\n  $$\n  \\begin{matrix}a & b\\\\c & d\\end{matrix}\n  $$\n",
   );
-  expectPresent(
-    listDegrade.xml,
-    [MONO_GRAY_FONT, MONO_GRAY_COLOR, "\\begin{matrix}"],
-    "容器内公式解析失败仍降级为 TeX 源码等宽灰字",
-  );
-  expectAbsent(listDegrade.xml, ["<m:oMath"], "容器内公式降级不混排(不产 m:oMath)");
-  if (!listDegrade.warns.some((text) => text.includes(FORMULA_DEGRADED) && text.includes("\\begin{matrix}"))) {
-    throw new Error(
-      `docx 公式/容器降级断言失败:列表内公式解析失败缺少公式降级警告,实际 ${JSON.stringify(listDegrade.warns)}`,
+  await suite.case("列表内公式解析失败仍降级为 TeX 源码等宽灰字 + 公式降级警告(不报暂不支持)", () => {
+    expectPresent(
+      listDegrade.xml,
+      [MONO_GRAY_FONT, MONO_GRAY_COLOR, "\\begin{matrix}"],
+      "容器内公式解析失败仍降级为 TeX 源码等宽灰字",
     );
-  }
-  expectNoWarning(listDegrade.warns, UNSUPPORTED_IN_CONTAINER, "容器内公式解析失败不报「暂不支持」");
+    expectAbsent(listDegrade.xml, ["<m:oMath"], "容器内公式降级不混排(不产 m:oMath)");
+    if (!listDegrade.warns.some((text) => text.includes(FORMULA_DEGRADED) && text.includes("\\begin{matrix}"))) {
+      throw new Error(
+        `docx 公式/容器降级断言失败:列表内公式解析失败缺少公式降级警告,实际 ${JSON.stringify(listDegrade.warns)}`,
+      );
+    }
+    expectNoWarning(listDegrade.warns, UNSUPPORTED_IN_CONTAINER, "容器内公式解析失败不报「暂不支持」");
+  });
 
   const quoteDegrade = await renderDocxXml("> $$\n> \\frac{1}{\n> $$\n");
-  expectPresent(
-    quoteDegrade.xml,
-    [MONO_GRAY_FONT, MONO_GRAY_COLOR, "\\frac{1}{"],
-    "引用块内公式 katex-error 仍降级为 TeX 源码等宽灰字",
-  );
-  expectAbsent(quoteDegrade.xml, ["<m:oMath"], "引用块内公式降级不混排(不产 m:oMath)");
-  if (!quoteDegrade.warns.some((text) => text.includes(FORMULA_DEGRADED) && text.includes("\\frac{1}{"))) {
-    throw new Error(
-      `docx 公式/容器降级断言失败:引用块内公式解析失败缺少公式降级警告,实际 ${JSON.stringify(quoteDegrade.warns)}`,
+  await suite.case("引用块内公式 katex-error 仍降级为 TeX 源码等宽灰字 + 公式降级警告", () => {
+    expectPresent(
+      quoteDegrade.xml,
+      [MONO_GRAY_FONT, MONO_GRAY_COLOR, "\\frac{1}{"],
+      "引用块内公式 katex-error 仍降级为 TeX 源码等宽灰字",
     );
-  }
+    expectAbsent(quoteDegrade.xml, ["<m:oMath"], "引用块内公式降级不混排(不产 m:oMath)");
+    if (!quoteDegrade.warns.some((text) => text.includes(FORMULA_DEGRADED) && text.includes("\\frac{1}{"))) {
+      throw new Error(
+        `docx 公式/容器降级断言失败:引用块内公式解析失败缺少公式降级警告,实际 ${JSON.stringify(quoteDegrade.warns)}`,
+      );
+    }
+  });
   console.log("[ok] docx 容器内公式解析失败兜底仍保留:TeX 源码等宽灰字 + 公式降级警告(不报「暂不支持」)");
 
   // ---------- 容器内表格 → 逐行文本段落(单元格纯文本以「 | 」连接) ----------
   // 断言两行各自成段(而非一张真表格:无 <w:tbl>),单元格内容顺序与分隔符锁定。
   const listTable = await renderDocxXml("- 列表内表格\n\n  | 甲 | 乙 |\n  | --- | --- |\n  | 丙 | 丁 |\n");
-  expectPresent(listTable.xml, ["甲 | 乙", "丙 | 丁"], "列表内表格逐行文本段落");
-  expectAbsent(listTable.xml, ["<w:tbl>"], "容器内表格不渲染为真表格");
-  expectWarningCount(listTable.warns, `表格 在列表内${UNSUPPORTED_IN_CONTAINER}`, 1, "列表内表格警告");
+  await suite.case("列表内表格 → 逐行「 | 」连接文本段落 + 一条暂不支持警告", () => {
+    expectPresent(listTable.xml, ["甲 | 乙", "丙 | 丁"], "列表内表格逐行文本段落");
+    expectAbsent(listTable.xml, ["<w:tbl>"], "容器内表格不渲染为真表格");
+    expectWarningCount(listTable.warns, `表格 在列表内${UNSUPPORTED_IN_CONTAINER}`, 1, "列表内表格警告");
+  });
 
   const quoteTable = await renderDocxXml("> | 列一 | 列二 |\n> | --- | --- |\n> | 甲 | 乙 |\n");
-  expectPresent(quoteTable.xml, ["列一 | 列二", "甲 | 乙"], "引用块内表格逐行文本段落");
-  expectAbsent(quoteTable.xml, ["<w:tbl>"], "引用块内表格不渲染为真表格");
-  expectWarningCount(quoteTable.warns, `表格 在引用块内${UNSUPPORTED_IN_CONTAINER}`, 1, "引用块内表格警告");
+  await suite.case("引用块内表格 → 逐行「 | 」连接文本段落 + 一条暂不支持警告", () => {
+    expectPresent(quoteTable.xml, ["列一 | 列二", "甲 | 乙"], "引用块内表格逐行文本段落");
+    expectAbsent(quoteTable.xml, ["<w:tbl>"], "引用块内表格不渲染为真表格");
+    expectWarningCount(quoteTable.warns, `表格 在引用块内${UNSUPPORTED_IN_CONTAINER}`, 1, "引用块内表格警告");
+  });
   console.log("[ok] docx 容器内表格(列表/引用块)→ 逐行「 | 」连接文本段落 + 警告,不成 <w:tbl>");
 
   // ---------- 容器内同一类降级去重(warnDedup:同类型同容器只报一次) ----------
   const dedup = await renderDocxXml(
     "> | 甲 | 乙 |\n> | --- | --- |\n> | 丙 | 丁 |\n>\n> | 戊 | 己 |\n> | --- | --- |\n> | 庚 | 辛 |\n",
   );
-  expectWarningCount(dedup.warns, `表格 在引用块内${UNSUPPORTED_IN_CONTAINER}`, 1, "同容器同类降级去重");
+  await suite.case("同容器同类降级只报 1 条(warnDedup)", () => {
+    expectWarningCount(dedup.warns, `表格 在引用块内${UNSUPPORTED_IN_CONTAINER}`, 1, "同容器同类降级去重");
+  });
   const mixed = await renderDocxXml(
     "- 列表内表格\n\n  | 甲 | 乙 |\n  | --- | --- |\n  | 丙 | 丁 |\n\n> | 戊 | 己 |\n> | --- | --- |\n> | 庚 | 辛 |\n",
   );
-  expectWarningCount(mixed.warns, `表格 在列表内${UNSUPPORTED_IN_CONTAINER}`, 1, "列表侧去重");
-  expectWarningCount(mixed.warns, `表格 在引用块内${UNSUPPORTED_IN_CONTAINER}`, 1, "引用块侧去重(容器不同不合并)");
+  await suite.case("容器不同不合并:列表侧与引用块侧各报 1 条", () => {
+    expectWarningCount(mixed.warns, `表格 在列表内${UNSUPPORTED_IN_CONTAINER}`, 1, "列表侧去重");
+    expectWarningCount(mixed.warns, `表格 在引用块内${UNSUPPORTED_IN_CONTAINER}`, 1, "引用块侧去重(容器不同不合并)");
+  });
   console.log("[ok] docx 容器内降级去重:同类型同容器只报 1 条,容器不同各报 1 条");
 
   // ---------- 容器内非白名单 html → 原文等宽灰字 + 「HTML 在…」警告 ----------
   // 尖括号按 XML 转义成 &lt;/&gt;(断言可见形态,勿直接找原始尖括号)。
   const quoteDiv = await renderDocxXml("> <div>提示</div>\n");
-  expectPresent(
-    quoteDiv.xml,
-    [MONO_GRAY_FONT, MONO_GRAY_COLOR, "&lt;div&gt;提示&lt;/div&gt;"],
-    "引用块内非白名单 html 降级为原文等宽灰字",
-  );
-  expectWarningCount(quoteDiv.warns, `HTML 在引用块内${UNSUPPORTED_IN_CONTAINER}`, 1, "引用块内 html 警告");
+  await suite.case("引用块内非白名单 html → 原文等宽灰字 + 一条 HTML 在… 警告", () => {
+    expectPresent(
+      quoteDiv.xml,
+      [MONO_GRAY_FONT, MONO_GRAY_COLOR, "&lt;div&gt;提示&lt;/div&gt;"],
+      "引用块内非白名单 html 降级为原文等宽灰字",
+    );
+    expectWarningCount(quoteDiv.warns, `HTML 在引用块内${UNSUPPORTED_IN_CONTAINER}`, 1, "引用块内 html 警告");
+  });
   console.log("[ok] docx 容器内非白名单 html → 原文(XML 转义)等宽灰字 + 「HTML 在…」警告");
 
   // ---------- 旁路一:`<!-- page-break -->` 在容器内照常分页且不产警告 ----------
   // renderContainerFallback 的 html 分支先判分页注释:注释不显示、分页照做,
   // 也不追加降级警告(否则每个容器内分页都会刷警告)。
   const quoteBreak = await renderDocxXml("> <!-- page-break -->\n");
-  expectPresent(quoteBreak.xml, ['<w:br w:type="page"/>'], "容器内分页注释照常分页");
-  expectAbsent(quoteBreak.xml, [MONO_GRAY_COLOR, "page-break"], "容器内分页注释不降级为源码文本");
-  if (quoteBreak.warns.length > 0) {
-    throw new Error(
-      `docx 公式/容器降级断言失败:容器内分页注释不应产生警告,实际 ${JSON.stringify(quoteBreak.warns)}`,
-    );
-  }
+  await suite.case("容器内分页注释照常分页、不降级为零警告", () => {
+    expectPresent(quoteBreak.xml, ['<w:br w:type="page"/>'], "容器内分页注释照常分页");
+    expectAbsent(quoteBreak.xml, [MONO_GRAY_COLOR, "page-break"], "容器内分页注释不降级为源码文本");
+    if (quoteBreak.warns.length > 0) {
+      throw new Error(
+        `docx 公式/容器降级断言失败:容器内分页注释不应产生警告,实际 ${JSON.stringify(quoteBreak.warns)}`,
+      );
+    }
+  });
   console.log("[ok] docx 容器内 <!-- page-break --> 照常分页(<w:br w:type=\"page\"/)且零警告");
 
   // ---------- 旁路二:白名单行内标签(<br>)在容器内照常按正文排版成段 ----------
@@ -556,23 +622,25 @@ export async function run() {
   // 在 renderBodyParagraph 的 indent 之后展开,整体替换 —— 与代码块那条同理,
   // 免得灰底带左缘与同块其他段落错开。
   const quoteBr = await renderDocxXml("> <br>\n");
-  expectPresent(
-    quoteBr.xml,
-    [
-      "<w:br/>",
-      'w:jc w:val="both"',
-      '<w:ind w:left="720"/>',
-      '<w:shd w:fill="F2F2F2" w:val="clear"/>',
-    ],
-    "容器内白名单行内 html 按正文排版成段 + 沿用引用块装饰",
-  );
-  expectAbsent(quoteBr.xml, ['w:firstLineChars="200"'], "容器装饰应整体替换正文首行缩进");
-  expectAbsent(quoteBr.xml, [MONO_GRAY_COLOR], "容器内白名单 html 不走降级样式");
-  if (quoteBr.warns.length > 0) {
-    throw new Error(
-      `docx 公式/容器降级断言失败:容器内白名单 html 不应产生警告,实际 ${JSON.stringify(quoteBr.warns)}`,
+  await suite.case("容器内白名单行内 html 按正文 5a 排版成段 + 沿用引用块装饰,不降级不告警", () => {
+    expectPresent(
+      quoteBr.xml,
+      [
+        "<w:br/>",
+        'w:jc w:val="both"',
+        '<w:ind w:left="720"/>',
+        '<w:shd w:fill="F2F2F2" w:val="clear"/>',
+      ],
+      "容器内白名单行内 html 按正文排版成段 + 沿用引用块装饰",
     );
-  }
+    expectAbsent(quoteBr.xml, ['w:firstLineChars="200"'], "容器装饰应整体替换正文首行缩进");
+    expectAbsent(quoteBr.xml, [MONO_GRAY_COLOR], "容器内白名单 html 不走降级样式");
+    if (quoteBr.warns.length > 0) {
+      throw new Error(
+        `docx 公式/容器降级断言失败:容器内白名单 html 不应产生警告,实际 ${JSON.stringify(quoteBr.warns)}`,
+      );
+    }
+  });
   console.log("[ok] docx 容器内白名单行内 html(<br>)→ 按正文 5a 排版成段,不降级不告警");
 
   // ---------- 旁路三:引用块内代码块按代码块渲染 + 「代码块 在引用块内」警告 ----------
@@ -582,25 +650,27 @@ export async function run() {
   // 唯一来源)在 renderCode 的 spacing/indent 之后展开,整体覆盖代码块自身缩进,
   // 免得灰底带左缘与同块其他段落错开。
   const quoteCode = await renderDocxXml("> ```js\n> const a = 1;\n> ```\n");
-  expectPresent(
-    quoteCode.xml,
-    [
-      // 代码块排版(段前后间距 + 引用块装饰的左缩进),与普通正文段不同
-      'w:after="120" w:before="120"',
-      '<w:ind w:left="720"/>',
-      // 引用块装饰的灰底(与同块普通段落同一份 QUOTE_PARAGRAPH_PROPS)
-      '<w:shd w:fill="F2F2F2" w:val="clear"/>',
-      // 关键字着色色值证明走的是「代码块 + 高亮」路径而非纯文本降级;
-      // 文本按高亮 token 切 run,故逐 token 断言而非找整行
-      '<w:color w:val="CF222E"/>',
-      '<w:t xml:space="preserve">const</w:t>',
-      '<w:t xml:space="preserve"> a = </w:t>',
-    ],
-    "引用块内代码块内容成文",
-  );
-  expectAbsent(quoteCode.xml, ['<w:ind w:left="360"/>'], "引用块内代码块缩进须被引用段落装饰覆盖");
-  expectAbsent(quoteCode.xml, [MONO_GRAY_COLOR], "引用块内代码块走代码块样式而非降级灰字");
-  expectWarningCount(quoteCode.warns, `代码块 在引用块内${UNSUPPORTED_IN_CONTAINER}`, 1, "引用块内代码块警告");
+  await suite.case("引用块内代码块 → 代码块样式成文 + 引用段落底纹/缩进 + 一条暂不支持警告", () => {
+    expectPresent(
+      quoteCode.xml,
+      [
+        // 代码块排版(段前后间距 + 引用块装饰的左缩进),与普通正文段不同
+        'w:after="120" w:before="120"',
+        '<w:ind w:left="720"/>',
+        // 引用块装饰的灰底(与同块普通段落同一份 QUOTE_PARAGRAPH_PROPS)
+        '<w:shd w:fill="F2F2F2" w:val="clear"/>',
+        // 关键字着色色值证明走的是「代码块 + 高亮」路径而非纯文本降级;
+        // 文本按高亮 token 切 run,故逐 token 断言而非找整行
+        '<w:color w:val="CF222E"/>',
+        '<w:t xml:space="preserve">const</w:t>',
+        '<w:t xml:space="preserve"> a = </w:t>',
+      ],
+      "引用块内代码块内容成文",
+    );
+    expectAbsent(quoteCode.xml, ['<w:ind w:left="360"/>'], "引用块内代码块缩进须被引用段落装饰覆盖");
+    expectAbsent(quoteCode.xml, [MONO_GRAY_COLOR], "引用块内代码块走代码块样式而非降级灰字");
+    expectWarningCount(quoteCode.warns, `代码块 在引用块内${UNSUPPORTED_IN_CONTAINER}`, 1, "引用块内代码块警告");
+  });
   console.log("[ok] docx 引用块内代码块 → 代码块样式成文 + 引用段落底纹/缩进 + 「代码块 在引用块内暂不支持」警告");
 
   // ================= 第三部分:引用块段落装饰全覆盖 =================
@@ -676,24 +746,31 @@ export async function run() {
     ["甲 | 乙", "表格逐行段(数据行)"],
     ["嵌套引用段落", "嵌套引用块段落"],
   ];
+  // 逐类点名(needle → 该段 XML),确认「这五类内容确实各自成段且带装饰」,
+  // 避免只靠计数而漏判「某类内容根本没渲染出来」。逐类拆成独立 case:一类漏装饰不该
+  // 遮住后面几类的判定(一个 case 内失败只报第一条)。
   for (const [needle, label] of quoteContentTypes) {
-    const para = paragraphContaining(quoteAll.xml, needle);
-    if (!para.includes(QUOTE_SHADING) || !para.includes(QUOTE_INDENT)) {
-      throw new Error(
-        `docx 引用块装饰断言失败:引用块内${label}段落缺少装饰(底纹 ${QUOTE_SHADING} / 缩进 ${QUOTE_INDENT}),实际段落=${para.slice(0, 400)}`,
-      );
-    }
+    await suite.case(`引用块装饰逐类覆盖:${label}段落带底纹与缩进`, () => {
+      const para = paragraphContaining(quoteAll.xml, needle);
+      if (!para.includes(QUOTE_SHADING) || !para.includes(QUOTE_INDENT)) {
+        throw new Error(
+          `docx 引用块装饰断言失败:引用块内${label}段落缺少装饰(底纹 ${QUOTE_SHADING} / 缩进 ${QUOTE_INDENT}),实际段落=${para.slice(0, 400)}`,
+        );
+      }
+    });
   }
   // 整体口径:整篇(仅含引用块)每一个段落都必须带装饰——新增内容类型若忘记注入装饰,
   // 这里立即变红(逐类断言只覆盖已列出的类型)。
   const quoteParas = allParagraphs(quoteAll.xml);
-  const undecorated = quoteParas.filter((p) => !p.includes(QUOTE_SHADING) || !p.includes(QUOTE_INDENT));
-  if (undecorated.length > 0) {
-    throw new Error(
-      `docx 引用块装饰断言失败:引用块样例中有 ${undecorated.length} 段缺装饰(共 ${quoteParas.length} 段),首段=${(undecorated[0] ?? "").slice(0, 400)}`,
-    );
-  }
-  expectCount(quoteAll.xml, QUOTE_INDENT, quoteParas.length, "每段都带引用块缩进");
+  await suite.case("整体口径:引用块样例的每一个段落都带装饰", () => {
+    const undecorated = quoteParas.filter((p) => !p.includes(QUOTE_SHADING) || !p.includes(QUOTE_INDENT));
+    if (undecorated.length > 0) {
+      throw new Error(
+        `docx 引用块装饰断言失败:引用块样例中有 ${undecorated.length} 段缺装饰(共 ${quoteParas.length} 段),首段=${(undecorated[0] ?? "").slice(0, 400)}`,
+      );
+    }
+    expectCount(quoteAll.xml, QUOTE_INDENT, quoteParas.length, "每段都带引用块缩进");
+  });
   console.log(
     `[ok] docx 引用块内每种内容类型段落都带同一份装饰(底纹+缩进):${quoteParas.length} 段全绿(段落/公式/代码块三路径/mermaid 图/html 原文/表格逐行/嵌套引用)`,
   );
@@ -737,7 +814,9 @@ export async function run() {
     ].join("\n"),
   );
   // 全局口径:整篇不含灰底(docx 侧 F2F2F2 的唯一来源就是引用块底纹,见 theme.ts)
-  expectCount(nonQuote.xml, QUOTE_SHADING, 0, "非引用块内容不得出现引用块底纹");
+  await suite.case("反向锁:非引用块内容整篇不含引用块底纹", () => {
+    expectCount(nonQuote.xml, QUOTE_SHADING, 0, "非引用块内容不得出现引用块底纹");
+  });
   for (const [needle, label] of /** @type {[string, string][]} */ ([
     ["正文段落", "顶层正文段"],
     ["topCodeMark", "顶层代码块(高亮)"],
@@ -747,28 +826,34 @@ export async function run() {
     ["listCodeMark", "列表项内代码块"],
     ["&lt;div&gt;列表提示&lt;/div&gt;", "列表项内 html 原文段"],
   ])) {
-    const para = paragraphContaining(nonQuote.xml, needle);
-    if (para.includes(QUOTE_SHADING) || para.includes(QUOTE_INDENT)) {
-      throw new Error(
-        `docx 引用块装饰断言失败:${label}被误加引用块装饰,实际段落=${para.slice(0, 400)}`,
-      );
-    }
+    await suite.case(`反向锁:${label}不被误加引用块装饰`, () => {
+      const para = paragraphContaining(nonQuote.xml, needle);
+      if (para.includes(QUOTE_SHADING) || para.includes(QUOTE_INDENT)) {
+        throw new Error(
+          `docx 引用块装饰断言失败:${label}被误加引用块装饰,实际段落=${para.slice(0, 400)}`,
+        );
+      }
+    });
   }
   // 顶层代码块仍保留自身 360 缩进(装饰未被误施加到容器外)
-  expectPresent(
-    paragraphContaining(nonQuote.xml, "topCodeMark"),
-    ['<w:ind w:left="360"/>'],
-    "顶层代码块保留自身缩进 360",
-  );
+  await suite.case("反向锁:顶层代码块保留自身缩进 360", () => {
+    expectPresent(
+      paragraphContaining(nonQuote.xml, "topCodeMark"),
+      ['<w:ind w:left="360"/>'],
+      "顶层代码块保留自身缩进 360",
+    );
+  });
   console.log("[ok] docx 非引用块内容不带引用块装饰(顶层正文/代码块/真表格单元格 + 列表项内表格/代码块/html 逐段核对)");
 
   // ---------- 引用块内分页注释段不上装饰(版式标记,非块内内容) ----------
   // 装饰是逐段落画的:分页符段是无内容的空段,涂灰会在新页页首留一条悬空灰带
   // (正是本次要消除的形态)。见 fallback.ts renderContainerFallback 注释。
   const quoteBreakOnly = await renderDocxXml("> <!-- page-break -->\n");
-  expectCount(quoteBreakOnly.xml, QUOTE_SHADING, 0, "引用块内分页注释段不带底纹");
-  expectCount(quoteBreakOnly.xml, QUOTE_INDENT, 0, "引用块内分页注释段不带缩进");
-  expectPresent(quoteBreakOnly.xml, ['<w:br w:type="page"/>'], "分页注释段仍照常分页");
+  await suite.case("引用块内分页注释段不涂灰(零底纹零缩进)但仍照常分页", () => {
+    expectCount(quoteBreakOnly.xml, QUOTE_SHADING, 0, "引用块内分页注释段不带底纹");
+    expectCount(quoteBreakOnly.xml, QUOTE_INDENT, 0, "引用块内分页注释段不带缩进");
+    expectPresent(quoteBreakOnly.xml, ['<w:br w:type="page"/>'], "分页注释段仍照常分页");
+  });
   console.log("[ok] docx 引用块内分页注释段不涂灰(<w:br w:type=\"page\"/> 照常,零装饰避免页首悬空灰带)");
 
   // ================= 落盘样例(供人工在 Word/WPS 核对实际排版) =================
@@ -786,26 +871,29 @@ export async function run() {
     "> ```js\n> const quoteMark = 1;\n> ```\n>\n> <div>html 原文段</div>\n>\n" +
     "> | 列一 | 列二 |\n> | --- | --- |\n> | 甲 | 乙 |\n";
   const showcase = await renderDocxXml(showcaseMd);
-  expectPresent(
-    showcase.xml,
-    [
-      "<m:rad>",
-      "<m:limUpp>",
-      "<m:limLow>",
-      "<m:nary>",
-      "<m:sSubSup>",
-      "<m:t>中文混排</m:t>",
-      "甲 | 乙",
-      // 引用块内代码块与 html 原文段(样例即人工目视「灰底带是否连贯覆盖整块」的核对材料)
-      "quoteMark",
-      "html 原文段",
-      // 容器内两个分式(列表 + 引用块)也成公式
-      "<m:f>",
-      // display ∑ 的被加数在 <m:e> 内(样例即人工目视「∑ 处不该有方框」的核对材料)
-      '<m:sup><m:r><m:t>n</m:t></m:r></m:sup><m:e><m:r><m:t>i</m:t></m:r></m:e></m:nary>',
-    ],
-    "落盘样例",
-  );
+  await suite.case("落盘样例覆盖公式结构与容器内容(含 display ∑ 被加数在 <m:e> 内)", () => {
+    expectPresent(
+      showcase.xml,
+      [
+        "<m:rad>",
+        "<m:limUpp>",
+        "<m:limLow>",
+        "<m:nary>",
+        "<m:sSubSup>",
+        "<m:t>中文混排</m:t>",
+        "甲 | 乙",
+        // 引用块内代码块与 html 原文段(样例即人工目视「灰底带是否连贯覆盖整块」的核对材料)
+        "quoteMark",
+        "html 原文段",
+        // 容器内两个分式(列表 + 引用块)也成公式
+        "<m:f>",
+        // display ∑ 的被加数在 <m:e> 内(样例即人工目视「∑ 处不该有方框」的核对材料)
+        '<m:sup><m:r><m:t>n</m:t></m:r></m:sup><m:e><m:r><m:t>i</m:t></m:r></m:e></m:nary>',
+      ],
+      "落盘样例",
+    );
+  });
+  // saveArtifact 留在 case 外:落盘是段级副作用,不该被一条断言的成败带着走
   await saveArtifact("math-structures", {
     docx: docxBufferOf(
       (
@@ -813,4 +901,5 @@ export async function run() {
       ),
     ),
   });
+  return { cases: suite.results };
 }

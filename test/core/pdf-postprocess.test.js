@@ -23,6 +23,7 @@ import { renderPdfDocument } from "../../dist/core/pdf/render.js";
 import { HOST_FS } from "../harness/convert-helpers.js";
 import { formatWarning } from "../../dist/core/i18n/index.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /**
  * 契约类型的只读引用(编译期擦除,不产生运行期依赖——本段断言仍打 dist 产物):
@@ -39,6 +40,7 @@ export const fixtures = null;
 
 /** PDF 渲染后处理直测 */
 export async function run() {
+  const suite = createCaseSuite();
   // ---- 1. embedExternalImages:worker 抛错 + 空结果 → 保留原 URL + 统一警告 ----
   {
     const html = '<img src="https://a.example/x.png"><img src="https://b.example/y.png">';
@@ -50,15 +52,17 @@ export async function run() {
     };
     const out = await embedExternalImages(html, resolver, warnings);
     // 无成功结果 → 原样返回(引用不变)
-    if (out !== html) {
-      throw new Error("postprocess 断言失败:worker 抛错/空结果时应原样保留 HTML(引用不变)");
-    }
-    if (
-      !warnings.some((w) => formatWarning(w) === "图片加载失败: https://a.example/x.png") ||
-      !warnings.some((w) => formatWarning(w) === "图片加载失败: https://b.example/y.png")
-    ) {
-      throw new Error(`postprocess 断言失败:缺少统一降级警告,warnings=${JSON.stringify(warnings)}`);
-    }
+    await suite.case("embedExternalImages:worker 抛错/空结果原样保留 HTML 并各报一条统一警告", () => {
+      if (out !== html) {
+        throw new Error("postprocess 断言失败:worker 抛错/空结果时应原样保留 HTML(引用不变)");
+      }
+      if (
+        !warnings.some((w) => formatWarning(w) === "图片加载失败: https://a.example/x.png") ||
+        !warnings.some((w) => formatWarning(w) === "图片加载失败: https://b.example/y.png")
+      ) {
+        throw new Error(`postprocess 断言失败:缺少统一降级警告,warnings=${JSON.stringify(warnings)}`);
+      }
+    });
     console.log("[ok] postprocess:embedExternalImages worker 抛错/空结果保留原 URL + 统一警告");
   }
 
@@ -79,23 +83,29 @@ export async function run() {
     const out = await embedExternalImages(html, resolver, warnings);
     const dataA = `data:image/png;base64,${Buffer.concat([PNG_MAGIC, Buffer.from("A")]).toString("base64")}`;
     const dataB = `data:image/png;base64,${Buffer.concat([PNG_MAGIC, Buffer.from("B")]).toString("base64")}`;
-    if (!out.includes(`src="${dataA}"`) || !out.includes(`src="${dataB}"`)) {
-      throw new Error("postprocess 断言失败:互为子串 URL 未精确替换(src=\"...\" 包裹)");
-    }
-    if (out.includes('src="https://')) {
-      throw new Error("postprocess 断言失败:替换后残留原 URL(子串误替换)");
-    }
+    await suite.case("embedExternalImages:互为子串的 URL 精确替换,不误替换、不残留原 URL", () => {
+      if (!out.includes(`src="${dataA}"`) || !out.includes(`src="${dataB}"`)) {
+        throw new Error("postprocess 断言失败:互为子串 URL 未精确替换(src=\"...\" 包裹)");
+      }
+      if (out.includes('src="https://')) {
+        throw new Error("postprocess 断言失败:替换后残留原 URL(子串误替换)");
+      }
+    });
     // 去重:两个不同 URL 各调一次(重复的 https://example.com/a 不二次调用)
-    if (calls.length !== 2) {
-      throw new Error(`postprocess 断言失败:resolver 调用次数异常(期望 2 去重),calls=${JSON.stringify(calls)}`);
-    }
+    await suite.case("embedExternalImages:同 URL 去重(resolver 只调一次)且成功路径零警告", () => {
+      if (calls.length !== 2) {
+        throw new Error(`postprocess 断言失败:resolver 调用次数异常(期望 2 去重),calls=${JSON.stringify(calls)}`);
+      }
+      if (warnings.length !== 0) {
+        throw new Error(`postprocess 断言失败:成功路径不应有警告,warnings=${JSON.stringify(warnings)}`);
+      }
+    });
     // 替换循环 replace(..., "g"):重复 URL 的两处出现都被替换
-    if ((out.match(new RegExp(`src="${dataA}"`, "g")) || []).length !== 2) {
-      throw new Error("postprocess 断言失败:去重后替换应覆盖全部出现(重复 URL 2 处)");
-    }
-    if (warnings.length !== 0) {
-      throw new Error(`postprocess 断言失败:成功路径不应有警告,warnings=${JSON.stringify(warnings)}`);
-    }
+    await suite.case("embedExternalImages:去重后替换仍覆盖重复 URL 的全部出现", () => {
+      if ((out.match(new RegExp(`src="${dataA}"`, "g")) || []).length !== 2) {
+        throw new Error("postprocess 断言失败:去重后替换应覆盖全部出现(重复 URL 2 处)");
+      }
+    });
     console.log("[ok] postprocess:embedExternalImages URL 替换循环(互为子串精确替换 + 去重)");
   }
 
@@ -109,27 +119,33 @@ export async function run() {
       return null; // 缺失
     };
     await checkLocalImages(srcs, resolver, warnings);
-    if (
-      warnings.length !== 2 ||
-      !warnings.some((w) => formatWarning(w) === "图片加载失败: a.png") ||
-      !warnings.some((w) => formatWarning(w) === "图片加载失败: b.png")
-    ) {
-      throw new Error(`postprocess 断言失败:checkLocalImages 警告异常(期望去重后 2 条),warnings=${JSON.stringify(warnings)}`);
-    }
+    await suite.case("checkLocalImages:抛错与 null 统一警告且按 src 去重后恰 2 条", () => {
+      if (
+        warnings.length !== 2 ||
+        !warnings.some((w) => formatWarning(w) === "图片加载失败: a.png") ||
+        !warnings.some((w) => formatWarning(w) === "图片加载失败: b.png")
+      ) {
+        throw new Error(`postprocess 断言失败:checkLocalImages 警告异常(期望去重后 2 条),warnings=${JSON.stringify(warnings)}`);
+      }
+    });
     // 成功路径:resolver 返回 Buffer → 不警告
     /** @type {Warning[]} */
     const okWarnings = [];
     await checkLocalImages(["ok.png"], async () => PNG_MAGIC, okWarnings);
-    if (okWarnings.length !== 0) {
-      throw new Error(`postprocess 断言失败:成功不应警告,okWarnings=${JSON.stringify(okWarnings)}`);
-    }
+    await suite.case("checkLocalImages:成功路径不警告", () => {
+      if (okWarnings.length !== 0) {
+        throw new Error(`postprocess 断言失败:成功不应警告,okWarnings=${JSON.stringify(okWarnings)}`);
+      }
+    });
     // 无 resolver:直接返回,不调用、不警告
     /** @type {Warning[]} */
     const noResolverWarnings = [];
     await checkLocalImages(["x.png"], undefined, noResolverWarnings);
-    if (noResolverWarnings.length !== 0) {
-      throw new Error(`postprocess 断言失败:无 resolver 应直接返回(不警告)`);
-    }
+    await suite.case("checkLocalImages:无 resolver 直接返回且不警告", () => {
+      if (noResolverWarnings.length !== 0) {
+        throw new Error(`postprocess 断言失败:无 resolver 应直接返回(不警告)`);
+      }
+    });
     console.log("[ok] postprocess:checkLocalImages catch(抛错)/null 统一警告 + 成功/无 resolver 不警告");
   }
 
@@ -152,9 +168,11 @@ export async function run() {
       "图片文件无访问权限: locked.png",
       "图片加载失败: other.png",
     ]) {
-      if (!texts.includes(expected)) {
-        throw new Error(`postprocess 断言失败:checkLocalImages 缺少细分警告「${expected}」,warnings=${JSON.stringify(warnings)}`);
-      }
+      await suite.case(`checkLocalImages 失败原因细分:${expected}`, () => {
+        if (!texts.includes(expected)) {
+          throw new Error(`postprocess 断言失败:checkLocalImages 缺少细分警告「${expected}」,warnings=${JSON.stringify(warnings)}`);
+        }
+      });
     }
     console.log("[ok] postprocess:checkLocalImages 失败原因细分(ENOENT/EACCES/兜底)断言通过");
   }
@@ -181,21 +199,27 @@ export async function run() {
     const expected =
       `<img src="${dataOf("https://x.example/1.png")}"><img src="https://x.example/bad.png">` +
       `<p>正文</p><img src="${dataOf("https://x.example/1.png")}"><img src="${dataOf("https://x.example/3.png")}">`;
-    if (out !== expected) {
-      throw new Error(`postprocess 断言失败:多图乱序/相邻场景产物不符,out=${out}`);
-    }
+    await suite.case("embedExternalImages:多图乱序/相邻/中间失败的单遍遍历产物逐字相符", () => {
+      if (out !== expected) {
+        throw new Error(`postprocess 断言失败:多图乱序/相邻场景产物不符,out=${out}`);
+      }
+    });
     // 去重:URL1 两处出现只下载一次
-    if (calls.filter((c) => c === "https://x.example/1.png").length !== 1) {
-      throw new Error(`postprocess 断言失败:同 URL 应只下载一次,calls=${JSON.stringify(calls)}`);
-    }
+    await suite.case("embedExternalImages:同 URL 两处出现只下载一次", () => {
+      if (calls.filter((c) => c === "https://x.example/1.png").length !== 1) {
+        throw new Error(`postprocess 断言失败:同 URL 应只下载一次,calls=${JSON.stringify(calls)}`);
+      }
+    });
     // 「恰一条且文案为 X」:解构首条 + 余下条数,一次断掉条数与文案两件事
     // (noUncheckedIndexedAccess 下 `ws[0]` 带 undefined,而 `length !== 1 ||` 的
     //  短路并不会替它收窄 —— 拆成解构才收得住)
     const [onlyBad, ...extraBad] = warnings;
-    if (onlyBad === undefined || extraBad.length > 0
-      || formatWarning(onlyBad) !== "图片加载失败: https://x.example/bad.png") {
-      throw new Error(`postprocess 断言失败:失败 URL 应恰一条统一警告,warnings=${JSON.stringify(warnings)}`);
-    }
+    await suite.case("embedExternalImages:失败 URL 恰一条统一警告", () => {
+      if (onlyBad === undefined || extraBad.length > 0
+        || formatWarning(onlyBad) !== "图片加载失败: https://x.example/bad.png") {
+        throw new Error(`postprocess 断言失败:失败 URL 应恰一条统一警告,warnings=${JSON.stringify(warnings)}`);
+      }
+    });
     console.log("[ok] postprocess:embedExternalImages cursor 单遍遍历(多图乱序/相邻/中间失败)断言通过");
   }
 
@@ -219,17 +243,21 @@ export async function run() {
     /** @type {Warning[]} */
     const warnings = [];
     await checkLocalImages(["ok.png", "gone.png", "locked.png"], resolver, warnings);
-    if (resolveCalls !== 0) {
-      throw new Error(`postprocess 断言失败:exists 通道存在时不应回调完整 resolver,实际 ${resolveCalls} 次`);
-    }
+    await suite.case("checkLocalImages exists 通道:全程不回调完整 resolver", () => {
+      if (resolveCalls !== 0) {
+        throw new Error(`postprocess 断言失败:exists 通道存在时不应回调完整 resolver,实际 ${resolveCalls} 次`);
+      }
+    });
     const texts = warnings.map((w) => formatWarning(w)).sort();
-    if (
-      texts.length !== 2 ||
-      texts[0] !== "图片文件不存在: gone.png" ||
-      texts[1] !== "图片文件无访问权限: locked.png"
-    ) {
-      throw new Error(`postprocess 断言失败:exists 通道警告异常,texts=${JSON.stringify(texts)}`);
-    }
+    await suite.case("checkLocalImages exists 通道:true/false/抛错细分为两条精确警告", () => {
+      if (
+        texts.length !== 2 ||
+        texts[0] !== "图片文件不存在: gone.png" ||
+        texts[1] !== "图片文件无访问权限: locked.png"
+      ) {
+        throw new Error(`postprocess 断言失败:exists 通道警告异常,texts=${JSON.stringify(texts)}`);
+      }
+    });
     console.log("[ok] postprocess:checkLocalImages exists 轻量通道(true/false/抛错细分)断言通过");
   }
 
@@ -253,14 +281,18 @@ export async function run() {
       return src.startsWith("7") ? null : PNG_MAGIC;
     };
     await checkLocalImages(srcs, resolver, warnings);
-    if (maxActive > 3) {
-      throw new Error(`postprocess 断言失败:本地图片检查应使用有界并发(<=3),实际 ${maxActive}`);
-    }
+    await suite.case("checkLocalImages:request 契约注入且并发有界", () => {
+      if (maxActive > 3) {
+        throw new Error(`postprocess 断言失败:本地图片检查应使用有界并发(<=3),实际 ${maxActive}`);
+      }
+    });
     const [only7, ...extra7] = warnings;
-    if (only7 === undefined || extra7.length > 0
-      || formatWarning(only7) !== "图片加载失败: 7.png") {
-      throw new Error(`postprocess 断言失败:本地图片 warning 应按文档顺序稳定,warnings=${JSON.stringify(warnings)}`);
-    }
+    await suite.case("checkLocalImages:warning 按文档顺序稳定(恰一条)", () => {
+      if (only7 === undefined || extra7.length > 0
+        || formatWarning(only7) !== "图片加载失败: 7.png") {
+        throw new Error(`postprocess 断言失败:本地图片 warning 应按文档顺序稳定,warnings=${JSON.stringify(warnings)}`);
+      }
+    });
     console.log("[ok] postprocess:本地图片有界并发 + request 契约 + warning 顺序稳定");
   }
 
@@ -287,9 +319,11 @@ export async function run() {
     });
     const texts = warnings.map((w) => formatWarning(w));
     const expected = [1, 2, 3].map((i) => `图片加载失败: https://x.example/${i}.png`);
-    if (JSON.stringify(texts) !== JSON.stringify(expected)) {
-      throw new Error(`postprocess 断言失败:外链图片 warning 应按文档顺序稳定,texts=${JSON.stringify(texts)}`);
-    }
+    await suite.case("embedExternalImages:外链图片 warning 按文档顺序稳定(不受异步完成顺序影响)", () => {
+      if (JSON.stringify(texts) !== JSON.stringify(expected)) {
+        throw new Error(`postprocess 断言失败:外链图片 warning 应按文档顺序稳定,texts=${JSON.stringify(texts)}`);
+      }
+    });
     console.log("[ok] postprocess:外链图片 warning 顺序不受异步完成顺序影响");
   }
 
@@ -313,21 +347,27 @@ export async function run() {
       maxImages: 2,
       concurrency: 2,
     });
-    if (calls.length !== 2 || !calls.every(({ request }) => request.maxBytes === 9 && request.timeoutMs === 100)) {
-      throw new Error(`postprocess 断言失败:数量预算应阻止第三个 resolver 调用且注入单图预算,calls=${JSON.stringify(calls)}`);
-    }
-    const first = `data:image/png;base64,${Buffer.concat([PNG_MAGIC, Buffer.from("1")]).toString("base64")}`;
-    if (!out.includes(first) || (out.match(/data:image\/png/g) || []).length !== 1) {
-      throw new Error(`postprocess 断言失败:前 2 张各 9 bytes 应在总预算 18 内仅首图成功,out=${out}`);
-    }
+    await suite.case("embedExternalImages:数量预算阻止第三个 resolver 调用且注入单图/超时预算", () => {
+      if (calls.length !== 2 || !calls.every(({ request }) => request.maxBytes === 9 && request.timeoutMs === 100)) {
+        throw new Error(`postprocess 断言失败:数量预算应阻止第三个 resolver 调用且注入单图预算,calls=${JSON.stringify(calls)}`);
+      }
+    });
+    await suite.case("embedExternalImages:文档总字节预算内仅首图成功内嵌", () => {
+      const first = `data:image/png;base64,${Buffer.concat([PNG_MAGIC, Buffer.from("1")]).toString("base64")}`;
+      if (!out.includes(first) || (out.match(/data:image\/png/g) || []).length !== 1) {
+        throw new Error(`postprocess 断言失败:前 2 张各 9 bytes 应在总预算 18 内仅首图成功,out=${out}`);
+      }
+    });
     const texts = warnings.map((w) => formatWarning(w));
     const expected = [
       "图片加载失败: https://x.example/2.png",
       "图片加载失败: https://x.example/3.png",
     ];
-    if (JSON.stringify(texts) !== JSON.stringify(expected)) {
-      throw new Error(`postprocess 断言失败:预算超限 warning 应稳定按文档顺序,texts=${JSON.stringify(texts)}`);
-    }
+    await suite.case("embedExternalImages:预算超限 warning 稳定按文档顺序", () => {
+      if (JSON.stringify(texts) !== JSON.stringify(expected)) {
+        throw new Error(`postprocess 断言失败:预算超限 warning 应稳定按文档顺序,texts=${JSON.stringify(texts)}`);
+      }
+    });
     console.log("[ok] postprocess:外链图片数量/单图/总字节预算 + maxBytes 注入 + 稳定降级");
   }
 
@@ -344,14 +384,18 @@ export async function run() {
       maxImages: 2,
       concurrency: 1,
     });
-    if (out !== html || Date.now() - startedAt >= 1000) {
-      throw new Error("postprocess 断言失败:单请求超时应快速降级并保留原 URL");
-    }
+    await suite.case("embedExternalImages:永不 resolve 的 resolver 在单请求超时内快速降级并保留原 URL", () => {
+      if (out !== html || Date.now() - startedAt >= 1000) {
+        throw new Error("postprocess 断言失败:单请求超时应快速降级并保留原 URL");
+      }
+    });
     const [onlyHang, ...extraHang] = warnings;
-    if (onlyHang === undefined || extraHang.length > 0
-      || formatWarning(onlyHang) !== "图片加载失败: https://x.example/hang.png") {
-      throw new Error(`postprocess 断言失败:超时 warning 应稳定,warnings=${JSON.stringify(warnings)}`);
-    }
+    await suite.case("embedExternalImages:单请求超时的 warning 稳定(恰一条)", () => {
+      if (onlyHang === undefined || extraHang.length > 0
+        || formatWarning(onlyHang) !== "图片加载失败: https://x.example/hang.png") {
+        throw new Error(`postprocess 断言失败:超时 warning 应稳定,warnings=${JSON.stringify(warnings)}`);
+      }
+    });
     console.log("[ok] postprocess:永不 resolve 的外链 resolver 在单请求超时内降级");
   }
 
@@ -364,14 +408,18 @@ export async function run() {
       requestTimeoutMs: 15,
       concurrency: 2,
     });
-    if (Date.now() - startedAt >= 1000) {
-      throw new Error("postprocess 断言失败:本地图片检查的单请求超时应生效");
-    }
+    await suite.case("checkLocalImages:单请求超时生效(快速退出)", () => {
+      if (Date.now() - startedAt >= 1000) {
+        throw new Error("postprocess 断言失败:本地图片检查的单请求超时应生效");
+      }
+    });
     const [onlyHangLocal, ...extraHangLocal] = warnings;
-    if (onlyHangLocal === undefined || extraHangLocal.length > 0
-      || formatWarning(onlyHangLocal) !== "图片加载失败: hang.png") {
-      throw new Error(`postprocess 断言失败:本地图片超时 warning 应稳定,warnings=${JSON.stringify(warnings)}`);
-    }
+    await suite.case("checkLocalImages:单请求超时的 warning 稳定(恰一条)", () => {
+      if (onlyHangLocal === undefined || extraHangLocal.length > 0
+        || formatWarning(onlyHangLocal) !== "图片加载失败: hang.png") {
+        throw new Error(`postprocess 断言失败:本地图片超时 warning 应稳定,warnings=${JSON.stringify(warnings)}`);
+      }
+    });
     console.log("[ok] postprocess:本地图片检查的单请求超时降级");
   }
 
@@ -408,15 +456,19 @@ export async function run() {
       // 放宽理由:catch 变量为 unknown;取消错误按 core 契约为带 code 的 Error 实例
       error = /** @type {{ code?: string, stack?: string }} */ (err);
     }
-    if (!error || error.code !== "ERR_CONVERSION_CANCELLED") {
-      throw new Error(`postprocess 断言失败:外部取消应使用独立错误码,error=${error?.stack ?? error}`);
-    }
-    if (requestSignal?.aborted !== true) {
-      throw new Error("postprocess 断言失败:resolver 未收到已取消的 request.signal");
-    }
-    if (warnings.length !== 0) {
-      throw new Error(`postprocess 断言失败:取消不应写入普通图片失败 warning,warnings=${JSON.stringify(warnings)}`);
-    }
+    await suite.case("embedExternalImages:外部取消使用独立错误码 ERR_CONVERSION_CANCELLED", () => {
+      if (!error || error.code !== "ERR_CONVERSION_CANCELLED") {
+        throw new Error(`postprocess 断言失败:外部取消应使用独立错误码,error=${error?.stack ?? error}`);
+      }
+    });
+    await suite.case("embedExternalImages:resolver 收到已取消的 request.signal 且不写图片失败警告", () => {
+      if (requestSignal?.aborted !== true) {
+        throw new Error("postprocess 断言失败:resolver 未收到已取消的 request.signal");
+      }
+      if (warnings.length !== 0) {
+        throw new Error(`postprocess 断言失败:取消不应写入普通图片失败 warning,warnings=${JSON.stringify(warnings)}`);
+      }
+    });
     console.log("[ok] postprocess:外部取消传播至 resolver request.signal 且使用独立错误码");
   }
 
@@ -445,11 +497,13 @@ export async function run() {
       // 放宽理由:catch 变量为 unknown;取消错误按 core 契约为带 code 的 Error 实例
       error = /** @type {{ code?: string, stack?: string }} */ (err);
     }
-    if (!error || error.code !== "ERR_CONVERSION_CANCELLED" || warnings.length !== 0) {
-      throw new Error(
-        `postprocess 断言失败:本地图片检查的取消应上抛且不写警告,error=${error?.stack ?? error},warnings=${JSON.stringify(warnings)}`,
-      );
-    }
+    await suite.case("checkLocalImages:外部取消上抛独立错误码且不写图片失败警告", () => {
+      if (!error || error.code !== "ERR_CONVERSION_CANCELLED" || warnings.length !== 0) {
+        throw new Error(
+          `postprocess 断言失败:本地图片检查的取消应上抛且不写警告,error=${error?.stack ?? error},warnings=${JSON.stringify(warnings)}`,
+        );
+      }
+    });
     console.log("[ok] postprocess:本地图片检查取消上抛且不写图片失败警告");
   }
 
@@ -464,12 +518,14 @@ export async function run() {
       requestTimeoutMs: 1000,
       concurrency: 8,
     });
-    const embedded = (out.match(/data:image\/png/g) || []).length;
-    if (embedded !== count || warnings.length !== 0) {
-      throw new Error(
-        `postprocess 断言失败:默认预算(512 张)内 ${count} 张应全部内嵌且无警告,embedded=${embedded} warnings=${warnings.length}`,
-      );
-    }
+    await suite.case("embedExternalImages:默认数量预算内大量图片全部内嵌且无警告", () => {
+      const embedded = (out.match(/data:image\/png/g) || []).length;
+      if (embedded !== count || warnings.length !== 0) {
+        throw new Error(
+          `postprocess 断言失败:默认预算(512 张)内 ${count} 张应全部内嵌且无警告,embedded=${embedded} warnings=${warnings.length}`,
+        );
+      }
+    });
     // 数量预算收紧到 10:第 11 张起不再发起请求,按文档顺序稳定降级
     /** @type {Warning[]} */
     const cappedWarnings = [];
@@ -478,19 +534,23 @@ export async function run() {
       calls += 1;
       return Buffer.concat([PNG_MAGIC, Buffer.from("1")]);
     }, cappedWarnings, { maxImages: 10, concurrency: 4 });
-    if (calls !== 10 || cappedWarnings.length !== count - 10) {
-      throw new Error(
-        `postprocess 断言失败:数量预算 10 时应只请求 10 次并对其余 ${count - 10} 张稳定告警,calls=${calls} warnings=${cappedWarnings.length}`,
-      );
-    }
+    await suite.case("embedExternalImages:收紧数量预算后只请求预算内张数并对其余稳定告警", () => {
+      if (calls !== 10 || cappedWarnings.length !== count - 10) {
+        throw new Error(
+          `postprocess 断言失败:数量预算 10 时应只请求 10 次并对其余 ${count - 10} 张稳定告警,calls=${calls} warnings=${cappedWarnings.length}`,
+        );
+      }
+    });
     // 首条同样要断掉 noUncheckedIndexedAccess 带来的 undefined(缺失即报错,不当空文案比)
-    const firstCapped = cappedWarnings[0];
-    if (firstCapped === undefined
-      || formatWarning(firstCapped) !== "图片加载失败: https://x.example/10.png") {
-      throw new Error(
-        `postprocess 断言失败:超预算 warning 应从第 11 张起按文档顺序入列,首个=${JSON.stringify(cappedWarnings[0] ?? null)}`,
-      );
-    }
+    await suite.case("embedExternalImages:超预算 warning 从第 11 张起按文档顺序入列", () => {
+      const firstCapped = cappedWarnings[0];
+      if (firstCapped === undefined
+        || formatWarning(firstCapped) !== "图片加载失败: https://x.example/10.png") {
+        throw new Error(
+          `postprocess 断言失败:超预算 warning 应从第 11 张起按文档顺序入列,首个=${JSON.stringify(cappedWarnings[0] ?? null)}`,
+        );
+      }
+    });
     console.log(
       `[ok] postprocess:大量图片 ${count} 张在预算内完成(默认全内嵌 / maxImages=10 时仅请求 10 次),耗时 ${Date.now() - startedAt}ms`,
     );
@@ -520,43 +580,59 @@ export async function run() {
     ].join("\n");
     const { html, headings } = await renderPdfDocument(md, { baseDir: FIXTURES_DIR, title: "结构化标题", toc: true, fs: HOST_FS });
     // h1 层级正确 + 文本剥行内标签、实体解码(与旧 HTML 反解析口径逐字一致)
-    const first = headings[0];
-    if (!first || first.level !== 1 || first.text !== "章一" || first.id !== "章一") {
-      throw new Error(`postprocess 断言失败:h1 结构化标题异常,first=${JSON.stringify(first)}`);
-    }
+    await suite.case("结构化标题:h1 的 level/text/id 正确", () => {
+      const first = headings[0];
+      if (!first || first.level !== 1 || first.text !== "章一" || first.id !== "章一") {
+        throw new Error(`postprocess 断言失败:h1 结构化标题异常,first=${JSON.stringify(first)}`);
+      }
+    });
     const texts = headings.map((h) => h.text);
-    if (JSON.stringify(texts) !== JSON.stringify(["章一", "1.1 小节 与 代码", "1.1.1 A & B", "章一", "尾随 行内 HTML"])) {
-      throw new Error(`postprocess 断言失败:结构化标题文本/层级序列异常,texts=${JSON.stringify(texts)}`);
-    }
+    await suite.case("结构化标题:文本序列剥标签并解码实体", () => {
+      if (JSON.stringify(texts) !== JSON.stringify(["章一", "1.1 小节 与 代码", "1.1.1 A & B", "章一", "尾随 行内 HTML"])) {
+        throw new Error(`postprocess 断言失败:结构化标题文本/层级序列异常,texts=${JSON.stringify(texts)}`);
+      }
+    });
     const levels = headings.map((h) => h.level);
-    if (JSON.stringify(levels) !== JSON.stringify([1, 2, 3, 1, 2])) {
-      throw new Error(`postprocess 断言失败:标题层级序列异常(期望 h1/h2/h3/h1/h2),levels=${JSON.stringify(levels)}`);
-    }
+    await suite.case("结构化标题:层级序列只含 h1/h2/h3", () => {
+      if (JSON.stringify(levels) !== JSON.stringify([1, 2, 3, 1, 2])) {
+        throw new Error(`postprocess 断言失败:标题层级序列异常(期望 h1/h2/h3/h1/h2),levels=${JSON.stringify(levels)}`);
+      }
+    });
     // 重复标题 id 去重(uniqueSlug 单源),且 id 文档内唯一
     const ids = headings.map((h) => h.id);
-    if (ids[0] !== "章一" || ids[3] !== "章一-2" || new Set(ids).size !== ids.length) {
-      throw new Error(`postprocess 断言失败:重复标题 id 未去重或出现重复,ids=${JSON.stringify(ids)}`);
-    }
-    // h4-h6 确有 id(排除"标题没渲染"的假绿),但不进目录/结构化标题
-    if (!/<h4 id="[^"]+"/.test(html) || !/<h5 id="[^"]+"/.test(html) || !/<h6 id="[^"]+"/.test(html)) {
-      throw new Error("postprocess 断言失败:h4-h6 应带 id 渲染(不进目录≠不渲染)");
-    }
-    const tocRegion = /<ul[^>]*data-toc[^>]*>([\s\S]*?)<\/ul>/.exec(html)?.[1] ?? "";
-    if (tocRegion === "") throw new Error("postprocess 断言失败:目录区(data-toc)未生成");
-    if (tocRegion.includes("第四节") || tocRegion.includes("第五节") || tocRegion.includes("第六节")) {
-      throw new Error(`postprocess 断言失败:h4-h6 不应进目录,toc=${tocRegion}`);
-    }
-    for (const id of ids) {
-      if (!tocRegion.includes(`<a href="#${id}">`)) {
-        throw new Error(`postprocess 断言失败:目录项缺失锚点 #${id},toc=${tocRegion}`);
+    await suite.case("结构化标题:重复标题 id 去重且文档内唯一", () => {
+      if (ids[0] !== "章一" || ids[3] !== "章一-2" || new Set(ids).size !== ids.length) {
+        throw new Error(`postprocess 断言失败:重复标题 id 未去重或出现重复,ids=${JSON.stringify(ids)}`);
       }
+    });
+    // h4-h6 确有 id(排除"标题没渲染"的假绿),但不进目录/结构化标题
+    await suite.case("h4-h6 确有 id 渲染(不进目录不等于不渲染)", () => {
+      if (!/<h4 id="[^"]+"/.test(html) || !/<h5 id="[^"]+"/.test(html) || !/<h6 id="[^"]+"/.test(html)) {
+        throw new Error("postprocess 断言失败:h4-h6 应带 id 渲染(不进目录≠不渲染)");
+      }
+    });
+    const tocRegion = /<ul[^>]*data-toc[^>]*>([\s\S]*?)<\/ul>/.exec(html)?.[1] ?? "";
+    await suite.case("目录区已生成且 h4-h6 不进目录", () => {
+      if (tocRegion === "") throw new Error("postprocess 断言失败:目录区(data-toc)未生成");
+      if (tocRegion.includes("第四节") || tocRegion.includes("第五节") || tocRegion.includes("第六节")) {
+        throw new Error(`postprocess 断言失败:h4-h6 不应进目录,toc=${tocRegion}`);
+      }
+    });
+    for (const id of ids) {
+      await suite.case(`目录项含锚点 #${id}`, () => {
+        if (!tocRegion.includes(`<a href="#${id}">`)) {
+          throw new Error(`postprocess 断言失败:目录项缺失锚点 #${id},toc=${tocRegion}`);
+        }
+      });
     }
     // 结构化数据与旧兼容层(HTML 反解析)逐字一致——渐进替换不改行为
-    if (JSON.stringify(extractHeadings(html)) !== JSON.stringify(headings)) {
-      throw new Error(
-        `postprocess 断言失败:结构化标题与兼容层提取不一致,regex=${JSON.stringify(extractHeadings(html))}`,
-      );
-    }
+    await suite.case("结构化标题与兼容层(HTML 反解析)逐字一致", () => {
+      if (JSON.stringify(extractHeadings(html)) !== JSON.stringify(headings)) {
+        throw new Error(
+          `postprocess 断言失败:结构化标题与兼容层提取不一致,regex=${JSON.stringify(extractHeadings(html))}`,
+        );
+      }
+    });
     console.log("[ok] postprocess:结构化标题(h1 层级/h4-h6 不进目录/重复 id 去重/与兼容层一致)");
   }
 
@@ -567,16 +643,21 @@ export async function run() {
       { level: 2, id: "b", text: "1.1 <b>小节</b>" }, // 文本按 HTML 转义,原样入目录
       { level: 4, id: "d", text: "第四节" }, // 层级上限外的防御过滤
     ]);
-    if (!toc.includes('<ul data-toc>') || !toc.includes('<li class="toc-l1"><a href="#a">第一章</a></li>')) {
-      throw new Error(`postprocess 断言失败:buildTocHtml 未按结构化标题生成目录项,toc=${toc}`);
-    }
-    if (!toc.includes("<a href=\"#b\">1.1 &lt;b&gt;小节&lt;/b&gt;</a>")) {
-      throw new Error(`postprocess 断言失败:buildTocHtml 未转义标题文本,toc=${toc}`);
-    }
-    if (toc.includes("#d") || toc.includes("第四节")) {
-      throw new Error(`postprocess 断言失败:buildTocHtml 不应收录 h4(层级上限 3),toc=${toc}`);
-    }
-    if (buildTocHtml([]) !== "") throw new Error("postprocess 断言失败:无标题时 buildTocHtml 应返回空串(不生成目录)");
+    await suite.case("buildTocHtml:按结构化标题生成目录项并转义标题文本", () => {
+      if (!toc.includes('<ul data-toc>') || !toc.includes('<li class="toc-l1"><a href="#a">第一章</a></li>')) {
+        throw new Error(`postprocess 断言失败:buildTocHtml 未按结构化标题生成目录项,toc=${toc}`);
+      }
+      if (!toc.includes("<a href=\"#b\">1.1 &lt;b&gt;小节&lt;/b&gt;</a>")) {
+        throw new Error(`postprocess 断言失败:buildTocHtml 未转义标题文本,toc=${toc}`);
+      }
+    });
+    await suite.case("buildTocHtml:层级上限外的 h4 被过滤,空输入返回空串", () => {
+      if (toc.includes("#d") || toc.includes("第四节")) {
+        throw new Error(`postprocess 断言失败:buildTocHtml 不应收录 h4(层级上限 3),toc=${toc}`);
+      }
+      if (buildTocHtml([]) !== "") throw new Error("postprocess 断言失败:无标题时 buildTocHtml 应返回空串(不生成目录)");
+    });
     console.log("[ok] postprocess:buildTocHtml 结构化入参 + 层级上限防御 + 空输入空串");
   }
+  return { cases: suite.results };
 }

@@ -25,6 +25,7 @@ import path from "node:path";
 import { createJsonWriter, defaultJsonWriterDeps } from "../../dist/main/persist/atomic-json.js";
 import { removeTree } from "../harness/temp-resource.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /** @typedef {import("../../dist/main/persist/atomic-json.js").JsonWriterDeps} JsonWriterDeps */
 /** @typedef {import("../../dist/main/persist/atomic-json.js").DurableFileHandle} DurableFileHandle */
@@ -68,6 +69,7 @@ export const meta = { description: "原子写耐久性:fsync 时点与顺序、�
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const dir = path.join(os.tmpdir(), `m2w-atomic-durability-${process.pid}`);
   await fs.mkdir(dir, { recursive: true });
   try {
@@ -120,39 +122,42 @@ export async function run() {
     await fs.writeFile(orderFile, '{"old":true}\n', "utf8");
     const writer = createWriter(observed);
     await writer(orderFile, { fresh: 1 });
-    assert(
-      JSON.stringify(calls) ===
-        JSON.stringify(["open:order.json.tmp", "writeFile", "sync", "close", "rename", `syncDir:${path.basename(dir)}`]),
-      `写盘调用序不符,实际 ${JSON.stringify(calls)}`,
-    );
-    assert(
-      calls.indexOf("sync") < calls.indexOf("rename"),
-      `fsync 必须早于 rename(内容先落盘再换名),实际序 ${JSON.stringify(calls)}`,
-    );
-    // 经 const 取快照再核验(赋值发生在上面的闭包里,直接读 let 收窄不到)
-    const snapshot = atSync;
-    assert(syncCalled, "sync 未被调用,无法核验其时点的磁盘实况");
-    assert(
-      snapshot.tmp === `${JSON.stringify({ fresh: 1 }, null, 2)}\n`,
-      `sync 时刻 tmp 应已是完整新内容,实际 ${JSON.stringify(snapshot.tmp)}`,
-    );
-    assert(
-      snapshot.target === '{"old":true}\n',
-      `sync 时刻目标应仍是旧值(rename 未发生),实际 ${JSON.stringify(snapshot.target)}`,
-    );
-    assert(
-      JSON.parse(await fs.readFile(orderFile, "utf8")).fresh === 1,
-      "写后目标文件应持有新值",
-    );
-    await fs
-      .access(`${orderFile}.tmp`)
-      .then(
-        () => assert(false, "tmp 写后不应残留"),
-        () => undefined,
+    await suite.case("调用序 open→write→sync→close→rename→syncDir(父目录),sync 早于 rename", async () => {
+      assert(
+        JSON.stringify(calls) ===
+          JSON.stringify(["open:order.json.tmp", "writeFile", "sync", "close", "rename", `syncDir:${path.basename(dir)}`]),
+        `写盘调用序不符,实际 ${JSON.stringify(calls)}`,
       );
+      assert(
+        calls.indexOf("sync") < calls.indexOf("rename"),
+        `fsync 必须早于 rename(内容先落盘再换名),实际序 ${JSON.stringify(calls)}`,
+      );
+      // 经 const 取快照再核验(赋值发生在上面的闭包里,直接读 let 收窄不到)
+      const snapshot = atSync;
+      assert(syncCalled, "sync 未被调用,无法核验其时点的磁盘实况");
+      assert(
+        snapshot.tmp === `${JSON.stringify({ fresh: 1 }, null, 2)}\n`,
+        `sync 时刻 tmp 应已是完整新内容,实际 ${JSON.stringify(snapshot.tmp)}`,
+      );
+      assert(
+        snapshot.target === '{"old":true}\n',
+        `sync 时刻目标应仍是旧值(rename 未发生),实际 ${JSON.stringify(snapshot.target)}`,
+      );
+      assert(
+        JSON.parse(await fs.readFile(orderFile, "utf8")).fresh === 1,
+        "写后目标文件应持有新值",
+      );
+      await fs
+        .access(`${orderFile}.tmp`)
+        .then(
+          () => assert(false, "tmp 写后不应残留"),
+          () => undefined,
+        );
+    });
     console.log("[ok] atomic-json-durability:调用序 open→write→sync→close→rename→syncDir(父目录),sync 早于 rename");
 
     // ---- 2. 断电模拟:写后未 fsync vs 已 fsync 的可观测差异 ----
+    // 两条写都落到各自文件,case 只读回读结果(不各自重建句柄)
     const powerFile = path.join(dir, "power.json");
     const durable = createWriter({
       ...real,
@@ -160,10 +165,6 @@ export async function run() {
     });
     await durable(powerFile, { a: 1 });
     const durableRaw = await fs.readFile(powerFile, "utf8");
-    assert(
-      JSON.parse(durableRaw).a === 1,
-      `fsync 生效时产物应完整可解析,实际 ${JSON.stringify(durableRaw)}`,
-    );
 
     const lossyFile = path.join(dir, "lossy.json");
     const lossy = createWriter({
@@ -172,16 +173,23 @@ export async function run() {
     });
     await lossy(lossyFile, { a: 1 });
     const lossyRaw = await fs.readFile(lossyFile, "utf8");
-    let lossyParseFailed = false;
-    try {
-      JSON.parse(lossyRaw);
-    } catch {
-      lossyParseFailed = true;
-    }
-    assert(
-      lossyParseFailed,
-      `未 fsync 的产物应是残缺内容(可观测差异),实际解析成功:${JSON.stringify(lossyRaw)}`,
-    );
+
+    await suite.case("断电模拟:fsync 后完整可解析 vs 未 fsync 残缺", () => {
+      assert(
+        JSON.parse(durableRaw).a === 1,
+        `fsync 生效时产物应完整可解析,实际 ${JSON.stringify(durableRaw)}`,
+      );
+      let lossyParseFailed = false;
+      try {
+        JSON.parse(lossyRaw);
+      } catch {
+        lossyParseFailed = true;
+      }
+      assert(
+        lossyParseFailed,
+        `未 fsync 的产物应是残缺内容(可观测差异),实际解析成功:${JSON.stringify(lossyRaw)}`,
+      );
+    });
     console.log(
       `[ok] atomic-json-durability:断电模拟差异成立(fsync 后 ${durableRaw.length} 字节可解析 / 未 fsync ${lossyRaw.length} 字节残缺)`,
     );
@@ -203,18 +211,20 @@ export async function run() {
     } catch {
       syncFailed = true;
     }
-    assert(syncFailed, "fsync 失败必须向调用方抛错(静默跳过就等于没加 fsync)");
-    assert(closed, "失败路径也必须 close 句柄(否则句柄泄漏)");
-    assert(
-      JSON.parse(await fs.readFile(syncFailFile, "utf8")).kept === true,
-      "fsync 失败时旧值必须保持不变",
-    );
-    await fs
-      .access(`${syncFailFile}.tmp`)
-      .then(
-        () => assert(false, "fsync 失败不应残留半成品 tmp"),
-        () => undefined,
+    await suite.case("fsync 失败 → 写失败/旧值完好/句柄已关/tmp 已清理", async () => {
+      assert(syncFailed, "fsync 失败必须向调用方抛错(静默跳过就等于没加 fsync)");
+      assert(closed, "失败路径也必须 close 句柄(否则句柄泄漏)");
+      assert(
+        JSON.parse(await fs.readFile(syncFailFile, "utf8")).kept === true,
+        "fsync 失败时旧值必须保持不变",
       );
+      await fs
+        .access(`${syncFailFile}.tmp`)
+        .then(
+          () => assert(false, "fsync 失败不应残留半成品 tmp"),
+          () => undefined,
+        );
+    });
     console.log("[ok] atomic-json-durability:fsync 失败 → 写失败/旧值完好/句柄已关/tmp 已清理");
 
     // ---- 4. 写失败路径:close 仍执行,tmp 清理失败不掩盖原始错误 ----
@@ -237,8 +247,10 @@ export async function run() {
     } catch (err) {
       writeFailMessage = err instanceof Error ? err.message : String(err);
     }
-    assert(writeFailMessage === "模拟写失败", `应上抛原始写错误,实际 ${writeFailMessage}`);
-    assert(writeFailClosed, "写失败路径也必须 close 句柄");
+    await suite.case("写失败 → 上抛原始错误(清理失败不掩盖)/句柄已关", () => {
+      assert(writeFailMessage === "模拟写失败", `应上抛原始写错误,实际 ${writeFailMessage}`);
+      assert(writeFailClosed, "写失败路径也必须 close 句柄");
+    });
     console.log("[ok] atomic-json-durability:写失败 → 上抛原始错误(清理失败不掩盖)/句柄已关");
 
     // ---- 5. rename 之后的父目录 fsync 失败:不推翻已成功的写,仅留痕 ----
@@ -262,20 +274,24 @@ export async function run() {
     } finally {
       console.warn = originalWarn;
     }
-    assert(committed, "父目录 fsync 失败仍应提交缓存(内容已就位)");
-    assert(
-      JSON.parse(await fs.readFile(dirFailFile, "utf8")).v === 2,
-      "父目录 fsync 失败时目标文件应已是新值(rename 已完成)",
-    );
-    assert(
-      warnLogs.some((l) => l.includes("父目录 fsync 失败")),
-      `父目录 fsync 失败应留痕,实际 ${JSON.stringify(warnLogs)}`,
-    );
+    await suite.case("父目录 fsync 失败不推翻已成功的写(仅留痕)", async () => {
+      assert(committed, "父目录 fsync 失败仍应提交缓存(内容已就位)");
+      assert(
+        JSON.parse(await fs.readFile(dirFailFile, "utf8")).v === 2,
+        "父目录 fsync 失败时目标文件应已是新值(rename 已完成)",
+      );
+      assert(
+        warnLogs.some((l) => l.includes("父目录 fsync 失败")),
+        `父目录 fsync 失败应留痕,实际 ${JSON.stringify(warnLogs)}`,
+      );
+    });
     console.log("[ok] atomic-json-durability:父目录 fsync 失败不推翻已成功的写(仅留痕)");
 
     // ---- 6. 默认 syncDir 在本平台可运行(win32 为空操作,posix 为真实目录 fsync) ----
-    await defaultJsonWriterDeps.syncDir(dir);
-    await defaultJsonWriterDeps.syncDir(path.join(dir, "no-such-dir"));
+    await suite.case("默认 syncDir 可运行(平台不支持目录 fsync 时降级为空操作)", async () => {
+      await defaultJsonWriterDeps.syncDir(dir);
+      await defaultJsonWriterDeps.syncDir(path.join(dir, "no-such-dir"));
+    });
     console.log(
       `[ok] atomic-json-durability:默认 syncDir 可运行(平台 ${process.platform},不支持目录 fsync 时降级为空操作)`,
     );
@@ -283,4 +299,5 @@ export async function run() {
     // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
     removeTree(dir);
   }
+  return { cases: suite.results };
 }

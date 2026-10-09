@@ -15,6 +15,7 @@ import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
 import { globalSlot, setGlobalSlot } from "./dom-stub.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const { assert: harnessAssert } = createAsserter("wizard-command-guard");
 
@@ -256,6 +257,7 @@ const OVERLAY_IDS = new Set(["precheckDialog", "completeDialog", "batchDialog", 
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const originalDocument = globalSlot("document");
   const originalWindow = globalSlot("window");
   /** @type {string[]} */
@@ -377,9 +379,13 @@ export async function run() {
     const fileList = await import(distUrl("convert/file-list.js"));
 
     actions.bindConvertActionsEvents();
-    const keydown = docListeners.get("keydown");
-    assert(keydown, "转换域应在 document 上绑定快捷键");
+    const keydownRaw = docListeners.get("keydown");
     const convertBtn = elementFor("convertBtn");
+    await suite.case("转换域在 document 上绑定快捷键", () => {
+      assert(keydownRaw, "转换域应在 document 上绑定快捷键");
+    });
+    // 窄化理由同上:判定留在 case 内,这里只让后续 case 能直接驱动这个 handler。
+    const keydown = /** @type {(arg: unknown) => unknown} */ (keydownRaw);
     // 忙态与合并次数经读取函数取值:断言函数的类型收窄会把属性/数组长度
     // 锁死在上一次比较的字面量上,而它们由被测回调在断言之间变化。
     const btnDisabled = () => convertBtn.disabled;
@@ -392,31 +398,38 @@ export async function run() {
     state.selectedFiles = ["C:\\work\\a.md"];
     state.suppressCompleteDialog = true; // 结果弹窗不参与本段判定
     fileList.updateActionButtons();
-    assert(btnDisabled() === false, "空闲态转换按钮应可用");
+    await suite.case("空闲态转换按钮可用", () => {
+      assert(btnDisabled() === false, "空闲态转换按钮应可用");
+    });
+
     const chain = flow.withPrecheck(["C:\\work\\a.md"], () => {});
-    assert(btnDisabled() === true, "预检进行中转换按钮应置灰");
-    assert(flow.isConvertCommandBlocked(), "预检进行中命令锁应生效");
-    keydown({ key: "Enter", ctrlKey: true, preventDefault() {} });
-    assert(precheckCount() === 1, "预检未决时快捷键不得另起预检");
-    const settleFirstPrecheck = pendingPrechecks.shift();
-    assert(settleFirstPrecheck, "应有一条未决预检链可结算");
-    settleFirstPrecheck([]);
-    await chain;
-    await flush();
-    assert(btnDisabled() === false, "预检结算后转换按钮应恢复可用");
-    assert(!flow.isConvertCommandBlocked(), "预检结算后命令锁应释放");
+    await suite.case("预检进行中转换按钮置灰且命令锁生效", async () => {
+      assert(btnDisabled() === true, "预检进行中转换按钮应置灰");
+      assert(flow.isConvertCommandBlocked(), "预检进行中命令锁应生效");
+      keydown({ key: "Enter", ctrlKey: true, preventDefault() {} });
+      assert(precheckCount() === 1, "预检未决时快捷键不得另起预检");
+      const settleFirstPrecheck = pendingPrechecks.shift();
+      assert(settleFirstPrecheck, "应有一条未决预检链可结算");
+      settleFirstPrecheck([]);
+      await chain;
+      await flush();
+      assert(btnDisabled() === false, "预检结算后转换按钮应恢复可用");
+      assert(!flow.isConvertCommandBlocked(), "预检结算后命令锁应释放");
+    });
 
     // ---- 2. 预检未决时按钮点击被阻断(视觉与守卫一致),结算后恢复 ----
     const chain2 = flow.withPrecheck(["C:\\work\\a.md"], () => {});
-    assert(btnDisabled() === true, "第二条预检链未决时按钮应保持置灰");
-    handlerOf(convertBtn, "click")();
-    assert(precheckCount() === 2, "预检未决时按钮点击不得另起预检");
-    const settleSecondPrecheck = pendingPrechecks.shift();
-    assert(settleSecondPrecheck, "应有一条未决预检链可结算");
-    settleSecondPrecheck([]);
-    await chain2;
-    await flush();
-    assert(btnDisabled() === false, "预检结算后按钮忙态复位");
+    await suite.case("预检未决时按钮点击被阻断且结算后忙态复位", async () => {
+      assert(btnDisabled() === true, "第二条预检链未决时按钮应保持置灰");
+      handlerOf(convertBtn, "click")();
+      assert(precheckCount() === 2, "预检未决时按钮点击不得另起预检");
+      const settleSecondPrecheck = pendingPrechecks.shift();
+      assert(settleSecondPrecheck, "应有一条未决预检链可结算");
+      settleSecondPrecheck([]);
+      await chain2;
+      await flush();
+      assert(btnDisabled() === false, "预检结算后按钮忙态复位");
+    });
 
     // ---- 3. 向导打开:自身遮罩不计阻断,背景命令/快捷键阻断 ----
     // 向导每次 open 重建外壳(步骤控件在构建期读最新 settings),故容器需按次重取
@@ -432,80 +445,111 @@ export async function run() {
     };
     bookWizard.openBookWizard();
     let overlay = currentOverlay();
-    assert(!overlay.classList.contains("hidden"), "向导打开后遮罩可见");
-    assert(flow.isBackgroundCommandBlocked(), "向导打开时背景命令应被判定阻断");
-    const precheckBeforeModal = precheckCount();
-    keydown({ key: "Enter", ctrlKey: true, preventDefault() {} });
-    await flow.withPrecheck(["C:\\work\\a.md"], () => {});
-    assert(precheckCount() === precheckBeforeModal, "向导打开时不得启动新预检");
+    await suite.case("向导打开时遮罩可见且背景命令被阻断", async () => {
+      assert(!overlay.classList.contains("hidden"), "向导打开后遮罩可见");
+      assert(flow.isBackgroundCommandBlocked(), "向导打开时背景命令应被判定阻断");
+      const precheckBeforeModal = precheckCount();
+      keydown({ key: "Enter", ctrlKey: true, preventDefault() {} });
+      await flow.withPrecheck(["C:\\work\\a.md"], () => {});
+      assert(precheckCount() === precheckBeforeModal, "向导打开时不得启动新预检");
+    });
 
     // ---- 4. 向导内入口统一前置校验:受阻不动,结算后恢复 ----
     const skipBtn = findById(overlay, "wizardSkip");
     const prevBtn = findById(overlay, "wizardPrev");
     const nextBtn = findById(overlay, "wizardNext");
     const finishBtn = findById(overlay, "wizardFinish");
-    assert(skipBtn && prevBtn && nextBtn && finishBtn, "向导应构建 skip/prev/next/finish 控件");
-    assert(step() === 1, "向导应停在第 1 步");
+    await suite.case("向导构建 skip/prev/next/finish 控件并停在第 1 步", () => {
+      assert(skipBtn && prevBtn && nextBtn && finishBtn, "向导应构建 skip/prev/next/finish 控件");
+      assert(step() === 1, "向导应停在第 1 步");
+    });
+    // 四个入口的存在性由上一条 case 兜住;这里只做类型窄化,让后续 case 能直接驱动
+    // 这些按钮(窄化不是新增断言,判定仍在那条 case 里)。
+    const skipEl = /** @type {WizardStubElement} */ (skipBtn);
+    const prevEl = /** @type {WizardStubElement} */ (prevBtn);
+    const nextEl = /** @type {WizardStubElement} */ (nextBtn);
+    const finishEl = /** @type {WizardStubElement} */ (finishBtn);
 
-    state.mode = "single"; // 转换进行中
-    handlerOf(skipBtn, "click")();
-    handlerOf(nextBtn, "click")();
-    handlerOf(prevBtn, "click")();
-    handlerOf(finishBtn, "click")();
-    await flush();
-    assert(step() === 1, "转换进行中向导步序不应变化");
-    assert(mergeCount() === 0, "转换进行中付印不应发起合并转换");
-    state.mode = null; // 结算
+    await suite.case("转换进行中向导入口一律不响应", async () => {
+      state.mode = "single"; // 转换进行中
+      handlerOf(skipEl, "click")();
+      handlerOf(nextEl, "click")();
+      handlerOf(prevEl, "click")();
+      handlerOf(finishEl, "click")();
+      await flush();
+      assert(step() === 1, "转换进行中向导步序不应变化");
+      assert(mergeCount() === 0, "转换进行中付印不应发起合并转换");
+      state.mode = null; // 结算
+    });
 
-    handlerOf(nextBtn, "click")();
-    assert(step() === 2, "命令结算后下一步应恢复");
-    handlerOf(prevBtn, "click")();
-    assert(step() === 1, "命令结算后上一步应恢复");
-    handlerOf(skipBtn, "click")();
-    assert(step() === 2, "命令结算后跳过应恢复");
+    await suite.case("命令结算后向导各入口恢复", () => {
+      handlerOf(nextEl, "click")();
+      assert(step() === 2, "命令结算后下一步应恢复");
+      handlerOf(prevEl, "click")();
+      assert(step() === 1, "命令结算后上一步应恢复");
+      handlerOf(skipEl, "click")();
+      assert(step() === 2, "命令结算后跳过应恢复");
+    });
 
     // ---- 5. 付印链:single-flight + 两格式依次,链内不起第二条命令 ----
     runtime.draft.sources = ["C:\\work\\a.md", "C:\\work\\b.md"];
     runtime.draft.format = "both";
     state.selectedFiles = ["C:\\work\\a.md", "C:\\work\\b.md"];
-    for (let i = 0; i < 6 && step() < 7; i++) handlerOf(nextBtn, "click")();
-    assert(step() === 7, "应可推进到最后一步(付印入口)");
+    for (let i = 0; i < 6 && step() < 7; i++) handlerOf(nextEl, "click")();
     const precheckBeforeFinish = precheckCalls;
-    handlerOf(finishBtn, "click")();
+    await suite.case("向导可推进到最后一步(付印入口)", () => {
+      assert(step() === 7, "应可推进到最后一步(付印入口)");
+    });
+
+    handlerOf(finishEl, "click")();
     // 付印(合并)现与工具栏合并同一条防线:逐源文件预检。无告警即静默放行;
     // 两种格式复用同一轮预检(链内覆盖集),故整条付印只应发出 2 次预检 IPC。
     await settlePrechecks(2);
-    assert(mergeCount() === 2, `付印两格式应依次执行两次合并,实际 ${mergeCalls.length} 次`);
-    assert(
-      mergeCalls[0] === "docx" && mergeCalls[1] === "pdf",
-      `付印格式序应为 docx→pdf,实际 ${mergeCalls}`,
-    );
-    assert(
-      precheckCount() === precheckBeforeFinish + 2,
-      `付印应逐源文件各预检一次(2 文件 = 2 次 IPC,两格式不重复查),实际 ${precheckCount() - precheckBeforeFinish} 次`,
-    );
-    assert(!flow.isConvertCommandBlocked(), "付印链结算后命令锁应释放");
-    assert(overlay.classList.contains("hidden"), "付印后向导应关闭");
+    await suite.case("付印两格式依次执行且逐源文件各预检一次", () => {
+      assert(mergeCount() === 2, `付印两格式应依次执行两次合并,实际 ${mergeCalls.length} 次`);
+      assert(
+        mergeCalls[0] === "docx" && mergeCalls[1] === "pdf",
+        `付印格式序应为 docx→pdf,实际 ${mergeCalls}`,
+      );
+      assert(
+        precheckCount() === precheckBeforeFinish + 2,
+        `付印应逐源文件各预检一次(2 文件 = 2 次 IPC,两格式不重复查),实际 ${precheckCount() - precheckBeforeFinish} 次`,
+      );
+    });
+
+    await suite.case("付印链结算后命令锁释放且向导关闭", () => {
+      assert(!flow.isConvertCommandBlocked(), "付印链结算后命令锁应释放");
+      assert(overlay.classList.contains("hidden"), "付印后向导应关闭");
+    });
 
     // ---- 6. 转换进行中再付印:不并发起第二条链;结算后可再付印 ----
     bookWizard.openBookWizard();
     overlay = currentOverlay();
-    assert(step() === 1 && !overlay.classList.contains("hidden"), "向导应可复开(复开为重建,容器重新取)");
     const finishBtn2 = findById(overlay, "wizardFinish");
-    assert(finishBtn2, "复开的向导应构建 finish 控件");
+    await suite.case("向导可复开(复开为重建,容器重新取)且构建 finish 控件", () => {
+      assert(step() === 1 && !overlay.classList.contains("hidden"), "向导应可复开(复开为重建,容器重新取)");
+      assert(finishBtn2, "复开的向导应构建 finish 控件");
+    });
+    const finishEl2 = /** @type {WizardStubElement} */ (finishBtn2);
+
     runtime.draft.sources = ["C:\\work\\a.md", "C:\\work\\b.md"];
     state.mode = "merge";
     const mergesBeforeBlocked = mergeCalls.length;
-    handlerOf(finishBtn2, "click")();
-    await flush();
-    assert(mergeCount() === mergesBeforeBlocked, "转换进行中再付印不得并发起第二条链");
-    assert(!overlay.classList.contains("hidden"), "受阻时向导保持打开");
+    await suite.case("转换进行中再付印不并发起第二条链且向导保持打开", async () => {
+      handlerOf(finishEl2, "click")();
+      await flush();
+      assert(mergeCount() === mergesBeforeBlocked, "转换进行中再付印不得并发起第二条链");
+      assert(!overlay.classList.contains("hidden"), "受阻时向导保持打开");
+    });
+
     state.mode = null;
-    handlerOf(finishBtn2, "click")(); // 结算后付印生效(单格式 docx,草稿已被 open 重置)
+    handlerOf(finishEl2, "click")(); // 结算后付印生效(单格式 docx,草稿已被 open 重置)
     await settlePrechecks(2); // 合并前的逐文件预检(无告警即静默放行)
-    assert(mergeCount() === mergesBeforeBlocked + 1, "结算后付印应恢复");
-    assert(mergeCalls.at(-1) === "docx", "单格式付印按草稿格式执行");
-    assert(overlay.classList.contains("hidden"), "付印后向导应关闭");
+    await suite.case("结算后付印按草稿单格式执行并关闭向导", () => {
+      assert(mergeCount() === mergesBeforeBlocked + 1, "结算后付印应恢复");
+      assert(mergeCalls.at(-1) === "docx", "单格式付印按草稿格式执行");
+      assert(overlay.classList.contains("hidden"), "付印后向导应关闭");
+    });
 
     // ---- 7. 前序留下前台模态(完成弹窗):第二次格式转换按单一明确结果拦下 ----
     bookWizard.openBookWizard();
@@ -515,16 +559,25 @@ export async function run() {
     state.suppressCompleteDialog = false; // 转换结束展示完成弹窗(前台模态)
     const mergesBeforeModal = mergeCalls.length;
     const finishBtn3 = findById(overlay, "wizardFinish");
-    assert(finishBtn3, "向导应构建 finish 控件");
-    handlerOf(finishBtn3, "click")();
+    await suite.case("向导构建 finish 控件", () => {
+      assert(finishBtn3, "向导应构建 finish 控件");
+    });
+    const finishEl3 = /** @type {WizardStubElement} */ (finishBtn3);
+
+    handlerOf(finishEl3, "click")();
     await settlePrechecks(2);
-    assert(
-      mergeCalls.length === mergesBeforeModal + 1,
-      `完成弹窗在前台时第二次格式转换应被统一守卫拦下,实际新增 ${mergeCalls.length - mergesBeforeModal} 次`,
-    );
-    assert(!completeDialog.classList.contains("hidden"), "付印完成应展示完成弹窗");
-    completeDialog.classList.add("hidden");
-    assert(!flow.isConvertCommandBlocked(), "弹窗关闭后命令锁应释放");
+    await suite.case("完成弹窗在前台时第二次格式转换被统一守卫拦下", () => {
+      assert(
+        mergeCalls.length === mergesBeforeModal + 1,
+        `完成弹窗在前台时第二次格式转换应被统一守卫拦下,实际新增 ${mergeCalls.length - mergesBeforeModal} 次`,
+      );
+    });
+
+    await suite.case("付印完成展示完成弹窗且弹窗关闭后命令锁释放", () => {
+      assert(!completeDialog.classList.contains("hidden"), "付印完成应展示完成弹窗");
+      completeDialog.classList.add("hidden");
+      assert(!flow.isConvertCommandBlocked(), "弹窗关闭后命令锁应释放");
+    });
 
     // ---- 8. 付印链持链口径固定:整条链经 withPrecheck 单一 flight,两格式之间复检统一守卫 ----
     const wizardSource = fs.readFileSync(
@@ -532,20 +585,26 @@ export async function run() {
       "utf8",
     );
     const finishBody = wizardSource.slice(wizardSource.indexOf("async function finishWizard"));
-    assert(
-      finishBody.includes("withPrecheck(") && finishBody.includes("isBackgroundCommandBlocked()"),
-      "付印链应经 withPrecheck 持链,并在两格式之间复检统一前置校验",
-    );
     const entryBlock = wizardSource.slice(
       wizardSource.indexOf('skipBtn.addEventListener("click"'),
       wizardSource.indexOf('finishBtn.addEventListener("click"'),
     );
-    assert(
-      (entryBlock.match(/isWizardCommandBlocked\(\)/g) ?? []).length >= 3,
-      "skip/上一步/下一步三个入口应各自经统一前置校验",
-    );
+    await suite.case("付印链经 withPrecheck 持链并在两格式之间复检统一前置校验", () => {
+      assert(
+        finishBody.includes("withPrecheck(") && finishBody.includes("isBackgroundCommandBlocked()"),
+        "付印链应经 withPrecheck 持链,并在两格式之间复检统一前置校验",
+      );
+    });
+
+    await suite.case("skip/上一步/下一步三个入口各自经统一前置校验", () => {
+      assert(
+        (entryBlock.match(/isWizardCommandBlocked\(\)/g) ?? []).length >= 3,
+        "skip/上一步/下一步三个入口应各自经统一前置校验",
+      );
+    });
 
     console.log("[ok] wizard-command-guard:向导入口守卫/付印链/预检按钮忙态断言通过");
+    return { cases: suite.results };
   } finally {
     setGlobalSlot("document", originalDocument);
     setGlobalSlot("window", originalWindow);

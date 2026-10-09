@@ -38,6 +38,7 @@ import { backupSettings } from "../harness/settings.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { removeTree } from "../harness/temp-resource.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const { assert: harnessAssert } = createAsserter("operation-single-flight");
 
@@ -104,6 +105,7 @@ const nextTick = () => new Promise((resolve) => setImmediate(resolve));
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "m2w-singleflight-"));
   const restoreSettings = await backupSettings();
   /** @type {BrowserWindow | null} */
@@ -126,10 +128,14 @@ export async function run() {
 
     // ---------- 1. 真实并发突发:飞行中最大活动操作数为 1 ----------
     const pending = handlers.get(CH.convertSingle)(event, md, "docx");
-    // 占用在调用栈内同步完成(注册前无 await):首个请求返回时已在飞行
+    // 占用在调用栈内同步完成(注册前无 await):首个请求返回时已在飞行。
+    // 声明必须在第一个 case 之外 —— case 体是独立函数作用域,放进去则后两个 case
+    // 读到的是 TDZ(后两个 case 拿它做飞行期 context 恒定性与注册表清空的判定)。
     const firstOp = getWebContentsOperation(senderId);
-    assert(firstOp !== undefined, "首个 convertSingle 应在返回前完成注册表占用");
-    assert(firstOp.kind === "single", `首个操作类型应为 single(实际 ${firstOp.kind})`);
+    await suite.case("首个 convertSingle 在返回前完成注册表占用(类型 single)", () => {
+      assert(firstOp !== undefined, "首个 convertSingle 应在返回前完成注册表占用");
+      assert(firstOp.kind === "single", `首个操作类型应为 single(实际 ${firstOp.kind})`);
+    });
 
     // 同一 tick 内连发其余请求(不 await 首个):双击/Ctrl+Enter/预检中再转换的并发面
     const others = [
@@ -152,39 +158,61 @@ export async function run() {
     settled = true;
     await sampler;
 
-    const observed = samples.filter((ctx) => ctx !== null);
-    assert(observed.length > 0, "飞行期间应至少采样到一次活动操作");
-    assert(
-      observed.every((ctx) => ctx === firstOp.context),
-      "飞行期间活动 context 恒定(后继请求不得替换已占用 context)",
-    );
-    assert(first.ok === true && typeof first.outputPath === "string" && first.busy === undefined,
-      `首个请求应正常完成转换(实际 ${JSON.stringify(first)})`);
-    assert(!hasWebContentsOperation(senderId), "全部请求结束后注册表应为空");
-    assertBusy(rest[0], "并发 convertSingle");
-    assertBusy(rest[1], "并发 convertPrecheck");
-    assertBusy(rest[2], "并发 convertBatch", BATCH_BUSY_KEYS);
-    assertBusy(rest[3], "并发 convertMerge");
-    assertBusy(rest[4], "并发 convertPrecheck(第二次)");
+    await suite.case("飞行采样 context 恒定(后继请求不得替换已占用 context)", () => {
+      const observed = samples.filter((ctx) => ctx !== null);
+      assert(observed.length > 0, "飞行期间应至少采样到一次活动操作");
+      assert(firstOp !== undefined, "首个 convertSingle 应在返回前完成注册表占用");
+      assert(
+        observed.every((ctx) => ctx === firstOp.context),
+        "飞行期间活动 context 恒定(后继请求不得替换已占用 context)",
+      );
+    });
+
+    await suite.case("首个请求正常完成转换,全部结束后注册表为空", () => {
+      assert(first.ok === true && typeof first.outputPath === "string" && first.busy === undefined,
+        `首个请求应正常完成转换(实际 ${JSON.stringify(first)})`);
+      assert(!hasWebContentsOperation(senderId), "全部请求结束后注册表应为空");
+    });
+
+    // 五条 busy 断言彼此独立(任一条形状漂移不掩盖其余),故按域拆开
+    await suite.case("并发 convertSingle/convertPrecheck 返回形状稳定的 busy", () => {
+      assertBusy(rest[0], "并发 convertSingle");
+      assertBusy(rest[1], "并发 convertPrecheck");
+      assertBusy(rest[4], "并发 convertPrecheck(第二次)");
+    });
+    await suite.case("并发 convertBatch/convertMerge 返回形状稳定的 busy", () => {
+      assertBusy(rest[2], "并发 convertBatch", BATCH_BUSY_KEYS);
+      assertBusy(rest[3], "并发 convertMerge");
+    });
     console.log(
       `[ok] single-flight:真实并发 ${others.length + 1} 请求 → 1 执行 + ${others.length} busy(飞行采样 context 恒定)`,
     );
 
     // ---------- 2. 取消指向当前操作,结束后不复位为悬挂占用 ----------
     const canceling = handlers.get(CH.convertSingle)(event, md, "docx");
-    assert(hasWebContentsOperation(senderId), "取消前应存在活动操作");
+    // 占用同步完成(注册前无 await),取消前此刻应已在飞行 —— 取成值供 case 断言,
+    // 断言必须落在 case 内,但取样点必须留在 await 之前(否则读到的是取消后的空表)
+    const occupiedBeforeCancel = hasWebContentsOperation(senderId);
     const canceled = handlers.get(CH.convertCancel)(event); // 同步置位当前 ctx
-    assert(canceled === undefined, "convert:cancel 无返回值(void)");
     const cancelResult = await canceling;
-    assert(
-      cancelResult.ok === false && cancelResult.canceled === true && cancelResult.busy === undefined,
-      `飞行中取消应返回 { ok:false, canceled:true }(实际 ${JSON.stringify(cancelResult)})`,
+    // 复位验证:取消后再次请求正常执行(后续 case 与 3 的「正常警告不被污染」共用其结果)
+    // handler 引用来自 captureHandlers 的 Map(无类型标注),断言移进 case 后收窄不到
+    // 调用点,故在此按「预检返回警告数组」这一契约面显式标注(字符串警告或带 key 的对象)
+    const afterCancel = /** @type {(string | { key?: string })[]} */ (
+      await handlers.get(CH.convertPrecheck)(event, precheckMd)
     );
-    assert(!hasWebContentsOperation(senderId), "取消完成后注册表应释放(不悬挂阻塞后续)");
-    // 复位验证:取消后再次请求正常执行
-    const afterCancel = await handlers.get(CH.convertPrecheck)(event, precheckMd);
-    assert(Array.isArray(afterCancel) && afterCancel.length > 0,
-      `取消后再次预检应正常返回警告(实际 ${JSON.stringify(afterCancel)})`);
+
+    await suite.case("飞行中取消 → canceled 结果 + 注册表释放 + 后续请求可执行", () => {
+      assert(occupiedBeforeCancel, "取消前应存在活动操作");
+      assert(canceled === undefined, "convert:cancel 无返回值(void)");
+      assert(
+        cancelResult.ok === false && cancelResult.canceled === true && cancelResult.busy === undefined,
+        `飞行中取消应返回 { ok:false, canceled:true }(实际 ${JSON.stringify(cancelResult)})`,
+      );
+      assert(!hasWebContentsOperation(senderId), "取消完成后注册表应释放(不悬挂阻塞后续)");
+      assert(Array.isArray(afterCancel) && afterCancel.length > 0,
+        `取消后再次预检应正常返回警告(实际 ${JSON.stringify(afterCancel)})`);
+    });
     console.log("[ok] single-flight:飞行中取消 → canceled 结果 + 注册表释放 + 后续请求可执行");
 
     // ---------- 3. 预检异常可观察(不再静默空数组),正常警告语义不变 ----------
@@ -197,26 +225,32 @@ export async function run() {
     } finally {
       console.error = originalError;
     }
-    assert(Array.isArray(missingResult) && missingResult.length === 1,
-      `缺文件预检应返回单条失败警告而非空数组(实际 ${JSON.stringify(missingResult)})`);
-    const failure = missingResult[0];
-    assert(
-      typeof failure === "object" && failure.key === "warn.precheckFailed" &&
-        typeof failure.fallback === "string" && failure.fallback.includes("预检失败"),
-      `失败警告应携带可展示文案(实际 ${JSON.stringify(failure)})`,
-    );
-    assert(
-      logged.some((line) => line.includes("convert:precheck 失败") && line.includes("missing.md")),
-      `主进程应留痕预检失败(实际日志 ${JSON.stringify(logged)})`,
-    );
     const dirResult = await handlers.get(CH.convertPrecheck)(event, dir);
-    assert(Array.isArray(dirResult) && dirResult.length === 1 && dirResult[0].key === "warn.precheckFailed",
-      `目录入参预检失败同样应可观察(实际 ${JSON.stringify(dirResult)})`);
-    const normalKeys = afterCancel.map((w) => (typeof w === "string" ? w : w.key));
-    assert(
-      normalKeys.every((k) => k !== "warn.precheckFailed"),
-      "合法文件的正常警告不应被失败警告污染",
-    );
+
+    await suite.case("预检缺文件 → 单条可观察失败警告 + 主进程留痕", () => {
+      assert(Array.isArray(missingResult) && missingResult.length === 1,
+        `缺文件预检应返回单条失败警告而非空数组(实际 ${JSON.stringify(missingResult)})`);
+      const failure = missingResult[0];
+      assert(
+        typeof failure === "object" && failure.key === "warn.precheckFailed" &&
+          typeof failure.fallback === "string" && failure.fallback.includes("预检失败"),
+        `失败警告应携带可展示文案(实际 ${JSON.stringify(failure)})`,
+      );
+      assert(
+        logged.some((line) => line.includes("convert:precheck 失败") && line.includes("missing.md")),
+        `主进程应留痕预检失败(实际日志 ${JSON.stringify(logged)})`,
+      );
+    });
+
+    await suite.case("预检目录入参同样可观察 + 正常警告不被失败警告污染", () => {
+      assert(Array.isArray(dirResult) && dirResult.length === 1 && dirResult[0].key === "warn.precheckFailed",
+        `目录入参预检失败同样应可观察(实际 ${JSON.stringify(dirResult)})`);
+      const normalKeys = afterCancel.map((w) => (typeof w === "string" ? w : w.key));
+      assert(
+        normalKeys.every((k) => k !== "warn.precheckFailed"),
+        "合法文件的正常警告不应被失败警告污染",
+      );
+    });
     console.log("[ok] precheck 契约:失败单条可观察警告 + 主进程留痕;正常警告语义不变");
   } finally {
     if (win && !win.isDestroyed()) win.destroy();
@@ -224,4 +258,5 @@ export async function run() {
     // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
     removeTree(dir);
   }
+  return { cases: suite.results };
 }

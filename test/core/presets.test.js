@@ -23,6 +23,7 @@ import {
   MARGIN_MIN_MM,
 } from "../../dist/core/settings/settings-defaults.js";
 import { TEMPLATE_PRESETS, matchesPreset } from "../../dist/core/settings/presets.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /** @typedef {import("../../dist/core/settings/presets.js").TemplatePreset} TemplatePreset */
 /** @typedef {import("../../dist/core/settings/settings-defaults.js").HeaderFooterSettings} HeaderFooterSettings */
@@ -116,15 +117,23 @@ export const fixtures = null;
 
 /** TEMPLATE_PRESETS / matchesPreset 契约单测 */
 export async function run() {
+  const suite = createCaseSuite();
+  // case 名逐字复用 assertEq 的 label 形参:失败文案与 case 名同源,不必两份清单同步维护
   // ---------- 预设数量与 id 唯一性(模板下拉按 id 定位) ----------
-  assertEq(TEMPLATE_PRESETS.length, 6, "预设数量");
+  await suite.case("预设数量", () => {
+    assertEq(TEMPLATE_PRESETS.length, 6, "预设数量");
+  });
   const ids = new Set(TEMPLATE_PRESETS.map((p) => p.id));
-  assertEq(ids.size, TEMPLATE_PRESETS.length, "预设 id 唯一");
-  assertEq(
-    TEMPLATE_PRESETS.every((p) => p.id && p.name && p.hint),
-    true,
-    "预设 id/name/hint 非空",
-  );
+  await suite.case("预设 id 唯一", () => {
+    assertEq(ids.size, TEMPLATE_PRESETS.length, "预设 id 唯一");
+  });
+  await suite.case("预设 id/name/hint 非空", () => {
+    assertEq(
+      TEMPLATE_PRESETS.every((p) => p.id && p.name && p.hint),
+      true,
+      "预设 id/name/hint 非空",
+    );
+  });
   console.log(`[ok] 预设结构:${TEMPLATE_PRESETS.length} 个预设,id 唯一,name/hint 非空 断言通过`);
 
   // ---------- 预设说明三语化:hintI18nKey 契约(内置 6 预设必填 + 三语齐备) ----------
@@ -132,43 +141,53 @@ export async function run() {
   for (const preset of TEMPLATE_PRESETS) {
     // 收窄成 string 后再拿它做唯一性判定与字典索引(见 hintKeyOf 的说明)
     const hintKey = hintKeyOf(preset);
-    assertEq(
-      hintKeys.has(hintKey),
-      false,
-      `hintI18nKey 应唯一(重复:${hintKey})`,
-    );
+    await suite.case(`hintI18nKey 应唯一:${preset.id}`, () => {
+      assertEq(
+        hintKeys.has(hintKey),
+        false,
+        `hintI18nKey 应唯一(重复:${hintKey})`,
+      );
+    });
     hintKeys.add(hintKey);
     // hint 是字典缺键时的回退底:删掉/清空会让缺键语言退化成空提示
-    assertEq(
-      typeof preset.hint === "string" && preset.hint.length > 0,
-      true,
-      `预设 ${preset.id} hint 回退原文应非空`,
-    );
+    await suite.case(`预设 ${preset.id} hint 回退原文应非空`, () => {
+      assertEq(
+        typeof preset.hint === "string" && preset.hint.length > 0,
+        true,
+        `预设 ${preset.id} hint 回退原文应非空`,
+      );
+    });
     // 三语字典均须有该键(渲染层 presetHintText 据此取当前语言说明)
     for (const { code } of LANGUAGES) {
       // 字典键来自 i18n 注册表(动态字符串),静态结构类型无法收窄 → 显式字典视图
       const dict = DICT_VIEW[code];
       if (!dict) throw new Error(`i18n 字典缺少语言 ${code}`);
-      const value = dict[hintKey];
-      assertEq(
-        typeof value === "string" && value.length > 0,
-        true,
-        `${code} 字典应含非空 ${hintKey}`,
-      );
+      await suite.case(`${code} 字典应含非空 ${hintKey}`, () => {
+        const value = dict[hintKey];
+        assertEq(
+          typeof value === "string" && value.length > 0,
+          true,
+          `${code} 字典应含非空 ${hintKey}`,
+        );
+      });
     }
     // zh 键值 = hint 回退原文(两处文案同源,任一处改动须同步,防 zh 显示与缺键回退漂移)
     const zhDict = /** @type {Record<string, string>} */ (DICT.zh);
-    assertEq(
-      zhDict[hintKey],
-      preset.hint,
-      `zh.${hintKey} 应与预设 ${preset.id} 的 hint 逐字一致`,
-    );
+    await suite.case(`zh.${hintKey} 与预设 ${preset.id} 的 hint 逐字一致`, () => {
+      assertEq(
+        zhDict[hintKey],
+        preset.hint,
+        `zh.${hintKey} 应与预设 ${preset.id} 的 hint 逐字一致`,
+      );
+    });
   }
-  assertEq(
-    hintKeys.size,
-    TEMPLATE_PRESETS.length,
-    "hintI18nKey 键数应与预设数一致",
-  );
+  await suite.case("hintI18nKey 键数应与预设数一致", () => {
+    assertEq(
+      hintKeys.size,
+      TEMPLATE_PRESETS.length,
+      "hintI18nKey 键数应与预设数一致",
+    );
+  });
   console.log(
     `[ok] 预设说明三语化:${TEMPLATE_PRESETS.length} 个内置预设均声明唯一 hintI18nKey,${LANGUAGES.map((l) => l.code).join("/")} 字典齐备,zh 键值 = hint 回退原文 断言通过`,
   );
@@ -178,16 +197,20 @@ export async function run() {
     // 四条「存在」断言 + 收窄合并在 deliveryChainOf 里(它逐条比对 undefined 后返回必填视图)
     const chain = deliveryChainOf(preset);
     // 交付链字段须为 sane 默认值(无 watermark、页眉=标题居中+页码)
-    assertEq(
-      chain.watermark.text,
-      DEFAULT_WATERMARK.text,
-      `预设 ${preset.id} watermark.text 默认空`,
-    );
-    assertEq(
-      chain.headerFooter.headerMode,
-      DEFAULT_HEADER_FOOTER.headerMode,
-      `预设 ${preset.id} headerMode 默认`,
-    );
+    await suite.case(`预设 ${preset.id} watermark.text 默认空`, () => {
+      assertEq(
+        chain.watermark.text,
+        DEFAULT_WATERMARK.text,
+        `预设 ${preset.id} watermark.text 默认空`,
+      );
+    });
+    await suite.case(`预设 ${preset.id} headerMode 默认`, () => {
+      assertEq(
+        chain.headerFooter.headerMode,
+        DEFAULT_HEADER_FOOTER.headerMode,
+        `预设 ${preset.id} headerMode 默认`,
+      );
+    });
   }
   console.log("[ok] 完整交付链:全部内置预设携带 headerFooter/watermark/equationNumbering/breakBeforeH1 断言通过");
 
@@ -205,112 +228,142 @@ export async function run() {
       equationNumbering: chain.equationNumbering,
       breakBeforeH1: chain.breakBeforeH1,
     };
-    assertEq(
-      merged.equationNumbering,
-      chain.equationNumbering,
-      `合并 equationNumbering(${preset.id})`,
-    );
-    assertEq(
-      merged.breakBeforeH1,
-      chain.breakBeforeH1,
-      `合并 breakBeforeH1(${preset.id})`,
-    );
-    assertEq(
-      merged.headerFooter.headerMode,
-      chain.headerFooter.headerMode,
-      `合并 headerFooter(${preset.id})`,
-    );
-    assertEq(
-      merged.watermark.text,
-      chain.watermark.text,
-      `合并 watermark(${preset.id})`,
-    );
+    await suite.case(`合并 equationNumbering(${preset.id})`, () => {
+      assertEq(
+        merged.equationNumbering,
+        chain.equationNumbering,
+        `合并 equationNumbering(${preset.id})`,
+      );
+    });
+    await suite.case(`合并 breakBeforeH1(${preset.id})`, () => {
+      assertEq(
+        merged.breakBeforeH1,
+        chain.breakBeforeH1,
+        `合并 breakBeforeH1(${preset.id})`,
+      );
+    });
+    await suite.case(`合并 headerFooter(${preset.id})`, () => {
+      assertEq(
+        merged.headerFooter.headerMode,
+        chain.headerFooter.headerMode,
+        `合并 headerFooter(${preset.id})`,
+      );
+    });
+    await suite.case(`合并 watermark(${preset.id})`, () => {
+      assertEq(
+        merged.watermark.text,
+        chain.watermark.text,
+        `合并 watermark(${preset.id})`,
+      );
+    });
   }
   console.log("[ok] 预设→设置合并:新字段(equationNumbering/breakBeforeH1/headerFooter/watermark)等于预设值 断言通过");
 
   // ---------- matchesPreset:自匹配 + 默认设置匹配 + 微调不匹配 ----------
   for (const preset of TEMPLATE_PRESETS) {
-    assertEq(
-      matchesPreset(preset, settingsFromPreset(preset.id)),
-      true,
-      `matchesPreset 自匹配(${preset.id})`,
-    );
+    await suite.case(`matchesPreset 自匹配(${preset.id})`, () => {
+      assertEq(
+        matchesPreset(preset, settingsFromPreset(preset.id)),
+        true,
+        `matchesPreset 自匹配(${preset.id})`,
+      );
+    });
   }
   // default 预设与 DEFAULT_SETTINGS 完全一致(默认模板 = 默认设置)
   const defaultPreset = TEMPLATE_PRESETS.find((p) => p.id === "default");
   // find() 带 undefined,而 matchesPreset 的首参要 TemplatePreset(默认模板的存在性
   // 是本段前提,不是被断言的行为)—— 与 settingsFromPreset 内 find 后的守卫同一口径。
   if (!defaultPreset) throw new Error("default 预设不存在");
-  assertEq(
-    matchesPreset(defaultPreset, DEFAULT_SETTINGS),
-    true,
-    "default 预设匹配 DEFAULT_SETTINGS",
-  );
+  await suite.case("default 预设匹配 DEFAULT_SETTINGS", () => {
+    assertEq(
+      matchesPreset(defaultPreset, DEFAULT_SETTINGS),
+      true,
+      "default 预设匹配 DEFAULT_SETTINGS",
+    );
+  });
   // 微调任一字段 → 不匹配(排版侧代表:字号;页面侧代表:上边距)
-  assertEq(
-    matchesPreset(
-      defaultPreset,
-      settingsFromPreset("default", { typography: { ...DEFAULT_SETTINGS.typography, bodySizePt: 13 } }),
-    ),
-    false,
-    "微调字号后不匹配",
-  );
-  assertEq(
-    matchesPreset(
-      defaultPreset,
-      settingsFromPreset("default", { pageSetup: { ...DEFAULT_SETTINGS.pageSetup, marginTop: 30 } }),
-    ),
-    false,
-    "微调上边距后不匹配",
-  );
+  await suite.case("微调字号后不匹配", () => {
+    assertEq(
+      matchesPreset(
+        defaultPreset,
+        settingsFromPreset("default", { typography: { ...DEFAULT_SETTINGS.typography, bodySizePt: 13 } }),
+      ),
+      false,
+      "微调字号后不匹配",
+    );
+  });
+  await suite.case("微调上边距后不匹配", () => {
+    assertEq(
+      matchesPreset(
+        defaultPreset,
+        settingsFromPreset("default", { pageSetup: { ...DEFAULT_SETTINGS.pageSetup, marginTop: 30 } }),
+      ),
+      false,
+      "微调上边距后不匹配",
+    );
+  });
   // 完整交付链:headerFooter 被改 → 不匹配(预设定义了 headerFooter)
-  assertEq(
-    matchesPreset(
-      defaultPreset,
-      settingsFromPreset("default", {
-        headerFooter: { ...DEFAULT_SETTINGS.headerFooter, headerMode: "none" },
-      }),
-    ),
-    false,
-    "改 headerFooter 后不匹配",
-  );
+  await suite.case("改 headerFooter 后不匹配", () => {
+    assertEq(
+      matchesPreset(
+        defaultPreset,
+        settingsFromPreset("default", {
+          headerFooter: { ...DEFAULT_SETTINGS.headerFooter, headerMode: "none" },
+        }),
+      ),
+      false,
+      "改 headerFooter 后不匹配",
+    );
+  });
   // watermark 被改 → 不匹配
-  assertEq(
-    matchesPreset(
-      defaultPreset,
-      settingsFromPreset("default", {
-        watermark: { ...DEFAULT_SETTINGS.watermark, text: "机密" },
-      }),
-    ),
-    false,
-    "改 watermark 后不匹配",
-  );
+  await suite.case("改 watermark 后不匹配", () => {
+    assertEq(
+      matchesPreset(
+        defaultPreset,
+        settingsFromPreset("default", {
+          watermark: { ...DEFAULT_SETTINGS.watermark, text: "机密" },
+        }),
+      ),
+      false,
+      "改 watermark 后不匹配",
+    );
+  });
   // equationNumbering 被改 → 不匹配
-  assertEq(
-    matchesPreset(
-      defaultPreset,
-      settingsFromPreset("default", { equationNumbering: !DEFAULT_SETTINGS.equationNumbering }),
-    ),
-    false,
-    "改 equationNumbering 后不匹配",
-  );
+  await suite.case("改 equationNumbering 后不匹配", () => {
+    assertEq(
+      matchesPreset(
+        defaultPreset,
+        settingsFromPreset("default", { equationNumbering: !DEFAULT_SETTINGS.equationNumbering }),
+      ),
+      false,
+      "改 equationNumbering 后不匹配",
+    );
+  });
   console.log("[ok] matchesPreset:全预设自匹配、default 匹配默认设置、微调任一字段(含交付链)不匹配 断言通过");
 
   // ---------- 值域契约:预设值落在范围常量内(改预设值时须同步本段) ----------
   for (const preset of TEMPLATE_PRESETS) {
     const { typography: t, pageSetup: p } = preset;
-    if (t.bodySizePt < BODY_SIZE_MIN || t.bodySizePt > BODY_SIZE_MAX) {
-      throw new Error(`预设 ${preset.id} 字号越界: ${t.bodySizePt}(范围 ${BODY_SIZE_MIN}-${BODY_SIZE_MAX})`);
-    }
-    if (t.lineSpacing < LINE_SPACING_MIN || t.lineSpacing > LINE_SPACING_MAX) {
-      throw new Error(`预设 ${preset.id} 行距越界: ${t.lineSpacing}(范围 ${LINE_SPACING_MIN}-${LINE_SPACING_MAX})`);
-    }
+    // 每个量一个 case:字号越界与行距越界是两处不同的值域漂移
+    await suite.case(`预设 ${preset.id} 字号在范围内`, () => {
+      if (t.bodySizePt < BODY_SIZE_MIN || t.bodySizePt > BODY_SIZE_MAX) {
+        throw new Error(`预设 ${preset.id} 字号越界: ${t.bodySizePt}(范围 ${BODY_SIZE_MIN}-${BODY_SIZE_MAX})`);
+      }
+    });
+    await suite.case(`预设 ${preset.id} 行距在范围内`, () => {
+      if (t.lineSpacing < LINE_SPACING_MIN || t.lineSpacing > LINE_SPACING_MAX) {
+        throw new Error(`预设 ${preset.id} 行距越界: ${t.lineSpacing}(范围 ${LINE_SPACING_MIN}-${LINE_SPACING_MAX})`);
+      }
+    });
     const margins = [p.marginTop, p.marginBottom, p.marginLeft, p.marginRight];
     for (const margin of margins) {
-      if (margin < MARGIN_MIN_MM || margin > MARGIN_MAX_MM) {
-        throw new Error(`预设 ${preset.id} 边距越界: ${margin}(范围 ${MARGIN_MIN_MM}-${MARGIN_MAX_MM})`);
-      }
+      await suite.case(`预设 ${preset.id} 边距在范围内(${margin}mm)`, () => {
+        if (margin < MARGIN_MIN_MM || margin > MARGIN_MAX_MM) {
+          throw new Error(`预设 ${preset.id} 边距越界: ${margin}(范围 ${MARGIN_MIN_MM}-${MARGIN_MAX_MM})`);
+        }
+      });
     }
   }
   console.log(`[ok] 值域契约:${TEMPLATE_PRESETS.length} 个预设的字号/行距/四边距均在范围常量内 断言通过`);
+  return { cases: suite.results };
 }

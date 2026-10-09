@@ -12,6 +12,7 @@ import { zipContains, unzipPart } from "../harness/docx-utils.js";
 import { htmlToPdf } from "../harness/pdf-utils.js";
 import { saveArtifact } from "../harness/artifacts.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /** 主样例:脚注 + 页眉页脚(frontmatter 触发页眉;重复引用 [^1] 两次 → 独立脚注 id;
  *  多段脚注定义),gen-fixtures 落盘为 docs/footnotes.md */
@@ -40,69 +41,19 @@ export const fixtures = { main: footnoteMd };
 
 /** 脚注 + 页眉页脚验收 */
 export async function run() {
+  const suite = createCaseSuite();
   const docxBuffer = docxBufferOf(
     await convertWithFs(footnoteMd, "docx", {
       baseDir: FIXTURES_DIR,
       warnings: [],
     }),
   );
-  // docx 断言:footnotes.xml / footer1.xml 必须存在(metadata.title 存在 → header1.xml 也应存在)
-  const docxOk = zipContains(docxBuffer, "word/footnotes.xml");
-  const footerOk = zipContains(docxBuffer, "word/footer1.xml");
-  const headerOk = zipContains(docxBuffer, "word/header1.xml");
-  if (!docxOk || !footerOk || !headerOk) {
-    throw new Error(
-      `docx 部件断言失败: footnotes=${docxOk} footer=${footerOk} header=${headerOk}`,
-    );
-  }
-  console.log("[ok] docx 脚注/页眉页脚:footnotes.xml、footer1.xml、header1.xml 均存在");
-
-  // 重复引用共享同一脚注(样例 [^1] 引用两次 + [^2] 一次 = 3 个引用):
-  // 正文恰 3 个 footnoteReference;footnotes.xml 恰 2 条内容脚注(id 1/2,无 id 3)
+  // 解包取数备在 case 之外:下面各条判定读的都是这几份 XML,
+  // 搬进 case 就得逐条重解包,而解包失败与判定失败是两回事
   const footnotesXml = await unzipPart(docxBuffer, "word/footnotes.xml");
-  const refCount = ((await unzipPart(docxBuffer, "word/document.xml")).match(/<w:footnoteReference /g) || []).length;
-  if (refCount !== 3) {
-    throw new Error(`脚注共享断言失败:正文应有 3 个脚注引用(1+1+1),实际 ${refCount}`);
-  }
-  if (!footnotesXml.includes('w:id="1"') || !footnotesXml.includes('w:id="2"')) {
-    throw new Error("脚注共享断言失败:应存在内容脚注 id 1/2");
-  }
-  if (footnotesXml.includes('w:id="3"')) {
-    throw new Error("脚注共享断言失败:重复引用不得产生第三条脚注(应共享 id)");
-  }
-  console.log("[ok] 脚注共享:[^1] 重复引用 → 正文 3 引用、脚注区仅 2 条内容脚注");
-
-  // 页眉内容断言(renderHeader 实现事实:标题文本居中 + 7pt(14 half-points)灰 888888;
-  // 标题取 metadata.title 优先,样例 frontmatter title=「脚注与页眉页脚验收」)
   const headerXml = await unzipPart(docxBuffer, "word/header1.xml");
-  if (!headerXml.includes("脚注与页眉页脚验收")) {
-    throw new Error("页眉断言失败:header1.xml 缺少标题文本");
-  }
-  if (!headerXml.includes('<w:jc w:val="center"/>')) {
-    throw new Error("页眉断言失败:header1.xml 缺少居中对齐 w:jc center");
-  }
-  if (!headerXml.includes('<w:sz w:val="14"/>') || !headerXml.includes('<w:color w:val="888888"/>')) {
-    throw new Error("页眉断言失败:header1.xml 缺少 7pt/灰 888888 字号颜色(14 half-points)");
-  }
-  console.log("[ok] 页眉:标题居中、7pt 灰(888888)渲染");
-
-  // 页脚内容断言(renderFooter 实现事实:居中 + 「第 X 页 / 共 X 页」,
-  // 页码为域结构 PAGE/NUMPAGES:fldChar begin + instrText + fldChar end)
   const footerXml = await unzipPart(docxBuffer, "word/footer1.xml");
-  if (!footerXml.includes("第 ") || !footerXml.includes(" 页 / 共 ") || !footerXml.includes(" 页")) {
-    throw new Error("页脚断言失败:footer1.xml 缺少「第 X 页 / 共 X 页」文案结构");
-  }
-  if (
-    !footerXml.includes('<w:instrText xml:space="preserve">PAGE</w:instrText>') ||
-    !footerXml.includes('<w:instrText xml:space="preserve">NUMPAGES</w:instrText>')
-  ) {
-    throw new Error("页脚断言失败:footer1.xml 缺少 PAGE/NUMPAGES 页码域指令");
-  }
-  if (!footerXml.includes('<w:jc w:val="center"/>')) {
-    throw new Error("页脚断言失败:footer1.xml 缺少居中对齐 w:jc center");
-  }
-  console.log("[ok] 页脚:第 X 页 / 共 X 页(PAGE/NUMPAGES 域)居中渲染");
-
+  const refCount = ((await unzipPart(docxBuffer, "word/document.xml")).match(/<w:footnoteReference /g) || []).length;
   const pdfArtifact = asPdfArtifact(
     await convertWithFs(footnoteMd, "pdf", {
       baseDir: FIXTURES_DIR,
@@ -110,22 +61,109 @@ export async function run() {
       warnings: [],
     }),
   );
+
+  // docx 断言:footnotes.xml / footer1.xml 必须存在(metadata.title 存在 → header1.xml 也应存在)
+  // 三个部件逐个一个 case:缺 header 与缺 footnotes 是两处不同的产出问题
+  await suite.case("docx 含 footnotes.xml 部件", () => {
+    if (!zipContains(docxBuffer, "word/footnotes.xml")) {
+      throw new Error(`docx 部件断言失败: footnotes=${false}`);
+    }
+  });
+  await suite.case("docx 含 footer1.xml 部件", () => {
+    if (!zipContains(docxBuffer, "word/footer1.xml")) {
+      throw new Error(`docx 部件断言失败: footer=${false}`);
+    }
+  });
+  await suite.case("docx 含 header1.xml 部件", () => {
+    if (!zipContains(docxBuffer, "word/header1.xml")) {
+      throw new Error(`docx 部件断言失败: header=${false}`);
+    }
+  });
+  console.log("[ok] docx 脚注/页眉页脚:footnotes.xml、footer1.xml、header1.xml 均存在");
+
+  // 重复引用共享同一脚注(样例 [^1] 引用两次 + [^2] 一次 = 3 个引用):
+  // 正文恰 3 个 footnoteReference;footnotes.xml 恰 2 条内容脚注(id 1/2,无 id 3)
+  await suite.case("正文恰 3 个脚注引用(重复引用共享同一脚注)", () => {
+    if (refCount !== 3) {
+      throw new Error(`脚注共享断言失败:正文应有 3 个脚注引用(1+1+1),实际 ${refCount}`);
+    }
+  });
+  await suite.case("脚注区存在内容脚注 id 1/2", () => {
+    if (!footnotesXml.includes('w:id="1"') || !footnotesXml.includes('w:id="2"')) {
+      throw new Error("脚注共享断言失败:应存在内容脚注 id 1/2");
+    }
+  });
+  await suite.case("重复引用不产生第三条脚注(应共享 id)", () => {
+    if (footnotesXml.includes('w:id="3"')) {
+      throw new Error("脚注共享断言失败:重复引用不得产生第三条脚注(应共享 id)");
+    }
+  });
+  console.log("[ok] 脚注共享:[^1] 重复引用 → 正文 3 引用、脚注区仅 2 条内容脚注");
+
+  // 页眉内容断言(renderHeader 实现事实:标题文本居中 + 7pt(14 half-points)灰 888888;
+  // 标题取 metadata.title 优先,样例 frontmatter title=「脚注与页眉页脚验收」)
+  await suite.case("页眉含标题文本", () => {
+    if (!headerXml.includes("脚注与页眉页脚验收")) {
+      throw new Error("页眉断言失败:header1.xml 缺少标题文本");
+    }
+  });
+  await suite.case("页眉标题居中对齐", () => {
+    if (!headerXml.includes('<w:jc w:val="center"/>')) {
+      throw new Error("页眉断言失败:header1.xml 缺少居中对齐 w:jc center");
+    }
+  });
+  await suite.case("页眉 7pt/灰 888888 字号颜色", () => {
+    if (!headerXml.includes('<w:sz w:val="14"/>') || !headerXml.includes('<w:color w:val="888888"/>')) {
+      throw new Error("页眉断言失败:header1.xml 缺少 7pt/灰 888888 字号颜色(14 half-points)");
+    }
+  });
+  console.log("[ok] 页眉:标题居中、7pt 灰(888888)渲染");
+
+  // 页脚内容断言(renderFooter 实现事实:居中 + 「第 X 页 / 共 X 页」,
+  // 页码为域结构 PAGE/NUMPAGES:fldChar begin + instrText + fldChar end)
+  await suite.case("页脚含「第 X 页 / 共 X 页」文案结构", () => {
+    if (!footerXml.includes("第 ") || !footerXml.includes(" 页 / 共 ") || !footerXml.includes(" 页")) {
+      throw new Error("页脚断言失败:footer1.xml 缺少「第 X 页 / 共 X 页」文案结构");
+    }
+  });
+  await suite.case("页脚含 PAGE/NUMPAGES 页码域指令", () => {
+    if (
+      !footerXml.includes('<w:instrText xml:space="preserve">PAGE</w:instrText>') ||
+      !footerXml.includes('<w:instrText xml:space="preserve">NUMPAGES</w:instrText>')
+    ) {
+      throw new Error("页脚断言失败:footer1.xml 缺少 PAGE/NUMPAGES 页码域指令");
+    }
+  });
+  await suite.case("页脚居中对齐", () => {
+    if (!footerXml.includes('<w:jc w:val="center"/>')) {
+      throw new Error("页脚断言失败:footer1.xml 缺少居中对齐 w:jc center");
+    }
+  });
+  console.log("[ok] 页脚:第 X 页 / 共 X 页(PAGE/NUMPAGES 域)居中渲染");
+
   // PDF 断言:脚注区结构(class="footnotes")与正文上标引用(footnote-ref)存在
-  if (!pdfArtifact.html.includes('class="footnotes"') || !pdfArtifact.html.includes("footnote-ref")) {
-    throw new Error("PDF 脚注结构断言失败:未找到 footnotes 区/上标引用");
-  }
+  await suite.case("PDF 含 footnotes 区与 footnote-ref 上标引用", () => {
+    if (!pdfArtifact.html.includes('class="footnotes"') || !pdfArtifact.html.includes("footnote-ref")) {
+      throw new Error("PDF 脚注结构断言失败:未找到 footnotes 区/上标引用");
+    }
+  });
   console.log("[ok] PDF 脚注:footnotes 区与 footnote-ref 引用结构存在");
   const footnotePdf = await htmlToPdf(pdfArtifact.html, pdfArtifact.footerTemplate);
   // 与主进程 renderPdf 链路对齐(printToPDF → 书签 → 元数据注入)
-  const footnotePdfMeta = await setPdfMetadata(new Uint8Array(footnotePdf), pdfArtifact.metadata);
-  const pdfDoc = await PDFDocument.load(footnotePdfMeta);
-  const pdfTitle = pdfDoc.getTitle();
-  const pdfAuthor = pdfDoc.getAuthor();
-  if (pdfTitle !== "脚注与页眉页脚验收" || pdfAuthor !== "测试") {
-    throw new Error(`PDF 元数据断言失败: title=${pdfTitle} author=${pdfAuthor}`);
-  }
-  console.log(`[ok] PDF 元数据:title="${pdfTitle}" author="${pdfAuthor}" 读回一致`);
+  await suite.case("PDF Info 的 title/author 与 frontmatter 一致(读回验证)", async () => {
+    const footnotePdfMeta = await setPdfMetadata(new Uint8Array(footnotePdf), pdfArtifact.metadata);
+    const pdfDoc = await PDFDocument.load(footnotePdfMeta);
+    const pdfTitle = pdfDoc.getTitle();
+    const pdfAuthor = pdfDoc.getAuthor();
+    if (pdfTitle !== "脚注与页眉页脚验收" || pdfAuthor !== "测试") {
+      throw new Error(`PDF 元数据断言失败: title=${pdfTitle} author=${pdfAuthor}`);
+    }
+    // 打印逐字沿用原样(读回值在此 case 内,故打印用固定文案而非重复回读)
+    console.log('[ok] PDF 元数据:title="脚注与页眉页脚验收" author="测试" 读回一致');
+  });
   // setPdfMetadata 的返回类型是 Uint8Array(pdf-lib 契约),而落盘要 Buffer
   // (node:fs writeFile)—— 边界上显式转一次,而不是把 Buffer 断言成 Uint8Array
+  const footnotePdfMeta = await setPdfMetadata(new Uint8Array(footnotePdf), pdfArtifact.metadata);
   await saveArtifact("footnotes", { docx: docxBuffer, pdf: Buffer.from(footnotePdfMeta) });
+  return { cases: suite.results };
 }

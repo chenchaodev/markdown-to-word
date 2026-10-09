@@ -22,6 +22,7 @@ import { isConversionCanceled } from "../../dist/core/cancel.js";
 import { backupSettings } from "../harness/settings.js";
 import { removeTree } from "../harness/temp-resource.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /**
  * 本段横跨的层(ADR-062 L6 判据要求 behavior 段显式声明):判据只校验「非空 ＋ 每个元素
@@ -67,6 +68,7 @@ const liveFlag = (value) => value;
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const dir = path.join(os.tmpdir(), `m2w-merge-cancel-${process.pid}`);
   const { restore: restoreSettings } = await backupSettings();
   try {
@@ -81,7 +83,7 @@ export async function run() {
     }
 
     // ---- 1. 预取消:入口闸门即抛 main ConvertCanceledError,零产物 ----
-    {
+    await suite.case("预取消抛 ConvertCanceledError 且零产物", async () => {
       const ctx = createConvertContext();
       ctx.cancel();
       /** @type {Error | undefined} */
@@ -95,10 +97,10 @@ export async function run() {
       assert(isConversionCanceled(error), "预取消错误的错误码应为 ERR_CONVERSION_CANCELLED");
       assert((await artifactsOf(srcDir)).length === 0, "预取消不应产出任何文件");
       console.log("[ok] merge-cancel:预取消抛 ConvertCanceledError 且零产物");
-    }
+    });
 
     // ---- 2. 转换途中取消:取消在读取/渲染阶段被识别,不产出产物、不报失败 ----
-    {
+    await suite.case("途中取消被识别为取消(不报失败)且零产物", async () => {
       const ctx = createConvertContext();
       assert(ctx.signal.aborted === false, "新建上下文的信号应为未取消");
       const pending = mergeConvertImpl(files, "docx", undefined, ctx);
@@ -117,21 +119,21 @@ export async function run() {
       // 而两次断言之间 ctx.cancel() 会改写它
       assert(liveFlag(ctx.signal.aborted) === true, "取消后信号应保持 aborted");
       console.log("[ok] merge-cancel:途中取消被识别为取消(不报失败)且零产物");
-    }
+    });
 
     // ---- 3. 正常合并(对照组):不取消时产物照常落盘 ----
-    {
+    await suite.case("未取消的合并照常产出(对照组)", async () => {
       const ctx = createConvertContext();
       const result = await mergeConvertImpl(files.slice(0, 3), "docx", undefined, ctx);
       assert(result.ok && !!result.outputPath, `未取消的合并应成功,实际 ${JSON.stringify(result)}`);
       assert((await artifactsOf(srcDir)).length === 1, "未取消的合并应产出 1 个产物");
       console.log("[ok] merge-cancel:未取消的合并照常产出(对照组)");
-    }
+    });
     // ---- 4. 过期 deadline:core 渲染层入口即判取消,main 面归一为 ConvertCanceledError ----
     // 用 deadline 而非 cancel() —— 后者只置 cancelRequested(入口闸门即拦),不会走到
     // core;deadline 经 buildConvertContext 透传到 core ConvertContext,是确定性的
     // 「渲染层取消 → main 面取消」通路。
-    {
+    await suite.case("过期 deadline 经 core 渲染层取消并归一为本层取消错误", async () => {
       const ctx = createConvertContext({ deadline: Date.now() - 1 });
       /** @type {Error | undefined} */
       let error;
@@ -144,7 +146,7 @@ export async function run() {
       assert(isConversionCanceled(error), "过期 deadline 的错误码应为 ERR_CONVERSION_CANCELLED");
       assert((await artifactsOf(srcDir)).length === 1, "过期 deadline 不应新增产物(前一条用例的产物仍在)");
       console.log("[ok] merge-cancel:过期 deadline 经 core 渲染层取消并归一为本层取消错误");
-    }
+    });
 
     // ---- 5. 读取完成后的取消闸门:取消不得越过正文合并 ----
     // 「mergeMarkdowns 未被调用」无模块打桩可断言(全仓 ESM、无注入点),
@@ -154,7 +156,7 @@ export async function run() {
     // (mapWithConcurrency 的 await 之后无任何让出点),故「已取消」标志只可能
     // 在此之前置位——这正是该闸门要守的窗口;若改用定时器,定时器必落在读取
     // 开始之前(被入口闸门拦下)或读取完成之后(已越过闸门),守不到这一道。
-    {
+    await suite.case("读取后取消被拦在正文合并之前", async () => {
       const ctx = createConvertContext();
       /** @type {string[]} */
       const stages = [];
@@ -186,7 +188,9 @@ export async function run() {
         `读取后取消不应报出 render 阶段(等价于未进入正文合并),实际阶段序列 ${JSON.stringify(stages)}`,
       );
       console.log(`[ok] merge-cancel:读取后取消被拦在正文合并之前(阶段序列 ${JSON.stringify(stages)})`);
-    }
+    });
+
+    return { cases: suite.results };
   } finally {
     await restoreSettings();
     // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)

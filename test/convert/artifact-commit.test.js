@@ -27,6 +27,7 @@ import path from "node:path";
 import { ARTIFACT_TEMP_PREFIX, commitArtifact } from "../../dist/convert/artifact-writer.js";
 import { removeTree } from "../harness/temp-resource.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const { assert: harnessAssert } = createAsserter("artifact-commit");
 
@@ -86,73 +87,81 @@ function errnoError(code) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const dir = path.join(os.tmpdir(), `m2w-artifact-commit-${process.pid}`);
   await fs.mkdir(dir, { recursive: true });
   try {
     // ================= 1. 提交成功:首选路径 + 逐字节一致 + 无临时残留 =================
-    const plain = path.join(dir, "plain.docx");
-    const plainPayload = zipBytes("plain");
-    const plainResult = await commitArtifact(plain, plainPayload);
-    assert(plainResult === plain, `首选路径空闲时应原样落盘,实际 ${plainResult}`);
-    const plainRead = await fs.readFile(plain);
-    assert(plainRead.equals(plainPayload), "落盘内容应与载荷逐字节一致");
-    assert(
-      (await tempLeftovers(dir)).length === 0,
-      `提交成功后不应残留临时文件,实际 ${JSON.stringify(await tempLeftovers(dir))}`,
-    );
-    const pdfPlain = path.join(dir, "plain.pdf");
-    const pdfResult = await commitArtifact(pdfPlain, pdfBytes("plain"));
-    assert(pdfResult === pdfPlain && (await fs.readFile(pdfResult)).equals(pdfBytes("plain")), "PDF 提交路径/内容异常");
+    await suite.case("提交成功:首选路径落盘、内容逐字节一致、无临时残留", async () => {
+      const plain = path.join(dir, "plain.docx");
+      const plainPayload = zipBytes("plain");
+      const plainResult = await commitArtifact(plain, plainPayload);
+      assert(plainResult === plain, `首选路径空闲时应原样落盘,实际 ${plainResult}`);
+      const plainRead = await fs.readFile(plain);
+      assert(plainRead.equals(plainPayload), "落盘内容应与载荷逐字节一致");
+      assert(
+        (await tempLeftovers(dir)).length === 0,
+        `提交成功后不应残留临时文件,实际 ${JSON.stringify(await tempLeftovers(dir))}`,
+      );
+      const pdfPlain = path.join(dir, "plain.pdf");
+      const pdfResult = await commitArtifact(pdfPlain, pdfBytes("plain"));
+      assert(pdfResult === pdfPlain && (await fs.readFile(pdfResult)).equals(pdfBytes("plain")), "PDF 提交路径/内容异常");
+    });
     console.log("[ok] artifact-commit:提交成功(首选路径/逐字节一致/PDF 同款/无临时残留)");
 
     // ================= 2. 重名递增:首选被占 → 「名 (2).ext」,序号从 2 起 =================
-    const dupPreferred = path.join(dir, "dup.docx");
-    await fs.writeFile(dupPreferred, "既有产物", "utf8");
-    const dupPayload = zipBytes("dup");
-    const dupResult = await commitArtifact(dupPreferred, dupPayload);
-    assert(
-      path.basename(dupResult) === "dup (2).docx",
-      `首选被占时应递增为「dup (2).docx」,实际 ${path.basename(dupResult)}`,
-    );
-    assert((await fs.readFile(dupPreferred, "utf8")) === "既有产物", "重名提交不得覆盖既有文件");
-    assert((await fs.readFile(dupResult)).equals(dupPayload), "序号变体内容应为本轮载荷");
-    const dup2Result = await commitArtifact(dupPreferred, zipBytes("dup2"));
-    assert(
-      path.basename(dup2Result) === "dup (3).docx",
-      `第二个序号应为「dup (3).docx」,实际 ${path.basename(dup2Result)}`,
-    );
+    await suite.case("重名递增:从 (2) 起且既有文件零覆盖", async () => {
+      const dupPreferred = path.join(dir, "dup.docx");
+      await fs.writeFile(dupPreferred, "既有产物", "utf8");
+      const dupPayload = zipBytes("dup");
+      const dupResult = await commitArtifact(dupPreferred, dupPayload);
+      assert(
+        path.basename(dupResult) === "dup (2).docx",
+        `首选被占时应递增为「dup (2).docx」,实际 ${path.basename(dupResult)}`,
+      );
+      assert((await fs.readFile(dupPreferred, "utf8")) === "既有产物", "重名提交不得覆盖既有文件");
+      assert((await fs.readFile(dupResult)).equals(dupPayload), "序号变体内容应为本轮载荷");
+      const dup2Result = await commitArtifact(dupPreferred, zipBytes("dup2"));
+      assert(
+        path.basename(dup2Result) === "dup (3).docx",
+        `第二个序号应为「dup (3).docx」,实际 ${path.basename(dup2Result)}`,
+      );
+    });
     console.log("[ok] artifact-commit:重名递增(EEXIST → 名 (2)/(3),既有文件零覆盖)");
 
     // ================= 3. 真并发同名不覆盖(24 路同一首选路径) =================
-    const raceDir = path.join(dir, "race");
-    await fs.mkdir(raceDir, { recursive: true });
-    const racePreferred = path.join(raceDir, "race.docx");
     const raceCount = 24;
-    const racePayloads = Array.from({ length: raceCount }, (_, i) => zipBytes(`race-${i}`));
-    const raceResults = await Promise.all(
-      racePayloads.map((payload) => commitArtifact(racePreferred, payload)),
-    );
-    assert(
-      new Set(raceResults).size === raceCount,
-      `并发同名提交应得到 ${raceCount} 个互异路径,实际去重后 ${new Set(raceResults).size} 个:${JSON.stringify(
-        raceResults.map((p) => path.basename(p)),
-      )}`,
-    );
-    // 逐路径核对内容:每个产物必须完整等于某一载荷,不得出现被覆盖/交错的半份内容
-    const raceFiles = (await fs.readdir(raceDir)).filter((name) => name.endsWith(".docx"));
-    assert(raceFiles.length === raceCount, `并发提交应落 ${raceCount} 个产物,实际 ${raceFiles.length}`);
-    const matched = new Set();
-    for (const name of raceFiles) {
-      const bytes = await fs.readFile(path.join(raceDir, name));
-      const index = racePayloads.findIndex((payload) => payload.equals(bytes));
-      assert(index >= 0, `产物 ${name} 内容与任一载荷都不一致(疑似覆盖/交错)`);
-      assert(!matched.has(index), `载荷 race-${index} 出现在多个产物中(覆盖)`);
-      matched.add(index);
-    }
-    assert((await tempLeftovers(raceDir)).length === 0, "并发提交后临时文件应清理干净");
+    await suite.case("真并发同名不覆盖:互异路径且内容逐一对应", async () => {
+      const raceDir = path.join(dir, "race");
+      await fs.mkdir(raceDir, { recursive: true });
+      const racePreferred = path.join(raceDir, "race.docx");
+      const racePayloads = Array.from({ length: raceCount }, (_, i) => zipBytes(`race-${i}`));
+      const raceResults = await Promise.all(
+        racePayloads.map((payload) => commitArtifact(racePreferred, payload)),
+      );
+      assert(
+        new Set(raceResults).size === raceCount,
+        `并发同名提交应得到 ${raceCount} 个互异路径,实际去重后 ${new Set(raceResults).size} 个:${JSON.stringify(
+          raceResults.map((p) => path.basename(p)),
+        )}`,
+      );
+      // 逐路径核对内容:每个产物必须完整等于某一载荷,不得出现被覆盖/交错的半份内容
+      const raceFiles = (await fs.readdir(raceDir)).filter((name) => name.endsWith(".docx"));
+      assert(raceFiles.length === raceCount, `并发提交应落 ${raceCount} 个产物,实际 ${raceFiles.length}`);
+      const matched = new Set();
+      for (const name of raceFiles) {
+        const bytes = await fs.readFile(path.join(raceDir, name));
+        const index = racePayloads.findIndex((payload) => payload.equals(bytes));
+        assert(index >= 0, `产物 ${name} 内容与任一载荷都不一致(疑似覆盖/交错)`);
+        assert(!matched.has(index), `载荷 race-${index} 出现在多个产物中(覆盖)`);
+        matched.add(index);
+      }
+      assert((await tempLeftovers(raceDir)).length === 0, "并发提交后临时文件应清理干净");
+    });
     console.log(`[ok] artifact-commit:真并发同名不覆盖(${raceCount} 路并发 → ${raceCount} 个互异产物,内容逐一对应)`);
 
     // ================= 4. 魔数闸门:不符/空/未知扩展名 → 抛错 + 无最终文件 =================
+    // 各不符形态互不依赖(一种判红不该掩盖其余四种),故逐形态一个 case
     const magicDir = path.join(dir, "magic");
     await fs.mkdir(magicDir, { recursive: true });
     const magicCases = [
@@ -163,65 +172,73 @@ export async function run() {
       { name: "未知扩展名", target: path.join(magicDir, "weird.rtf"), payload: zipBytes("x") },
     ];
     for (const testCase of magicCases) {
-      /** @type {NodeJS.ErrnoException | null} */
-    let failed = null;
-      try {
-        await commitArtifact(testCase.target, testCase.payload);
-      } catch (err) {
-        failed = /** @type {NodeJS.ErrnoException} */ (err);
-      }
-      assert(!!failed, `${testCase.name}:应抛错阻断提交`);
-      assert(
-        !(await fs.access(testCase.target).then(() => true, () => false)),
-        `${testCase.name}:不应产生最终文件 ${path.basename(testCase.target)}`,
-      );
+      await suite.case(`魔数闸门拦下:${testCase.name}`, async () => {
+        /** @type {NodeJS.ErrnoException | null} */
+        let failed = null;
+        try {
+          await commitArtifact(testCase.target, testCase.payload);
+        } catch (err) {
+          failed = /** @type {NodeJS.ErrnoException} */ (err);
+        }
+        assert(!!failed, `${testCase.name}:应抛错阻断提交`);
+        assert(
+          !(await fs.access(testCase.target).then(() => true, () => false)),
+          `${testCase.name}:不应产生最终文件 ${path.basename(testCase.target)}`,
+        );
+      });
     }
-    assert(
-      (await fs.readdir(magicDir)).length === 0,
-      `魔数失败不得留下任何文件(含临时文件),实际 ${JSON.stringify(await fs.readdir(magicDir))}`,
-    );
-    // 空 ZIP 容器(合法 ZIP 魔数之一)与 PDF 正常放行,确保闸门不是「一律拒绝」
-    const emptyZip = path.join(magicDir, "empty-zip.docx");
-    await commitArtifact(emptyZip, Buffer.from([0x50, 0x4b, 0x05, 0x06, 0x00, 0x00]));
-    await fs.stat(emptyZip);
+    await suite.case("魔数失败后目录零文件;合法空 ZIP 放行", async () => {
+      assert(
+        (await fs.readdir(magicDir)).length === 0,
+        `魔数失败不得留下任何文件(含临时文件),实际 ${JSON.stringify(await fs.readdir(magicDir))}`,
+      );
+      // 空 ZIP 容器(合法 ZIP 魔数之一)与 PDF 正常放行,确保闸门不是「一律拒绝」
+      const emptyZip = path.join(magicDir, "empty-zip.docx");
+      await commitArtifact(emptyZip, Buffer.from([0x50, 0x4b, 0x05, 0x06, 0x00, 0x00]));
+      await fs.stat(emptyZip);
+    });
     console.log("[ok] artifact-commit:提交前魔数闸门(5 类不符/空/未知扩展名均抛错且零文件,合法空 ZIP 放行)");
 
     // ================= 5. 提交失败(真实故障上抛)与取消闸门:无最终文件、无临时残留 =================
     const failDir = path.join(dir, "fail");
     await fs.mkdir(failDir, { recursive: true });
-    const failTarget = path.join(failDir, "fail.docx");
-    /** @type {NodeJS.ErrnoException | null} */
-    let failError = null;
-    try {
-      await commitArtifact(failTarget, zipBytes("fail"), { link: async () => { throw errnoError("EIO"); } });
-    } catch (err) {
-      failError = /** @type {NodeJS.ErrnoException} */ (err);
-    }
-    assert(!!failError && failError.code === "EIO", `提交故障应原样上抛 EIO,实际 ${failError}`);
-    assert(
-      (await fs.readdir(failDir)).length === 0,
-      `提交失败后目录应为空(无最终文件、无临时文件),实际 ${JSON.stringify(await fs.readdir(failDir))}`,
-    );
+    await suite.case("提交故障原样上抛 EIO 且不留残文件", async () => {
+      const failTarget = path.join(failDir, "fail.docx");
+      /** @type {NodeJS.ErrnoException | null} */
+      let failError = null;
+      try {
+        await commitArtifact(failTarget, zipBytes("fail"), { link: async () => { throw errnoError("EIO"); } });
+      } catch (err) {
+        failError = /** @type {NodeJS.ErrnoException} */ (err);
+      }
+      assert(!!failError && failError.code === "EIO", `提交故障应原样上抛 EIO,实际 ${failError}`);
+      assert(
+        (await fs.readdir(failDir)).length === 0,
+        `提交失败后目录应为空(无最终文件、无临时文件),实际 ${JSON.stringify(await fs.readdir(failDir))}`,
+      );
+    });
     // 取消闸门:提交前抛错(与 ConvertCanceledError 同形)→ 不提交任何文件
-    const cancelTarget = path.join(failDir, "cancel.docx");
-    /** @type {NodeJS.ErrnoException | null} */
-    let cancelError = null;
-    try {
-      await commitArtifact(cancelTarget, zipBytes("cancel"), {
-        beforeCommit: () => {
-          const err = new Error("已取消");
-          err.name = "ConvertCanceledError";
-          throw err;
-        },
-      });
-    } catch (err) {
-      cancelError = /** @type {NodeJS.ErrnoException} */ (err);
-    }
-    assert(cancelError?.name === "ConvertCanceledError", `取消闸门应原样上抛,实际 ${cancelError}`);
-    assert(
-      (await fs.readdir(failDir)).length === 0,
-      `取消后目录应为空(无最终文件、无临时文件),实际 ${JSON.stringify(await fs.readdir(failDir))}`,
-    );
+    await suite.case("取消闸门原样上抛且不留残文件", async () => {
+      const cancelTarget = path.join(failDir, "cancel.docx");
+      /** @type {NodeJS.ErrnoException | null} */
+      let cancelError = null;
+      try {
+        await commitArtifact(cancelTarget, zipBytes("cancel"), {
+          beforeCommit: () => {
+            const err = new Error("已取消");
+            err.name = "ConvertCanceledError";
+            throw err;
+          },
+        });
+      } catch (err) {
+        cancelError = /** @type {NodeJS.ErrnoException} */ (err);
+      }
+      assert(cancelError?.name === "ConvertCanceledError", `取消闸门应原样上抛,实际 ${cancelError}`);
+      assert(
+        (await fs.readdir(failDir)).length === 0,
+        `取消后目录应为空(无最终文件、无临时文件),实际 ${JSON.stringify(await fs.readdir(failDir))}`,
+      );
+    });
     console.log("[ok] artifact-commit:提交失败/取消(故障上抛不留残文件,临时文件已清理)");
 
     // ================= 6. 不支持硬链接的环境:抛可操作错误,零文件(不做非原子退化写) =================
@@ -232,56 +249,62 @@ export async function run() {
     const unsupportedCodes = ["EPERM", "EACCES", "EXDEV", "ENOSYS", "EOPNOTSUPP", "ENOTSUP", "EMLINK", "EINVAL"];
     for (const code of unsupportedCodes) {
       const target = path.join(noLinkDir, `nolink-${code}.docx`);
+      await suite.case(`不支持链接错误码 ${code}:抛可操作错误且零文件`, async () => {
+        /** @type {NodeJS.ErrnoException | null} */
+        let failed = null;
+        try {
+          await commitArtifact(target, zipBytes(code), {
+            link: async () => {
+              throw errnoError(code);
+            },
+          });
+        } catch (err) {
+          failed = /** @type {NodeJS.ErrnoException} */ (err);
+        }
+        assert(!!failed, `不支持链接错误码 ${code}:应抛错,而不是把产物直写最终路径`);
+        assert(
+          typeof failed.message === "string" &&
+            failed.message.includes("原子提交") &&
+            failed.message.includes(noLinkDir) &&
+            failed.message.includes("输出目录"),
+          `不支持链接错误码 ${code}:错误文案应可操作(原因 + 路径 + 改选输出目录的建议),实际 ${failed?.message}`,
+        );
+        assert(
+          !(await fs.access(target).then(() => true, () => false)),
+          `不支持链接错误码 ${code}:不得产生最终文件(哪怕半截)`,
+        );
+      });
+    }
+    await suite.case("不支持硬链接时目录零文件(无最终文件、无 temp)", async () => {
+      assert(
+        (await fs.readdir(noLinkDir)).length === 0,
+        `不支持硬链接时目录应零文件(无最终文件、无 temp),实际 ${JSON.stringify(await fs.readdir(noLinkDir))}`,
+      );
+    });
+
+    // 6b. 真实故障与「环境不支持」严格区分:EIO 原样上抛,不被改写成「换目录」提示
+    await suite.case("真实故障 EIO 原样上抛,不与「环境不支持」混淆", async () => {
+      const eioTarget = path.join(noLinkDir, "eio.docx");
       /** @type {NodeJS.ErrnoException | null} */
-      let failed = null;
+      let eioError = null;
       try {
-        await commitArtifact(target, zipBytes(code), {
+        await commitArtifact(eioTarget, zipBytes("eio"), {
           link: async () => {
-            throw errnoError(code);
+            throw errnoError("EIO");
           },
         });
       } catch (err) {
-        failed = /** @type {NodeJS.ErrnoException} */ (err);
+        eioError = /** @type {NodeJS.ErrnoException} */ (err);
       }
-      assert(!!failed, `不支持链接错误码 ${code}:应抛错,而不是把产物直写最终路径`);
       assert(
-        typeof failed.message === "string" &&
-          failed.message.includes("原子提交") &&
-          failed.message.includes(noLinkDir) &&
-          failed.message.includes("输出目录"),
-        `不支持链接错误码 ${code}:错误文案应可操作(原因 + 路径 + 改选输出目录的建议),实际 ${failed?.message}`,
+        eioError?.code === "EIO" && !eioError.message.includes("原子提交"),
+        `真实故障(EIO)应原样上抛而不被改写成「不支持原子提交」,实际 ${eioError}`,
       );
       assert(
-        !(await fs.access(target).then(() => true, () => false)),
-        `不支持链接错误码 ${code}:不得产生最终文件(哪怕半截)`,
+        (await fs.readdir(noLinkDir)).length === 0,
+        `真实故障后目录应零文件,实际 ${JSON.stringify(await fs.readdir(noLinkDir))}`,
       );
-    }
-    assert(
-      (await fs.readdir(noLinkDir)).length === 0,
-      `不支持硬链接时目录应零文件(无最终文件、无 temp),实际 ${JSON.stringify(await fs.readdir(noLinkDir))}`,
-    );
-
-    // 6b. 真实故障与「环境不支持」严格区分:EIO 原样上抛,不被改写成「换目录」提示
-    const eioTarget = path.join(noLinkDir, "eio.docx");
-    /** @type {NodeJS.ErrnoException | null} */
-    let eioError = null;
-    try {
-      await commitArtifact(eioTarget, zipBytes("eio"), {
-        link: async () => {
-          throw errnoError("EIO");
-        },
-      });
-    } catch (err) {
-      eioError = /** @type {NodeJS.ErrnoException} */ (err);
-    }
-    assert(
-      eioError?.code === "EIO" && !eioError.message.includes("原子提交"),
-      `真实故障(EIO)应原样上抛而不被改写成「不支持原子提交」,实际 ${eioError}`,
-    );
-    assert(
-      (await fs.readdir(noLinkDir)).length === 0,
-      `真实故障后目录应零文件,实际 ${JSON.stringify(await fs.readdir(noLinkDir))}`,
-    );
+    });
 
     // 6c. 判定顺序:EEXIST 优先于「不支持」——同名先递增序号,空闲名才报不支持。
     // 桩须区分两种情形(被占 → EEXIST,空闲 → EPERM),否则永远走不到递增分支
@@ -296,24 +319,26 @@ export async function run() {
       );
       throw taken ? errnoError("EEXIST") : errnoError("EPERM");
     };
-    /** @type {NodeJS.ErrnoException | null} */
-    let orderError = null;
-    try {
-      await commitArtifact(path.join(noLinkDir, "order.docx"), zipBytes("order"), {
-        link: occupiedThenUnsupported,
-      });
-    } catch (err) {
-      orderError = /** @type {NodeJS.ErrnoException} */ (err);
-    }
-    assert(
-      orderError !== null && orderError.message.includes("order (2).docx"),
-      `同名时应先递增序号再报不支持,实际 ${orderError?.message}`,
-    );
-    assert(
-      (await fs.readFile(path.join(noLinkDir, "order.docx"), "utf8")) === "既有产物" &&
-        (await fs.readdir(noLinkDir)).length === 1,
-      "递增过程不得覆盖既有文件,也不得留下额外产物/临时文件",
-    );
+    await suite.case("同名时先递增序号再报不支持,既有文件零覆盖", async () => {
+      /** @type {NodeJS.ErrnoException | null} */
+      let orderError = null;
+      try {
+        await commitArtifact(path.join(noLinkDir, "order.docx"), zipBytes("order"), {
+          link: occupiedThenUnsupported,
+        });
+      } catch (err) {
+        orderError = /** @type {NodeJS.ErrnoException} */ (err);
+      }
+      assert(
+        orderError !== null && orderError.message.includes("order (2).docx"),
+        `同名时应先递增序号再报不支持,实际 ${orderError?.message}`,
+      );
+      assert(
+        (await fs.readFile(path.join(noLinkDir, "order.docx"), "utf8")) === "既有产物" &&
+          (await fs.readdir(noLinkDir)).length === 1,
+        "递增过程不得覆盖既有文件,也不得留下额外产物/临时文件",
+      );
+    });
     console.log(
       `[ok] artifact-commit:不支持硬链接(${unsupportedCodes.length} 个错误码 → 可操作错误/目录零文件,` +
         "与真实故障 EIO 区分,EEXIST 优先递增)",
@@ -322,17 +347,20 @@ export async function run() {
     // 6d. 正常路径复核:不注入 link → 真实 fs.link 原子提交(内容逐字节一致、无 temp)
     const normalDir = path.join(dir, "normal");
     await fs.mkdir(normalDir, { recursive: true });
-    const normalPayload = zipBytes("normal");
-    const normalResult = await commitArtifact(path.join(normalDir, "normal.docx"), normalPayload);
-    assert(
-      normalResult === path.join(normalDir, "normal.docx") &&
-        (await fs.readFile(normalResult)).equals(normalPayload) &&
-        (await tempLeftovers(normalDir)).length === 0,
-      "正常路径应走真实硬链接原子提交(首选路径/内容一致/无 temp)",
-    );
+    await suite.case("正常路径走真实 fs.link 原子提交", async () => {
+      const normalPayload = zipBytes("normal");
+      const normalResult = await commitArtifact(path.join(normalDir, "normal.docx"), normalPayload);
+      assert(
+        normalResult === path.join(normalDir, "normal.docx") &&
+          (await fs.readFile(normalResult)).equals(normalPayload) &&
+          (await tempLeftovers(normalDir)).length === 0,
+        "正常路径应走真实硬链接原子提交(首选路径/内容一致/无 temp)",
+      );
+    });
     console.log("[ok] artifact-commit:正常路径(真实 fs.link 原子提交,内容一致/无 temp 残留)");
   } finally {
     // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)
     removeTree(dir);
   }
+  return { cases: suite.results };
 }

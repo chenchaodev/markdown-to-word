@@ -30,6 +30,7 @@ import { isConversionCanceled } from "../../dist/core/cancel.js";
 import { backupSettings } from "../harness/settings.js";
 import { removeTree } from "../harness/temp-resource.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /**
  * 本段横跨的层(ADR-062 L6 判据要求 behavior 段显式声明):判据只校验「非空 ＋ 每个元素
@@ -81,6 +82,7 @@ function sourceAt(files, index) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const dir = path.join(os.tmpdir(), `m2w-convert-cancel-${process.pid}`);
   const { restore: restoreSettings } = await backupSettings();
   try {
@@ -101,7 +103,7 @@ export async function run() {
     const settings = loadSettings();
 
     // ---- 0. 映射面:buildConvertContext 原样透传 signal/deadline 到 core ----
-    {
+    await suite.case("buildConvertContext 透传 signal/deadline 到 core", async () => {
       const ctx = createConvertContext({ deadline: Date.now() + 60_000 });
       const coreCtx = await buildConvertContext({
         baseDir: srcDir,
@@ -113,12 +115,12 @@ export async function run() {
       assert(coreCtx.signal === ctx.signal, "core 上下文应复用 main 上下文的 signal 对象(非副本)");
       assert(coreCtx.deadline === ctx.deadline, "core 上下文的 deadline 应等于 main 上下文的 deadline");
       console.log("[ok] convert-cancel:buildConvertContext 透传 signal/deadline 到 core");
-    }
+    });
 
     // ---- 1. 单文件过期 deadline:core 渲染层入口判取消 → 归一为本层取消错误,零产物 ----
     // 确定性判据:main 闸门只读 cancelRequested(deadline 不置位),故「过期 deadline 抛取消」
     // 只可能来自渲染层守卫——signal/deadline 未透传 core 时本用例必然失败(会正常产出)。
-    {
+    await suite.case("单文件过期 deadline 经 core 渲染层取消并归一为本层取消错误", async () => {
       const ctx = createConvertContext({ deadline: Date.now() - 1 });
       /** @type {Error | undefined} */
       let error;
@@ -134,11 +136,11 @@ export async function run() {
       assert(isConversionCanceled(error), "过期 deadline 的错误码应为 ERR_CONVERSION_CANCELLED");
       assert((await artifactsOf(srcDir)).length === 0, "过期 deadline 不应产出任何文件");
       console.log("[ok] convert-cancel:单文件过期 deadline 经 core 渲染层取消并归一为本层取消错误");
-    }
+    });
 
     // ---- 2. 渲染期取消:落在 render 上报之后(此刻已越过 main 入口闸门),取消经 signal
     //         到达 core 入口检查点 → 仍归一为本层取消错误,且零产物 ----
-    {
+    await suite.case("渲染期取消(越过 main 闸门后)被识别为取消且零产物", async () => {
       const ctx = createConvertContext();
       /** @type {Error | undefined} */
       let error;
@@ -156,12 +158,18 @@ export async function run() {
       assert(ctx.signal.aborted === true, "取消后信号应保持 aborted(供渲染层检查点感知)");
       assert((await artifactsOf(srcDir)).length === 0, "渲染期取消不应产出任何文件");
       console.log("[ok] convert-cancel:渲染期取消(越过 main 闸门后)被识别为取消且零产物");
-    }
+    });
 
     // ---- 3. 批量过期 deadline:批次 ctx 透传到逐文件 convertImpl → 逐项结算为取消 ----
-    {
-      const ctx = createConvertContext({ deadline: Date.now() - 1 });
-      const result = await batchConvertImpl(files, "docx", undefined, ctx);
+    const batchCanceled = await batchConvertImpl(
+      files,
+      "docx",
+      undefined,
+      createConvertContext({ deadline: Date.now() - 1 }),
+    );
+
+    await suite.case("批量过期 deadline 逐文件取消且汇总完整", () => {
+      const result = batchCanceled;
       assert(result.okCount === 0, `过期 deadline 下批量不应有成功项,实际 ok=${result.okCount}`);
       assert(
         result.canceledCount === files.length && result.items.every((item) => item?.canceled === true),
@@ -171,21 +179,33 @@ export async function run() {
         result.okCount + result.failCount + result.canceledCount === files.length,
         "取消后汇总必须逐项归属(不留空洞)",
       );
-      assert((await artifactsOf(srcDir)).length === 0, "批量过期 deadline 不应产出任何文件");
       console.log("[ok] convert-cancel:批量过期 deadline 逐文件取消(汇总完整/零产物)");
-    }
+    });
+
+    await suite.case("批量过期 deadline 零产物", async () => {
+      assert((await artifactsOf(srcDir)).length === 0, "批量过期 deadline 不应产出任何文件");
+    });
 
     // ---- 4. 对照组:未到期 deadline 与未取消转换照常产出(透传不误伤) ----
-    {
-      const ctx = createConvertContext({ deadline: Date.now() + 60_000 });
-      const result = await convertImpl(sourceAt(files, 0), "docx", undefined, ctx);
-      assert(typeof result.outputPath === "string" && result.outputPath.length > 0, "未到期 deadline 应正常产出");
+    const controlSingle = await convertImpl(
+      sourceAt(files, 0),
+      "docx",
+      undefined,
+      createConvertContext({ deadline: Date.now() + 60_000 }),
+    );
+    await suite.case("对照组未到期 deadline 正常产出单产物", async () => {
+      assert(typeof controlSingle.outputPath === "string" && controlSingle.outputPath.length > 0, "未到期 deadline 应正常产出");
       assert((await artifactsOf(srcDir)).length === 1, "对照组应产出 1 个产物");
-      const batch = await batchConvertImpl(files.slice(1, 3), "docx");
-      assert(batch.okCount === 2, `未取消的批量应全部成功,实际 ok=${batch.okCount}`);
-      assert((await artifactsOf(srcDir)).length === 3, "对照组批量应再产出 2 个产物");
       console.log("[ok] convert-cancel:未到期 deadline/未取消转换照常产出(对照组)");
-    }
+    });
+
+    const controlBatch = await batchConvertImpl(files.slice(1, 3), "docx");
+    await suite.case("对照组未取消批量全部成功", async () => {
+      assert(controlBatch.okCount === 2, `未取消的批量应全部成功,实际 ok=${controlBatch.okCount}`);
+      assert((await artifactsOf(srcDir)).length === 3, "对照组批量应再产出 2 个产物");
+    });
+
+    return { cases: suite.results };
   } finally {
     await restoreSettings();
     // 清理失败刻意吞掉:finally 里的清理不得盖过段内真正的断言失败(助手只负责吸收 Windows 上的瞬时占用)

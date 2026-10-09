@@ -19,6 +19,7 @@ import { saveArtifact } from "../harness/artifacts.js";
 import path from "node:path";
 import { FIXTURES_DIR, KATEX_DIR } from "../harness/paths.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf } from "../harness/convert-helpers.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /** @typedef {import("../../dist/core/i18n/index.js").ConvertWarning} ConvertWarning */
 
@@ -49,14 +50,18 @@ export const meta = { description: "公式测试:" };
 export const fixtures = { main: formulaMd, degrade: degradeMd };
 
 export async function run() {
+  const suite = createCaseSuite();
   const katexDir = KATEX_DIR;
   const formulaDocx = (
     await convertWithFs(formulaMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], katexDir })
   );
   const formulaDocument = await unzipPart(docxBufferOf(formulaDocx), "word/document.xml");
-  if (!formulaDocument.includes("<m:oMath")) {
-    throw new Error("公式断言失败:document.xml 缺少 <m:oMath(公式未生成)");
-  }
+  await suite.case("docx 公式生成 <m:oMath 容器", () => {
+    if (!formulaDocument.includes("<m:oMath")) {
+      throw new Error("公式断言失败:document.xml 缺少 <m:oMath(公式未生成)");
+    }
+  });
+  // 序列化断言表逐项一个 case:label 是该 MathML 片段的稳定标识
   for (const [needle, label] of /** @type {[string, string][]} */ ([
     ["<m:t>x</m:t>", "x 上标文本"],
     ["<m:f>", "分式 m:f"],
@@ -68,7 +73,9 @@ export async function run() {
     ["<m:nary>", "display 求和 m:nary"],
     ['<m:chr m:val="∑"/>', "display 求和 ∑ 字符(m:naryPr)"],
   ])) {
-    if (!formulaDocument.includes(needle)) throw new Error(`公式断言失败:document.xml 缺少 ${label}(${needle})`);
+    await suite.case(`docx 公式序列化: ${label}`, () => {
+      if (!formulaDocument.includes(needle)) throw new Error(`公式断言失败:document.xml 缺少 ${label}(${needle})`);
+    });
   }
   console.log("[ok] docx 公式:m:oMath 与 分式/行内上下标/开方/display 求和 序列化齐全");
 
@@ -76,12 +83,16 @@ export async function run() {
     baseDir: FIXTURES_DIR, title: "公式测试", warnings: [], katexDir,
   }));
   const formulaHtml = pdfHtmlOf(formulaPdf);
-  if (!formulaHtml.includes('class="katex"')) {
-    throw new Error('公式断言失败:PDF 缺少 KaTeX 渲染结构(class="katex")');
-  }
-  if (!formulaHtml.includes("@font-face")) {
-    throw new Error("公式断言失败:PDF 缺少 @font-face(KaTeX CSS 内联未生效)");
-  }
+  await suite.case("PDF 含 KaTeX 渲染结构", () => {
+    if (!formulaHtml.includes('class="katex"')) {
+      throw new Error('公式断言失败:PDF 缺少 KaTeX 渲染结构(class="katex")');
+    }
+  });
+  await suite.case("PDF 含 @font-face(KaTeX CSS 内联生效)", () => {
+    if (!formulaHtml.includes("@font-face")) {
+      throw new Error("公式断言失败:PDF 缺少 @font-face(KaTeX CSS 内联未生效)");
+    }
+  });
   console.log("[ok] PDF 公式:KaTeX 结构 + CSS 字体内联生效");
 
   // ---------- 容器内(列表项 / 引用块内)公式在 PDF 侧无降级 ----------
@@ -111,18 +122,24 @@ export async function run() {
     ['<span class="katex-display">', "display 公式结构"],
     ["<mfrac><mn>1</mn><mn>2</mn></mfrac>", "分式 MathML"],
   ])) {
-    if (!containerHtml.includes(needle)) {
-      throw new Error(`公式断言失败:PDF 容器内公式缺少 ${label}(${needle})`);
+    await suite.case(`PDF 容器内公式含 ${label}`, () => {
+      if (!containerHtml.includes(needle)) {
+        throw new Error(`公式断言失败:PDF 容器内公式缺少 ${label}(${needle})`);
+      }
+    });
+  }
+  await suite.case("PDF 容器内公式无 katex-error", () => {
+    if (containerHtml.includes("katex-error")) {
+      throw new Error("公式断言失败:PDF 容器内公式不应出现 katex-error(公式应正常渲染)");
     }
-  }
-  if (containerHtml.includes("katex-error")) {
-    throw new Error("公式断言失败:PDF 容器内公式不应出现 katex-error(公式应正常渲染)");
-  }
-  if (containerWarnings.length > 0) {
-    throw new Error(
-      `公式断言失败:PDF 容器内公式正常渲染不应产生警告,实际 ${JSON.stringify(containerWarnings.map((w) => formatWarning(w)))}`,
-    );
-  }
+  });
+  await suite.case("PDF 容器内公式零警告", () => {
+    if (containerWarnings.length > 0) {
+      throw new Error(
+        `公式断言失败:PDF 容器内公式正常渲染不应产生警告,实际 ${JSON.stringify(containerWarnings.map((w) => formatWarning(w)))}`,
+      );
+    }
+  });
   console.log("[ok] PDF 容器内公式(列表项/引用块内)→ katex-display + mfrac 正常渲染,无 katex-error、零警告");
 
   // ---------- loadKatexCss 读取失败返回空串 + warnings 上报 ----------
@@ -138,15 +155,21 @@ export async function run() {
     katexDir: path.join(FIXTURES_DIR, "no-such-katex"),
   }));
   const badKatexHtml = pdfHtmlOf(badKatexPdf);
-  if (badKatexHtml.includes("@font-face")) {
-    throw new Error("公式断言失败:无效 katexDir 不应内联 @font-face(loadKatexCss 应返回空串)");
-  }
-  if (!badKatexHtml.includes('class="katex"')) {
-    throw new Error("公式断言失败:无效 katexDir 时公式仍应渲染为 KaTeX HTML");
-  }
-  if (!badKatexWarnings.some((w) => formatWarning(w).includes("KaTeX 样式加载失败"))) {
-    throw new Error(`公式断言失败:无效 katexDir 未产生 KaTeX CSS 加载失败警告,warnings=${JSON.stringify(badKatexWarnings)}`);
-  }
+  await suite.case("无效 katexDir 不内联 @font-face(loadKatexCss 返回空串)", () => {
+    if (badKatexHtml.includes("@font-face")) {
+      throw new Error("公式断言失败:无效 katexDir 不应内联 @font-face(loadKatexCss 应返回空串)");
+    }
+  });
+  await suite.case("无效 katexDir 时公式仍渲染为 KaTeX HTML", () => {
+    if (!badKatexHtml.includes('class="katex"')) {
+      throw new Error("公式断言失败:无效 katexDir 时公式仍应渲染为 KaTeX HTML");
+    }
+  });
+  await suite.case("无效 katexDir 产生 KaTeX CSS 加载失败警告", () => {
+    if (!badKatexWarnings.some((w) => formatWarning(w).includes("KaTeX 样式加载失败"))) {
+      throw new Error(`公式断言失败:无效 katexDir 未产生 KaTeX CSS 加载失败警告,warnings=${JSON.stringify(badKatexWarnings)}`);
+    }
+  });
   console.log("[ok] PDF 公式:loadKatexCss 读取失败返回空串 + warnings 上报(KaTeX 样式加载失败),断言通过");
 
   // ---------- loadKatexCss 依赖注入(read 默认 node:fs,注入后不落盘) ----------
@@ -155,9 +178,11 @@ export async function run() {
   const injectedCss = loadKatexCss(path.join(FIXTURES_DIR, "no-such-katex"), [], {
     read: () => "/*injected*/.katex { color: red; }",
   });
-  if (!injectedCss.includes("/*injected*/")) {
-    throw new Error("公式断言失败:loadKatexCss 未走注入 read(无效 katexDir 应产出注入内容而非空串)");
-  }
+  await suite.case("loadKatexCss 走注入 read(不落盘)", () => {
+    if (!injectedCss.includes("/*injected*/")) {
+      throw new Error("公式断言失败:loadKatexCss 未走注入 read(无效 katexDir 应产出注入内容而非空串)");
+    }
+  });
   // 注入 read 自身失败 → 与 fs 失败同通道:空串 + warn.katexCssLoadFailed(不回落真实 fs)
   /** @type {ConvertWarning[]} */
   const injectWarnings = [];
@@ -166,12 +191,16 @@ export async function run() {
       throw new Error("injected read failure");
     },
   });
-  if (injectFailed !== "") {
-    throw new Error("公式断言失败:注入 read 抛错时 loadKatexCss 应返回空串(不应静默回落 readFileSync)");
-  }
-  if (!injectWarnings.some((w) => formatWarning(w).includes("KaTeX 样式加载失败"))) {
-    throw new Error(`公式断言失败:注入 read 抛错未走 keyed 警告通道,warnings=${JSON.stringify(injectWarnings)}`);
-  }
+  await suite.case("注入 read 抛错时 loadKatexCss 返回空串(不回落 readFileSync)", () => {
+    if (injectFailed !== "") {
+      throw new Error("公式断言失败:注入 read 抛错时 loadKatexCss 应返回空串(不应静默回落 readFileSync)");
+    }
+  });
+  await suite.case("注入 read 抛错走 keyed 警告通道", () => {
+    if (!injectWarnings.some((w) => formatWarning(w).includes("KaTeX 样式加载失败"))) {
+      throw new Error(`公式断言失败:注入 read 抛错未走 keyed 警告通道,warnings=${JSON.stringify(injectWarnings)}`);
+    }
+  });
   console.log("[ok] PDF 公式:loadKatexCss read 依赖注入生效(不落盘 + 注入失败同警告通道),断言通过");
 
   // ---------- 降级分支:解析失败的公式 → TeX 源码等宽灰字 + 警告 ----------
@@ -187,28 +216,38 @@ export async function run() {
   );
   const degradeDocument = await unzipPart(docxBufferOf(degradeDocx), "word/document.xml");
   // 断言:降级 TeX 源码以等宽灰字出现在 document.xml(样式 needle 已实证:color 888888)
-  if (!degradeDocument.includes("\\frac{1}{")) {
-    throw new Error("公式断言失败:降级公式 TeX 源码未出现在 document.xml");
-  }
-  if (!degradeDocument.includes('<w:color w:val="888888"/>')) {
-    throw new Error("公式断言失败:降级公式缺少灰色(等宽灰字,w:color 888888)");
-  }
-  if (!degradeDocument.includes("Consolas")) {
-    throw new Error("公式断言失败:降级公式缺少等宽字体(CODE_FONT=Consolas)");
-  }
+  await suite.case("降级公式 TeX 源码出现在 document.xml", () => {
+    if (!degradeDocument.includes("\\frac{1}{")) {
+      throw new Error("公式断言失败:降级公式 TeX 源码未出现在 document.xml");
+    }
+  });
+  await suite.case("降级公式为等宽灰字(color 888888)", () => {
+    if (!degradeDocument.includes('<w:color w:val="888888"/>')) {
+      throw new Error("公式断言失败:降级公式缺少灰色(等宽灰字,w:color 888888)");
+    }
+  });
+  await suite.case("降级公式为等宽字体(CODE_FONT=Consolas)", () => {
+    if (!degradeDocument.includes("Consolas")) {
+      throw new Error("公式断言失败:降级公式缺少等宽字体(CODE_FONT=Consolas)");
+    }
+  });
   // 断言:整式降级 → 不产出 m:oMath(不混排)
-  if (degradeDocument.includes("<m:oMath")) {
-    throw new Error("公式断言失败:降级公式不应产出 m:oMath(整式降级不混排)");
-  }
+  await suite.case("降级公式不产出 m:oMath(整式降级不混排)", () => {
+    if (degradeDocument.includes("<m:oMath")) {
+      throw new Error("公式断言失败:降级公式不应产出 m:oMath(整式降级不混排)");
+    }
+  });
   // 断言:convert 返回 warnings 含降级警告文案(含公式源码)。
   // 警告为 KeyedWarning 对象,断言经 formatWarning 格式化后的最终文案。
-  const degradeWarnOk = degradeWarnings.some((w) => {
-    const text = typeof w === "string" ? w : formatWarning(w);
-    return text.includes("公式解析失败,降级为 TeX 源码") && text.includes("\\frac{1}{");
+  await suite.case("warnings 含公式降级警告文案(含公式源码)", () => {
+    const degradeWarnOk = degradeWarnings.some((w) => {
+      const text = typeof w === "string" ? w : formatWarning(w);
+      return text.includes("公式解析失败,降级为 TeX 源码") && text.includes("\\frac{1}{");
+    });
+    if (!degradeWarnOk) {
+      throw new Error("公式断言失败:warnings 缺少公式降级警告文案(公式解析失败,降级为 TeX 源码)");
+    }
   });
-  if (!degradeWarnOk) {
-    throw new Error("公式断言失败:warnings 缺少公式降级警告文案(公式解析失败,降级为 TeX 源码)");
-  }
   console.log("[ok] docx 公式降级:TeX 源码等宽灰字 + 无 oMath + warnings 警告 断言通过");
 
   // ---------- munderover 非 ∑ 回落(munderoverToNary / moText) ----------
@@ -233,12 +272,16 @@ $$
   );
   const fallbackDocument = await unzipPart(docxBufferOf(fallbackDocx), "word/document.xml");
   // 回落结构:MathSubSuperScript 而非 MathSum(无 m:nary)
-  if (!fallbackDocument.includes("<m:sSubSup>")) {
-    throw new Error("公式断言失败:非 ∑ munderover 未回落 MathSubSuperScript(<m:sSubSup>)");
-  }
-  if (fallbackDocument.includes("<m:nary")) {
-    throw new Error("公式断言失败:非 ∑ munderover 不应产出 MathSum(<m:nary)");
-  }
+  await suite.case("非 ∑ munderover 回落 MathSubSuperScript", () => {
+    if (!fallbackDocument.includes("<m:sSubSup>")) {
+      throw new Error("公式断言失败:非 ∑ munderover 未回落 MathSubSuperScript(<m:sSubSup>)");
+    }
+  });
+  await suite.case("非 ∑ munderover 不产出 MathSum", () => {
+    if (fallbackDocument.includes("<m:nary")) {
+      throw new Error("公式断言失败:非 ∑ munderover 不应产出 MathSum(<m:nary)");
+    }
+  });
   // mo 文本化(moText):∏ / ⋃ 以 MathRun 文本进 base,sub/sup 兄弟节点文本齐全
   for (const [needle, label] of /** @type {[string, string][]} */ ([
     ["<m:t>∏</m:t>", "∏ 基文本"],
@@ -246,10 +289,13 @@ $$
     ["<m:t>i</m:t>", "下标 i"],
     ["<m:t>n</m:t>", "上标 n"],
   ])) {
-    if (!fallbackDocument.includes(needle)) throw new Error(`公式断言失败:非 ∑ 回落缺少 ${label}(${needle})`);
+    await suite.case(`非 ∑ 回落含 ${label}`, () => {
+      if (!fallbackDocument.includes(needle)) throw new Error(`公式断言失败:非 ∑ 回落缺少 ${label}(${needle})`);
+    });
   }
   console.log("[ok] docx 公式:munderover 非 ∑ 回落(MathSubSuperScript + mo 文本,无 m:nary)断言通过");
 
   const formulaPdfBin = await htmlToPdf(formulaHtml, asPdfArtifact(formulaPdf).footerTemplate);
   await saveArtifact("formula", { docx: docxBufferOf(formulaDocx), pdf: formulaPdfBin });
+  return { cases: suite.results };
 }

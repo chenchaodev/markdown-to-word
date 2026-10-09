@@ -14,6 +14,7 @@ import { PDFDocument } from "pdf-lib";
 import { htmlToPdf } from "../harness/pdf-utils.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { asPdfArtifact, convertWithFs } from "../harness/convert-helpers.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const md = `# 第一章
 
@@ -43,6 +44,7 @@ function headingIdAt(headings, i) {
 }
 
 export async function run() {
+  const suite = createCaseSuite();
   // 纯逻辑:injectTocPageNumbers 注入页码 span,且仅替换目录条目
   const tocHtml =
     '<div class="toc"><ul>' +
@@ -50,15 +52,21 @@ export async function run() {
     '<li class="toc-l2"><a href="#b">1.1 小节</a></li>' +
     "</ul></div>";
   const injected = injectTocPageNumbers(tocHtml, { a: 2, b: 3 });
-  if (!injected.includes('<span class="toc-page">2</span>')) {
-    throw new Error("目录带页码(adr-007) 断言失败:目录页码未注入(第一章)");
-  }
-  if (!injected.includes('<span class="toc-page">3</span>')) {
-    throw new Error("目录带页码(adr-007) 断言失败:目录页码未注入(小节)");
-  }
-  if (injected.includes('<li class="toc-l1"><a href="#a">第一章</a></li>')) {
-    throw new Error("目录带页码(adr-007) 断言失败:原 TOC 条目结构应被替换(含页码)");
-  }
+  await suite.case("目录页码注入第一章条目", () => {
+    if (!injected.includes('<span class="toc-page">2</span>')) {
+      throw new Error("目录带页码(adr-007) 断言失败:目录页码未注入(第一章)");
+    }
+  });
+  await suite.case("目录页码注入小节条目", () => {
+    if (!injected.includes('<span class="toc-page">3</span>')) {
+      throw new Error("目录带页码(adr-007) 断言失败:目录页码未注入(小节)");
+    }
+  });
+  await suite.case("原 TOC 条目结构被替换(含页码)", () => {
+    if (injected.includes('<li class="toc-l1"><a href="#a">第一章</a></li>')) {
+      throw new Error("目录带页码(adr-007) 断言失败:原 TOC 条目结构应被替换(含页码)");
+    }
+  });
   console.log("[ok] injectTocPageNumbers:页码 span 注入 断言通过");
 
   // 目录样式类改名不破功能:条目形态/容器 class 全改,只靠 data-toc 结构标记 + id 集合定位
@@ -70,26 +78,38 @@ export async function run() {
       "</ul></div>" +
       '<ul><li class="lvl-1"><a href="#a">正文里的目录式链接</a></li></ul>';
     const out = injectTocPageNumbers(renamed, { a: 2, b: 3 }, ["a", "b"]);
-    if (!out.includes('<li class="lvl-1"><a href="#a">第一章</a><span class="toc-page">2</span></li>')) {
-      throw new Error(`目录带页码(adr-007) 断言失败:目录项 class 改名后页码未注入,out=${out}`);
-    }
-    if (!out.includes('<span class="toc-page">3</span>')) {
-      throw new Error(`目录带页码(adr-007) 断言失败:目录项 class 改名后二级条目页码未注入,out=${out}`);
-    }
-    // 目录容器外的正文 <li> 指向同名锚点也不注入(作用域 = data-toc 容器)
-    if (out.includes("正文里的目录式链接</a><span")) {
-      throw new Error(`目录带页码(adr-007) 断言失败:目录容器外的正文 li 不应被注入页码,out=${out}`);
-    }
-    // 显式 id 集合之外的目录条目不注入(集合即定位依据)
+    // 重复注入与部分注入的结果取数备在 case 之前:
+    // 「重复注入替换旧页码」读的是第三次调用的产物,搬进 case 就得在 case 里重跑一次
     const partial = injectTocPageNumbers(renamed, { a: 2, b: 3 }, ["a"]);
-    if (partial.includes('<span class="toc-page">3</span>')) {
-      throw new Error(`目录带页码(adr-007) 断言失败:id 集合外的条目不应注入页码,out=${partial}`);
-    }
-    // 重复注入替换旧页码,不叠加
     const again = injectTocPageNumbers(injected, { a: 7, b: 8 }, ["a", "b"]);
-    if ((again.match(/class="toc-page"/g) ?? []).length !== 2 || !again.includes('<span class="toc-page">7</span>')) {
-      throw new Error(`目录带页码(adr-007) 断言失败:重复注入应替换旧页码而非叠加,out=${again}`);
-    }
+    await suite.case("目录项 class 改名后页码仍注入(一级条目)", () => {
+      if (!out.includes('<li class="lvl-1"><a href="#a">第一章</a><span class="toc-page">2</span></li>')) {
+        throw new Error(`目录带页码(adr-007) 断言失败:目录项 class 改名后页码未注入,out=${out}`);
+      }
+    });
+    await suite.case("目录项 class 改名后页码仍注入(二级条目)", () => {
+      if (!out.includes('<span class="toc-page">3</span>')) {
+        throw new Error(`目录带页码(adr-007) 断言失败:目录项 class 改名后二级条目页码未注入,out=${out}`);
+      }
+    });
+    // 目录容器外的正文 <li> 指向同名锚点也不注入(作用域 = data-toc 容器)
+    await suite.case("目录容器外的正文 li 不被注入页码(作用域 = data-toc 容器)", () => {
+      if (out.includes("正文里的目录式链接</a><span")) {
+        throw new Error(`目录带页码(adr-007) 断言失败:目录容器外的正文 li 不应被注入页码,out=${out}`);
+      }
+    });
+    // 显式 id 集合之外的目录条目不注入(集合即定位依据)
+    await suite.case("id 集合之外的目录条目不注入页码", () => {
+      if (partial.includes('<span class="toc-page">3</span>')) {
+        throw new Error(`目录带页码(adr-007) 断言失败:id 集合外的条目不应注入页码,out=${partial}`);
+      }
+    });
+    // 重复注入替换旧页码,不叠加
+    await suite.case("重复注入替换旧页码而非叠加", () => {
+      if ((again.match(/class="toc-page"/g) ?? []).length !== 2 || !again.includes('<span class="toc-page">7</span>')) {
+        throw new Error(`目录带页码(adr-007) 断言失败:重复注入应替换旧页码而非叠加,out=${again}`);
+      }
+    });
     console.log("[ok] injectTocPageNumbers:目录项定位对 class 改名鲁棒 + id 集合作用域 + 重复注入替换");
   }
 
@@ -97,47 +117,64 @@ export async function run() {
   const art = asPdfArtifact(
     await convertWithFs(md, "pdf", { baseDir: FIXTURES_DIR, title: "目录带页码样例", warnings: [], tocMode: "field" }),
   );
-  if (!art.html.includes('class="toc"')) throw new Error("目录带页码(adr-007) 断言失败:field 模式应含目录");
   const pass1 = await htmlToPdf(art.html, art.footerTemplate);
   const doc = await PDFDocument.load(new Uint8Array(pass1));
   const headings = extractHeadings(art.html);
-  if (headings.length === 0) throw new Error("目录带页码(adr-007) 断言失败:未提取到标题");
+  await suite.case("field 模式产物含目录", () => {
+    if (!art.html.includes('class="toc"')) throw new Error("目录带页码(adr-007) 断言失败:field 模式应含目录");
+  });
+  await suite.case("提取到标题", () => {
+    if (headings.length === 0) throw new Error("目录带页码(adr-007) 断言失败:未提取到标题");
+  });
   // slug → 页码 映射(返回类型由产物声明给出,无需测试侧再标一次)
+  // 取数备在 case 之前:下面三条判定(非空、在页范围内、顺序单调)读的是同一份映射
   const pageNumbers = pageNumbersForNames(
     doc,
     headings.map((h) => h.id),
   );
   const pageCount = doc.getPageCount();
+  // 每个标题的页码:非空与在页范围内是同一件事的两面(都判「这个页码站得住」),合成一个 case
   for (const h of headings) {
-    const p = pageNumbers[h.id];
-    if (p == null) throw new Error(`目录带页码(adr-007) 断言失败:标题 ${h.id} 未解析到页码`);
-    if (p < 1 || p > pageCount) throw new Error(`目录带页码(adr-007) 断言失败:页码越界 ${p}(共 ${pageCount} 页)`);
+    await suite.case(`标题 ${h.id} 的页码非空且在页范围内`, () => {
+      const p = pageNumbers[h.id];
+      if (p == null) throw new Error(`目录带页码(adr-007) 断言失败:标题 ${h.id} 未解析到页码`);
+      if (p < 1 || p > pageCount) throw new Error(`目录带页码(adr-007) 断言失败:页码越界 ${p}(共 ${pageCount} 页)`);
+    });
   }
   // 页码随文档顺序单调递增(后续标题页号不小于先前)
-  for (let i = 1; i < headings.length; i++) {
-    const cur = pageNumbers[headingIdAt(headings, i)];
-    const prev = pageNumbers[headingIdAt(headings, i - 1)];
-    // 上方循环已逐条断言页码非空,此处仅取回已验证值
-    if (cur == null || prev == null) {
-      throw new Error("目录带页码(adr-007) 断言失败:页码顺序比较前标题页码缺失");
+  await suite.case("页码随文档顺序单调递增", () => {
+    for (let i = 1; i < headings.length; i++) {
+      const cur = pageNumbers[headingIdAt(headings, i)];
+      const prev = pageNumbers[headingIdAt(headings, i - 1)];
+      // 上方 case 已逐条断言页码非空,此处仅取回已验证值
+      if (cur == null || prev == null) {
+        throw new Error("目录带页码(adr-007) 断言失败:页码顺序比较前标题页码缺失");
+      }
+      if (cur < prev) {
+        throw new Error("目录带页码(adr-007) 断言失败:页码顺序不符文档顺序(应单调递增)");
+      }
     }
-    if (cur < prev) {
-      throw new Error("目录带页码(adr-007) 断言失败:页码顺序不符文档顺序(应单调递增)");
-    }
-  }
+  });
   const html2 = injectTocPageNumbers(art.html, pageNumbers, headings.map((h) => h.id));
-  if (!html2.includes('<span class="toc-page">')) {
-    throw new Error("目录带页码(adr-007) 断言失败:第二遍 HTML 应含页码 span");
-  }
   // 真实产物按 data-toc 容器定位:页码 span 只落在目录条目上(数量 = 标题数)
   const tocRegion = /<ul[^>]*data-toc[^>]*>([\s\S]*?)<\/ul>/.exec(html2)?.[1] ?? "";
-  if ((tocRegion.match(/class="toc-page"/g) ?? []).length !== headings.length) {
-    throw new Error(
-      `目录带页码(adr-007) 断言失败:目录区页码数量应等于标题数,实际 ${(tocRegion.match(/class="toc-page"/g) ?? []).length}/${headings.length}`,
-    );
-  }
-  if (html2.slice(0, html2.indexOf("<ul data-toc>")).includes('class="toc-page"')) {
-    throw new Error("目录带页码(adr-007) 断言失败:目录区之前不应出现页码 span");
-  }
+  await suite.case("第二遍 HTML 含页码 span", () => {
+    if (!html2.includes('<span class="toc-page">')) {
+      throw new Error("目录带页码(adr-007) 断言失败:第二遍 HTML 应含页码 span");
+    }
+  });
+  await suite.case("目录区页码数量等于标题数", () => {
+    if ((tocRegion.match(/class="toc-page"/g) ?? []).length !== headings.length) {
+      throw new Error(
+        `目录带页码(adr-007) 断言失败:目录区页码数量应等于标题数,实际 ${(tocRegion.match(/class="toc-page"/g) ?? []).length}/${headings.length}`,
+      );
+    }
+  });
+  await suite.case("目录区之前不出现页码 span", () => {
+    if (html2.slice(0, html2.indexOf("<ul data-toc>")).includes('class="toc-page"')) {
+      throw new Error("目录带页码(adr-007) 断言失败:目录区之前不应出现页码 span");
+    }
+  });
   console.log("[ok] PDF 两遍法:field 模式 /Dests 解析页码 + 注入一致 断言通过");
+  return { cases: suite.results };
 }

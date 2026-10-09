@@ -34,6 +34,7 @@ import {
   settingsJsonPath,
 } from "../harness/settings.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /** @typedef {import("../../dist/core/i18n/zh.js").Dict} Dict */
 /** @typedef {import("../../dist/core/i18n/index.js").KeyedWarning} KeyedWarning */
@@ -44,6 +45,7 @@ const { assert } = createAsserter("i18n-registry");
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   // 本段按语言码动态索引字典(DICT 的键是字面量联合),故先取 Record 视图
   const DICT_VIEW = /** @type {Record<string, Record<string, string>>} */ (/** @type {unknown} */ (DICT));
   /**
@@ -56,28 +58,33 @@ export async function run() {
   const enKeys = Object.keys(DICT.en).sort();
 
   // ================= (a) 键集包含关系 =================
-  assert(
-    zhKeys.length === enKeys.length && zhKeys.every((k, i) => k === enKeys[i]),
-    `en 键集应与 zh 全等,zh 独有=${JSON.stringify(zhKeys.filter((k) => !enKeys.includes(k)))},en 独有=${JSON.stringify(enKeys.filter((k) => !zhKeys.includes(k)))}`,
-  );
+  await suite.case("(a) en 键集与 zh 全等", () => {
+    assert(
+      zhKeys.length === enKeys.length && zhKeys.every((k, i) => k === enKeys[i]),
+      `en 键集应与 zh 全等,zh 独有=${JSON.stringify(zhKeys.filter((k) => !enKeys.includes(k)))},en 独有=${JSON.stringify(enKeys.filter((k) => !zhKeys.includes(k)))}`,
+    );
+  });
   const otherCodes = LANGUAGES.map((l) => l.code).filter((c) => c !== "zh" && c !== "en");
   /** @type {Record<string, number>} */
   const coverage = {};
+  // 逐语言一条:某语言的越界键/占位符漂移不该掩盖其余语言的同类问题
   for (const code of otherCodes) {
-    const extra = Object.keys(dictOf(code)).filter((k) => !zhKeys.includes(k));
-    assert(extra.length === 0, `${code} 字典不应有 zh 之外的键,多出=${JSON.stringify(extra)}`);
-    coverage[code] = Object.keys(dictOf(code)).length;
-    // 抽查插值占位符不丢失:含 ${} 的 zh 模板,译文若存在则占位符集合必须一致
-    // (例外:warn.crossRefNotFound 的 kind 参数按 en 口径省略,允许为 zh 子集)
-    for (const [key, value] of Object.entries(dictOf(code))) {
-      const ph = (/** @type {unknown} */ s) => [...String(s).matchAll(/\$\{(\w+)\}/g)].map((m) => m[1]).sort().join(",");
-      // zh 键缺失时原实现会在此抛错,此处只做非空收窄,行为不变
-      if (!/** @type {string} */ (dictOf("zh")[key]).includes("${")) continue;
-      assert(
-        ph(value) === ph(dictOf("zh")[key]) || key === "warn.crossRefNotFound",
-        `${code}.${key} 插值占位符应与 zh 一致:zh=[${ph(dictOf("zh")[key])}] ${code}=[${ph(value)}]`,
-      );
-    }
+    await suite.case(`(a) ${code} 键集 ⊆ zh 且插值占位符一致`, () => {
+      const extra = Object.keys(dictOf(code)).filter((k) => !zhKeys.includes(k));
+      assert(extra.length === 0, `${code} 字典不应有 zh 之外的键,多出=${JSON.stringify(extra)}`);
+      coverage[code] = Object.keys(dictOf(code)).length;
+      // 抽查插值占位符不丢失:含 ${} 的 zh 模板,译文若存在则占位符集合必须一致
+      // (例外:warn.crossRefNotFound 的 kind 参数按 en 口径省略,允许为 zh 子集)
+      for (const [key, value] of Object.entries(dictOf(code))) {
+        const ph = (/** @type {unknown} */ s) => [...String(s).matchAll(/\$\{(\w+)\}/g)].map((m) => m[1]).sort().join(",");
+        // zh 键缺失时原实现会在此抛错,此处只做非空收窄,行为不变
+        if (!/** @type {string} */ (dictOf("zh")[key]).includes("${")) continue;
+        assert(
+          ph(value) === ph(dictOf("zh")[key]) || key === "warn.crossRefNotFound",
+          `${code}.${key} 插值占位符应与 zh 一致:zh=[${ph(dictOf("zh")[key])}] ${code}=[${ph(value)}]`,
+        );
+      }
+    });
   }
   console.log(
     `[ok] i18n-registry:(a) en=zh 全量(${zhKeys.length} 键);其余语言键集 ⊆ zh 且占位符一致 ${JSON.stringify(coverage)} 断言通过`,
@@ -86,32 +93,42 @@ export async function run() {
   // ================= (b) 回退链行为(当前语言 → en → key) =================
   // ja 已全量翻译(无天然缺口),夹具升级为全字典级不变量:ja 下遍历全部 zh 键,
   // t() 永不返回裸 key——任何键缺失于 ja 时必落 en 文案(en satisfies 全量兜底)
-  setLanguage("ja");
   // zhKeys 来自 Object.keys(DICT.zh),元素是运行期 string;t 的 key 受 Dict 联合约束,
   // 而「枚举全字典键逐个验」正是动态 key 场景 —— 走 tByKey(它与 t 共用同一实现与
   // 同一条回退链,差别只在 key 是否受编译期约束)
-  for (const key of zhKeys) {
-    assert(tByKey(key) !== key, `ja 下键 ${key} 不应回退裸 key(en 全量兜底失效?)`);
-  }
+  // 语言状态是模块级单例,故三段(ja 不变量 / en 直命中 / ja 两级缺失)各自成 case 时
+  // 必须自带 setLanguage 前置 —— 否则前一条判红跳过切换,后面会读到错语言
+  await suite.case("(b) ja 下遍历全部 zh 键 tByKey 永不返回裸 key", () => {
+    setLanguage("ja");
+    for (const key of zhKeys) {
+      assert(tByKey(key) !== key, `ja 下键 ${key} 不应回退裸 key(en 全量兜底失效?)`);
+    }
+  });
   // en 直接命中抽查(不经 zh)
-  setLanguage("en");
-  assert(t("app.title") === DICT.en["app.title"], "en 当前语言应直接命中 en 字典");
+  await suite.case("(b) en 当前语言直接命中 en 字典", () => {
+    setLanguage("en");
+    assert(t("app.title") === DICT.en["app.title"], "en 当前语言应直接命中 en 字典");
+  });
   // 两级均缺失才回退 fallback / 裸 key(既有语义保持)
-  setLanguage("ja");
   // ⚠ 须经 unknown 中转:字面量的 key 与 WarningKey 不重叠,直接 cast 会撞 TS2352
   const keyed = /** @type {KeyedWarning} */ (/** @type {unknown} */ ({
     key: "no.such.key",
     params: { error: "E" },
     fallback: "兜底文案",
   }));
-  assert(formatWarning(keyed) === "兜底文案", "两级均缺失时 formatWarning 应回退 fallback");
-  // 「字典里没有的 key」走 tByKey:它的 key 参数是 string,正是 src/core/i18n/t.ts
-  // 为「动态 key 场景」留的原始实现(t() 的 key 受 Dict 联合约束,收不进不存在的键)
-  assert(tByKey("no.such.key") === "no.such.key", "两级均缺失时 tByKey() 应回退 key 本身");
-  // 已译键不受回退链影响:ja 直接命中
-  assert(t("app.title") === DICT.ja["app.title"], "ja 已译键应直接命中,不经 en");
-  setLanguage("zh");
-  assert(t("app.title") === DICT.zh["app.title"], "切回 zh 后恢复中文(状态可复原地测试)");
+  await suite.case("(b) 两级均缺失:formatWarning 回 fallback、tByKey 回裸 key", () => {
+    setLanguage("ja");
+    assert(formatWarning(keyed) === "兜底文案", "两级均缺失时 formatWarning 应回退 fallback");
+    // 「字典里没有的 key」走 tByKey:它的 key 参数是 string,正是 src/core/i18n/t.ts
+    // 为「动态 key 场景」留的原始实现(t() 的 key 受 Dict 联合约束,收不进不存在的键)
+    assert(tByKey("no.such.key") === "no.such.key", "两级均缺失时 tByKey() 应回退 key 本身");
+    // 已译键不受回退链影响:ja 直接命中
+    assert(t("app.title") === DICT.ja["app.title"], "ja 已译键应直接命中,不经 en");
+  });
+  await suite.case("(b) 切回 zh 后恢复中文(状态可复原地测试)", () => {
+    setLanguage("zh");
+    assert(t("app.title") === DICT.zh["app.title"], "切回 zh 后恢复中文(状态可复原地测试)");
+  });
   console.log("[ok] i18n-registry:(b) 回退链全字典不变量(ja 下无裸 key,en 兜底)+ 两级均缺失分支 断言通过");
 
   // ================= (c) htmlLang 映射(BCP 47) =================
@@ -122,24 +139,31 @@ export async function run() {
     ja: "ja",
   };
   for (const { code } of LANGUAGES) {
-    assert(
-      htmlLangOf(code) === EXPECTED_HTML_LANG[code],
-      `htmlLangOf(${code}) 应为 "${EXPECTED_HTML_LANG[code]}",实际 "${htmlLangOf(code)}"`,
-    );
-    assert(isLanguage(code) === true, `isLanguage(${code}) 应为 true(注册表内)`);
+    await suite.case(`(c) htmlLangOf(${code}) 映射正确且 isLanguage 为 true`, () => {
+      assert(
+        htmlLangOf(code) === EXPECTED_HTML_LANG[code],
+        `htmlLangOf(${code}) 应为 "${EXPECTED_HTML_LANG[code]}",实际 "${htmlLangOf(code)}"`,
+      );
+      assert(isLanguage(code) === true, `isLanguage(${code}) 应为 true(注册表内)`);
+    });
   }
   // 裁撤语言回归守卫:ko/fr/ru 不再是合法值(isLanguage 由注册表派生,误回加/漏删即失败)
-  assert(
-    isLanguage("ko") === false && isLanguage("fr") === false && isLanguage("ru") === false,
-    "isLanguage 应拒绝已裁撤的 ko/fr/ru",
-  );
-  assert(isLanguage("xx") === false && isLanguage("de") === false && isLanguage(1) === false,
-    "isLanguage 未注册值/非字符串应拒绝");
+  await suite.case("(c) isLanguage 拒绝已裁撤的 ko/fr/ru", () => {
+    assert(
+      isLanguage("ko") === false && isLanguage("fr") === false && isLanguage("ru") === false,
+      "isLanguage 应拒绝已裁撤的 ko/fr/ru",
+    );
+  });
+  await suite.case("(c) isLanguage 拒绝未注册值与非字符串", () => {
+    assert(isLanguage("xx") === false && isLanguage("de") === false && isLanguage(1) === false,
+      "isLanguage 未注册值/非字符串应拒绝");
+  });
   console.log(`[ok] i18n-registry:(c) htmlLang 映射正确(${LANGUAGES.map((l) => `${l.code}→${l.htmlLang}`).join(", ")}) + ko/fr/ru 已裁撤 断言通过`);
 
   // ================= (d) settings 校验:注册语言接受 + 裁撤语言字段级迁移兜底 =================
   const settingsFile = settingsJsonPath();
   const { restore } = await backupSettingsFile();
+  // 清理/复位留在 run() 顶层:进了 case 的话,case 失败会先抛、finally 不执行,真实设置与语言状态被污染
   try {
     await fs.mkdir(app.getPath("userData"), { recursive: true });
     const mod = await freshSettingsModule("i18n-registry");
@@ -147,18 +171,24 @@ export async function run() {
       version: 1, format: "docx", afterConvert: "none", breakBeforeH1: false, toc: true,
       pageSetup: { paper: "A4", orientation: "portrait", marginTop: 20, marginBottom: 20, marginLeft: 30, marginRight: 30 },
     };
-    for (const { code } of LANGUAGES) {
-      assert(mod.isValidSettings({ ...base, language: code }) === true, `isValidSettings 应接受注册语言 ${code}`);
-    }
+    await suite.case("(d) isValidSettings 接受全部注册语言码", () => {
+      for (const { code } of LANGUAGES) {
+        assert(mod.isValidSettings({ ...base, language: code }) === true, `isValidSettings 应接受注册语言 ${code}`);
+      }
+    });
     // 语言裁撤迁移语义:非法/未注册语言码不再整文件拒绝(否则 ko/fr/ru 用户
     // 全部偏好被默认值覆盖),由 loadSettings 字段级兜底 zh
-    assert(mod.isValidSettings({ ...base, language: "xx" }) === true, "未注册语言码不应整文件拒绝(字段级兜底)");
-    assert(mod.isValidSettings(base) === true, "缺 language 的旧文件应合法(兜底 zh)");
+    await suite.case("(d) 未注册语言码与缺字段旧文件不整文件拒绝", () => {
+      assert(mod.isValidSettings({ ...base, language: "xx" }) === true, "未注册语言码不应整文件拒绝(字段级兜底)");
+      assert(mod.isValidSettings(base) === true, "缺 language 的旧文件应合法(兜底 zh)");
+    });
 
     // 往返无损:新语言写入磁盘后,全新模块实例 loadSettings 原样读回
-    await fs.writeFile(settingsFile, JSON.stringify({ ...base, language: "ja" }), "utf8");
-    const m1 = await freshSettingsModule("i18n-rt-ja");
-    assert(m1.loadSettings().language === "ja", "settings.json 写入 ja 后 loadSettings 应原样读回 ja");
+    await suite.case("(d) settings.json 写入 ja 后往返无损", async () => {
+      await fs.writeFile(settingsFile, JSON.stringify({ ...base, language: "ja" }), "utf8");
+      const m1 = await freshSettingsModule("i18n-rt-ja");
+      assert(m1.loadSettings().language === "ja", "settings.json 写入 ja 后 loadSettings 应原样读回 ja");
+    });
 
     // 裁撤语言迁移(核心):已存 ko → loadSettings 回退 zh,其余偏好原样保留
     const migrated = {
@@ -168,23 +198,27 @@ export async function run() {
       theme: "dark",
       typography: { fontAscii: "Arial", fontEastAsia: "宋体", bodySizePt: 12, lineSpacing: 1.5, firstLineIndent: true, align: "justify", headingNumbering: true, captionNumbering: true },
     };
-    await fs.writeFile(settingsFile, JSON.stringify(migrated), "utf8");
-    const m2 = await freshSettingsModule("i18n-migrate-ko");
-    const loadedKo = m2.loadSettings();
-    assert(loadedKo.language === "zh", `已存 ko 应字段级兜底 zh,实际 ${loadedKo.language}`);
-    assert(loadedKo.outputDir === "C:\\docs\\out", "语言迁移不应波及其他偏好(outputDir 保留)");
-    assert(loadedKo.theme === "dark", "语言迁移不应波及其他偏好(theme 保留)");
-    assert(loadedKo.typography.fontEastAsia === "宋体", "语言迁移不应波及其他偏好(typography 保留)");
+    await suite.case("(d) 已存 ko 字段级兜底 zh 且其余偏好原样保留", async () => {
+      await fs.writeFile(settingsFile, JSON.stringify(migrated), "utf8");
+      const m2 = await freshSettingsModule("i18n-migrate-ko");
+      const loadedKo = m2.loadSettings();
+      assert(loadedKo.language === "zh", `已存 ko 应字段级兜底 zh,实际 ${loadedKo.language}`);
+      assert(loadedKo.outputDir === "C:\\docs\\out", "语言迁移不应波及其他偏好(outputDir 保留)");
+      assert(loadedKo.theme === "dark", "语言迁移不应波及其他偏好(theme 保留)");
+      assert(loadedKo.typography.fontEastAsia === "宋体", "语言迁移不应波及其他偏好(typography 保留)");
+    });
     // updateSettings 写入路径同样字段级兜底(ko 补丁 → zh)
-    await fs.writeFile(settingsFile, JSON.stringify({ ...base, language: "en" }), "utf8");
-    const r = await freshSettingsModule("i18n-rt-patch");
-    await r.updateSettings({ language: "ko" });
-    const r2 = await freshSettingsModule("i18n-rt-patch2");
-    assert(r2.loadSettings().language === "zh", "updateSettings(ko) 应字段级兜底 zh");
-    // 向后兼容:旧文件缺 language → 兜底 zh
-    await fs.writeFile(settingsFile, JSON.stringify(base), "utf8");
-    const m3 = await freshSettingsModule("i18n-rt-legacy");
-    assert(m3.loadSettings().language === "zh", "旧文件缺 language 应兜底 zh");
+    await suite.case("(d) updateSettings(ko) 同样字段级兜底 zh;旧文件缺字段兜底 zh", async () => {
+      await fs.writeFile(settingsFile, JSON.stringify({ ...base, language: "en" }), "utf8");
+      const r = await freshSettingsModule("i18n-rt-patch");
+      await r.updateSettings({ language: "ko" });
+      const r2 = await freshSettingsModule("i18n-rt-patch2");
+      assert(r2.loadSettings().language === "zh", "updateSettings(ko) 应字段级兜底 zh");
+      // 向后兼容:旧文件缺 language → 兜底 zh
+      await fs.writeFile(settingsFile, JSON.stringify(base), "utf8");
+      const m3 = await freshSettingsModule("i18n-rt-legacy");
+      assert(m3.loadSettings().language === "zh", "旧文件缺 language 应兜底 zh");
+    });
     console.log("[ok] i18n-registry:(d) 注册语言接受 + 裁撤语言(ko/fr/ru)字段级迁移兜底 zh 且其余偏好保留 + 往返无损 断言通过");
   } finally {
     await restore();
@@ -199,10 +233,12 @@ export async function run() {
     path.join(ROOT, "src", "renderer", "lang-bootstrap.js"),
     "utf8",
   );
-  assert(
-    bootstrapSrc.includes("m2w.htmlLang"),
-    "lang-bootstrap.js 应读取 m2w.htmlLang 镜像(不得回退为内置 code→htmlLang 硬编码映射)",
-  );
+  await suite.case("(e) lang-bootstrap 读 htmlLang 镜像(无硬编码映射回归)", () => {
+    assert(
+      bootstrapSrc.includes("m2w.htmlLang"),
+      "lang-bootstrap.js 应读取 m2w.htmlLang 镜像(不得回退为内置 code→htmlLang 硬编码映射)",
+    );
+  });
   console.log("[ok] i18n-registry:(e) lang-bootstrap 读 htmlLang 镜像(无硬编码映射回归) 断言通过");
 
   // ---- (f) warn.pathScanLimit:目录扫描预算触顶三语齐备 ----
@@ -212,21 +248,25 @@ export async function run() {
     [...String(s).matchAll(/\$\{(\w+)\}/g)].map((m) => m[1]).sort().join(",");
   const limitKeys = ["kind", "limit"];
   for (const code of LANGUAGES.map((l) => l.code)) {
-    const value = dictOf(code)["warn.pathScanLimit"];
-    assert(typeof value === "string" && value.length > 0, `${code} 应有 warn.pathScanLimit 文案`);
-    assert(
-      limitPh(value) === limitKeys.join(","),
-      `${code}.warn.pathScanLimit 占位符应为 [${limitKeys.join(",")}],实际 [${limitPh(value)}]`,
-    );
+    await suite.case(`(f) ${code}.warn.pathScanLimit 文案齐备且占位符为 kind,limit`, () => {
+      const value = dictOf(code)["warn.pathScanLimit"];
+      assert(typeof value === "string" && value.length > 0, `${code} 应有 warn.pathScanLimit 文案`);
+      assert(
+        limitPh(value) === limitKeys.join(","),
+        `${code}.warn.pathScanLimit 占位符应为 [${limitKeys.join(",")}],实际 [${limitPh(value)}]`,
+      );
+    });
   }
-  assert(
-    DICT.en["warn.pathScanLimit"] !== DICT.zh["warn.pathScanLimit"],
-    "en.warn.pathScanLimit 不应沿用中文原文",
-  );
-  assert(
-    DICT.ja["warn.pathScanLimit"] !== DICT.zh["warn.pathScanLimit"],
-    "ja.warn.pathScanLimit 不应沿用中文原文",
-  );
+  await suite.case("(f) en/ja 的 warn.pathScanLimit 不沿用中文原文", () => {
+    assert(
+      DICT.en["warn.pathScanLimit"] !== DICT.zh["warn.pathScanLimit"],
+      "en.warn.pathScanLimit 不应沿用中文原文",
+    );
+    assert(
+      DICT.ja["warn.pathScanLimit"] !== DICT.zh["warn.pathScanLimit"],
+      "ja.warn.pathScanLimit 不应沿用中文原文",
+    );
+  });
   // zh 值为默认语言口径,须与「已停止收集」语义一致(调用侧 kind/limit 插值后成句)
   // DICT 的值类型是 `string | undefined`(zh 是 Partial<Record<Dict, string>>),
   // 缺键正是「翻译缺失」—— 但本条断言的是 zh 原文的内容,故显式断掉而不是
@@ -235,16 +275,18 @@ export async function run() {
   if (typeof zhScanLimit !== "string") {
     throw new Error("zh.warn.pathScanLimit 缺文案");
   }
-  assert(
-    zhScanLimit.includes("已停止收集"),
-    "zh.warn.pathScanLimit 应说明扫描已停止收集(用户需知情截断)",
-  );
-  setLanguage("en");
-  assert(
-    t("warn.pathScanLimit", { kind: "条目数", limit: 20000 }).includes("20000"),
-    "en 下 warn.pathScanLimit 应插值出上限值",
-  );
-  setLanguage("zh");
+  await suite.case("(f) zh 原文说明扫描已停止收集;en 下插值出上限值", () => {
+    assert(
+      zhScanLimit.includes("已停止收集"),
+      "zh.warn.pathScanLimit 应说明扫描已停止收集(用户需知情截断)",
+    );
+    setLanguage("en");
+    assert(
+      t("warn.pathScanLimit", { kind: "条目数", limit: 20000 }).includes("20000"),
+      "en 下 warn.pathScanLimit 应插值出上限值",
+    );
+    setLanguage("zh");
+  });
   console.log("[ok] i18n-registry:(f) warn.pathScanLimit 三语齐备 + 占位符一致(en/ja 非中文原文) 断言通过");
 
   // ================= (g) 预设说明键(preset.hint*):三语齐备 + 无占位符 =================
@@ -261,29 +303,37 @@ export async function run() {
     "preset.hintCnReader",
     "preset.hintCnMinimal",
   ];
+  // 逐键一个 case:某一键缺翻译/带占位符不该掩盖其余五键的同类问题
   for (const key of presetHintKeys) {
-    for (const { code } of LANGUAGES) {
-      const value = dictOf(code)[key];
-      assert(
-        typeof value === "string" && value.trim().length > 0,
-        `${code} 应有非空文案 ${key}`,
-      );
-      // 上一行已断言 value 为非空字符串,此处按该前置假设收窄
-      assert(
-        !/** @type {string} */ (value).includes("${"),
-        `${code}.${key} 不应含插值占位符(预设说明为固定文案,实测 ${JSON.stringify(value)})`,
-      );
-    }
-    assert(dictOf("en")[key] !== dictOf("zh")[key], `en.${key} 不应沿用中文原文`);
-    assert(dictOf("ja")[key] !== dictOf("zh")[key], `ja.${key} 不应沿用中文原文`);
+    await suite.case(`(g) ${key} 三语非空且无插值占位符`, () => {
+      for (const { code } of LANGUAGES) {
+        const value = dictOf(code)[key];
+        assert(
+          typeof value === "string" && value.trim().length > 0,
+          `${code} 应有非空文案 ${key}`,
+        );
+        // 上一行已断言 value 为非空字符串,此处按该前置假设收窄
+        assert(
+          !/** @type {string} */ (value).includes("${"),
+          `${code}.${key} 不应含插值占位符(预设说明为固定文案,实测 ${JSON.stringify(value)})`,
+        );
+      }
+    });
+    await suite.case(`(g) ${key} 的 en/ja 译文不沿用中文原文`, () => {
+      assert(dictOf("en")[key] !== dictOf("zh")[key], `en.${key} 不应沿用中文原文`);
+      assert(dictOf("ja")[key] !== dictOf("zh")[key], `ja.${key} 不应沿用中文原文`);
+    });
     // 逐语言经 t() 验证命中(缺键时 t 会回退裸 key/英文,均在此暴露)
-    for (const { code } of LANGUAGES) {
-      setLanguage(code);
-      assert(t(key) === dictOf(code)[key], `${code} 下 t(${key}) 应命中本语言字典`);
-    }
+    await suite.case(`(g) ${key} 经 t() 逐语言命中`, () => {
+      for (const { code } of LANGUAGES) {
+        setLanguage(code);
+        assert(t(key) === dictOf(code)[key], `${code} 下 t(${key}) 应命中本语言字典`);
+      }
+    });
   }
   setLanguage("zh");
   console.log(
     `[ok] i18n-registry:(g) 预设说明 ${presetHintKeys.length} 键三语齐备 + 无占位符 + t() 逐语言命中(en/ja 非中文原文) 断言通过`,
   );
+  return { cases: suite.results };
 }

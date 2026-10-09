@@ -17,6 +17,7 @@ import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
 import { globalSlot, setGlobalSlot } from "./dom-stub.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const { assert: harnessAssert } = createAsserter("command-entry-guard");
 
@@ -226,6 +227,7 @@ function handlerOf(el, type) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const originalDocument = globalSlot("document");
   const originalWindow = globalSlot("window");
   let modalVisible = false;
@@ -341,87 +343,115 @@ export async function run() {
     const dropZone = elementFor("dropZone");
     const innerButton = makeElement("button");
     const innerLabel = makeElement("label");
-    const clickOnDropZone = dropZone.listener.get("click");
-    const keydownOnDropZone = dropZone.listener.get("keydown");
-    assert(clickOnDropZone && keydownOnDropZone, "拖放区应绑定 click/keydown 入口");
+    const clickOnDropZoneRaw = dropZone.listener.get("click");
+    const keydownOnDropZoneRaw = dropZone.listener.get("keydown");
 
     // ① 容器自身目标:照常打开文件对话框
+    await suite.case("拖放区应绑定 click/keydown 入口", () => {
+      assert(clickOnDropZoneRaw && keydownOnDropZoneRaw, "拖放区应绑定 click/keydown 入口");
+    });
+
+    // 两个入口的存在性由上一条 case 兜住;这里只做类型窄化,让后续 case 能直接驱动
+    // 这两个 handler(窄化不是新增断言,判定仍在那条 case 里)。
+    const clickOnDropZone = /** @type {(...args: unknown[]) => unknown} */ (clickOnDropZoneRaw);
+    const keydownOnDropZone = /** @type {(...args: unknown[]) => unknown} */ (keydownOnDropZoneRaw);
+
     // openDialog 为单飞(见 ⑧):同一 tick 内的第二次调用按「在途」忽略,故两个入口
     // 之间先 flush 让前一个对话框结算,各自证明独立可开(不靠并发时序区分入口)。
-    clickOnDropZone(makeEvent({ target: dropZone }));
-    assert(dialogCount() === 1, "点击拖放区自身应打开一次文件对话框");
-    await flush();
-    keydownOnDropZone(makeEvent({ key: "Enter", target: dropZone }));
-    assert(dialogCount() === 2, "拖放区自身 Enter 应打开一次文件对话框");
-    await flush();
+    await suite.case("容器自身目标(click / Enter)各自打开一次文件对话框", async () => {
+      clickOnDropZone(makeEvent({ target: dropZone }));
+      assert(dialogCount() === 1, "点击拖放区自身应打开一次文件对话框");
+      await flush();
+      keydownOnDropZone(makeEvent({ key: "Enter", target: dropZone }));
+      assert(dialogCount() === 2, "拖放区自身 Enter 应打开一次文件对话框");
+      await flush();
+    });
 
     // ② 内部交互控件冒泡:不得叠加第二个动作(按钮/label、click 与 Enter/Space)
-    for (const control of [innerButton, innerLabel]) {
-      clickOnDropZone(makeEvent({ target: control }));
-      keydownOnDropZone(makeEvent({ key: "Enter", target: control }));
-      keydownOnDropZone(makeEvent({ key: " ", target: control }));
-    }
-    assert(dialogCount() === 2, "内部控件 click/Enter/Space 冒泡不得再打开文件对话框");
+    await suite.case("内部交互控件冒泡不得叠加第二个动作", () => {
+      for (const control of [innerButton, innerLabel]) {
+        clickOnDropZone(makeEvent({ target: control }));
+        keydownOnDropZone(makeEvent({ key: "Enter", target: control }));
+        keydownOnDropZone(makeEvent({ key: " ", target: control }));
+      }
+      assert(dialogCount() === 2, "内部控件 click/Enter/Space 冒泡不得再打开文件对话框");
+    });
 
     // ③ 容器角色:role=button 会与内部交互元素语义冲突,应为 region
-    const html = fs.readFileSync(path.join(ROOT, "src", "renderer", "index.html"), "utf8");
-    const dropZoneTag = html.match(/<div\s[^>]*id="dropZone"[\s\S]*?>/)?.[0] ?? "";
-    assert(dropZoneTag.includes('role="region"'), "拖放区容器应声明 role=region");
-    assert(!dropZoneTag.includes('role="button"'), "拖放区容器不应再声明 role=button");
-    assert(dropZoneTag.includes('tabindex="0"'), "拖放区容器应保留可聚焦性(键盘可达投放区)");
+    await suite.case("拖放区容器角色为 region 而非 button 且保留可聚焦", () => {
+      const html = fs.readFileSync(path.join(ROOT, "src", "renderer", "index.html"), "utf8");
+      const dropZoneTag = html.match(/<div\s[^>]*id="dropZone"[\s\S]*?>/)?.[0] ?? "";
+      assert(dropZoneTag.includes('role="region"'), "拖放区容器应声明 role=region");
+      assert(!dropZoneTag.includes('role="button"'), "拖放区容器不应再声明 role=button");
+      assert(dropZoneTag.includes('tabindex="0"'), "拖放区容器应保留可聚焦性(键盘可达投放区)");
+    });
 
     // ④ 连续 Ctrl+Enter:只起一条预检链
     state.selectedFiles.push("a.md");
-    const keydown = docListeners.get("keydown");
-    assert(keydown, "转换域应在 document 上绑定快捷键");
-    keydown(makeEvent({ key: "Enter", ctrlKey: true }));
-    keydown(makeEvent({ key: "Enter", ctrlKey: true }));
-    assert(precheckCount() === 1, "连续 Ctrl+Enter 只应启动一次预检");
-    assert(flow.isConvertCommandBlocked(), "预检进行中命令锁应生效");
-    // 预检未决时按钮再点一次:仍复用同一链
+    const keydownRaw = docListeners.get("keydown");
     const convertBtn = elementFor("convertBtn");
-    handlerOf(convertBtn, "click")(makeEvent({ target: convertBtn }));
-    assert(precheckCount() === 1, "预检未决时按钮再点不得另起预检");
-    const settleFirstPrecheck = pendingPrechecks.shift();
-    assert(settleFirstPrecheck, "应有一条未决预检链可结算");
-    settleFirstPrecheck([]); // 预检通过(无警告)→ 链进入转换
-    await flush();
-    assert(convertCount() === 1, "唯一活动预检完成后只执行一次转换");
-    assert(!flow.isConvertCommandBlocked(), "转换结束(命令锁释放)后应可发起新命令");
+    await suite.case("转换域在 document 上绑定快捷键", () => {
+      assert(keydownRaw, "转换域应在 document 上绑定快捷键");
+    });
+
+    // 窄化理由同上面两个入口:判定留在 case 内,这里只让类型通过。
+    const keydown = /** @type {(...args: unknown[]) => unknown} */ (keydownRaw);
+
+    await suite.case("连续 Ctrl+Enter 与按钮再点只起一条预检链", async () => {
+      keydown(makeEvent({ key: "Enter", ctrlKey: true }));
+      keydown(makeEvent({ key: "Enter", ctrlKey: true }));
+      assert(precheckCount() === 1, "连续 Ctrl+Enter 只应启动一次预检");
+      assert(flow.isConvertCommandBlocked(), "预检进行中命令锁应生效");
+      // 预检未决时按钮再点一次:仍复用同一链
+      handlerOf(convertBtn, "click")(makeEvent({ target: convertBtn }));
+      assert(precheckCount() === 1, "预检未决时按钮再点不得另起预检");
+      const settleFirstPrecheck = pendingPrechecks.shift();
+      assert(settleFirstPrecheck, "应有一条未决预检链可结算");
+      settleFirstPrecheck([]); // 预检通过(无警告)→ 链进入转换
+      await flush();
+      assert(convertCount() === 1, "唯一活动预检完成后只执行一次转换");
+      assert(!flow.isConvertCommandBlocked(), "转换结束(命令锁释放)后应可发起新命令");
+    });
 
     // ⑤ 模态(成书向导)打开:快捷键与按钮命令统一阻断
-    modalVisible = true;
-    keydown(makeEvent({ key: "Enter", ctrlKey: true }));
-    handlerOf(convertBtn, "click")(makeEvent({ target: convertBtn }));
-    keydown(makeEvent({ key: "o", ctrlKey: true }));
-    assert(precheckCount() === 1, "模态打开时不得启动新预检");
-    assert(convertCount() === 1, "模态打开时不得启动新转换");
-    assert(dialogCount() === 2, "模态打开时 Ctrl+O 不得打开文件对话框");
-    // 阻断时不吞默认行为(模态内控件的 Enter/Space 激活不受影响)
-    const blockedKey = makeEvent({ key: "Enter", ctrlKey: true });
-    keydown(blockedKey);
-    assert(!blockedKey.defaultPrevented, "被阻断的快捷键不应 preventDefault");
-    modalVisible = false;
+    await suite.case("模态打开时快捷键与按钮命令统一阻断", () => {
+      modalVisible = true;
+      keydown(makeEvent({ key: "Enter", ctrlKey: true }));
+      handlerOf(convertBtn, "click")(makeEvent({ target: convertBtn }));
+      keydown(makeEvent({ key: "o", ctrlKey: true }));
+      assert(precheckCount() === 1, "模态打开时不得启动新预检");
+      assert(convertCount() === 1, "模态打开时不得启动新转换");
+      assert(dialogCount() === 2, "模态打开时 Ctrl+O 不得打开文件对话框");
+      // 阻断时不吞默认行为(模态内控件的 Enter/Space 激活不受影响)
+      const blockedKey = makeEvent({ key: "Enter", ctrlKey: true });
+      keydown(blockedKey);
+      assert(!blockedKey.defaultPrevented, "被阻断的快捷键不应 preventDefault");
+      modalVisible = false;
+    });
 
     // ⑥ 转换进行中:新命令阻断
-    state.mode = "single";
-    keydown(makeEvent({ key: "Enter", ctrlKey: true }));
-    assert(precheckCount() === 1, "转换进行中不得启动新预检");
-    state.mode = null;
+    await suite.case("转换进行中阻断新命令", () => {
+      state.mode = "single";
+      keydown(makeEvent({ key: "Enter", ctrlKey: true }));
+      assert(precheckCount() === 1, "转换进行中不得启动新预检");
+      state.mode = null;
+    });
 
     // ⑦ 预检中再点「打开文件」:同锁阻断
-    keydown(makeEvent({ key: "o", ctrlKey: true }));
-    assert(dialogCount() === 3, "空闲时 Ctrl+O 应打开一次文件对话框");
-    const beforePrecheck = precheckCalls;
-    keydown(makeEvent({ key: "Enter", ctrlKey: true }));
-    keydown(makeEvent({ key: "o", ctrlKey: true }));
-    assert(precheckCount() === beforePrecheck + 1, "预检只应启动一次");
-    assert(dialogCount() === 3, "预检未决时不得打开文件对话框");
-    const settleRetryPrecheck = pendingPrechecks.shift();
-    assert(settleRetryPrecheck, "应有一条未决预检链可结算");
-    settleRetryPrecheck([]); // 释放本条链
-    await flush();
-    assert(!flow.isConvertCommandBlocked(), "预检链结算后应释放命令锁");
+    await suite.case("预检未决时同锁阻断打开文件对话框", async () => {
+      keydown(makeEvent({ key: "o", ctrlKey: true }));
+      assert(dialogCount() === 3, "空闲时 Ctrl+O 应打开一次文件对话框");
+      const beforePrecheck = precheckCalls;
+      keydown(makeEvent({ key: "Enter", ctrlKey: true }));
+      keydown(makeEvent({ key: "o", ctrlKey: true }));
+      assert(precheckCount() === beforePrecheck + 1, "预检只应启动一次");
+      assert(dialogCount() === 3, "预检未决时不得打开文件对话框");
+      const settleRetryPrecheck = pendingPrechecks.shift();
+      assert(settleRetryPrecheck, "应有一条未决预检链可结算");
+      settleRetryPrecheck([]); // 释放本条链
+      await flush();
+      assert(!flow.isConvertCommandBlocked(), "预检链结算后应释放命令锁");
+    });
 
     // ⑧ 文件对话框 single-flight(在途守卫):一次选择意图 = 一个原生窗
     //    制造在途窗口:openMarkdowns 改为未决 Promise,由本段显式结算(不靠真实等待)。
@@ -442,111 +472,130 @@ export async function run() {
     const beforeFlight = dialogCount();
 
     // ⑧-1 连点两次「添加文件」(双击 = 两次独立 click):只开一个原生窗
-    clickSelectBtn();
-    clickSelectBtn();
-    assert(
-      dialogCount() === beforeFlight + 1,
-      `连点两次「添加文件」只应开一个窗,实际 openMarkdowns 增量=${dialogCount() - beforeFlight}`,
-    );
-    assert(
-      pendingDialogCount() === 1,
-      "在途期间只应有一条未决 openMarkdowns(不得叠加第二个)",
-    );
-    // 忽略而非排队:首窗结算后不得补开第二次
-    takePendingDialog().resolve(["C:\\docs\\first.md"]); // 成功路径
-    await flush();
-    assert(
-      dialogCount() === beforeFlight + 1,
-      "被忽略的第二次点击不得在首窗结算后补开(语义是忽略,不是排队)",
-    );
-    assert(
-      state.selectedFiles.length === 1 && state.selectedFiles[0] === "C:\\docs\\first.md",
-      `成功选择应落库到单文件态,实际 ${JSON.stringify(state.selectedFiles)}`,
-    );
-    // 成功路径释放锁:再点能正常开窗
-    clickSelectBtn();
-    assert(dialogCount() === beforeFlight + 2, "成功路径后应可再次打开(锁已释放)");
-    takePendingDialog().resolve([]); // 用户取消(保持现状)
-    await flush();
-    assert(
-      state.selectedFiles.length === 1,
-      `用户取消不得改动现有列表,实际 ${JSON.stringify(state.selectedFiles)}`,
-    );
+    await suite.case("连点两次「添加文件」只开一个原生窗且不补开", async () => {
+      clickSelectBtn();
+      clickSelectBtn();
+      assert(
+        dialogCount() === beforeFlight + 1,
+        `连点两次「添加文件」只应开一个窗,实际 openMarkdowns 增量=${dialogCount() - beforeFlight}`,
+      );
+      assert(
+        pendingDialogCount() === 1,
+        "在途期间只应有一条未决 openMarkdowns(不得叠加第二个)",
+      );
+      // 忽略而非排队:首窗结算后不得补开第二次
+      takePendingDialog().resolve(["C:\\docs\\first.md"]); // 成功路径
+      await flush();
+      assert(
+        dialogCount() === beforeFlight + 1,
+        "被忽略的第二次点击不得在首窗结算后补开(语义是忽略,不是排队)",
+      );
+      assert(
+        state.selectedFiles.length === 1 && state.selectedFiles[0] === "C:\\docs\\first.md",
+        `成功选择应落库到单文件态,实际 ${JSON.stringify(state.selectedFiles)}`,
+      );
+    });
+
+    await suite.case("成功路径与用户取消后锁均释放", async () => {
+      // 成功路径释放锁:再点能正常开窗
+      clickSelectBtn();
+      assert(dialogCount() === beforeFlight + 2, "成功路径后应可再次打开(锁已释放)");
+      takePendingDialog().resolve([]); // 用户取消(保持现状)
+      await flush();
+      assert(
+        state.selectedFiles.length === 1,
+        `用户取消不得改动现有列表,实际 ${JSON.stringify(state.selectedFiles)}`,
+      );
+    });
 
     // ⑧-2 抛错路径:锁必须释放(异常不得把入口永久卡死)
-    clickSelectBtn();
-    assert(dialogCount() === beforeFlight + 3, "取消后应可再次打开(锁已释放)");
-    takePendingDialog().reject(new Error("open dialog failed"));
-    await flush();
-    clickSelectBtn();
-    assert(dialogCount() === beforeFlight + 4, "打开失败(抛错)后应可再次打开(锁已释放)");
-    takePendingDialog().resolve([]); // 收尾:取消,不留未决链
-    await flush();
+    await suite.case("抛错路径后锁释放可再次打开", async () => {
+      clickSelectBtn();
+      assert(dialogCount() === beforeFlight + 3, "取消后应可再次打开(锁已释放)");
+      takePendingDialog().reject(new Error("open dialog failed"));
+      await flush();
+      clickSelectBtn();
+      assert(dialogCount() === beforeFlight + 4, "打开失败(抛错)后应可再次打开(锁已释放)");
+      takePendingDialog().resolve([]); // 收尾:取消,不留未决链
+      await flush();
+    });
 
     // ⑧-3 拖放区入口与按钮入口在途互斥:点按钮后立刻点拖放区,不叠第二个窗
     const beforeZoneExclusive = dialogCount();
-    clickSelectBtn();
-    clickOnDropZone(makeEvent({ target: dropZone })); // 拖放区 click
-    keydownOnDropZone(makeEvent({ key: "Enter", target: dropZone })); // 拖放区键盘
-    clickAppendBtn(); // 「追加文件 / 继续添加」入口
-    keydown(makeEvent({ key: "o", ctrlKey: true })); // Ctrl+O
-    assert(
-      dialogCount() === beforeZoneExclusive + 1,
-      "按钮在途期间,拖放区/追加/Ctrl+O 入口均不得叠开第二个原生窗",
-    );
-    assert(
-      pendingDialogCount() === 1,
-      "在途期间只应有一条未决 openMarkdowns",
-    );
-    takePendingDialog().resolve([]); // 取消收尾
-    await flush();
+    await suite.case("按钮在途期间各入口均不得叠开第二个原生窗", async () => {
+      clickSelectBtn();
+      clickOnDropZone(makeEvent({ target: dropZone })); // 拖放区 click
+      keydownOnDropZone(makeEvent({ key: "Enter", target: dropZone })); // 拖放区键盘
+      clickAppendBtn(); // 「追加文件 / 继续添加」入口
+      keydown(makeEvent({ key: "o", ctrlKey: true })); // Ctrl+O
+      assert(
+        dialogCount() === beforeZoneExclusive + 1,
+        "按钮在途期间,拖放区/追加/Ctrl+O 入口均不得叠开第二个原生窗",
+      );
+      assert(
+        pendingDialogCount() === 1,
+        "在途期间只应有一条未决 openMarkdowns",
+      );
+      takePendingDialog().resolve([]); // 取消收尾
+      await flush();
+    });
 
     // ⑧-4 append/replace 两语义与单/多文件态追加判定未被守卫改动
     //     多文件态拖放区点击 = 追加(与已有列表合并),按钮点击 = 更换
     state.selectedFiles = ["C:\\docs\\first.md", "C:\\docs\\second.md"];
     const beforeAppend = dialogCount();
-    clickOnDropZone(makeEvent({ target: dropZone }));
-    assert(dialogCount() === beforeAppend + 1, "多文件态拖放区点击应打开一次文件对话框");
-    takePendingDialog().resolve(["C:\\docs\\third.md"]);
-    await flush();
-    assert(
-      state.selectedFiles.length === 3 && state.selectedFiles.includes("C:\\docs\\third.md"),
-      `多文件态拖放区点击应走追加合并,实际 ${JSON.stringify(state.selectedFiles)}`,
-    );
+    await suite.case("多文件态拖放区点击走追加合并", async () => {
+      clickOnDropZone(makeEvent({ target: dropZone }));
+      assert(dialogCount() === beforeAppend + 1, "多文件态拖放区点击应打开一次文件对话框");
+      takePendingDialog().resolve(["C:\\docs\\third.md"]);
+      await flush();
+      assert(
+        state.selectedFiles.length === 3 && state.selectedFiles.includes("C:\\docs\\third.md"),
+        `多文件态拖放区点击应走追加合并,实际 ${JSON.stringify(state.selectedFiles)}`,
+      );
+    });
+
     const beforeReplace = dialogCount();
-    clickSelectBtn();
-    assert(dialogCount() === beforeReplace + 1, "「添加文件」按钮应打开一次文件对话框");
-    takePendingDialog().resolve(["C:\\docs\\only.md"]);
-    await flush();
-    assert(
-      state.selectedFiles.length === 1 && state.selectedFiles[0] === "C:\\docs\\only.md",
-      `「添加文件」按钮应走 replace 语义,实际 ${JSON.stringify(state.selectedFiles)}`,
-    );
+    await suite.case("「添加文件」按钮走 replace 语义", async () => {
+      clickSelectBtn();
+      assert(dialogCount() === beforeReplace + 1, "「添加文件」按钮应打开一次文件对话框");
+      takePendingDialog().resolve(["C:\\docs\\only.md"]);
+      await flush();
+      assert(
+        state.selectedFiles.length === 1 && state.selectedFiles[0] === "C:\\docs\\only.md",
+        `「添加文件」按钮应走 replace 语义,实际 ${JSON.stringify(state.selectedFiles)}`,
+      );
+    });
 
     // ⑧-5 既有命令锁语义不回归:转换中 / 模态打开期间仍不打开对话框
     //     (守卫只加「在途」这一条,不得放宽 isConvertCommandBlocked)
     const beforeBlocked = dialogCount();
-    state.mode = "single"; // 转换中
-    clickSelectBtn();
-    clickOnDropZone(makeEvent({ target: dropZone }));
-    assert(dialogCount() === beforeBlocked, "转换进行中不得打开文件对话框");
-    state.mode = null;
-    modalVisible = true; // 成书向导模态
-    clickSelectBtn();
-    clickAppendBtn();
-    assert(dialogCount() === beforeBlocked, "模态打开时不得打开文件对话框");
-    modalVisible = false;
-    assert(pendingDialogCount() === 0, "被阻断的调用不得留下未决链");
-    // 阻断解除后可正常开窗(且不留死锁)
-    clickSelectBtn();
-    assert(dialogCount() === beforeBlocked + 1, "锁解除后应可正常打开文件对话框");
-    takePendingDialog().resolve([]);
-    await flush();
-    deferFileDialog = false;
+    await suite.case("转换中与模态打开期间仍不打开对话框", () => {
+      state.mode = "single"; // 转换中
+      clickSelectBtn();
+      clickOnDropZone(makeEvent({ target: dropZone }));
+      assert(dialogCount() === beforeBlocked, "转换进行中不得打开文件对话框");
+      state.mode = null;
+      modalVisible = true; // 成书向导模态
+      clickSelectBtn();
+      clickAppendBtn();
+      assert(dialogCount() === beforeBlocked, "模态打开时不得打开文件对话框");
+      modalVisible = false;
+      assert(pendingDialogCount() === 0, "被阻断的调用不得留下未决链");
+    });
+
+    await suite.case("阻断解除后可正常开窗且不留死锁", async () => {
+      clickSelectBtn();
+      assert(dialogCount() === beforeBlocked + 1, "锁解除后应可正常打开文件对话框");
+      takePendingDialog().resolve([]);
+      await flush();
+      deferFileDialog = false;
+    });
 
     console.log(
       "[ok] command-entry-guard:事件边界/连续快捷键/预检与模态阻断/文件对话框单飞断言通过",
     );
+    return { cases: suite.results };
   } finally {
     setGlobalSlot("document", originalDocument);
     setGlobalSlot("window", originalWindow);

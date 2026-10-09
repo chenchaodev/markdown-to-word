@@ -14,6 +14,7 @@ import { unzipPart } from "../harness/docx-utils.js";
 import { saveArtifact } from "../harness/artifacts.js";
 import { docxBufferOf, prepareForConvert } from "../harness/convert-helpers.js";
 import { docxTocAnchors } from "../harness/dual-extract.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /** 主样例:标题编号 + 内部锚点/外部链接 + h1-h6(gen-fixtures 落盘为 docs/heading-links.md) */
 const linkMd = `---
@@ -44,85 +45,128 @@ export const fixtures = { main: linkMd };
 
 /** 标题编号 + 内部/外部链接验收 */
 export async function run() {
+  const suite = createCaseSuite();
   const linkDocx = docxBufferOf(
     await convert(prepareForConvert(linkMd), "docx", { baseDir: FIXTURES_DIR, warnings: [] }),
   );
   const numberingXml = await unzipPart(linkDocx, "word/numbering.xml");
   const documentXml = await unzipPart(linkDocx, "word/document.xml");
+  const relsXml = await unzipPart(linkDocx, "word/_rels/document.xml.rels");
   // 回归守卫:书签 w:id 文档内唯一。docx Bookmark 组件每枚独立计数恒为 1 →
   // 全文档标题/公式书签 w:id 全部冲突(Word 要求文档内唯一,实测 WPS 显示异常);
   // bookmarkChildren 改用 ctx.bookmarkNextId 自增,每枚 bookmarkStart/End 对独占 id。
   // 此处收集全部 w:bookmarkStart 的 w:id,去重后数量须等于总数。
   const bookmarkIds = [...documentXml.matchAll(/w:bookmarkStart[^>]*w:id="(\d+)"/g)].map((m) => m[1]);
-  if (bookmarkIds.length === 0) {
-    throw new Error("书签断言失败:document.xml 无 w:bookmarkStart w:id");
-  }
-  if (new Set(bookmarkIds).size !== bookmarkIds.length) {
-    throw new Error(`书签断言失败:w:id 文档内不唯一(共 ${bookmarkIds.length} 枚,去重后 ${new Set(bookmarkIds).size} 枚)`);
-  }
+  // 内部锚点取数备在 case 外:「有锚点元素」与「有一条指向该标题」读的是同一份数组
+  const internalAnchors = docxTocAnchors(documentXml);
+  // 外链 r:id 匹配取数备在 case 外:它是正则匹配结果,
+  // 移进 case 会让「元素缺失」报成另一种形状的错
+  const extLink = /<w:hyperlink[^>]*r:id="([^"]+)"/.exec(documentXml);
+  // 段落切片备在 case 外:paragraphXmlAt 自身找不到 <w:p> 起止即抛,
+  // 那是取数失败,不该归到「某标题不该有编号」名下
+  const h4to6Paras = ["四级标题", "五级标题", "六级标题"].map((name) => ({
+    name,
+    para: paragraphXmlAt(documentXml, documentXml.indexOf(`w:bookmarkStart w:name="${name}"`)),
+  }));
+  const h1Para = paragraphXmlAt(documentXml, documentXml.indexOf('w:bookmarkStart w:name="第一章"'));
+
+  await suite.case("document.xml 有 w:bookmarkStart w:id", () => {
+    if (bookmarkIds.length === 0) {
+      throw new Error("书签断言失败:document.xml 无 w:bookmarkStart w:id");
+    }
+  });
+  await suite.case("书签 w:id 文档内唯一", () => {
+    if (new Set(bookmarkIds).size !== bookmarkIds.length) {
+      throw new Error(`书签断言失败:w:id 文档内不唯一(共 ${bookmarkIds.length} 枚,去重后 ${new Set(bookmarkIds).size} 枚)`);
+    }
+  });
   console.log(`[ok] docx 书签 w:id 文档内唯一(${bookmarkIds.length} 枚)`);
   // 标题编号:numbering.xml 含多级 text 模板 %1 / %1.%2 / %1.%2.%3
   // (reference 名 "md-heading" 是库内部标识,不写进 XML,断言 text 模板即可)
-  if (!numberingXml.includes('w:lvlText w:val="%1"/>') || !numberingXml.includes('w:lvlText w:val="%1.%2"/>')) {
-    throw new Error("标题编号断言失败:numbering.xml 缺少多级 text 模板");
-  }
+  await suite.case("numbering.xml 含多级 text 模板 %1 / %1.%2", () => {
+    if (!numberingXml.includes('w:lvlText w:val="%1"/>') || !numberingXml.includes('w:lvlText w:val="%1.%2"/>')) {
+      throw new Error("标题编号断言失败:numbering.xml 缺少多级 text 模板");
+    }
+  });
   // 内部链接:document.xml 含 w:hyperlink w:anchor 指向标题书签。
   // 取事实走 dual-extract 的 docxTocAnchors(内部锚点 = <w:hyperlink w:history="1" w:anchor="…">),
   // 口径与目录条目、交叉引用段一致(实读:本段产物的 4 条内部 w:hyperlink 全部带 w:history="1")。
-  const internalAnchors = docxTocAnchors(documentXml);
   // 拆成两条:「存在指向锚点的内部超链接元素」与「其中一条指向该标题书签」是两件事
-  if (internalAnchors.length === 0) {
-    throw new Error("内部链接断言失败:document.xml 缺少 w:hyperlink w:anchor 内部超链接元素");
-  }
-  if (!internalAnchors.includes("二级标题")) {
-    throw new Error(`内部链接断言失败:无指向标题书签的 w:anchor(实得:${internalAnchors.join(",")})`);
-  }
+  await suite.case("document.xml 含 w:hyperlink w:anchor 内部超链接元素", () => {
+    if (internalAnchors.length === 0) {
+      throw new Error("内部链接断言失败:document.xml 缺少 w:hyperlink w:anchor 内部超链接元素");
+    }
+  });
+  await suite.case("内部超链接有一条指向标题书签「二级标题」", () => {
+    if (!internalAnchors.includes("二级标题")) {
+      throw new Error(`内部链接断言失败:无指向标题书签的 w:anchor(实得:${internalAnchors.join(",")})`);
+    }
+  });
   // 外链(ExternalHyperlink 实现事实):URL 只进 rels(document.xml 经 r:id 引用,
   // 关系 Id 为 docx 库随机生成,须动态比对);关系类型 hyperlink + TargetMode External
-  const relsXml = await unzipPart(linkDocx, "word/_rels/document.xml.rels");
-  if (!relsXml.includes('Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"')) {
-    throw new Error("外链断言失败:document.xml.rels 缺少 hyperlink 关系类型");
-  }
-  if (!relsXml.includes('Target="https://example.com"') || !relsXml.includes('TargetMode="External"')) {
-    throw new Error("外链断言失败:rels 缺少 Target=https://example.com 或 TargetMode=External");
-  }
-  const extLink = /<w:hyperlink[^>]*r:id="([^"]+)"/.exec(documentXml);
-  if (!extLink) {
-    throw new Error("外链断言失败:document.xml 缺少带 r:id 的外部超链接元素");
-  }
-  if (!relsXml.includes(`Id="${extLink[1]}"`)) {
-    throw new Error(`外链断言失败:document.xml 的 r:id(${extLink[1]}) 在 rels 中无对应关系`);
-  }
+  await suite.case("document.xml.rels 含 hyperlink 关系类型", () => {
+    if (!relsXml.includes('Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"')) {
+      throw new Error("外链断言失败:document.xml.rels 缺少 hyperlink 关系类型");
+    }
+  });
+  await suite.case("rels 含 Target 与 TargetMode=External", () => {
+    if (!relsXml.includes('Target="https://example.com"') || !relsXml.includes('TargetMode="External"')) {
+      throw new Error("外链断言失败:rels 缺少 Target=https://example.com 或 TargetMode=External");
+    }
+  });
+  await suite.case("document.xml 含带 r:id 的外部超链接元素", () => {
+    if (!extLink) {
+      throw new Error("外链断言失败:document.xml 缺少带 r:id 的外部超链接元素");
+    }
+  });
+  await suite.case("document.xml 的 r:id 在 rels 中有对应关系", () => {
+    // 上方 case 已断言元素存在,故此处匹配必有值
+    if (!extLink) {
+      throw new Error("外链断言失败:document.xml 缺少带 r:id 的外部超链接元素");
+    }
+    if (!relsXml.includes(`Id="${extLink[1]}"`)) {
+      throw new Error(`外链断言失败:document.xml 的 r:id(${extLink[1]}) 在 rels 中无对应关系`);
+    }
+  });
   // 标题书签仍在(编号不破坏 Bookmark)
-  if (!documentXml.includes('w:bookmarkStart w:name="二级标题"')) {
-    throw new Error("标题书签断言失败:编号后 Bookmark 丢失");
-  }
+  await suite.case("编号未破坏标题书签「二级标题」", () => {
+    if (!documentXml.includes('w:bookmarkStart w:name="二级标题"')) {
+      throw new Error("标题书签断言失败:编号后 Bookmark 丢失");
+    }
+  });
   // h4-h6 渲染正确:样式齐全(Heading4/5/6 段落样式)+ 书签全级别
   // (parse.ts 为所有标题生成 data.id,renderHeading 对任意 depth 挂 Bookmark)
   for (const [style, name] of [["Heading4", "四级标题"], ["Heading5", "五级标题"], ["Heading6", "六级标题"]]) {
-    if (!documentXml.includes(`<w:pStyle w:val="${style}"/>`)) {
-      throw new Error(`标题样式断言失败:缺少 ${style} 段落样式`);
-    }
-    if (!documentXml.includes(`w:bookmarkStart w:name="${name}"`)) {
-      throw new Error(`标题书签断言失败:${name} 书签缺失`);
-    }
+    await suite.case(`${style} 段落样式齐全`, () => {
+      if (!documentXml.includes(`<w:pStyle w:val="${style}"/>`)) {
+        throw new Error(`标题样式断言失败:缺少 ${style} 段落样式`);
+      }
+    });
+    await suite.case(`${name} 书签齐全`, () => {
+      if (!documentXml.includes(`w:bookmarkStart w:name="${name}"`)) {
+        throw new Error(`标题书签断言失败:${name} 书签缺失`);
+      }
+    });
   }
   // 编号仅挂 h1-h3:headingNumberingOptions 只生成 3 级(levels 0-2),
   // renderHeading numbering 条件为 depth <= 3 → h4-h6 段落无 w:numPr
-  for (const name of ["四级标题", "五级标题", "六级标题"]) {
-    const para = paragraphXmlAt(documentXml, documentXml.indexOf(`w:bookmarkStart w:name="${name}"`));
-    if (para.includes("w:numPr")) {
-      throw new Error(`标题编号断言失败:${name} 不应有 w:numPr(编号仅 h1-h3)`);
-    }
+  for (const { name, para } of h4to6Paras) {
+    await suite.case(`${name} 段落无 w:numPr(编号仅 h1-h3)`, () => {
+      if (para.includes("w:numPr")) {
+        throw new Error(`标题编号断言失败:${name} 不应有 w:numPr(编号仅 h1-h3)`);
+      }
+    });
   }
   // 对照:h1 正文段落(以书签锚定,避开目录页同名词条)应带 w:numPr
-  const h1Para = paragraphXmlAt(documentXml, documentXml.indexOf('w:bookmarkStart w:name="第一章"'));
-  if (!h1Para.includes("w:numPr")) {
-    throw new Error("标题编号断言失败:h1 段落缺少 w:numPr(编号应生效)");
-  }
+  await suite.case("h1 段落带 w:numPr(编号应生效)", () => {
+    if (!h1Para.includes("w:numPr")) {
+      throw new Error("标题编号断言失败:h1 段落缺少 w:numPr(编号应生效)");
+    }
+  });
   console.log("[ok] docx 标题编号/内部链接:numbering md-heading + hyperlink anchor + 书签齐全;h4-h6 样式/书签齐全且无编号");
   console.log("[ok] docx 外链:rels hyperlink External 关系 + document.xml r:id 匹配");
   await saveArtifact("heading-links", { docx: linkDocx });
+  return { cases: suite.results };
 }
 
 /**

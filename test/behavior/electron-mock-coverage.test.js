@@ -23,6 +23,7 @@ import path from "node:path";
 import { ROOT } from "../harness/paths.js";
 import { SEGMENT_DIRS } from "../../shared/test-common-surface.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /**
  * 本段横跨的层(ADR-062 L6 判据要求 behavior 段显式声明):判据只校验「非空 ＋ 每个元素
@@ -139,8 +140,9 @@ function scanTree(root, extensions) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   // ---- 1. 抽取器形态自测(合成源码:证明判定链有效) ----
-  {
+  await suite.case("抽取器形态自测通过(值/type/内联 type/默认/命名空间/字符串伪语句)", () => {
     const src = [
       'import { app } from "electron";',
       'import type { BrowserWindow } from "electron";',
@@ -168,31 +170,35 @@ export async function run() {
     assert(!required.has("dialog"), "默认绑定应记为 default 而非按本地名记录(本地名对 mock 无意义)");
     assert(!required.has("fake"), "字符串字面量里的伪 import 语句不得被抽取(行首锚定失效?)");
     console.log("[ok] electron-mock-coverage:抽取器形态自测通过(值/type/内联 type/默认/命名空间/字符串伪语句)");
-  }
+  });
 
   // ---- 2. src 侧:具名 import 集合钉死 + mock 全覆盖 ----
+  // mock 导出表与 src 全树扫描是多 case 共享的昂贵前置,故在 case 之前备好。
   const mock = await import("../harness/electron-mock.mjs");
   const mockExports = new Set(Object.keys(mock));
-  assert(mockExports.size > 0, "electron-mock 未导出任何命名成员(mock 失效?)");
-
   const srcScan = scanTree(path.join(ROOT, "src"), [".ts", ".cts"]);
-  assert(srcScan.required.size > 0, "src 侧未抽到任何 electron 绑定(抽取失效?)");
   const srcNames = [...srcScan.required].sort();
-  assert(
-    srcNames.join(",") === [...SRC_REQUIRED].sort().join(","),
-    `src 对 electron 的运行时绑定集合已漂移:请同步 electron-mock.mjs 与本段 SRC_REQUIRED。实际 ${srcNames.join(",")}`,
-  );
-  {
+
+  await suite.case("src 侧 electron 绑定集合已钉死且 mock 非空", () => {
+    assert(mockExports.size > 0, "electron-mock 未导出任何命名成员(mock 失效?)");
+    assert(srcScan.required.size > 0, "src 侧未抽到任何 electron 绑定(抽取失效?)");
+    assert(
+      srcNames.join(",") === [...SRC_REQUIRED].sort().join(","),
+      `src 对 electron 的运行时绑定集合已漂移:请同步 electron-mock.mjs 与本段 SRC_REQUIRED。实际 ${srcNames.join(",")}`,
+    );
+  });
+
+  await suite.case("src 侧 electron 绑定全部被 mock 覆盖", () => {
     const missing = srcNames.filter((n) => !mockExports.has(n));
     assert(
       missing.length === 0,
       `electron-mock 缺少 src 用到的命名导出:${missing.join(",")}(补进 test/harness/electron-mock.mjs;否则依赖它的段在纯 Node 下 import 失败)`,
     );
     console.log(`[ok] electron-mock-coverage:src 侧 ${srcNames.length} 个 electron 绑定全部被 mock 覆盖`);
-  }
+  });
 
   // ---- 3. test/ 侧:生成器会 import 的段与共享 helper 同样全覆盖 ----
-  {
+  await suite.case("test/ 侧 electron 绑定集合已钉死且全部被 mock 覆盖", () => {
     const roots = [...SEGMENT_DIRS, "harness"].map((d) => path.join(ROOT, "test", d));
     /** @type {{ required: Set<string>, namespaceFiles: string[] }} */
     const merged = { required: new Set(), namespaceFiles: [] };
@@ -212,10 +218,10 @@ export async function run() {
       `electron-mock 缺少 test/ 侧用到的命名导出:${missing.join(",")}(gen-fixtures 纯 Node 下会 import 失败)`,
     );
     console.log(`[ok] electron-mock-coverage:test/ 侧 ${names.length} 个 electron 绑定全部被 mock 覆盖`);
-  }
+  });
 
   // ---- 4. core 零 electron import(层向 core-no-host 旁证)+ 命名空间导入不静默 ----
-  {
+  await suite.case("core 层零 electron 依赖且 src 无命名空间导入", () => {
     const coreElectron = [...srcScan.byFile.entries()].filter(([file]) => file.startsWith("src/core/"));
     assert(
       coreElectron.length === 0,
@@ -226,5 +232,7 @@ export async function run() {
       `src 出现 electron 命名空间导入,覆盖判定无法静态定界(请改具名 import):${srcScan.namespaceFiles.join(",")}`,
     );
     console.log("[ok] electron-mock-coverage:core 层零 electron 依赖,src 无命名空间导入");
-  }
+  });
+
+  return { cases: suite.results };
 }

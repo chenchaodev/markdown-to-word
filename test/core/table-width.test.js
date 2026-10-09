@@ -32,6 +32,7 @@ import { TABLE_BORDER_BLACK } from "../../dist/core/docx/theme.js";
 import { unzipPart } from "../harness/docx-utils.js";
 import { convertWithFs, pdfHtmlOf } from "../harness/convert-helpers.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const { assert } = createAsserter("table-width");
 
@@ -46,34 +47,43 @@ const TOTAL_DXA = Math.round(twipsToPx(mmToTwips(CONTENT_WIDTH_MM)) * 15); // 82
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   // ================= (a) 解析纯函数直测 =================
   // 分隔行词法:对齐冒号不计入 dash 数;首尾管道可省略;空白容忍
-  assert(JSON.stringify(parseDelimiterRow("|---|:-----------:|")) === "[3,11]", "冒号不计入(:-----------: 按 11 计)");
-  assert(JSON.stringify(parseDelimiterRow(":---:|---")) === "[3,3]", "首尾管道可省略");
-  assert(JSON.stringify(parseDelimiterRow("| :-- | --: | :-: |")) === "[2,2,1]", "空白与混合对齐容忍(逐列计数)");
-  assert(parseDelimiterRow("| a | b |") === null, "内容行不是分隔行");
-  assert(parseDelimiterRow("---") === null, "hr 语法不是分隔行(不含管道)");
-  assert(parseDelimiterRow("| --- | x |") === null, "含非 dash 单元格整体判非法");
-  assert(parseDelimiterRow("| ||") === null, "空单元格非法");
+  await suite.case("分隔行词法:冒号不计 / 管道可省 / 空白容忍 / 非法形态判非法", () => {
+    assert(JSON.stringify(parseDelimiterRow("|---|:-----------:|")) === "[3,11]", "冒号不计入(:-----------: 按 11 计)");
+    assert(JSON.stringify(parseDelimiterRow(":---:|---")) === "[3,3]", "首尾管道可省略");
+    assert(JSON.stringify(parseDelimiterRow("| :-- | --: | :-: |")) === "[2,2,1]", "空白与混合对齐容忍(逐列计数)");
+    assert(parseDelimiterRow("| a | b |") === null, "内容行不是分隔行");
+    assert(parseDelimiterRow("---") === null, "hr 语法不是分隔行(不含管道)");
+    assert(parseDelimiterRow("| --- | x |") === null, "含非 dash 单元格整体判非法");
+    assert(parseDelimiterRow("| ||") === null, "空单元格非法");
+  });
   // 阈值判定:max ≥ 5 且 max/min ≥ 3 才触发
-  assert(TABLE_WIDTH_MIN_MAX_DASHES === 5 && TABLE_WIDTH_RATIO_THRESHOLD === 3, "阈值常量契约(5 与 3)");
-  assert(delimiterWidthsPercent([4, 4]) === null, "等宽 dash 不触发(维持现状)");
-  assert(delimiterWidthsPercent([1, 1, 1]) === null, "全 1 dash 不触发(都很少)");
-  assert(delimiterWidthsPercent([2, 5]) === null, "max 达 5 但比例 <3 不触发(边界)");
-  assert(delimiterWidthsPercent([3, 12]) !== null, "max ≥5 且比例 ≥3 触发");
-  assert(delimiterWidthsPercent([1, 10]) !== null, "悬殊比例触发");
-  assert(delimiterWidthsPercent([]) === null, "空数组不触发");
+  await suite.case("阈值判定:常量契约与六种 dash 组合的触发/不触发", () => {
+    assert(TABLE_WIDTH_MIN_MAX_DASHES === 5 && TABLE_WIDTH_RATIO_THRESHOLD === 3, "阈值常量契约(5 与 3)");
+    assert(delimiterWidthsPercent([4, 4]) === null, "等宽 dash 不触发(维持现状)");
+    assert(delimiterWidthsPercent([1, 1, 1]) === null, "全 1 dash 不触发(都很少)");
+    assert(delimiterWidthsPercent([2, 5]) === null, "max 达 5 但比例 <3 不触发(边界)");
+    assert(delimiterWidthsPercent([3, 12]) !== null, "max ≥5 且比例 ≥3 触发");
+    assert(delimiterWidthsPercent([1, 10]) !== null, "悬殊比例触发");
+    assert(delimiterWidthsPercent([]) === null, "空数组不触发");
+  });
   // 百分比换算:前 n-1 列四舍五入、末列吸收余数(和恒为 100)
-  assert(JSON.stringify(delimiterWidthsPercent([3, 11])) === "[21,79]", "[3,11] → [21,79](末列吸收余数)");
-  assert(JSON.stringify(delimiterWidthsPercent([1, 10])) === "[9,91]", "[1,10] → [9,91](末列吸收余数)");
-  // [1,1,10] 必触发(比例 10 ≥3),故按非空数组断言;三项求和用 reduce 表达
-  // (与显式三项链加等价,规避 noUncheckedIndexedAccess 的逐项 undefined 噪声)
-  const triple = /** @type {number[]} */ (delimiterWidthsPercent([1, 1, 10]));
-  assert(triple.reduce((sum, pct) => sum + pct, 0) === 100 && triple[2] === 84, "三列取整后总和守恒为 100");
+  await suite.case("百分比换算:末列吸收余数,三列取整后总和守恒 100", () => {
+    assert(JSON.stringify(delimiterWidthsPercent([3, 11])) === "[21,79]", "[3,11] → [21,79](末列吸收余数)");
+    assert(JSON.stringify(delimiterWidthsPercent([1, 10])) === "[9,91]", "[1,10] → [9,91](末列吸收余数)");
+    // [1,1,10] 必触发(比例 10 ≥3),故按非空数组断言;三项求和用 reduce 表达
+    // (与显式三项链加等价,规避 noUncheckedIndexedAccess 的逐项 undefined 噪声)
+    const triple = /** @type {number[]} */ (delimiterWidthsPercent([1, 1, 10]));
+    assert(triple.reduce((sum, pct) => sum + pct, 0) === 100 && triple[2] === 84, "三列取整后总和守恒为 100");
+  });
   // 源码行入口:表头行号(0-based)+ 下一行分隔行;越界安全
-  const lines = ["text", "| A | B |", "|---|:-----------:|", "| 1 | 2 |"];
-  assert(JSON.stringify(tableColumnWidthsFromSource(lines, 1)) === "[21,79]", "源码行入口按表头行号解析");
-  assert(tableColumnWidthsFromSource(lines, 99) === null, "越界行号按无信号处理(null)");
+  await suite.case("源码行入口:按表头行号解析,越界行号按无信号处理", () => {
+    const lines = ["text", "| A | B |", "|---|:-----------:|", "| 1 | 2 |"];
+    assert(JSON.stringify(tableColumnWidthsFromSource(lines, 1)) === "[21,79]", "源码行入口按表头行号解析");
+    assert(tableColumnWidthsFromSource(lines, 99) === null, "越界行号按无信号处理(null)");
+  });
   console.log("[ok] table-width:(a) 解析纯函数直测(分隔行词法/冒号不计/阈值判定/取整守恒)断言通过");
 
   // ================= (b) docx 产物断言 =================
@@ -90,22 +100,26 @@ export async function run() {
   ].join("\n");
   const buffer = await renderDocx(parseMarkdown(docxMd), {});
   const xml = await unzipPart(buffer, "word/document.xml");
-  // tblGrid:21% → round(8277×0.21)=1738;末列吸收余量 = 8277−1738=6539
-  assert(
-    xml.includes(`<w:tblGrid><w:gridCol w:w="1738"/><w:gridCol w:w="6539"/></w:tblGrid>`),
-    `比例表应生成 tblGrid(1738/6539,总宽 ${TOTAL_DXA} DXA)`,
-  );
-  assert(xml.includes('<w:tblLayout w:type="fixed"/>'), "比例表应为固定布局(tblLayout fixed)");
-  assert(xml.includes('<w:tcW w:type="dxa" w:w="1738"/>') && xml.includes('<w:tcW w:type="dxa" w:w="6539"/>'), "单元格 tcW 应与 gridCol 同步(dxa)");
-  // 对齐样式与列宽共存:B 列居中(:-----------:)仍映射 w:jc center(行为不变)
-  const jcCenterInCell = /<w:tcW w:type="dxa" w:w="6539"\/>[\s\S]*?<w:jc w:val="center"\/>[\s\S]*?<\/w:tc>/.test(xml);
-  assert(jcCenterInCell, "B 列(79%)居中对齐应与列宽共存(w:jc center)");
-  // 表格边框色经 theme 常量单源(勿在 table.ts 散落硬编码)
-  const tblBorders = /<w:tblBorders>[\s\S]*?<\/w:tblBorders>/.exec(xml)?.[0] ?? "";
-  assert(
-    tblBorders.includes(`w:color="${TABLE_BORDER_BLACK}"`),
-    `表格边框 six-side 应取自 theme 常量 TABLE_BORDER_BLACK(${TABLE_BORDER_BLACK})`,
-  );
+  await suite.case("docx:比例表 tblGrid DXA 比例 + 固定布局 + tcW 同步", () => {
+    // tblGrid:21% → round(8277×0.21)=1738;末列吸收余量 = 8277−1738=6539
+    assert(
+      xml.includes(`<w:tblGrid><w:gridCol w:w="1738"/><w:gridCol w:w="6539"/></w:tblGrid>`),
+      `比例表应生成 tblGrid(1738/6539,总宽 ${TOTAL_DXA} DXA)`,
+    );
+    assert(xml.includes('<w:tblLayout w:type="fixed"/>'), "比例表应为固定布局(tblLayout fixed)");
+    assert(xml.includes('<w:tcW w:type="dxa" w:w="1738"/>') && xml.includes('<w:tcW w:type="dxa" w:w="6539"/>'), "单元格 tcW 应与 gridCol 同步(dxa)");
+  });
+  await suite.case("docx:对齐样式与列宽共存 + 边框色取 theme 单源", () => {
+    // 对齐样式与列宽共存:B 列居中(:-----------:)仍映射 w:jc center(行为不变)
+    const jcCenterInCell = /<w:tcW w:type="dxa" w:w="6539"\/>[\s\S]*?<w:jc w:val="center"\/>[\s\S]*?<\/w:tc>/.test(xml);
+    assert(jcCenterInCell, "B 列(79%)居中对齐应与列宽共存(w:jc center)");
+    // 表格边框色经 theme 常量单源(勿在 table.ts 散落硬编码)
+    const tblBorders = /<w:tblBorders>[\s\S]*?<\/w:tblBorders>/.exec(xml)?.[0] ?? "";
+    assert(
+      tblBorders.includes(`w:color="${TABLE_BORDER_BLACK}"`),
+      `表格边框 six-side 应取自 theme 常量 TABLE_BORDER_BLACK(${TABLE_BORDER_BLACK})`,
+    );
+  });
   console.log("[ok] table-width:(b) docx tblGrid 比例宽度 + 固定布局 + tcW 同步 + 对齐共存 断言通过");
 
   // ================= (c) pdf 产物断言 =================
@@ -115,18 +129,22 @@ export async function run() {
     await convertWithFs(docxMd, "pdf", { baseDir: ".", warnings: pdfWarnings })
   );
   const tables = pdfHtmlOf(pdf).match(/<table[\s\S]*?<\/table>/g) ?? [];
-  assert(tables.length === 2, "两个表格均应渲染");
-  // 长度已断言为 2:按位置取两张表(规避 noUncheckedIndexedAccess 的下标 undefined)
+  // 长度先在下面判掉,再按位置取两张表(规避 noUncheckedIndexedAccess 的下标 undefined)
   const [fixedTable, plainTable] = /** @type {[string, string]} */ (tables);
-  assert(fixedTable.startsWith('<table style="table-layout:fixed">'), "比例表应注入 table-layout:fixed");
-  assert(fixedTable.includes('<th style="width:21%">'), "比例表首列 th 应注入 width:21%");
-  assert(
-    fixedTable.includes('<th style="text-align:center;width:79%">'),
-    "比例表次列对齐样式应以「;」拼接保留(width 追加)",
-  );
-  // 等宽表完全不受影响(回归)
-  assert(plainTable.startsWith("<table>"), "等宽表不应注入任何样式(回归)");
-  assert(!plainTable.includes("table-layout"), "等宽表无固定布局(回归)");
+  await suite.case("pdf:两表均渲染,比例表注入固定布局与 th width%", () => {
+    assert(tables.length === 2, "两个表格均应渲染");
+    assert(fixedTable.startsWith('<table style="table-layout:fixed">'), "比例表应注入 table-layout:fixed");
+    assert(fixedTable.includes('<th style="width:21%">'), "比例表首列 th 应注入 width:21%");
+  });
+  await suite.case("pdf:对齐样式以「;」拼接保留 + 等宽表不受影响", () => {
+    assert(
+      fixedTable.includes('<th style="text-align:center;width:79%">'),
+      "比例表次列对齐样式应以「;」拼接保留(width 追加)",
+    );
+    // 等宽表完全不受影响(回归)
+    assert(plainTable.startsWith("<table>"), "等宽表不应注入任何样式(回归)");
+    assert(!plainTable.includes("table-layout"), "等宽表无固定布局(回归)");
+  });
   console.log("[ok] table-width:(c) pdf table-layout:fixed + th width% 注入 + 对齐拼接保留 断言通过");
 
   // ================= (d) 阈值边界与多表独立 =================
@@ -145,29 +163,35 @@ export async function run() {
     await convertWithFs(edgeMd, "pdf", { baseDir: ".", warnings: [] })
   );
   const edgeTables = pdfHtmlOf(edgePdf).match(/<table[\s\S]*?<\/table>/g) ?? [];
-  assert(edgeTables.length === 2, "边界用例两个表格均应渲染");
   const [edgeNoTrigger, edgeTrigger] = /** @type {[string, string]} */ (edgeTables);
-  assert(!edgeNoTrigger.includes("table-layout"), "[3,5] 比例不足不触发(阈值下界)");
-  assert(edgeTrigger.includes("table-layout:fixed"), "[2,10] 比例达标触发(阈值上界)");
+  await suite.case("阈值边界:[3,5] 不触发 / [2,10] 触发", () => {
+    assert(edgeTables.length === 2, "边界用例两个表格均应渲染");
+    assert(!edgeNoTrigger.includes("table-layout"), "[3,5] 比例不足不触发(阈值下界)");
+    assert(edgeTrigger.includes("table-layout:fixed"), "[2,10] 比例达标触发(阈值上界)");
+  });
   // 多表独立:同一文档内各表按各自分隔行取信号(前文 b/c 已覆盖两表场景,此处
   // 断言 docx 侧第二个表无 tcW——信号只作用于触发表)
   const edgeAst = parseMarkdown(edgeMd);
-  // colWidthsPct 为解析期动态挂载(见 pipeline/parse.ts),mdast 类型未声明该字段,
-  // 故按结构取该字段
-  assert(
-    edgeAst.children[0]?.type === "table" &&
-      /** @type {{ colWidthsPct?: number[] }} */ (edgeAst.children[0].data)?.colWidthsPct === undefined,
-    "边界一解析期即无信号(data 缺省)",
-  );
-  assert(
-    JSON.stringify(/** @type {{ colWidthsPct?: number[] }} */ (edgeAst.children[1]?.data)?.colWidthsPct) ===
-      "[17,83]",
-    "边界二解析期挂 colWidthsPct([2,10] → [17,83])",
-  );
+  await suite.case("解析期信号逐表独立:未触发表无、触发表挂 colWidthsPct", () => {
+    // colWidthsPct 为解析期动态挂载(见 pipeline/parse.ts),mdast 类型未声明该字段,
+    // 故按结构取该字段
+    assert(
+      edgeAst.children[0]?.type === "table" &&
+        /** @type {{ colWidthsPct?: number[] }} */ (edgeAst.children[0].data)?.colWidthsPct === undefined,
+      "边界一解析期即无信号(data 缺省)",
+    );
+    assert(
+      JSON.stringify(/** @type {{ colWidthsPct?: number[] }} */ (edgeAst.children[1]?.data)?.colWidthsPct) ===
+        "[17,83]",
+      "边界二解析期挂 colWidthsPct([2,10] → [17,83])",
+    );
+  });
   const edgeBuffer = await renderDocx(edgeAst, {});
   const edgeXml = await unzipPart(edgeBuffer, "word/document.xml");
-  assert((edgeXml.match(/<w:tblLayout w:type="fixed"\/>/g) ?? []).length === 1, "仅触发表的固定布局(逐表独立)");
-  assert((edgeXml.match(/<w:tcW /g) ?? []).length === 4, "仅触发表写单元格 tcW(2 行 × 2 列;未触发表回归不写)");
+  await suite.case("docx 侧逐表独立:仅触发表写固定布局与 tcW", () => {
+    assert((edgeXml.match(/<w:tblLayout w:type="fixed"\/>/g) ?? []).length === 1, "仅触发表的固定布局(逐表独立)");
+    assert((edgeXml.match(/<w:tcW /g) ?? []).length === 4, "仅触发表写单元格 tcW(2 行 × 2 列;未触发表回归不写)");
+  });
   console.log("[ok] table-width:(d) 阈值边界([3,5]/[2,10])+ 多表独立取信号 断言通过");
 
   // ================= (e) 等宽回归:docx 序列化逐字节不变 =================
@@ -176,8 +200,11 @@ export async function run() {
   const plainMd = "| 功能 | 状态 |\n| ---- | ---- |\n| 标题渲染 | 完成 |\n";
   const plainBuffer = await renderDocx(parseMarkdown(plainMd), {});
   const plainXml = await unzipPart(plainBuffer, "word/document.xml");
-  assert(!plainXml.includes("<w:tblLayout"), "等宽表无 tblLayout(序列化不变)");
-  assert(!plainXml.includes("<w:tcW"), "等宽表无 tcW(序列化不变)");
-  assert(plainXml.includes('<w:tblGrid><w:gridCol w:w="100"/><w:gridCol w:w="100"/></w:tblGrid>'), "等宽表 gridCol 保持库缺省占位(序列化不变)");
+  await suite.case("等宽 dash 表 docx 序列化逐项不变(回归)", () => {
+    assert(!plainXml.includes("<w:tblLayout"), "等宽表无 tblLayout(序列化不变)");
+    assert(!plainXml.includes("<w:tcW"), "等宽表无 tcW(序列化不变)");
+    assert(plainXml.includes('<w:tblGrid><w:gridCol w:w="100"/><w:gridCol w:w="100"/></w:tblGrid>'), "等宽表 gridCol 保持库缺省占位(序列化不变)");
+  });
   console.log("[ok] table-width:(e) 等宽 dash 表 docx 序列化逐项不变(回归)断言通过");
+  return { cases: suite.results };
 }

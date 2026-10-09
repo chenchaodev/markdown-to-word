@@ -6,6 +6,7 @@
  * 双格式端到端一致性由 raw-html.test.js 覆盖,此段只验证共享实现本身。
  */
 import { ALLOWED_INLINE_TAGS, isAllowedInlineHtml } from "../../dist/core/markdown/html-whitelist.js";
+import { createCaseSuite } from "../harness/case.js";
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
@@ -28,10 +29,14 @@ export async function run() {
     ["大小写", "<STRONG>粗</STRONG>"],
     ["混合文本", "<code>x()</code> 与 x<sub>1</sub> 和 y<sup>2</sup>"],
   ];
+  const suite = createCaseSuite();
+  // 矩阵逐行一个 case:label 是失败定位用的稳定标识,直接作 case 名
   for (const [label, input] of valid) {
-    if (!isAllowedInlineHtml(input)) {
-      throw new Error(`白名单判定失败:${label} 应合法(${JSON.stringify(input)})`);
-    }
+    await suite.case(`白名单判定:${label} 应合法`, () => {
+      if (!isAllowedInlineHtml(input)) {
+        throw new Error(`白名单判定失败:${label} 应合法(${JSON.stringify(input)})`);
+      }
+    });
   }
 
   /** @type {Array<[string, string]>} */
@@ -50,20 +55,26 @@ export async function run() {
     ["自闭合带属性伪装", '<img src="x" />'],
   ];
   for (const [label, input] of invalid) {
-    if (isAllowedInlineHtml(input)) {
-      throw new Error(`白名单判定失败:${label} 应非法(${JSON.stringify(input)})`);
-    }
+    await suite.case(`白名单判定:${label} 应非法`, () => {
+      if (isAllowedInlineHtml(input)) {
+        throw new Error(`白名单判定失败:${label} 应非法(${JSON.stringify(input)})`);
+      }
+    });
   }
 
   const expected = new Set([
     "strong", "b", "em", "i", "u", "s", "del", "code", "kbd", "sub", "sup", "mark", "br", "span",
   ]);
-  if (ALLOWED_INLINE_TAGS.size !== expected.size) {
-    throw new Error(`ALLOWED_INLINE_TAGS 数量不符:${ALLOWED_INLINE_TAGS.size} != ${expected.size}`);
-  }
-  for (const tag of expected) {
-    if (!ALLOWED_INLINE_TAGS.has(tag)) throw new Error(`ALLOWED_INLINE_TAGS 缺少 ${tag}`);
-  }
+  // 集合完整性合成一个 case:新增标签忘了登记时,「多出来的那个」与「期望里缺的项」是同一处改动
+  await suite.case("ALLOWED_INLINE_TAGS 集合完整性(数量相符且不漏任何期望标签)", () => {
+    if (ALLOWED_INLINE_TAGS.size !== expected.size) {
+      throw new Error(`ALLOWED_INLINE_TAGS 数量不符:${ALLOWED_INLINE_TAGS.size} != ${expected.size}`);
+    }
+    for (const tag of expected) {
+      if (!ALLOWED_INLINE_TAGS.has(tag)) throw new Error(`ALLOWED_INLINE_TAGS 缺少 ${tag}`);
+    }
+  });
 
   console.log(`[ok] html-whitelist:判定矩阵 ${valid.length} 合法 + ${invalid.length} 非法 + 集合完整性 全部通过`);
+  return { cases: suite.results };
 }

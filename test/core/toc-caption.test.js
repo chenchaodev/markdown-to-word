@@ -20,6 +20,7 @@ import { saveArtifact } from "../harness/artifacts.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { HOST_FS, asPdfArtifact, convertWithFs, docxBufferOf, pdfHtmlOf, prepareForConvert } from "../harness/convert-helpers.js";
 import { docxTocAnchors } from "../harness/dual-extract.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /** @typedef {import("../../dist/core/convert.js").ConvertTestOverrides} ConvertTestOverrides */
 /** @typedef {import("../../dist/core/convert.js").ConvertArtifact} Artifact */
@@ -87,85 +88,117 @@ export const meta = { description: "TOC 静态目录 + 图/表题注编号测试
 export const fixtures = { main: mainMd };
 
 export async function run() {
+  const suite = createCaseSuite();
   const mainDocx = (
     await convertWithFs(mainMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] })
   );
   const docxXml = await unzipPart(docxBufferOf(mainDocx), "word/document.xml");
-  // 8a-1:TOC 域指令仍在(w:sdt > w:instrText TOC \o "1-3" \h)
-  if (!docxXml.includes("TOC")) throw new Error("断言失败:document.xml 缺少 TOC 域指令");
-  // 8a-2:beginDirty:false → w:dirty="false"(显式关,Word 打开不提示更新域)
-  if (!docxXml.includes('w:dirty="false"') || docxXml.includes('w:dirty="true"')) {
-    throw new Error("断言失败:静态目录 dirty 属性应为 false(免更新路线)");
-  }
   // 8a-3:cachedEntries 静态条目 → 目录内超链接指向标题书签(w:hyperlink 带 w:history 属性,
   // 提取口径见 test/harness/dual-extract.js 的 docxTocAnchors:目录条目 = 内部锚点
   // <w:hyperlink w:history="1" w:anchor="…">,并排除 fig/tab/eq- 题注锚点)
   const mainTocAnchors = docxTocAnchors(docxXml);
-  if (!mainTocAnchors.includes("第一章")) {
-    throw new Error(`断言失败:静态目录条目缺少指向标题书签的超链接(实得:${mainTocAnchors.join(",")})`);
-  }
+  // 8a-1:TOC 域指令仍在(w:sdt > w:instrText TOC \o "1-3" \h)
+  await suite.case("docx 静态目录含 TOC 域指令", () => {
+    if (!docxXml.includes("TOC")) throw new Error("断言失败:document.xml 缺少 TOC 域指令");
+  });
+  // 8a-2:beginDirty:false → w:dirty="false"(显式关,Word 打开不提示更新域)
+  await suite.case("docx 静态目录 dirty 属性为 false(免更新路线)", () => {
+    if (!docxXml.includes('w:dirty="false"') || docxXml.includes('w:dirty="true"')) {
+      throw new Error("断言失败:静态目录 dirty 属性应为 false(免更新路线)");
+    }
+  });
+  await suite.case("docx 静态目录条目含指向标题书签的超链接", () => {
+    if (!mainTocAnchors.includes("第一章")) {
+      throw new Error(`断言失败:静态目录条目缺少指向标题书签的超链接(实得:${mainTocAnchors.join(",")})`);
+    }
+  });
   // field 模式 → beginDirty:true(Word/WPS 打开弹更新提示并注入真实页码),条目仍指向书签
   const fieldToc = (
     await convertWithFs(mainMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], tocMode: "field" })
   );
   const fieldDoc = await unzipPart(docxBufferOf(fieldToc), "word/document.xml");
-  if (!fieldDoc.includes('w:dirty="true"')) {
-    throw new Error("目录带页码(adr-007)断言失败:field 模式目录 dirty 属性应为 true(触发 Word 更新域)");
-  }
-  if (!docxTocAnchors(fieldDoc).includes("第一章")) {
-    throw new Error("目录带页码(adr-007)断言失败:field 模式目录条目仍应指向标题书签");
-  }
+  await suite.case("docx field 模式目录 dirty 属性为 true(触发 Word 更新域)", () => {
+    if (!fieldDoc.includes('w:dirty="true"')) {
+      throw new Error("目录带页码(adr-007)断言失败:field 模式目录 dirty 属性应为 true(触发 Word 更新域)");
+    }
+  });
+  await suite.case("docx field 模式目录条目仍指向标题书签", () => {
+    if (!docxTocAnchors(fieldDoc).includes("第一章")) {
+      throw new Error("目录带页码(adr-007)断言失败:field 模式目录条目仍应指向标题书签");
+    }
+  });
   // 8b-1:静态编号注入(章节号 + 章节内序数,图/表独立、h1 重置)
   for (const needle of ["图 1.1 总体架构示意图", "表 1.1 参数说明表", "图 1.2 小节内的图", "表 2.1 第二章的表"]) {
-    if (!docxXml.includes(needle)) throw new Error(`断言失败:题注编号缺失(${needle})`);
+    await suite.case(`docx 题注编号注入: ${needle}`, () => {
+      if (!docxXml.includes(needle)) throw new Error(`断言失败:题注编号缺失(${needle})`);
+    });
   }
   // 8b-2:孤立前缀行按普通段落(原文保留,不编号)
-  if (!docxXml.includes("图: 第一章的图(孤立题注,前无图 → 普通段落)")) {
-    throw new Error("断言失败:孤立「图:」行应按普通段落保留原文");
-  }
+  await suite.case("docx 孤立「图:」行按普通段落保留原文", () => {
+    if (!docxXml.includes("图: 第一章的图(孤立题注,前无图 → 普通段落)")) {
+      throw new Error("断言失败:孤立「图:」行应按普通段落保留原文");
+    }
+  });
   // 8a-4:toc 关闭 → docx 无 TOC 指令
   const noToc = (
     await convertWithFs(mainMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], toc: false })
   );
-  if ((await unzipPart(docxBufferOf(noToc), "word/document.xml")).includes("TOC")) {
-    throw new Error("断言失败:toc:false 时 document.xml 不应含 TOC 指令");
-  }
+  const noTocXml = await unzipPart(docxBufferOf(noToc), "word/document.xml");
+  await suite.case("docx toc:false 时无 TOC 域指令", () => {
+    if (noTocXml.includes("TOC")) {
+      throw new Error("断言失败:toc:false 时 document.xml 不应含 TOC 指令");
+    }
+  });
   // 8b-3:captionNumbering 显式关闭(不再借 typography 绕道)→ 题注行按普通段落(原文保留)
   const noCaption = (await convertWithOverrides(mainMd, "docx", {
     baseDir: FIXTURES_DIR, warnings: [],
     typography: { ...DEFAULT_TYPOGRAPHY, captionNumbering: true },
   }, { captionNumbering: false }));
-  if (!(await unzipPart(docxBufferOf(noCaption), "word/document.xml")).includes("图: 总体架构示意图")) {
-    throw new Error("断言失败:captionNumbering:false 时题注行应保留前缀原文");
-  }
+  const noCaptionXml = await unzipPart(docxBufferOf(noCaption), "word/document.xml");
+  await suite.case("docx captionNumbering:false 时题注行保留前缀原文", () => {
+    if (!noCaptionXml.includes("图: 总体架构示意图")) {
+      throw new Error("断言失败:captionNumbering:false 时题注行应保留前缀原文");
+    }
+  });
   console.log("[ok] docx 静态目录 + 题注编号:TOC 免更新/条目超链接/编号注入/孤立行/开关 断言通过");
 
   const mainPdf = (
     await convertWithFs(mainMd, "pdf", { baseDir: FIXTURES_DIR, title: "题注与目录验收", warnings: [] })
   );
   const mainHtml = pdfHtmlOf(mainPdf);
-  // 8b-4:PDF 题注 class + 前缀剥除(编号走 CSS counter 伪元素,不进文本节点)
-  if (!mainHtml.includes('<p class="fig-caption">总体架构示意图</p>')) {
-    throw new Error("断言失败:PDF 缺少 fig-caption 题注(class/前缀剥除)");
-  }
-  if (!mainHtml.includes('<p class="tab-caption">参数说明表</p>')) {
-    throw new Error("断言失败:PDF 缺少 tab-caption 题注");
-  }
-  // 8b-5:题注 CSS counter(章节号 + 序数,h1 重置语义)
-  if (!mainHtml.includes(".fig-caption::before") || !mainHtml.includes('content: "图 " counter(h1c) "." counter(figc)')) {
-    throw new Error("断言失败:PDF 缺少题注编号 CSS counter 规则");
-  }
-  // 8b-6:孤立前缀行不标记为题注(前无图/表)
-  if (mainHtml.includes('class="fig-caption">图:')) {
-    throw new Error("断言失败:孤立「图:」行不应标记为 fig-caption");
-  }
   // 8a-5:toc 关闭 → PDF 无目录
   const pdfNoToc = (
     await convertWithFs(mainMd, "pdf", { baseDir: FIXTURES_DIR, title: "题注与目录验收", warnings: [], toc: false })
   );
-  if (pdfHtmlOf(pdfNoToc).includes('class="toc"')) {
-    throw new Error("断言失败:toc:false 时 PDF 不应含目录");
-  }
+  const pdfNoTocHtml = pdfHtmlOf(pdfNoToc);
+  // 8b-4:PDF 题注 class + 前缀剥除(编号走 CSS counter 伪元素,不进文本节点)
+  await suite.case("PDF 含 fig-caption 题注(class/前缀剥除)", () => {
+    if (!mainHtml.includes('<p class="fig-caption">总体架构示意图</p>')) {
+      throw new Error("断言失败:PDF 缺少 fig-caption 题注(class/前缀剥除)");
+    }
+  });
+  await suite.case("PDF 含 tab-caption 题注", () => {
+    if (!mainHtml.includes('<p class="tab-caption">参数说明表</p>')) {
+      throw new Error("断言失败:PDF 缺少 tab-caption 题注");
+    }
+  });
+  // 8b-5:题注 CSS counter(章节号 + 序数,h1 重置语义)
+  await suite.case("PDF 含题注编号 CSS counter 规则", () => {
+    if (!mainHtml.includes(".fig-caption::before") || !mainHtml.includes('content: "图 " counter(h1c) "." counter(figc)')) {
+      throw new Error("断言失败:PDF 缺少题注编号 CSS counter 规则");
+    }
+  });
+  // 8b-6:孤立前缀行不标记为题注(前无图/表)
+  await suite.case("PDF 孤立「图:」行不标记为 fig-caption", () => {
+    if (mainHtml.includes('class="fig-caption">图:')) {
+      throw new Error("断言失败:孤立「图:」行不应标记为 fig-caption");
+    }
+  });
+  await suite.case("PDF toc:false 时无目录", () => {
+    if (pdfNoTocHtml.includes('class="toc"')) {
+      throw new Error("断言失败:toc:false 时 PDF 不应含目录");
+    }
+  });
   console.log("[ok] PDF 题注 + 目录开关:fig/tab-caption、CSS counter、孤立行、toc 开关 断言通过");
 
   // ---------- 显式项契约:headingNumbering / captionNumbering 覆盖 typography ----------
@@ -212,52 +245,73 @@ export async function run() {
 
   // 组合 1:captionNumbering 显式关(typography 开)→ 两侧都不编号、label 原样保留
   const capOff = await bothFormats({ typography: typo(true, true) }, { captionNumbering: false });
-  if (!capOff.docx.includes("图: 样例图 {#fig:v}")) {
-    throw new Error("显式项断言失败:docx captionNumbering:false 应压过 typography(题注行保留前缀与 label)");
-  }
-  if (capOff.docx.includes("图 1.1 样例图")) {
-    throw new Error("显式项断言失败:docx captionNumbering:false 不应注入编号");
-  }
-  if (!capOff.pdf.includes("{#fig:v}") || capOff.pdf.includes("counter(figc)")) {
-    throw new Error("显式项断言失败:PDF captionNumbering:false 应压过 typography(无编号 CSS、label 原样保留)");
-  }
+  await suite.case("组合1 docx captionNumbering:false 压过 typography(保留前缀与 label)", () => {
+    if (!capOff.docx.includes("图: 样例图 {#fig:v}")) {
+      throw new Error("显式项断言失败:docx captionNumbering:false 应压过 typography(题注行保留前缀与 label)");
+    }
+  });
+  await suite.case("组合1 docx captionNumbering:false 不注入编号", () => {
+    if (capOff.docx.includes("图 1.1 样例图")) {
+      throw new Error("显式项断言失败:docx captionNumbering:false 不应注入编号");
+    }
+  });
+  await suite.case("组合1 PDF captionNumbering:false 压过 typography(无编号 CSS、label 原样保留)", () => {
+    if (!capOff.pdf.includes("{#fig:v}") || capOff.pdf.includes("counter(figc)")) {
+      throw new Error("显式项断言失败:PDF captionNumbering:false 应压过 typography(无编号 CSS、label 原样保留)");
+    }
+  });
   console.log("[ok] 组合1 captionNumbering 显式关压过 typography(docx + pdf)");
 
   // 组合 2:captionNumbering 显式开(typography 关)→ 两侧都编号
   // 注:typography 的 headingNumbering 同为 false,故 docx 章节号为 null(题注无
   // 章节前缀「图 1」);本组合只验证题注编号被显式打开,不涉及章节号口径。
   const capOn = await bothFormats({ typography: typo(false, false) }, { captionNumbering: true });
-  if (!capOn.docx.includes('<w:t xml:space="preserve">图 1 样例图</w:t>')) {
-    throw new Error("显式项断言失败:docx captionNumbering:true 应压过 typography(注入「图 1」编号)");
-  }
-  if (!capOn.pdf.includes(".fig-caption::before") || capOn.pdf.includes("counter(h1c)")) {
-    throw new Error("显式项断言失败:PDF captionNumbering:true 应压过 typography(产出纯序数题注 counter 规则)");
-  }
-  if (!capOn.pdf.includes('<span id="fig:v">')) {
-    throw new Error("显式项断言失败:PDF captionNumbering:true 应登记题注锚点");
-  }
+  await suite.case("组合2 docx captionNumbering:true 注入「图 1」编号", () => {
+    if (!capOn.docx.includes('<w:t xml:space="preserve">图 1 样例图</w:t>')) {
+      throw new Error("显式项断言失败:docx captionNumbering:true 应压过 typography(注入「图 1」编号)");
+    }
+  });
+  await suite.case("组合2 PDF captionNumbering:true 产出纯序数题注 counter 规则", () => {
+    if (!capOn.pdf.includes(".fig-caption::before") || capOn.pdf.includes("counter(h1c)")) {
+      throw new Error("显式项断言失败:PDF captionNumbering:true 应压过 typography(产出纯序数题注 counter 规则)");
+    }
+  });
+  await suite.case("组合2 PDF captionNumbering:true 登记题注锚点", () => {
+    if (!capOn.pdf.includes('<span id="fig:v">')) {
+      throw new Error("显式项断言失败:PDF captionNumbering:true 应登记题注锚点");
+    }
+  });
   console.log("[ok] 组合2 captionNumbering 显式开压过 typography(docx + pdf)");
 
   // 组合 3:headingNumbering 显式关(typography 开)→ 章节引用双侧均悬空「(?)」
   const hnOff = await bothFormats({ typography: typo(true, true) }, { headingNumbering: false });
-  if (!hnOff.docx.includes('<w:t xml:space="preserve">(?)</w:t>')) {
-    throw new Error("显式项断言失败:docx headingNumbering:false 应压过 typography(章节引用悬空)");
-  }
-  if (!hnOff.pdf.includes("(?)") || hnOff.pdf.includes("counter(h1c)")) {
-    throw new Error("显式项断言失败:PDF headingNumbering:false 应压过 typography(悬空且无章节编号 CSS)");
-  }
+  await suite.case("组合3 docx headingNumbering:false 章节引用悬空", () => {
+    if (!hnOff.docx.includes('<w:t xml:space="preserve">(?)</w:t>')) {
+      throw new Error("显式项断言失败:docx headingNumbering:false 应压过 typography(章节引用悬空)");
+    }
+  });
+  await suite.case("组合3 PDF headingNumbering:false 悬空且无章节编号 CSS", () => {
+    if (!hnOff.pdf.includes("(?)") || hnOff.pdf.includes("counter(h1c)")) {
+      throw new Error("显式项断言失败:PDF headingNumbering:false 应压过 typography(悬空且无章节编号 CSS)");
+    }
+  });
   console.log("[ok] 组合3 headingNumbering 显式关压过 typography(docx + pdf)");
 
   // 组合 4:headingNumbering 显式开(typography 关)→ 章节引用双侧均命中编号
   const hnOn = await bothFormats({ typography: typo(false, false) }, { headingNumbering: true });
-  if (!hnOn.docx.includes('<w:hyperlink w:history="1" w:anchor="甲">')) {
-    throw new Error("显式项断言失败:docx headingNumbering:true 应压过 typography(章节引用跳标题书签)");
-  }
-  if (!hnOn.pdf.includes("counter(h1c)") || !hnOn.pdf.includes(">1</a>")) {
-    throw new Error("显式项断言失败:PDF headingNumbering:true 应压过 typography(章节编号 CSS + 引用编号 1)");
-  }
+  await suite.case("组合4 docx headingNumbering:true 章节引用跳标题书签", () => {
+    if (!hnOn.docx.includes('<w:hyperlink w:history="1" w:anchor="甲">')) {
+      throw new Error("显式项断言失败:docx headingNumbering:true 应压过 typography(章节引用跳标题书签)");
+    }
+  });
+  await suite.case("组合4 PDF headingNumbering:true 章节编号 CSS + 引用编号 1", () => {
+    if (!hnOn.pdf.includes("counter(h1c)") || !hnOn.pdf.includes(">1</a>")) {
+      throw new Error("显式项断言失败:PDF headingNumbering:true 应压过 typography(章节编号 CSS + 引用编号 1)");
+    }
+  });
   console.log("[ok] 组合4 headingNumbering 显式开压过 typography(docx + pdf)");
 
   const mainPdfBin = await htmlToPdf(mainHtml, asPdfArtifact(mainPdf).footerTemplate);
   await saveArtifact("toc-caption", { docx: docxBufferOf(mainDocx), pdf: mainPdfBin });
+  return { cases: suite.results };
 }

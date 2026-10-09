@@ -19,6 +19,7 @@ import { FIXTURES_DIR } from "../harness/paths.js";
 import { prepareForConvert } from "../harness/convert-helpers.js";
 import { backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../harness/settings.js";
 import { createAsserter } from "../harness/assert.js";
+import { createCaseSuite } from "../harness/case.js";
 
 const { assert } = createAsserter("i18n");
 
@@ -30,26 +31,33 @@ const { assert } = createAsserter("i18n");
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   const settingsFile = settingsJsonPath();
   // 备份真实 settings.json(如有),finally 恢复(与 settings.test.js 同模式;公共助手)
   const { restore } = await backupSettingsFile();
   const freshModule = () => freshSettingsModule("i18n");
+  // 恢复留在 run() 顶层:进了 case 的话,case 失败会先抛、finally 不执行,真实设置被污染
   try {
     await fs.mkdir(app.getPath("userData"), { recursive: true });
     const i18n = await import("../../dist/core/i18n/index.js");
 
   // ---- 1. t() 基础:zh 默认输出(与既有文案逐字一致;语言状态经 t() 输出观察,
   //      getLanguage 导出已移除) ----
-    assert(i18n.t("app.title") === "Markdown 转换工具", "zh 默认输出应逐字一致");
-    assert(i18n.t("file.selectFirst") === "请先选择 Markdown 文件", "zh 默认输出应逐字一致");
-    assert(i18n.t("convert.done.status", { outputPath: "C:\\out\\a.docx" }) === "转换完成:C:\\out\\a.docx", "zh 参数插值应替换占位符");
+    await suite.case("t() 基础:zh 默认输出逐字一致且参数插值生效", () => {
+      assert(i18n.t("app.title") === "Markdown 转换工具", "zh 默认输出应逐字一致");
+      assert(i18n.t("file.selectFirst") === "请先选择 Markdown 文件", "zh 默认输出应逐字一致");
+      assert(i18n.t("convert.done.status", { outputPath: "C:\\out\\a.docx" }) === "转换完成:C:\\out\\a.docx", "zh 参数插值应替换占位符");
+    });
 
     // ---- 2. setLanguage("en") 切换 + 插值 ----
-    i18n.setLanguage("en");
-    assert(i18n.t("app.title") === "Markdown Converter", "setLanguage(en) 后应输出英文");
-    assert(i18n.t("file.selectFirst") === "Please select a Markdown file first", "en 输出应为英文");
-    assert(i18n.t("convert.done.status", { outputPath: "C:\\out\\a.docx" }) === "Conversion complete: C:\\out\\a.docx", "en 参数插值应替换占位符");
-    assert(i18n.t("recent.time.monthDay", { month: 8, day: 16 }) === "8/16", "en 数字参数插值应生效");
+    // 语言切换本身即下一批 case 的前置(先切 en),故断言留在同一 case 内
+    await suite.case("setLanguage(en) 后输出英文且插值生效", () => {
+      i18n.setLanguage("en");
+      assert(i18n.t("app.title") === "Markdown Converter", "setLanguage(en) 后应输出英文");
+      assert(i18n.t("file.selectFirst") === "Please select a Markdown file first", "en 输出应为英文");
+      assert(i18n.t("convert.done.status", { outputPath: "C:\\out\\a.docx" }) === "Conversion complete: C:\\out\\a.docx", "en 参数插值应替换占位符");
+      assert(i18n.t("recent.time.monthDay", { month: 8, day: 16 }) === "8/16", "en 数字参数插值应生效");
+    });
 
     // ---- 3. 缺失 key 回退 key 本身;缺失参数保留占位符 ----
     // 「字典里没有的 key」走 tByKey 而非 t():t 的 key 参数受 Dict 字面量联合约束
@@ -57,17 +65,24 @@ export async function run() {
     // tByKey 正是 src/core/i18n/t.ts 为「动态 key 场景」留的那个原始实现,它刻意不经
     // core/i18n 的再导出面。ESM 下它与上面那份 i18n 解析到**同一个** t.js 实例,
     // 故语言状态(setLanguage("en"))对它同样生效,回退链走的是当前语言。
-    const i18nRaw = await import("../../dist/core/i18n/t.js");
-    assert(i18nRaw.tByKey("no.such.key") === "no.such.key", "缺失 key 应回退 key 本身(不抛错)");
-    assert(i18n.t("convert.done.status") === "Conversion complete: ${outputPath}", "缺失参数应保留占位符原样");
+    await suite.case("缺失 key 回退 key 本身;缺失参数保留占位符", async () => {
+      const i18nRaw = await import("../../dist/core/i18n/t.js");
+      assert(i18nRaw.tByKey("no.such.key") === "no.such.key", "缺失 key 应回退 key 本身(不抛错)");
+      assert(i18n.t("convert.done.status") === "Conversion complete: ${outputPath}", "缺失参数应保留占位符原样");
+    });
 
     // ---- 4. 切回 zh(模块级状态可反复切换) ----
-    i18n.setLanguage("zh");
-    assert(i18n.t("app.title") === "Markdown 转换工具", "切回 zh 后应输出中文");
+    // 切回 zh 是后续 zh 侧断言的前置,与该断言合成一个 case
+    await suite.case("切回 zh 后输出中文", () => {
+      i18n.setLanguage("zh");
+      assert(i18n.t("app.title") === "Markdown 转换工具", "切回 zh 后应输出中文");
+    });
 
     // ---- 5. applyStaticTexts:main 进程(document 未定义)安全返回 ----
-    assert(typeof i18n.applyStaticTexts === "function", "applyStaticTexts 应导出");
-    assert(i18n.applyStaticTexts() === undefined, "document 未定义时应安全返回(不抛错)");
+    await suite.case("applyStaticTexts 在 document 未定义时安全返回", () => {
+      assert(typeof i18n.applyStaticTexts === "function", "applyStaticTexts 应导出");
+      assert(i18n.applyStaticTexts() === undefined, "document 未定义时应安全返回(不抛错)");
+    });
 
     // ---- 6. settings.language:isValidSettings 形状校验 ----
     const mod = await freshModule();
@@ -75,37 +90,43 @@ export async function run() {
       version: 1, format: "docx", afterConvert: "none", breakBeforeH1: false, toc: false,
       pageSetup: { paper: "A4", orientation: "portrait", marginTop: 20, marginBottom: 20, marginLeft: 30, marginRight: 30 },
     };
-    assert(mod.isValidSettings({ ...base, language: "zh" }) === true, "language zh 应通过形状校验");
-    assert(mod.isValidSettings({ ...base, language: "en" }) === true, "language en 应通过形状校验");
+    await suite.case("isValidSettings:注册表内语言与缺字段旧文件均合法", () => {
+      assert(mod.isValidSettings({ ...base, language: "zh" }) === true, "language zh 应通过形状校验");
+      assert(mod.isValidSettings({ ...base, language: "en" }) === true, "language en 应通过形状校验");
+      assert(mod.isValidSettings(base) === true, "缺 language 的旧文件应通过形状校验(loadSettings 兜底 zh)");
+    });
     // 语言裁撤迁移(仅保留 zh/en/ja):未注册/非法语言码不再整文件拒绝,
     // 由 loadSettings 字段级兜底 zh(否则已存 ko/fr/ru 用户全部偏好被覆盖)
-    assert(mod.isValidSettings({ ...base, language: "xx" }) === true, "language 枚举外值不整文件拒绝(字段级兜底)");
-    assert(mod.isValidSettings({ ...base, language: 1 }) === true, "language 非字符串不整文件拒绝(字段级兜底)");
-    assert(mod.isValidSettings(base) === true, "缺 language 的旧文件应通过形状校验(loadSettings 兜底 zh)");
+    await suite.case("isValidSettings:枚举外值与非字符串不整文件拒绝(字段级兜底)", () => {
+      assert(mod.isValidSettings({ ...base, language: "xx" }) === true, "language 枚举外值不整文件拒绝(字段级兜底)");
+      assert(mod.isValidSettings({ ...base, language: 1 }) === true, "language 非字符串不整文件拒绝(字段级兜底)");
+    });
 
     // ---- 7. sanitizePatch:非法值回退 zh、合法值保留(经 updateSettings 公开路径) ----
-    const r1 = await mod.updateSettings({ language: "xx" });
-    assert(r1.language === "zh", "language 非法值(xx 未注册)应回退默认 zh");
-    const r2 = await mod.updateSettings({ language: "en" });
-    assert(r2.language === "en", "language 合法值(en)应保留");
-    const r3 = await mod.updateSettings({ language: "zh" });
-    assert(r3.language === "zh", "language 合法值(zh)应保留");
+    await suite.case("updateSettings:非法 language 回退 zh、合法值保留", async () => {
+      const r1 = await mod.updateSettings({ language: "xx" });
+      assert(r1.language === "zh", "language 非法值(xx 未注册)应回退默认 zh");
+      const r2 = await mod.updateSettings({ language: "en" });
+      assert(r2.language === "en", "language 合法值(en)应保留");
+      const r3 = await mod.updateSettings({ language: "zh" });
+      assert(r3.language === "zh", "language 合法值(zh)应保留");
+    });
 
     // ---- 8. loadSettings:旧文件缺 language → 兜底 zh;合法 en → 原样读取 ----
-    await fs.writeFile(settingsFile, JSON.stringify(base), "utf8");
-    const m1 = await freshModule();
-    assert(m1.loadSettings().language === "zh", "旧文件缺 language → 兜底 zh");
-    await fs.writeFile(settingsFile, JSON.stringify({ ...base, language: "en" }), "utf8");
-    const m2 = await freshModule();
-    assert(m2.loadSettings().language === "en", "合法文件 language en 应原样读取");
+    await suite.case("loadSettings:旧文件缺 language 兜底 zh、合法 en 原样读取", async () => {
+      await fs.writeFile(settingsFile, JSON.stringify(base), "utf8");
+      const m1 = await freshModule();
+      assert(m1.loadSettings().language === "zh", "旧文件缺 language → 兜底 zh");
+      await fs.writeFile(settingsFile, JSON.stringify({ ...base, language: "en" }), "utf8");
+      const m2 = await freshModule();
+      assert(m2.loadSettings().language === "en", "合法文件 language en 应原样读取");
+    });
 
     // ---- 9. formatWarning 三分支(keyed 警告)----
     // 9a. string 直通
-    assert(i18n.formatWarning("纯文本警告") === "纯文本警告", "formatWarning:string 应原样返回");
     // 9b. KeyedWarning key 命中 + 插值(zh)
     /** @type {KeyedWarning} */
     const keyed = { key: "warn.imageLoadFailed", params: { src: "a.png" }, fallback: "图片加载失败: a.png" };
-    assert(i18n.formatWarning(keyed) === "图片加载失败: a.png", "formatWarning:key 命中应走字典插值(zh)");
     // 9c. KeyedWarning key 缺失 → 回退 fallback
     // ⚠ 须经 unknown 中转:字面量的 key 与 WarningKey 不重叠,直接 cast 会撞 TS2352
     const missingKey = /** @type {unknown} */ ({
@@ -113,80 +134,92 @@ export async function run() {
       params: { x: 1 },
       fallback: "兜底文案",
     });
-    assert(
-      i18n.formatWarning(/** @type {KeyedWarning} */ (missingKey)) === "兜底文案",
-      "formatWarning:key 缺失应回退 fallback",
-    );
+    await suite.case("formatWarning:string 直通 / key 命中走字典插值 / key 缺失回退 fallback", () => {
+      assert(i18n.formatWarning("纯文本警告") === "纯文本警告", "formatWarning:string 应原样返回");
+      assert(i18n.formatWarning(keyed) === "图片加载失败: a.png", "formatWarning:key 命中应走字典插值(zh)");
+      assert(
+        i18n.formatWarning(/** @type {KeyedWarning} */ (missingKey)) === "兜底文案",
+        "formatWarning:key 缺失应回退 fallback",
+      );
+    });
     // 9d. en 下 keyed 警告走英文字典(语言切换后警告跟随)
-    i18n.setLanguage("en");
-    assert(i18n.formatWarning(keyed) === "Failed to load image: a.png", "formatWarning:en 应输出英文文案");
-    i18n.setLanguage("zh");
-
     // 9e. 字典外的 key 必须编译红。@ts-expect-error 是自校验的:若收窄失效,
     //    本行不再报错,@ts-expect-error 自己会红 —— 不需要额外机制看守。
-    i18n.formatWarning({
-      // @ts-expect-error 字典外 key 应被拒(本行若不再报错,本注释自己会红)
-      key: "warn.no.such.key",
-      params: { x: 1 },
-      fallback: "兜底文案",
-    });
     // 9f. warn.precheckFailed 已入字典(此前是有 key 无字典条目的孤儿:
     //    代码侧存在而三份字典都没有,用户看到的是 fallback 原文而非翻译后的提示)
-    assert(
+    await suite.case("formatWarning:en 走英文字典;字典外 key 编译红;precheckFailed 经字典渲染", () => {
+      i18n.setLanguage("en");
+      assert(i18n.formatWarning(keyed) === "Failed to load image: a.png", "formatWarning:en 应输出英文文案");
+      i18n.setLanguage("zh");
       i18n.formatWarning({
-        key: "warn.precheckFailed",
-        params: { error: "boom" },
-        fallback: "预检失败,已跳过预检: boom",
-      }) === "预检失败,已跳过预检: boom",
-      "warn.precheckFailed 应经字典渲染",
-    );
+        // @ts-expect-error 字典外 key 应被拒(本行若不再报错,本注释自己会红)
+        key: "warn.no.such.key",
+        params: { x: 1 },
+        fallback: "兜底文案",
+      });
+      assert(
+        i18n.formatWarning({
+          key: "warn.precheckFailed",
+          params: { error: "boom" },
+          fallback: "预检失败,已跳过预检: boom",
+        }) === "预检失败,已跳过预检: boom",
+        "warn.precheckFailed 应经字典渲染",
+      );
+    });
 
     // ---- 10. en 键集运行期一致性抽查(编译期已由 EN 类型锁定,此处冒烟) ----
-    const zhKeys = Object.keys(i18n.DICT.zh).sort();
-    const enKeys = Object.keys(i18n.DICT.en).sort();
-    assert(
-      zhKeys.length === enKeys.length && zhKeys.every((k, idx) => k === enKeys[idx]),
-      `zh/en 键集应一致,zh 独有=${JSON.stringify(zhKeys.filter((k) => !enKeys.includes(k)))},en 独有=${JSON.stringify(enKeys.filter((k) => !zhKeys.includes(k)))}`,
-    );
+    await suite.case("zh/en 键集运行期一致", () => {
+      const zhKeys = Object.keys(i18n.DICT.zh).sort();
+      const enKeys = Object.keys(i18n.DICT.en).sort();
+      assert(
+        zhKeys.length === enKeys.length && zhKeys.every((k, idx) => k === enKeys[idx]),
+        `zh/en 键集应一致,zh 独有=${JSON.stringify(zhKeys.filter((k) => !enKeys.includes(k)))},en 独有=${JSON.stringify(enKeys.filter((k) => !zhKeys.includes(k)))}`,
+      );
+    });
 
     // ---- 11. warnOnce 对象去重(去重键 = key + JSON(params))----
     // 悬空交叉引用重复出现 N 次 → 仅 1 条 KeyedWarning(docx render.ts warnDedup)
     /** @type {KeyedWarning[]} */
     const dedupWarnings = [];
-    await convert(prepareForConvert("[图](#fig:x)\n\n[图](#fig:x)\n\n[图](#fig:x)\n\n正文"), "docx", {
-      baseDir: FIXTURES_DIR,
-      warnings: dedupWarnings,
+    await suite.case("悬空交叉引用 ×3 去重为 1 条 warn.crossRefNotFound", async () => {
+      await convert(prepareForConvert("[图](#fig:x)\n\n[图](#fig:x)\n\n[图](#fig:x)\n\n正文"), "docx", {
+        baseDir: FIXTURES_DIR,
+        warnings: dedupWarnings,
+      });
+      assert(dedupWarnings.length === 1, `悬空引用 ×3 应去重为 1 条警告,实际 ${dedupWarnings.length}`);
+      const [dw] = /** @type {[KeyedWarning]} */ (dedupWarnings);
+      assert(typeof dw === "object" && dw.key === "warn.crossRefNotFound", `去重后应为 warn.crossRefNotFound 对象,实际 ${JSON.stringify(dw)}`);
+      assert(dw.params && dw.params.ref === "fig:x", `params.ref 应为 fig:x,实际 ${JSON.stringify(dw.params)}`);
+      assert(dw.fallback === "交叉引用未找到图 label: fig:x", `fallback 应逐字保留中文原文,实际 ${dw.fallback}`);
+      assert(i18n.formatWarning(dw) === "交叉引用未找到图 label: fig:x", "zh 下格式化结果应与 fallback 一致");
     });
-    assert(dedupWarnings.length === 1, `悬空引用 ×3 应去重为 1 条警告,实际 ${dedupWarnings.length}`);
-    const [dw] = /** @type {[KeyedWarning]} */ (dedupWarnings);
-    assert(typeof dw === "object" && dw.key === "warn.crossRefNotFound", `去重后应为 warn.crossRefNotFound 对象,实际 ${JSON.stringify(dw)}`);
-    assert(dw.params && dw.params.ref === "fig:x", `params.ref 应为 fig:x,实际 ${JSON.stringify(dw.params)}`);
-    assert(dw.fallback === "交叉引用未找到图 label: fig:x", `fallback 应逐字保留中文原文,实际 ${dw.fallback}`);
-    assert(i18n.formatWarning(dw) === "交叉引用未找到图 label: fig:x", "zh 下格式化结果应与 fallback 一致");
 
     // ---- 12. 共享去重纯函数 warnDedupKey/pushWarningOnce(docx/pdf 双管线单源) ----
     /** @type {KeyedWarning} */
     const kw = { key: "warn.imageLoadFailed", params: { src: "a.png" }, fallback: "兜底" };
-    assert(i18n.warnDedupKey(kw) === 'warn.imageLoadFailed:{"src":"a.png"}', "warnDedupKey 应为 key + JSON(params)");
-    assert(
-      i18n.warnDedupKey({ key: "warn.mermaidEmpty", fallback: "x" }) === "warn.mermaidEmpty:null",
-      "无 params 时去重键应为 key + null",
-    );
-    const seen = new Set();
-    /** @type {KeyedWarning[]} */
-    const out = [];
-    i18n.pushWarningOnce(seen, out, kw);
-    i18n.pushWarningOnce(seen, out, { ...kw }); // 同 key 同 params → 去重
-    i18n.pushWarningOnce(seen, out, { ...kw, params: { src: "b.png" } }); // params 不同 → 保留
-    assert(out.length === 2, `pushWarningOnce 应按 key+params 去重,期望 2 条,实际 ${out.length}`);
-    // warnings 缺省时仍登记 seen(不抛错;后续同键入列同样被拒)
-    const seenOnly = new Set();
-    i18n.pushWarningOnce(seenOnly, undefined, kw);
-    assert(seenOnly.size === 1, "warnings 缺省时应登记去重键");
+    await suite.case("warnDedupKey / pushWarningOnce 的去重口径", () => {
+      assert(i18n.warnDedupKey(kw) === 'warn.imageLoadFailed:{"src":"a.png"}', "warnDedupKey 应为 key + JSON(params)");
+      assert(
+        i18n.warnDedupKey({ key: "warn.mermaidEmpty", fallback: "x" }) === "warn.mermaidEmpty:null",
+        "无 params 时去重键应为 key + null",
+      );
+      const seen = new Set();
+      /** @type {KeyedWarning[]} */
+      const out = [];
+      i18n.pushWarningOnce(seen, out, kw);
+      i18n.pushWarningOnce(seen, out, { ...kw }); // 同 key 同 params → 去重
+      i18n.pushWarningOnce(seen, out, { ...kw, params: { src: "b.png" } }); // params 不同 → 保留
+      assert(out.length === 2, `pushWarningOnce 应按 key+params 去重,期望 2 条,实际 ${out.length}`);
+      // warnings 缺省时仍登记 seen(不抛错;后续同键入列同样被拒)
+      const seenOnly = new Set();
+      i18n.pushWarningOnce(seenOnly, undefined, kw);
+      assert(seenOnly.size === 1, "warnings 缺省时应登记去重键");
+    });
 
     console.log("[ok] i18n:t() 默认/切换/插值/缺 key 回退 + formatWarning 三分支 + en 键集一致性 + warnOnce 对象去重 + 共享去重纯函数 + settings.language 校验/兜底 断言通过");
   } finally {
     // 恢复真实 settings.json(原有内容或删除),避免污染用户设置(公共助手)
     await restore();
   }
+  return { cases: suite.results };
 }

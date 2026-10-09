@@ -21,6 +21,7 @@ import { replaceMermaidPlaceholders } from "../../dist/core/pdf/mermaid.js";
 import { createCancellationGuard } from "../../dist/core/cancel.js";
 import { unzipPart } from "../harness/docx-utils.js";
 import { docxBufferOf, convertWithFs, pdfHtmlOf } from "../harness/convert-helpers.js";
+import { createCaseSuite } from "../harness/case.js";
 
 /** @typedef {import("../../dist/core/i18n/index.js").ConvertWarning} ConvertWarning */
 
@@ -48,25 +49,28 @@ async function assertCancelled(promise, label) {
 export const fixtures = null;
 
 export async function run() {
+  const suite = createCaseSuite();
   // ---- 1. 预取消在 frontmatter/渲染前终止,不触发图片 resolver ----
   {
     const controller = new AbortController();
     controller.abort(new Error("cancelled-before-convert"));
     let resolverCalls = 0;
-    await assertCancelled(
-      convertWithFs("![图](x.png)", "docx", {
-        baseDir: ".",
-        signal: controller.signal,
-        imageResolver: async () => {
-          resolverCalls += 1;
-          return null;
-        },
-      }),
-      "core-resources:预取消",
-    );
-    if (resolverCalls !== 0) {
-      throw new Error("core-resources 断言失败:预取消不应启动 resolver");
-    }
+    // 转换 promise 备在 case 外:两条断言读的是同一次转换的结果(resolver 调用计数
+    // 只在这次转换 settle 后才有意义),搬进任一 case 都会让另一条读到未 settle 的中间态
+    const pending = convertWithFs("![图](x.png)", "docx", {
+      baseDir: ".",
+      signal: controller.signal,
+      imageResolver: async () => {
+        resolverCalls += 1;
+        return null;
+      },
+    });
+    await suite.case("core-resources:预取消", () => assertCancelled(pending, "core-resources:预取消"));
+    await suite.case("resolverCalls", () => {
+      if (resolverCalls !== 0) {
+        throw new Error("core-resources 断言失败:预取消不应启动 resolver");
+      }
+    });
     console.log("[ok] core-resources:预取消独立错误码 + 渲染前短路");
   }
 
@@ -74,17 +78,19 @@ export async function run() {
   {
     /** @type {string[]} */
     const stages = [];
-    await assertCancelled(
-      convertWithFs("# 标题", "pdf", {
-        baseDir: ".",
-        deadline: Date.now() - 1,
-        onStage: (/** @type {string} */ stage) => stages.push(stage),
-      }),
-      "core-resources:过期 deadline",
+    const pending = convertWithFs("# 标题", "pdf", {
+      baseDir: ".",
+      deadline: Date.now() - 1,
+      onStage: (/** @type {string} */ stage) => stages.push(stage),
+    });
+    await suite.case("core-resources:过期 deadline", () =>
+      assertCancelled(pending, "core-resources:过期 deadline"),
     );
-    if (stages.includes("parse")) {
-      throw new Error(`core-resources 断言失败:过期 deadline 不应进入 parse,stages=${JSON.stringify(stages)}`);
-    }
+    await suite.case("stages", () => {
+      if (stages.includes("parse")) {
+        throw new Error(`core-resources 断言失败:过期 deadline 不应进入 parse,stages=${JSON.stringify(stages)}`);
+      }
+    });
     console.log("[ok] core-resources:过期 deadline 在 PDF 阶段前终止");
   }
 
@@ -97,21 +103,28 @@ export async function run() {
       deadline: Date.now() + 60_000,
       onStage: (/** @type {string} */ stage) => stages.push(stage),
     }));
-    if (artifact.kind !== "pdf" || !pdfHtmlOf(artifact).includes("标题")) {
-      throw new Error("core-resources 断言失败:未到期 deadline 下 PDF 应正常产出");
-    }
-    for (const stage of ["parse", "inline", "mermaid", "katex"]) {
-      if (!stages.includes(stage)) {
-        throw new Error(`core-resources 断言失败:未到期 deadline 下阶段 ${stage} 应照常上报,stages=${JSON.stringify(stages)}`);
+    await suite.case("artifact.kind", () => {
+      if (artifact.kind !== "pdf" || !pdfHtmlOf(artifact).includes("标题")) {
+        throw new Error("core-resources 断言失败:未到期 deadline 下 PDF 应正常产出");
       }
+    });
+    // 逐阶段一个 case:阶段名即定位键,合成一条时先缺的那个阶段会顶掉后面几条
+    for (const stage of ["parse", "inline", "mermaid", "katex"]) {
+      await suite.case(`stages 含 ${stage}`, () => {
+        if (!stages.includes(stage)) {
+          throw new Error(`core-resources 断言失败:未到期 deadline 下阶段 ${stage} 应照常上报,stages=${JSON.stringify(stages)}`);
+        }
+      });
     }
     // docx 侧同样:未到期 deadline 不影响渲染
     const docx = (
       await convertWithFs("# 标题\n\n正文\n", "docx", { baseDir: ".", deadline: Date.now() + 60_000 })
     );
-    if (docx.kind !== "docx" || docxBufferOf(docx).length === 0) {
-      throw new Error("core-resources 断言失败:未到期 deadline 下 DOCX 应正常产出");
-    }
+    await suite.case("docx.kind", () => {
+      if (docx.kind !== "docx" || docxBufferOf(docx).length === 0) {
+        throw new Error("core-resources 断言失败:未到期 deadline 下 DOCX 应正常产出");
+      }
+    });
     console.log("[ok] core-resources:正向 deadline(未到期)双管线均正常完成");
   }
 
@@ -133,10 +146,14 @@ export async function run() {
       },
     });
     setTimeout(() => controller.abort(new Error("cancelled-during-docx")), 5);
-    await assertCancelled(pending, "core-resources:docx 渲染中取消");
-    if (requestSignal?.aborted !== true) {
-      throw new Error("core-resources 断言失败:docx resolver 未收到已取消的 request.signal");
-    }
+    await suite.case("core-resources:docx 渲染中取消", () =>
+      assertCancelled(pending, "core-resources:docx 渲染中取消"),
+    );
+    await suite.case("requestSignal.aborted", () => {
+      if (requestSignal?.aborted !== true) {
+        throw new Error("core-resources 断言失败:docx resolver 未收到已取消的 request.signal");
+      }
+    });
     console.log("[ok] core-resources:docx 渲染中取消可中断 resolver 等待");
   }
 
@@ -158,16 +175,20 @@ export async function run() {
         }),
     });
     setTimeout(() => controller.abort(new Error("cancelled-with-warning-check")), 5);
-    await assertCancelled(pending, "core-resources:docx 取消不降级");
+    await suite.case("core-resources:docx 取消不降级", () =>
+      assertCancelled(pending, "core-resources:docx 取消不降级"),
+    );
     // 警告元素为 string 或 KeyedWarning(带 key);此处按该二元结构收窄后取文案字段
-    if (
-      warnings.some((w) => {
-        if (typeof w === "string") return w.includes("图片");
-        return /** @type {{ key: string }} */ (w).key.startsWith("warn.image");
-      })
-    ) {
-      throw new Error(`core-resources 断言失败:取消不应写入图片失败警告,warnings=${JSON.stringify(warnings)}`);
-    }
+    await suite.case("warnings", () => {
+      if (
+        warnings.some((w) => {
+          if (typeof w === "string") return w.includes("图片");
+          return /** @type {{ key: string }} */ (w).key.startsWith("warn.image");
+        })
+      ) {
+        throw new Error(`core-resources 断言失败:取消不应写入图片失败警告,warnings=${JSON.stringify(warnings)}`);
+      }
+    });
     console.log("[ok] core-resources:取消不被图片 warning 吞掉(docx 侧)");
   }
 
@@ -185,10 +206,14 @@ export async function run() {
       },
       imageResolver: () => new Promise(() => {}), // 永不结算:验证取消不等回调
     });
-    await assertCancelled(pending, "core-resources:pdf 阶段取消");
-    if (stages.includes("inline") || stages.includes("mermaid") || stages.includes("katex")) {
-      throw new Error(`core-resources 断言失败:parse 后取消不应进入后续阶段,stages=${JSON.stringify(stages)}`);
-    }
+    await suite.case("core-resources:pdf 阶段取消", () =>
+      assertCancelled(pending, "core-resources:pdf 阶段取消"),
+    );
+    await suite.case("stages", () => {
+      if (stages.includes("inline") || stages.includes("mermaid") || stages.includes("katex")) {
+        throw new Error(`core-resources 断言失败:parse 后取消不应进入后续阶段,stages=${JSON.stringify(stages)}`);
+      }
+    });
     console.log("[ok] core-resources:pdf 阶段边界取消(parse 后不进入图片/公式阶段)");
   }
 
@@ -205,42 +230,61 @@ export async function run() {
       guard,
     );
     setTimeout(() => controller.abort(new Error("cancelled-mermaid")), 5);
-    await assertCancelled(pending, "core-resources:mermaid 取消");
-    if (warnings.length !== 0) {
-      throw new Error(`core-resources 断言失败:mermaid 取消不应写渲染失败警告,warnings=${JSON.stringify(warnings)}`);
-    }
+    await suite.case("core-resources:mermaid 取消", () =>
+      assertCancelled(pending, "core-resources:mermaid 取消"),
+    );
+    await suite.case("warnings", () => {
+      if (warnings.length !== 0) {
+        throw new Error(`core-resources 断言失败:mermaid 取消不应写渲染失败警告,warnings=${JSON.stringify(warnings)}`);
+      }
+    });
+    // guard 注销留在段内(不是 case 内):它是本场景的资源清理,归进 case 会让
+    // case 失败时漏掉注销
     guard.dispose();
     console.log("[ok] core-resources:mermaid 回调不配合取消时仍退出且不写警告");
   }
 
   // ---- 6. KaTeX 资源上限单源且 docx/PDF 均对恶意 TeX 有界降级 ----
   {
-    if (
-      DEFAULT_KATEX_RESOURCE_LIMITS.maxExpand !== 1000 ||
-      DEFAULT_KATEX_RESOURCE_LIMITS.maxSize !== 10 ||
-      DEFAULT_KATEX_RESOURCE_LIMITS.trust !== false
-    ) {
-      throw new Error(
-        `core-resources 断言失败:KaTeX 资源上限漂移,limits=${JSON.stringify(DEFAULT_KATEX_RESOURCE_LIMITS)}`,
-      );
-    }
+    await suite.case("DEFAULT_KATEX_RESOURCE_LIMITS", () => {
+      if (
+        DEFAULT_KATEX_RESOURCE_LIMITS.maxExpand !== 1000 ||
+        DEFAULT_KATEX_RESOURCE_LIMITS.maxSize !== 10 ||
+        DEFAULT_KATEX_RESOURCE_LIMITS.trust !== false
+      ) {
+        throw new Error(
+          `core-resources 断言失败:KaTeX 资源上限漂移,limits=${JSON.stringify(DEFAULT_KATEX_RESOURCE_LIMITS)}`,
+        );
+      }
+    });
     const untrusted = "\\includegraphics{https://example.com/x.png}{x}";
     const expansionBomb = "\\def\\loop{\\loop}\\loop";
     // 两种排版模式都探:displayMode 不参与降级判定(信任闸门/资源上限在 KaTeX
     // 调用之前/之后统一处理),但传 true 的路径不得因新参数而漏掉拦截。
-    for (const tex of [untrusted, expansionBomb]) {
+    // 每组 TeX 一个 case:矩阵行名(公式来源 + 排版模式)即定位键
+    for (const [texName, tex] of /** @type {[string, string][]} */ ([
+      ["includegraphics", untrusted],
+      ["expansionBomb", expansionBomb],
+    ])) {
       for (const displayMode of [false, true]) {
-        const result = texToDocxMath(tex, displayMode);
-        if (result.ok) {
-          throw new Error(
-            `core-resources 断言失败:恶意 TeX 未降级,tex=${tex},displayMode=${displayMode}`,
-          );
-        }
-        if (result.text !== tex) {
-          throw new Error(
-            `core-resources 断言失败:恶意 TeX 降级文本应保持原源,tex=${tex},displayMode=${displayMode}`,
-          );
-        }
+        // 「未降级」与「降级文本不对」合成一个 case:`text` 只存在于 `!result.ok` 那个
+        // 分支,它的判定对象由「ok 为假」这条保证(ok 为真时那条分支根本不存在)。
+        // 拆开会让前一条失败时后一条拿着 ok:true 的分支去读 text,产出遮掉真因的连带
+        // 失败,并且 `texToDocxMath` 被调两次(原写法只调一次)。
+        await suite.case(`result(${texName}, displayMode=${displayMode})`, () => {
+          const result = texToDocxMath(tex, displayMode);
+          if (result.ok) {
+            throw new Error(
+              `core-resources 断言失败:恶意 TeX 未降级,tex=${tex},displayMode=${displayMode}`,
+            );
+          }
+        
+          if (result.text !== tex) {
+            throw new Error(
+              `core-resources 断言失败:恶意 TeX 降级文本应保持原源,tex=${tex},displayMode=${displayMode}`,
+            );
+          }
+        });
       }
     }
     /** @type {ConvertWarning[]} */
@@ -249,15 +293,19 @@ export async function run() {
       await convertWithFs(`$$\n${untrusted}\n$$`, "docx", { baseDir: ".", warnings })
     );
     const xml = await unzipPart(docxBufferOf(docx), "word/document.xml");
-    if (xml.includes("<m:oMath") || !xml.includes("includegraphics")) {
-      throw new Error("core-resources 断言失败:docx 恶意 TeX 应降级为源码且不产出 oMath");
-    }
+    await suite.case("xml(m:oMath / includegraphics)", () => {
+      if (xml.includes("<m:oMath") || !xml.includes("includegraphics")) {
+        throw new Error("core-resources 断言失败:docx 恶意 TeX 应降级为源码且不产出 oMath");
+      }
+    });
     const pdf = (
       await convertWithFs(`$$\n${untrusted}\n$$`, "pdf", { baseDir: ".", warnings: [] })
     );
-    if (!pdfHtmlOf(pdf).includes("katex-error")) {
-      throw new Error("core-resources 断言失败:PDF 不可信 TeX 未产生 katex-error 降级");
-    }
+    await suite.case("pdfHtmlOf(pdf).includes(katex-error)", () => {
+      if (!pdfHtmlOf(pdf).includes("katex-error")) {
+        throw new Error("core-resources 断言失败:PDF 不可信 TeX 未产生 katex-error 降级");
+      }
+    });
     console.log("[ok] core-resources:KaTeX maxExpand/maxSize/trust 上限 + docx/PDF 有界降级");
   }
 
@@ -268,45 +316,60 @@ export async function run() {
     const docx = (
       await convertWithFs(`$$\n${bigTex}\n$$`, "docx", { baseDir: ".", warnings: [] })
     );
-    if (docx.kind !== "docx" || docxBufferOf(docx).length === 0) {
-      throw new Error("core-resources 断言失败:超大但合法的 TeX 应正常产出 docx");
-    }
+    await suite.case("docx.kind", () => {
+      if (docx.kind !== "docx" || docxBufferOf(docx).length === 0) {
+        throw new Error("core-resources 断言失败:超大但合法的 TeX 应正常产出 docx");
+      }
+    });
     // 超大显式尺寸(\rule{500em})被 maxSize 压到上限,不报错也不丢内容
     const capped = texToDocxMath("\\rule{500em}{1em}", false);
-    if (!capped.ok && capped.text !== "\\rule{500em}{1em}") {
-      throw new Error("core-resources 断言失败:降级时必须保持原 TeX 源码");
-    }
+    await suite.case("capped", () => {
+      if (!capped.ok && capped.text !== "\\rule{500em}{1em}") {
+        throw new Error("core-resources 断言失败:降级时必须保持原 TeX 源码");
+      }
+    });
     console.log("[ok] core-resources:超大 TeX(大公式/超尺寸)有界处理不中断转换");
   }
 
   // ---- 7. 图片预算单源:默认值合理 + 台账两道闸门 + 覆盖合并 ----
   {
     const budget = DEFAULT_IMAGE_RESOURCE_BUDGET;
-    if (budget.concurrency !== 3 || budget.maxImages < 8 || budget.maxDocumentBytes <= budget.maxImageBytes) {
-      throw new Error(`core-resources 断言失败:图片预算默认值异常,budget=${JSON.stringify(budget)}`);
-    }
+    await suite.case("DEFAULT_IMAGE_RESOURCE_BUDGET", () => {
+      if (budget.concurrency !== 3 || budget.maxImages < 8 || budget.maxDocumentBytes <= budget.maxImageBytes) {
+        throw new Error(`core-resources 断言失败:图片预算默认值异常,budget=${JSON.stringify(budget)}`);
+      }
+    });
     // 直接比较产物返回值:resolveImageBudget 的返回类型是 ImageResourceBudget
     // (maxImages 为 number),此前那层拓宽是 dist 无 .d.ts 时的残留。
-    if (resolveImageBudget({ maxImages: 2, requestTimeoutMs: undefined }).maxImages !== 2) {
-      throw new Error("core-resources 断言失败:预算覆盖未生效");
-    }
-    if (resolveImageBudget({ requestTimeoutMs: undefined }).requestTimeoutMs !== budget.requestTimeoutMs) {
-      throw new Error("core-resources 断言失败:undefined 覆盖不应击穿默认值");
-    }
+    await suite.case("resolveImageBudget(...).maxImages", () => {
+      if (resolveImageBudget({ maxImages: 2, requestTimeoutMs: undefined }).maxImages !== 2) {
+        throw new Error("core-resources 断言失败:预算覆盖未生效");
+      }
+    });
+    await suite.case("resolveImageBudget(...).requestTimeoutMs", () => {
+      if (resolveImageBudget({ requestTimeoutMs: undefined }).requestTimeoutMs !== budget.requestTimeoutMs) {
+        throw new Error("core-resources 断言失败:undefined 覆盖不应击穿默认值");
+      }
+    });
     // 同上:注入小预算需绕过 dist 侧字面量类型推断,故以 Object.assign 合并覆盖
     // (直接展开字面量会与 Object.freeze 推断出的 maxImages: 512 字面量类型冲突)。
+    // 台账两道闸门与累计量是**顺序敏感**的串行消费:tryBegin/tryCharge 各自改台账状态,
+    // 故三条断言留在同一个 case 内按原序执行,拆开会让后一条读到已被前一条消耗过的台账。
     const ledger = new ImageBudgetLedger(
       Object.assign({}, budget, { maxImages: 2, maxDocumentBytes: 10 }),
     );
-    if (!ledger.tryBegin() || !ledger.tryBegin() || ledger.tryBegin()) {
-      throw new Error("core-resources 断言失败:数量闸门应在上限处拒绝");
-    }
-    if (!ledger.tryCharge(6) || ledger.tryCharge(6)) {
-      throw new Error("core-resources 断言失败:字节闸门应在上限处拒绝");
-    }
-    if (ledger.usedImages !== 2 || ledger.usedBytes !== 6) {
-      throw new Error(`core-resources 断言失败:台账累计异常 images=${ledger.usedImages} bytes=${ledger.usedBytes}`);
-    }
+    await suite.case("ledger 两道闸门与累计量", () => {
+      if (!ledger.tryBegin() || !ledger.tryBegin() || ledger.tryBegin()) {
+        throw new Error("core-resources 断言失败:数量闸门应在上限处拒绝");
+      }
+      if (!ledger.tryCharge(6) || ledger.tryCharge(6)) {
+        throw new Error("core-resources 断言失败:字节闸门应在上限处拒绝");
+      }
+      if (ledger.usedImages !== 2 || ledger.usedBytes !== 6) {
+        throw new Error(`core-resources 断言失败:台账累计异常 images=${ledger.usedImages} bytes=${ledger.usedBytes}`);
+      }
+    });
     console.log("[ok] core-resources:图片预算单源(默认值/覆盖合并/数量与字节闸门)");
   }
+  return { cases: suite.results };
 }
