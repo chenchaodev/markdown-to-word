@@ -625,13 +625,10 @@ export const CRITERIA = Object.freeze([
       "每段接入具名 case:段必须 import case 契约模块**且**至少有一处 `.case(` 调用 ⇒ 否则判红"
       + "(import 是必要条件不是充分条件 —— 建了 suite 只用 describe 不调 case 的段如实判红,"
       + "该形态是否为合法例外待后续裁决)",
-    pending: true,
-    pendingReason:
-      "新增时绝大多数段尚未接入该契约,清零是 #08 的后续步骤。"
-      + "**转正动作 = 删掉本行的 pending: true 与 pendingReason,判定本体一行不改**。"
-      + "⚠ 已知待裁决点:有段建了 suite、只用 describe 不用 case,按「机器能判的先判红」裁决"
-      + "如实判红,而它是否为合法例外待后续裁决 —— **不得**为此开豁免白名单(ADR-071:5"
-      + "明写「新判据不设豁免」)。",
+    // 转正只删 `pending: true` 与 `pendingReason`,判定本体一行未改 —— 变的只是命中进
+    // 哪个通道。随 pendingReason 一并落定的两条:① 「建了 suite 只用 describe 不调 case
+    // 如实判红」是站着的裁决,而它「是否为合法例外待后续裁决」记在本条 title 里;
+    // ② **不得**为本族开豁免白名单(ADR-071:5 明写「新判据不设豁免」)。
   }),
   ]);
 

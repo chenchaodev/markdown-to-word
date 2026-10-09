@@ -113,11 +113,60 @@ function wellFormedSegment(layer) {
 const BASE_PAD = MIN_SCANNED_FILES + 10;
 
 /**
+ * 从段所在目录到契约模块的相对说明符(仓库相对 POSIX 路径)。
+ * @param {string} fromDir 段所在目录(仓库相对 POSIX)
+ * @param {string} to 目标文件(仓库相对 POSIX)
+ * @returns {string} 相对说明符;与 fromDir 同目录时返回 `./<basename>`
+ */
+function posixRelativeSpecifier(fromDir, to) {
+  const from = fromDir.split("/");
+  const parts = to.split("/");
+  let common = 0;
+  while (common < from.length && common < parts.length && from[common] === parts[common]) common += 1;
+  const spec = [...Array.from({ length: from.length - common }, () => ".."), ...parts.slice(common)].join("/");
+  return spec.startsWith(".") ? spec : `./${spec}`;
+}
+
+/**
+ * 合成段的「接入具名 case 契约」凭证。族二只判两格 —— import 契约模块(按解析后路径)
+ * 与至少一处 `.case(` 属性访问调用;它**不判 case 的语义**,故凭证里那个 case 体是空的。
+ *
+ * ⚠ 为什么默认给每份合成段补这段凭证:族二已 fail-closed,合成段若不带接入,那些
+ * 「期望零判红」的夹具会先被族二判红,验到的变成两族判据的叠加(与底板段必须 import
+ * 本层主体、否则 C1 先判红是同一处境)。
+ * ⚠ 为什么自带 `case.js` 桩的夹具要跳过:那正是要验「未接入如实判红」的那几条族二夹具,
+ * 它们必须保留未接入形态,判据才有牙齿。
+ * @param {string} rel 段文件(仓库相对 POSIX 路径)
+ * @returns {{ head: string, tail: string }} 追加到段正文首尾的两段文本
+ */
+function caseContractProbe(rel) {
+  const segDir = rel.slice(0, rel.lastIndexOf("/"));
+  const spec = posixRelativeSpecifier(segDir, `${TEST_REL}/harness/case.js`);
+  return {
+    // 说明符放在段正文**首部**:import 声明虽会被提升,但判定侧的 import 抽取器不该被
+    // 依赖「提升」这件事 —— 夹具凭证按最朴素的可解析形态写。
+    head: `import { createCaseSuite } from "${spec}";\n`,
+    tail: [
+      "",
+      "/** 族二接入凭证:该族判「import 契约模块 + 至少一处 .case(」两格,不判 case 语义。 */",
+      "async function caseContractProbe() {",
+      "  const suite = createCaseSuite();",
+      '  await suite.case("夹具段已接入具名 case 契约", () => {});',
+      "  return { cases: suite.results };",
+      "}",
+      "",
+    ].join("\n"),
+  };
+}
+
+/**
  * 造一棵合成仓根。
  * @param {Readonly<Record<string, string>>} [extra] 仓库相对 POSIX 路径 → 正文
+ * @param {{ keepSegmentsCaseBare?: boolean }} [opts] `keepSegmentsCaseBare`:本夹具的
+ *   合成段**一律不补**接入凭证(验「未接入如实判红」的那几条族二夹具要用)
  * @returns {string} 夹具根绝对路径
  */
-function createFixture(extra = {}) {
+function createFixture(extra = {}, opts = {}) {
   const dir = mkdtempSync(join(tmpdir(), "m2w-test-layout-selftest-"));
   // ① src/ 的每一层都要有目录(纪律 ②)。放一个 .gitkeep 即可:判据只看目录名。
   for (const layer of BASE_SRC_LAYERS) writeUnder(dir, `src/${layer}/.gitkeep`, "");
@@ -152,7 +201,19 @@ function createFixture(extra = {}) {
     const layer = BASE_SRC_LAYERS[i % BASE_SRC_LAYERS.length] ?? "core";
     writeUnder(dir, `${TEST_REL}/${layer}/pad-${i}.test.js`, wellFormedSegment(layer));
   }
-  for (const [rel, body] of Object.entries(extra)) writeUnder(dir, rel, body);
+  // 族二 fail-closed 后,合成段默认补上接入凭证(理由见 caseContractProbe 的注释);
+  // 自带 case.js 桩的夹具跳过 —— 它们验的正是「未接入」。
+  const fixtureSuppliesCaseModule = Object.keys(extra).some((k) => k.replace(/\\/g, "/").endsWith(`harness/case.js`));
+  const keepBare = opts.keepSegmentsCaseBare === true;
+  for (const [rel, body] of Object.entries(extra)) {
+    const norm = rel.replace(/\\/g, "/");
+    const isCaseModuleItself = norm.endsWith(`harness/case.js`);
+    // 三条互不替代的跳过理由:夹具显式要裸段、要验的正是「自带桩但段没接入」、桩文件自身。
+    const needsProbe =
+      !keepBare && !fixtureSuppliesCaseModule && !isCaseModuleItself && norm.endsWith(".test.js");
+    const probe = needsProbe ? caseContractProbe(norm) : { head: "", tail: "" };
+    writeUnder(dir, norm, `${probe.head}${body}${probe.tail}`);
+  }
   return dir;
 }
 
@@ -185,7 +246,7 @@ function judge(extra, opts = {}) {
   // missingRoot:求值根指向一个**不存在**的目录,逼 listDir 抛错(见 CASES 里那条夹具的注释)。
   // skipSrc:根与 test/ 都在,只缺 src/ ⇒ 镜像源派生不出来(另一侧输入缺失,判据点明它)。
   // 两种都仍要建夹具再删,是为了让 finally 的清理路径与其它夹具同形、不留第二套清理逻辑。
-  const dir = createFixture(extra);
+  const dir = createFixture(extra, opts);
   try {
     if (opts.missingRoot === true) rmSync(dir, { recursive: true, force: true });
     if (opts.skipSrc === true) rmSync(join(dir, "src"), { recursive: true, force: true });
@@ -227,8 +288,8 @@ function judge(extra, opts = {}) {
  * @param {string[]} [args] 传给门禁的参数
  * @returns {{ code: number | null, output: string }}
  */
-function runChecker(extra, args = [], removeTopDir = undefined) {
-  const dir = createFixture(extra);
+function runChecker(extra, args = [], removeTopDir = undefined, opts = {}) {
+  const dir = createFixture(extra, opts);
   try {
     // 删一整个顶层目录是「L7 缺一档」唯一能造出的形态:判据只加文件,而「少一层」这件事
     // 只能靠删目录表达(见 CASES 里 deriveMissing 那条的同款理由)。
@@ -1554,8 +1615,12 @@ const CASES = [
   // 下面那条「只在夹具串里合成别的段」的夹具就是这条的牙齿 —— 按字面判它会过关(它文件里确实
   // 写着 `createCaseSuite`),而它自己并不接 case 契约。
   {
-    name: "#08 族二:段未 import case 契约模块 → 报告(info 通道,不计退出码)",
+    name: "#08 族二:段未 import case 契约模块 → 判红(fail-closed;该族已转正,命中进 problems 通道)",
     judgeOnly: true,
+    // 本条验的正是「段没接入 ⇒ 判红」,合成段必须保持裸形态。
+    // 它也是唯一一条**不自带** case.js 桩的族二夹具(另三条自带桩,桩的存在即判据前提),
+    // 所以「自带桩就跳过注入」这条推断对它不成立 —— 必须显式声明,不能靠推断蒙混。
+    keepSegmentsCaseBare: true,
     extra: {
       [`${TEST_REL}/core/no-case-import.test.js`]: [
         "// @ts-check",
@@ -1566,15 +1631,15 @@ const CASES = [
         "",
       ].join("\n"),
     },
-    expectInfo: new RegExp(
+    expect: new RegExp(
       `${TEST_REL}/core/no-case-import\\.test\\.js → test-segment-named-case:该段没有 import case 契约模块`,
     ),
-    expect: null,
+    expectInfo: null,
   },
   {
     // **「机器能判的先判红」那一档的牙齿**:import 了契约模块、却一次没调 `.case(`(建了 suite
     // 只用 `describe`)。只按 import 判的实现会放过它 —— 而它正是裁决要求如实报出的那一段。
-    name: "#08 族二:import 了契约模块却一次没调 .case( → 报告(建了 suite 只用 describe 不算接入)",
+    name: "#08 族二:import 了契约模块却一次没调 .case( → 判红(建了 suite 只用 describe 不算接入)",
     judgeOnly: true,
     extra: {
       ["test/harness/case.js"]: "export const createCaseSuite = () => ({});\n",
@@ -1592,10 +1657,10 @@ const CASES = [
         "",
       ].join("\n"),
     },
-    expectInfo: new RegExp(
+    expect: new RegExp(
       `${TEST_REL}/core/suite-only\\.test\\.js → test-segment-named-case:该段 import 了 case 契约模块 .*但正文里没有任何`,
     ),
-    expect: null,
+    expectInfo: null,
   },
   {
     // **按 import 判而不按字面判的牙齿**:这一段在**夹具字符串**里合成别的段(把别的段的
@@ -1621,14 +1686,15 @@ const CASES = [
         "",
       ].join("\n"),
     },
-    expectInfo: new RegExp(
+    expect: new RegExp(
       `${TEST_REL}/harness/synth\\.test\\.js → test-segment-named-case:该段没有 import case 契约模块`,
     ),
-    expect: null,
+    expectInfo: null,
   },
   {
     // **反向锚点**:import 了契约 + 至少一处 `.case(` ⇒ 零报告。缺它的话,本族可能只是「恒红」——
-    // 而「恒红」与「建了族」在退出码上不可区分(它当前是 report-only,恒绿恒红都不改退出码)。
+    // 而「恒红」与「建了族」在退出码上不可区分 —— 本族转正后它已 fail-closed,恒红会改退出码,
+    // 所以上面那三条正夹具(钉 expect)与这条反向锚点(钉双 null)成对才够。
     name: "#08 族二:已 import 契约模块且至少调一次 .case( → 零报告(反向锚点)",
     judgeOnly: true,
     extra: {
@@ -2561,6 +2627,9 @@ for (const testCase of CASES) {
         gateRegistry: testCase.gateRegistry,
         gateSubjectExemptions: testCase.gateSubjectExemptions,
         criteriaOverride: testCase.criteriaOverride,
+        // 本族这一条要验的正是「段没接入 ⇒ 判红」,故它的合成段必须保持裸形态 ——
+        // 它是唯一一条**不自带** case.js 桩的族二夹具(自带桩就会被桩的存在带过)。
+        keepSegmentsCaseBare: testCase.keepSegmentsCaseBare,
       });
       const joined = problems.join("\n");
       const infoJoined = info.join("\n");
@@ -2613,7 +2682,12 @@ for (const testCase of CASES) {
     // 进程级档:真实仓库那两条只读,其余在合成目录里以 cwd 指夹具跑仓内真脚本
     const run = testCase.realRepo === true
       ? runAt(projectRoot, testCase.args ?? [])
-      : runChecker(testCase.extra ?? {}, testCase.args ?? [], testCase.removeTopDir);
+      : runChecker(
+          testCase.extra ?? {},
+          testCase.args ?? [],
+          testCase.removeTopDir,
+          { keepSegmentsCaseBare: testCase.keepSegmentsCaseBare },
+        );
     // expectCount 独立于 expect:前者钉**计数器**(结论行那一档),后者钉**诊断文案**。
     // 合成一条 if 会让「文案对但计数错」与「计数对但文案错」互相掩盖 ——
     // 上面那条 L7 缺档夹具的变异实验正是这么躲过去的。
