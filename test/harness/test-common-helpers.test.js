@@ -59,8 +59,13 @@ import {
  *
  * 主体三条,均由头注明写:`test/harness/assert.js`(每条断言的失败消息必须含实际值 +
  * 期望值 + 差异位置 —— 头注论证「只测不抛错不够,恒真的断言同样不抛错」)、
- * `test/harness/temp-resource.js`(删除失败必须显式暴露)、`test/harness/case.js`
+ * `test/harness/temp-resource.js`(删除失败必须显式暴露)、case 契约
  * (case 契约的登记入口,随 assert 一并声明)。
+ *
+ * ⚠ **契约真实现自 ADR-074 起在 `shared/`,本段经门面测的是它** —— 故 covers 里
+ * `shared/case.js` 与门面路径 `test/harness/case.js` 并列:门面是段的 import 落点
+ * (L8 要求至少一个元素指向 `test/harness/`),真实现是本段实际断言的对象。
+ * 只留门面会让 ADR-062「harness 是自指层、主体根 = `test/harness/` 自己」的表述失真。
  *
  * T3 步 6 之前本段住在 `test/core/`(头注自称「跨域守护段」),而主体全在
  * `test/harness/` ⇒ 主体与「段的可归属目录」无交集。同批把 harness 登记为段目录
@@ -70,6 +75,7 @@ export const covers = [
   "test/harness/assert.js",
   "test/harness/temp-resource.js",
   "test/harness/case.js",
+  "shared/case.js",
 ];
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
