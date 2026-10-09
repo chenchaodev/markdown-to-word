@@ -26,11 +26,25 @@
 //
 // ⚠ 已沉淀的教训:临时产物必须在 finally 清理 —— 中途断言失败抛异常时同样要删,否则系统
 // 临时区会堆满夹具树。
+//
+// ---- 形态:case 契约接入,但**不接 harness**(ADR-074 决定一 / ADR-068 bespoke 留在原处)----
+//
+// 夹具表逐条收成 `await suite.case(name, () => …)`,期望核对统一走 `shared/case.js` 的
+// `assert`(ADR-074 决定一:门禁树接的是落在 shared/ 的真实现 —— `gates-stay-in-gates`
+// 的允许面只有 `gates` / `shared` / `test/fixtures`,`test/` 整棵树不在其中,引不到
+// `test/harness/case.js`)。case 内失败即抛、由 case 级 catch 收成**该 case** 失败,不中断
+// 后续 case —— 一次跑完可见全部失败面。
+//
+// **不用合成根 harness**:本档的入参是**合成夹具目录路径**,判定回吐的是 `auditZeroFiles`
+// 的**结果对象**(problems / zeroFiles),而 harness 的表只收「树型路径 → 正文 + 问题清单
+// 正则」且判定体须回吐**问题清单** —— 入参与返回两侧都不对型,塞进去是假接入
+// (口径同 smoke-proc.selftest.mjs 头注)。
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { assert, createCaseSuite } from '../../shared/case.js';
 import { ROOT } from '../../shared/paths.js';
 import { auditZeroFiles, BASELINE_RELATIVE, SUMMARY_RELATIVE } from './check-coverage-zero.mjs';
 
@@ -330,34 +344,41 @@ function readSummaryIn(dir) {
   return readFileSync(join(dir, ...SUMMARY_RELATIVE.split('/')), 'utf8');
 }
 
-const failures = [];
+const suite = createCaseSuite();
+
+// 夹具表逐条收进 case:**档名即 case 名**(逐字沿用 CASES 里的 `name:`)。表内的期望核对与
+// 表外那条「夹具执行抛异常」都收敛成一条 `assert` 抛出,由 case 级 catch 收成该 case 失败。
 for (const testCase of CASES) {
-  /** @type {string | undefined} */
-  let dir;
-  try {
-    dir = testCase.create();
-    const result = auditZeroFiles(dir);
-    const joined = result.problems.join('\n');
-    if (testCase.expect === null) {
-      if (result.problems.length === 0) {
-        console.log(
-          `[ok] coverage-zero-selftest:${testCase.name}(0% 集合 ${result.zeroFiles.length} 个,判定面通过)`,
-        );
+  await suite.case(testCase.name, () => {
+    /** @type {string | undefined} */
+    let dir;
+    /** @type {string | null} */
+    let problem = null;
+    try {
+      dir = testCase.create();
+      const result = auditZeroFiles(dir);
+      const joined = result.problems.join('\n');
+      if (testCase.expect === null) {
+        // 反向锚点(expect: null):这一形态必须零问题 —— 它证明判红的不是「动过基线就红」。
+        if (result.problems.length === 0) {
+          console.log(
+            `[ok] coverage-zero-selftest:${testCase.name}(0% 集合 ${result.zeroFiles.length} 个,判定面通过)`,
+          );
+        } else {
+          problem = `${testCase.name}:期望通过,实际 ${result.problems.length} 项问题\n${joined}`;
+        }
+      } else if (testCase.expect.test(joined)) {
+        console.log(`[ok] coverage-zero-selftest:${testCase.name}(漂移被拦截,${result.problems.length} 项问题)`);
       } else {
-        failures.push(`${testCase.name}:期望通过,实际 ${result.problems.length} 项问题\n${joined}`);
+        problem = `${testCase.name}:期望诊断匹配 ${testCase.expect},实际\n${joined || '(无任何诊断 —— 门禁在此形态上恒绿了)'}`;
       }
-      continue;
+    } catch (error) {
+      problem = `${testCase.name}:夹具执行抛异常:${error instanceof Error ? error.message : String(error)}`;
+    } finally {
+      if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
     }
-    if (testCase.expect.test(joined)) {
-      console.log(`[ok] coverage-zero-selftest:${testCase.name}(漂移被拦截,${result.problems.length} 项问题)`);
-    } else {
-      failures.push(`${testCase.name}:期望诊断匹配 ${testCase.expect},实际\n${joined || '(无任何诊断 —— 门禁在此形态上恒绿了)'}`);
-    }
-  } catch (error) {
-    failures.push(`${testCase.name}:夹具执行抛异常:${error instanceof Error ? error.message : String(error)}`);
-  } finally {
-    if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
-  }
+    assert(problem === null, problem ?? '(无失败消息)');
+  });
 }
 
 /* ---------- 真实仓库:CLI 适配层(参数路由 → 动态面 → 退出码 → 诊断行) ---------- */
@@ -391,17 +412,22 @@ function checkRealRepo() {
   return null;
 }
 
-const realProblem = checkRealRepo();
-if (realProblem === null) {
-  const dataState = existsSync(join(projectRoot, ...SUMMARY_RELATIVE.split('/'))) ? '有本次覆盖率数据' : '无(按契约判红并点名数据源)';
-  console.log(`[ok] coverage-zero-selftest:真实仓库 CLI 适配层(${dataState})断言通过`);
-} else {
-  failures.push(realProblem);
-}
+// 表外块「真实仓库 CLI 适配层」收成一条 case,档名固定不变。搬迁前 `[ok]` 行里的
+// `${dataState}` 动态占位按裁决去掉 —— dataState 的两种取值继续在失败消息里出声:
+// `checkRealRepo()` 返回的 `真实仓库当前未漂移:…` 与 `真实仓库无覆盖率数据:…` 两支
+// 已各自把「数据在不在」写进消息,不再需要 [ok] 行复述。
+await suite.case('真实仓库 CLI 适配层', () => {
+  const problem = checkRealRepo();
+  assert(problem === null, problem ?? '(无失败消息)');
+  console.log(`[ok] coverage-zero-selftest:真实仓库 CLI 适配层断言通过`);
+});
 
-if (failures.length > 0) {
-  for (const failure of failures) console.error(`[coverage-zero-selftest:fail] ${failure}`);
-  console.error(`[coverage-zero-selftest:fail] 覆盖率零覆盖门禁回归守护失败,共 ${failures.length}/${CASES.length + 1} 条`);
+/* ---------- 汇总:段级成败按 case 结果判(分母与搬迁前的 `CASES.length + 1` 同一个数) ---------- */
+const cases = suite.results;
+const failedCases = suite.failures;
+if (failedCases.length > 0) {
+  for (const failure of failedCases) console.error(`[coverage-zero-selftest:fail] ${failure.name}:${failure.message ?? '(无失败消息)'}`);
+  console.error(`[coverage-zero-selftest:fail] 覆盖率零覆盖门禁回归守护失败,共 ${failedCases.length}/${cases.length} 条`);
   process.exit(1);
 }
-console.log(`[ok] coverage-zero-selftest:${CASES.length + 1} 条夹具全部符合预期(一致判绿 / 静默放宽被拦截且点名)`);
+console.log(`[ok] coverage-zero-selftest:${cases.length} 条夹具全部符合预期(一致判绿 / 静默放宽被拦截且点名)`);

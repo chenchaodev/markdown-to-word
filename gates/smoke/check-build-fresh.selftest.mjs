@@ -40,11 +40,25 @@
 //
 // ⚠ 元素类型刻意保持 `string[]`(判定本体的返回形状,理由在它自己的 JSDoc 里):富结构体
 // 经 protocol.mjs 的 toProblems() 归一时只保留 code + message,文件清单字段会被整段丢掉。
+//
+// ---- 形态:case 契约接入,但**不接 harness**(ADR-074 决定一 / ADR-068 bespoke 留在原处)----
+//
+// 夹具表逐条收成 `await suite.case(用例名, () => …)`,期望核对统一走 `shared/case.js` 的
+// `assert`(ADR-074 决定一:门禁树接的是落在 shared/ 的真实现 —— `gates-stay-in-gates` 的
+// 允许面只有 `gates` / `shared` / `test/fixtures`,`test/` 整棵树不在其中,引不到
+// `test/harness/case.js`)。case 内失败即抛、由 case 级 catch 收成**该 case** 失败,不中断
+// 后续 case —— 一次跑完可见全部失败面。
+//
+// **不用合成根 harness**:本档的入参是**合成树路径**与 `evaluateFreshness` / 子进程的
+// **结果对象**(problems 数组 / exit code + output),而 harness 的表只收「树型路径 → 正文
+// + 问题清单正则」且判定体须回吐**问题清单** —— 入参与返回两侧都不对型,塞进去是假接入
+// (口径同 smoke-proc.selftest.mjs 头注)。
 
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { assert, createCaseSuite } from '../../shared/case.js';
 import { ROOT } from '../../shared/paths.js';
 import { evaluateFreshness } from './check-build-fresh.mjs';
 
@@ -255,8 +269,7 @@ const CLI_CASES = [
   },
 ];
 
-/** @type {string[]} */
-const failures = [];
+const suite = createCaseSuite();
 
 /**
  * 把一条用例铺成合成树并施加漂移(createTree 已给出「src 旧 / dist 新」的正向锚点形态,
@@ -289,44 +302,53 @@ function materialize(testCase) {
 }
 
 /* ---------- 纯函数档 ---------- */
+// 档名即 case 名(逐字沿用 PURE_CASES 里的 `name:`)。每条用例的期望核对与夹具异常都收敛成
+// 一条 `assert` 抛出,由 case 级 catch 收成该 case 失败。
 for (const testCase of PURE_CASES) {
-  /** @type {string | undefined} */
-  let root;
-  try {
-    root = materialize(testCase);
-    const problems = evaluateFreshness({ srcDir: join(root, 'src'), distDir: join(root, 'dist') });
-    const joined = problems.join('\n');
-    if (testCase.expect === null) {
-      if (problems.length === 0) {
-        console.log(`[ok] build-fresh-selftest:${testCase.name}`);
+  await suite.case(testCase.name, () => {
+    /** @type {string | undefined} */
+    let root;
+    /** @type {string | null} */
+    let problem = null;
+    try {
+      root = materialize(testCase);
+      const problems = evaluateFreshness({ srcDir: join(root, 'src'), distDir: join(root, 'dist') });
+      const joined = problems.join('\n');
+      if (testCase.expect === null) {
+        if (problems.length === 0) {
+          console.log(`[ok] build-fresh-selftest:${testCase.name}`);
+        } else {
+          problem = `${testCase.name}:期望零问题,实际 ${problems.length} 条\n${joined}`;
+        }
       } else {
-        failures.push(`${testCase.name}:期望零问题,实际 ${problems.length} 条\n${joined}`);
+        // forbid 独立于 expect:它断的是「诊断还多说了不该说的」—— 一个把所有 src 文件名
+        // 串进诊断的退化实现能通过 expect,但过不了 forbid。两者缺一,「点名」都可能被做成假的。
+        const forbiddenHits = (testCase.forbid ?? []).filter((needle) => joined.includes(needle));
+        if (testCase.expect.test(joined) && forbiddenHits.length === 0) {
+          console.log(`[ok] build-fresh-selftest:${testCase.name}(漂移被拦截 / ${problems.length} 条问题)`);
+        } else {
+          const extra = forbiddenHits.length > 0
+            ? `\n(诊断里出现了不该出现的名字:${forbiddenHits.join(", ")} —— 「点名」必须是点名那一个,不是列一遍)`
+            : '';
+          problem = `${testCase.name}:期望问题清单匹配 ${testCase.expect},实际\n${joined || '(零问题 —— 判定在此形态上恒绿了)'}${extra}`;
+        }
       }
-      continue;
+    } catch (error) {
+      problem = `${testCase.name}:夹具执行抛异常:${error instanceof Error ? error.message : String(error)}`;
+    } finally {
+      if (root !== undefined) rmSync(root, { recursive: true, force: true });
     }
-    // forbid 独立于 expect:它断的是「诊断还多说了不该说的」—— 一个把所有 src 文件名
-    // 串进诊断的退化实现能通过 expect,但过不了 forbid。两者缺一,「点名」都可能被做成假的。
-    const forbiddenHits = (testCase.forbid ?? []).filter((needle) => joined.includes(needle));
-    if (testCase.expect.test(joined) && forbiddenHits.length === 0) {
-      console.log(`[ok] build-fresh-selftest:${testCase.name}(漂移被拦截 / ${problems.length} 条问题)`);
-    } else {
-      const extra = forbiddenHits.length > 0
-        ? `\n(诊断里出现了不该出现的名字:${forbiddenHits.join(", ")} —— 「点名」必须是点名那一个,不是列一遍)`
-        : '';
-      failures.push(`${testCase.name}:期望问题清单匹配 ${testCase.expect},实际\n${joined || '(零问题 —— 判定在此形态上恒绿了)'}${extra}`);
-    }
-  } catch (error) {
-    failures.push(`${testCase.name}:夹具执行抛异常:${error instanceof Error ? error.message : String(error)}`);
-  } finally {
-    if (root !== undefined) rmSync(root, { recursive: true, force: true });
-  }
+    assert(problem === null, problem ?? '(无失败消息)');
+  });
 }
 
 /* ---------- 反向锚点:撤销漂移必须回到判绿 ---------- */
 // 「注入 ⇒ 红」与「撤销 ⇒ 绿」必须成对存在:只做前者时,一个「无论什么输入都判红」的退化
 // 实现能让全部负向夹具通过;只做后者时,一个「恒绿」的实现同样能让全部用例通过。
-{
+await suite.case('注入/撤销成对', () => {
   const root = createTree();
+  /** @type {string | null} */
+  let problem = null;
   try {
     const stale = join(root, ...`${SRC_PREFIX}core/convert.ts`.split('/'));
     pinFile(root, `${SRC_PREFIX}core/convert.ts`, STALE_SECONDS);
@@ -352,43 +374,54 @@ for (const testCase of PURE_CASES) {
     }
     if (restored.length !== 0) problems.push(`撤销漂移后应回到判绿,实际:${restored.join(" | ")}`);
     if (problems.length > 0) {
-      failures.push(`注入/撤销成对:${problems.join("; ")}`);
+      problem = `注入/撤销成对:${problems.join("; ")}`;
     } else {
       console.log('[ok] build-fresh-selftest:注入 mtime 漂移判红、撤销后判绿、且判红只归因于被改的那个文件');
     }
   } catch (error) {
-    failures.push(`注入/撤销成对:抛异常:${error instanceof Error ? error.message : String(error)}`);
+    problem = `注入/撤销成对:抛异常:${error instanceof Error ? error.message : String(error)}`;
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}
+  assert(problem === null, problem ?? '(无失败消息)');
+});
 
 /* ---------- 进程级档 ---------- */
+// 档名即 case 名(逐字沿用 CLI_CASES 里的 `name:`);与表外那条「注入/撤销成对」的顺序保持
+// 搬迁前的「先纯函数、再反向锚点、后进程级」。
 for (const testCase of CLI_CASES) {
-  /** @type {string | undefined} */
-  let root;
-  try {
-    root = materialize(testCase);
-    const run = runGate(root, testCase.args ?? ['--src', 'src', '--dist', 'dist']);
-    if (run.code !== testCase.expectCode || !testCase.expect.test(run.output)) {
-      failures.push(
-        `${testCase.name}:期望 exit=${String(testCase.expectCode)} 且输出匹配 ${testCase.expect},`
-        + `实际 exit=${String(run.code)}\n${run.output || '(无输出)'}`,
-      );
-      continue;
+  await suite.case(testCase.name, () => {
+    /** @type {string | undefined} */
+    let root;
+    /** @type {string | null} */
+    let problem = null;
+    try {
+      root = materialize(testCase);
+      const run = runGate(root, testCase.args ?? ['--src', 'src', '--dist', 'dist']);
+      if (run.code !== testCase.expectCode || !testCase.expect.test(run.output)) {
+        problem =
+          `${testCase.name}:期望 exit=${String(testCase.expectCode)} 且输出匹配 ${testCase.expect},`
+          + `实际 exit=${String(run.code)}\n${run.output || '(无输出)'}`;
+      } else {
+        console.log(`[ok] build-fresh-selftest:${testCase.name}(exit ${String(run.code)})`);
+      }
+    } catch (error) {
+      problem = `${testCase.name}:夹具执行抛异常:${error instanceof Error ? error.message : String(error)}`;
+    } finally {
+      if (root !== undefined) rmSync(root, { recursive: true, force: true });
     }
-    console.log(`[ok] build-fresh-selftest:${testCase.name}(exit ${String(run.code)})`);
-  } catch (error) {
-    failures.push(`${testCase.name}:夹具执行抛异常:${error instanceof Error ? error.message : String(error)}`);
-  } finally {
-    if (root !== undefined) rmSync(root, { recursive: true, force: true });
-  }
+    assert(problem === null, problem ?? '(无失败消息)');
+  });
 }
 
-const total = PURE_CASES.length + 1 + CLI_CASES.length;
-if (failures.length > 0) {
-  for (const failure of failures) console.error(`[build-fresh-selftest:fail] ${failure}`);
-  console.error(`[build-fresh-selftest:fail] 构建新鲜度门禁回归守护失败,共 ${failures.length}/${total} 条`);
+/* ---------- 汇总:段级成败按 case 结果判 ---------- */
+// 分母 `suite.results.length` 与搬迁前的 `PURE_CASES.length + 1 + CLI_CASES.length` 同一个数;
+// 两侧一旦不等,说明有档没接进 case —— 那正是 `gates-selftest-named-case` 要抓的形态。
+const cases = suite.results;
+const failedCases = suite.failures;
+if (failedCases.length > 0) {
+  for (const failure of failedCases) console.error(`[build-fresh-selftest:fail] ${failure.name}:${failure.message ?? '(无失败消息)'}`);
+  console.error(`[build-fresh-selftest:fail] 构建新鲜度门禁回归守护失败,共 ${failedCases.length}/${cases.length} 条`);
   process.exit(1);
 }
-console.log(`[ok] build-fresh-selftest:${total} 条夹具全部符合预期(未漂移通过 / 漂移拦截)`);
+console.log(`[ok] build-fresh-selftest:${cases.length} 条夹具全部符合预期(未漂移通过 / 漂移拦截)`);
