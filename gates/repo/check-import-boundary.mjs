@@ -14,9 +14,18 @@
 //      renderer 不反向依赖 main,preload 不经上跳引用 main。这是单向依赖的
 //      机械断言,替代「靠 code review 记住」的约定。层向规则本身是 deny-list,
 //      故另配 allow-list:`src/` 顶层目录必须登记在 SRC_TOP_LAYERS(ADR-060 后果 3),
-//      否则新树不命中任何规则、其反向依赖静默放行。
+//      否则新树不命中任何规则、其反向依赖静默放行。renderer 之下同理有一张
+//      RENDERER_TOP_DIRS(理由见该表的注释)。
 //      另含 core 内部的**目录准入**判据(markdown / image / pipeline / util / i18n 五个
 //      子目录):它们钉的是「某条边不存在」而非方向,理由见 LAYER_RULES 里那组规则的注释。
+//
+// ---- 机制先落、规则后挂 ----
+//
+// 本文件此刻多出三样**判定机制**,它们在 LAYER_RULES 里**没有任何一条规则在用**
+// (挂规则是另一步的事):`peer:` forbid 形态、`renderer-features` 这一档 scope、
+// 以及 RENDERER_TOP_DIRS 这道单向的目录判据(它本身不挂 pending,是独立判红项)。
+// 三者各自都有内联双向自检(见 selfCheckPeerMesh / selfCheckTreeLayout 里那段),
+// 故「机制恒绿」这一最贵的失效形态已被钉住 —— 机制里没有规则,规则表与结论行一字未动。
 //
 // 判定输入是**源码文本**而非类型检查结果:门禁要在 tsc 之前跑,且要在
 // 「有人新写了一个 import」的最早时刻就红。正则抽取而非走 TS AST,理由同
@@ -129,6 +138,9 @@ export const CORE_NODE_BUILTIN_FILES = Object.freeze([
  *   layer:<层,层>   —— 不得 import 解析后落在这些层下的模块。`..` 是可取值:
  *                      向上逃逸的相对说明符归一化后首段恒为 `..`(见 ruleHits 的注释)
  *   prefix:<前缀>   —— 不得使用以此前缀开头的相对 specifier
+ *   peer:<根,根>    —— 不得 import 解析后归属这些**功能根**、且与 from 侧自身根不同的模块。
+ *                      二元语义(「目标 ≠ 自身」)而非目标集合语义,理由见 ruleHits 该分支。
+ *                      机制已就位、当前无规则在用(挂规则是另一步)
  */
 export const LAYER_RULES = Object.freeze([
   {
@@ -409,6 +421,78 @@ export function analyzeSrcTopLayers(srcDir) {
   return findUnregisteredSrcLayers(dirs).map(
     (name) => `src/ 顶层目录「${name}/」未登记在 SRC_TOP_LAYERS(${SRC_TOP_LAYERS.join('/')})`
       + ' —— 层向规则按 scope 枚举,未登记的目录不命中任何规则,它的反向依赖将静默放行',
+  );
+}
+
+// ---- renderer 内层布局判据:两级目录各自的 allow-list ----
+
+/**
+ * `src/renderer/` 下**已登记**的一级目录 allow-list。
+ *
+ * 为什么 renderer 之下还要一张表:SRC_TOP_LAYERS 只到 `renderer` 这一层,而 renderer
+ * 内部的分类正是本仓最密的一处判据面 —— 基础层(dom / state)、功能根(convert /
+ * settings / ui / wizard)、样式层各自由不同规则覆盖,而规则是按**具体目录名**枚举的
+ * (见 scopeMatches 里 renderer-foundation 那档)。多出一个未登记的一级目录时,它在
+ * 任何规则的 scope 视野之外:既不被基础层那条判到,也不被功能根枚举命中,
+ * 于是它对内对外的全部边静默放行 —— 与 SRC_TOP_LAYERS 注释里批过的洞同一形态,
+ * 只是往里了一层。
+ *
+ * **单向**:只判「多出未登记目录 ⇒ 判红」,**不判缺失**。少一个目录时该目录的边根本
+ * 不存在,没有可漏的东西;而判缺失会把「源码树长什么样」也管进来,那是越界去管布局
+ * 而不是管边界。同理它也**不走 pending**:它是建时即绿的布局判据(现状零未登记),
+ * 挂 pending 只会制造「已知违反」的假象 —— 处置同 core-image-no-markdown。
+ *
+ * 取当前值(只数目录,新增即需登记):
+ *   node -e "const{readdirSync}=require('node:fs');console.log(readdirSync('src/renderer',{withFileTypes:true}).filter(e=>e.isDirectory()).map(e=>e.name).sort().join('/'))"
+ */
+export const RENDERER_TOP_DIRS = Object.freeze([
+  'convert', 'dom', 'settings', 'state', 'style', 'ui', 'wizard',
+]);
+
+/**
+ * renderer 下的四个**功能根**:convert / settings / ui / wizard。
+ *
+ * ⚠ 它是 `RENDERER_TOP_DIRS` 的**子集**(那七项里的四个),两张表的关系必须写在脸上:
+ * 将来任何「scope 枚举」与「peer 根列表」都**只能从本表派生**,不得在别处再写一遍这四个
+ * 名字 —— 两处各写一遍时,新增一个功能根那天只改一处就会让另一处的判据恒绿,而那个洞
+ * 正是这两张表要堵的那个(未登记的名字静默放行)。自检里有一条断言专门钉这条子集关系。
+ *
+ * 为什么单列一张表而不让 `renderer-foundation` 之类的 scope 直接读 RENDERER_TOP_DIRS
+ * 再取差集:差集要在判定期每次重算,读出来的差是「此刻不是基础层的目录」——新增一个
+ * 非基础层的一级目录会自动落进功能根侧,而那正是「没人决定过它算什么」的情形。
+ * 显式列出四个名字,新增功能根是一次**需要人做的决定**,而不是一次集合运算的副作用。
+ */
+export const RENDERER_FEATURE_ROOTS = Object.freeze(['convert', 'settings', 'ui', 'wizard']);
+
+/**
+ * 找出 renderer 下未登记的一级目录名(判据的纯函数本体,便于自检与测试直接消费)。
+ * @param {readonly string[]} actualDirs renderer 顶层的目录名(文件不在其列)
+ * @returns {string[]} 未登记的目录名(已排序);空数组 = 全部已登记
+ */
+export function findUnregisteredRendererDirs(actualDirs) {
+  return actualDirs.filter((name) => !RENDERER_TOP_DIRS.includes(name)).sort();
+}
+
+/**
+ * renderer 内层布局判据:读 `src/renderer/` 顶层,未登记的一级目录一律判红。
+ *
+ * 与 `analyzeSrcTopLayers` 同一形状(只数目录、目录不存在则跳过)。跳过是**必需**而非
+ * 可选:沙盒调用只铺局部树(`test/gates/import-boundary.test.js` 里有只铺 `gates/.keep`
+ * 的沙盒),在那里判「renderer 下的目录」会因目录压根不存在而恒红,反而掩盖真实诊断。
+ * 本仓 src/renderer/ 常驻,真实仓库侧永远有声 —— main() 另有一条不跳过的独立锚定调用,
+ * 理由见那段注释。
+ * @param {string} rendererDir renderer 目录绝对路径
+ * @returns {string[]} 判红文案(空数组 = 通过)
+ */
+export function analyzeRendererTopDirs(rendererDir) {
+  if (!existsSync(rendererDir)) return [];
+  const dirs = readdirSync(rendererDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+  return findUnregisteredRendererDirs(dirs).map(
+    (name) => `src/renderer/ 顶层目录「${name}/」未登记在 RENDERER_TOP_DIRS(${RENDERER_TOP_DIRS.join('/')})`
+      + ' —— renderer 内部的层向规则按具体目录名枚举 scope,未登记的目录不命中任何规则,'
+      + '它的对内对外依赖将静默放行',
   );
 }
 
@@ -1225,6 +1309,51 @@ export function resolveLayer(file, spec) {
   return joined.split('/')[0];
 }
 
+/**
+ * 相对 specifier 解析到「归属根」:解析后路径的前两段(`renderer/convert/…` → `renderer/convert`)。
+ *
+ * 与 `resolveLayer` **平级、独立实现** —— 不共用它、也不改它。两条理由:
+ *   - 它只回答「落在哪一层」,对 renderer 内部恒答 `renderer`,故 `peer:` 形态需要的
+ *     「落在哪个功能根」它答不了;共用即意味着改它的返回值,而它是六条已 fail-closed 规则
+ *     (core-no-host / convert-no-gui / faces-no-renderer / smoke-no-outside-src 等)的
+ *     基础设施 —— 给它加「renderer 内读第二段」会同时改变那六条的行为面。
+ *   - 归一化在这里是承重的,不是顺手写的:`..` 必须被真正折叠掉,否则「目标根」会算成
+ *     字面的 `../..`,`peer:` 就退化成按字面前缀判 —— 正是 LAYER_RULES 里那几条
+ *     `layer:..` 注释批过的「随目录生长而误报的判据是负资产」。本仓说明符一律以 `.js`
+ *     结尾指向被解析的文件,且目录深度会变(convert/events/ 发 `../../ui/dom-ops.js`),
+ *     前缀形态要覆盖全部深度就得登记到深度无上界,故必须解析。
+ *
+ * 逃出扫描根时(`../..` 开头)返回值含 `..`,它不会等于任何登记的功能根,故 `peer:`
+ * 自然不命中 —— 与 `layer:..` 各管一边,互不代答。
+ * @param {string} file 文件相对扫描根的 POSIX 路径
+ * @param {string} spec 相对 import 说明符
+ * @returns {string} 解析后路径的前两段(不足两段时返回整条归一化路径)
+ */
+export function resolveOwner(file, spec) {
+  const dir = path.posix.dirname(file);
+  const joined = path.posix.normalize(path.posix.join(dir, spec));
+  const segments = joined.split('/');
+  return segments.length > 2 ? `${segments[0]}/${segments[1]}` : joined;
+}
+
+/**
+ * `renderer-features` 这一档 scope 的**逐文件排除**。
+ *
+ * 排除**刻意当前为空**:这一档的机制先落,LAYER_RULES 里还没有任何规则用它,故没有需要
+ * 豁免的文件。第一条 peer 规则落地时若确有正当豁免,在这一行按**去扩展名**逐个加 ——
+ * 同一份登记同时约束 src 的 .ts 源与 dist 的 .js 产物,不必两处各维护一份。
+ *
+ * 为什么它住在 scope 档而不是规则体的 `exceptFiles`:LAYER_RULES 的求值循环不读那个字段
+ * (只有 LAYER_TEXT_RULES 的 findTextLayerViolations 读它),挂上去会被静默忽略 ——
+ * 与 `allowTypeOnly` 只被 `prefix:` 分支读同一类 fail-open。详见 scopeMatches 里那段注释。
+ *
+ * ⚠ 空数组是一处**刻意留白**,不是「忘了填」:本文件多处强调过「除某文件外一律成立」
+ * 一旦泛化、登记缺失就退化成静默放行,而这里没有规则需要它,凭空登记一个名字反而是给
+ * 下一个读者一个假的既有豁免。自检(selfCheckPeerMesh)钉住「当前为空」这个事实,将来
+ * 第一条 peer 规则要豁免时那一处断言会提醒连同理由一起改。
+ */
+export const RENDERER_FEATURE_SCOPE_EXCEPT_FILES = Object.freeze([]);
+
 function scopeMatches(scope, file) {
   if (scope === 'preload') return file === 'main/preload.cts' || file === 'main/preload.cjs';
   // smoke 住在 main/ 下但按「文件」而非「目录」划层:它不是 main 的一个子模块,而是
@@ -1282,6 +1411,23 @@ function scopeMatches(scope, file) {
   if (scope === 'headless-faces') {
     return ['convert/', 'cli/', 'mcp/'].some((prefix) => file.startsWith(prefix));
   }
+  // renderer 的四个功能根:命中面是**根目录数组**(从 RENDERER_FEATURE_ROOTS 派生,不另写
+  // 一遍四个名字 —— 理由见该常量的注释),排除面是**逐文件**豁免(去扩展名比较,故 src 的
+  // .ts 源与 dist 的 .js 产物是同一份登记,同 i18n-dom 的先例)。
+  //
+  // ⚠ **为什么排除必须落在这一档(scope)内,而不是做成规则体的 `exceptFiles` 字段**:
+  // `LAYER_RULES` 的求值循环(analyze 里那段)只读 `forbid` 与 `pending`,**从不读**
+  // `exceptFiles` —— 那个字段只被 `LAYER_TEXT_RULES` 的 findTextLayerViolations 消费。
+  // 挂到规则体上会被**静默忽略**:规则照常判红,而读规则的人以为那处豁免生效了。
+  // 这与 `allowTypeOnly` 只被 `prefix:` 分支读是同一类「字段存在但形态上无效」的 fail-open,
+  // 两者都属本文件多处批过的「形态与语义不同源」病。写在这里则它与命中面同源同生命周期:
+  // 换掉数组即换掉命中面,两者不会各改一处。
+  if (scope === 'renderer-features') {
+    if (RENDERER_FEATURE_SCOPE_EXCEPT_FILES.some((allowed) => stripExtension(allowed) === stripExtension(file))) {
+      return false;
+    }
+    return RENDERER_FEATURE_ROOTS.some((root) => file.startsWith(`renderer/${root}/`));
+  }
   return file === scope || file.startsWith(`${scope}/`);
 }
 
@@ -1316,6 +1462,33 @@ function ruleHits(rule, entry) {
     const prefixes = rule.forbid.slice('prefix:'.length).split(',').map((p) => p.trim()).filter(Boolean);
     return prefixes.some((p) => entry.spec.startsWith(p));
   }
+  if (rule.forbid.startsWith('peer:')) {
+    // 「解析后归属这些根的模块,若与 from 侧所属根不同,则命中」。
+    //
+    // 为什么必须是新形态而不是复用 `prefix:`:`prefix:` 做的是 `entry.spec.startsWith(p)`,
+    // **比字面不解析**。本仓说明符一律以 `.js` 结尾指向被解析的文件,且目录深度会变
+    // (convert/events/ 发 `../../ui/dom-ops.js`)—— 要覆盖全部深度得同时登记 `../`、
+    // `../../`、`../../../`……**深度无上界**。prefix: 随目录生长而误报/漏判这一点
+    // `layer:` 当年的注释已写死:一个随目录生长而误报的判据是负资产。
+    //
+    // 为什么还必须是**二元**语义:prefix: 是「目标集合」语义(列出的每个目标都禁),
+    // 而本形态的判据对象是「目标 ≠ 自身」。少了「≠ 自身根」这一条,`convert/x.ts →
+    // convert/y.js` 这类**同 feature 自环边**会被判红 —— 实测 renderer 内自环边数量
+    // 远超跨 feature 边(取当前值跑 LAYER_RULES 里 renderer-foundation-no-feature-dep
+    // 上方注明的普查命令),即「只禁目标集合」会把多数合法边判红,判据从建起就不可用。
+    //
+    // 自身根的取法:拿 from 文件自己的**末段**当 spec 跑一遍 resolveOwner,解析结果就是
+    // 该文件自身,故深浅目录得出的根一致(见 resolveOwner 的注释)。只到一层的文件
+    // (renderer/about.ts 这类直属文件)拿不到两段,它的「根」就是它自己那条路径 ——
+    // 那不等于任何登记的功能根,故目标落在功能根内即判红,这与语义一致:它本就不在
+    // 任何 feature 里。`..` 开头的逃逸同理(解析不出两段),与 `layer:..` 各管一边。
+    if (entry.kind !== 'relative') return false;
+    const roots = rule.forbid.slice('peer:'.length).split(',').map((r) => r.trim()).filter(Boolean);
+    const target = resolveOwner(entry.file, entry.spec);
+    if (!roots.includes(target)) return false;
+    const self = resolveOwner(entry.file, path.posix.basename(entry.file));
+    return self !== target;
+  }
   if (rule.forbid.startsWith('builtin:')) {
     // node: 内建的精确名单(逗号分隔)。需要它是因为 classifySpecifier 把 node:*
     // 归为 kind 'builtin' 而非 'bare',故 bare: 形态匹配不到 —— 而我们需要的正是
@@ -1326,6 +1499,136 @@ function ruleHits(rule, entry) {
     return names.includes(entry.spec);
   }
   throw new Error(`未知的层向规则形态:${rule.forbid}`);
+}
+
+/**
+ * `peer:` 形态与 `renderer-features` 这一档 scope 的**双向自检**(纯判定层,不碰真实仓库)。
+ *
+ * 为什么必须有:这两样机制此刻**没有任何规则在用**,于是它们最危险的失效形态不是「判红
+ * 错了」而是**恒绿** —— 一份写错却什么都不报的机制比没有机制更坏(下一个人会以为 peer
+ * 纪律已经在跑)。而「恒绿」在没有规则的前提下不会体现在任何真实仓库输出里,故只能靠
+ * 内联夹具在此钉死。方向各一,判绿对照每条都挑了**有牙齿**的那种:
+ *   - 去掉归一化(`..` 不折叠)→ 「深目录发 ../../ 」那条立刻变绿;
+ *   - 去掉「≠ 自身根」二元语义 → 「同 feature 自环」那条立刻变红;
+ *   - 把 scope 的命中面从 RENDERER_FEATURE_ROOTS 派生改成写死字面 → 删常量里的名字时
+ *     这条自检会红(见下面那条子集断言)。
+ *
+ * 夹具刻意用**真实命名形态**(renderer/convert/events/… → ../../ui/dom-ops.js):
+ * 机制按相对路径解析 scope 与根,换一套假名字就测不到「它到底覆不覆盖真实布局」。
+ * @returns {string[]} 自检问题清单(空数组 = 两个方向都符合预期)
+ */
+export function selfCheckPeerMesh() {
+  const problems = [];
+  // 合成规则对象(不入 LAYER_RULES —— 本步不挂任何规则,规则表与结论行一字不动)
+  const meshRule = (forbid) => ({ id: 'peer-mesh-selfcheck', scope: 'renderer-features', forbid });
+  const FORBID = `peer:${RENDERER_FEATURE_ROOTS.map((root) => `renderer/${root}`).join(',')}`;
+  /** @type {{ name: string, file: string, spec: string, expect: boolean }[]} */
+  const cases = [
+    // ---- 判红方向:跨 feature 的边(深度无关才是本形态存在的理由) ----
+    { name: 'convert/events 深目录发 ../../ui/', file: 'renderer/convert/events/convert-actions.ts', spec: '../../ui/dom-ops.js', expect: true },
+    { name: 'settings 顶层目录发 ../wizard/', file: 'renderer/settings/settings-drawer.ts', spec: '../wizard/wizard-steps.js', expect: true },
+    { name: 'ui 深层目录发 ../convert/', file: 'renderer/ui/dom-ops.ts', spec: '../convert/convert-flow.js', expect: true },
+    // ---- 判绿对照:每条都挑了有牙齿的那种 ----
+    {
+      // 同 feature 自环:二元语义里「≠ 自身根」那一条的唯一证据。去掉它这条立刻变红
+      // —— 而 renderer 内自环边占多数(取当前值跑 LAYER_RULES 里 renderer-foundation
+      // 那条规则上方注明的普查命令),故它判红的代价远大于漏判的代价。
+      name: '同 feature 自环(convert/events → convert 顶层)',
+      file: 'renderer/convert/events/convert-actions.ts',
+      spec: '../convert-flow.js',
+      expect: false,
+    },
+    {
+      name: '同 feature 同目录(./ )',
+      file: 'renderer/convert/events/selection.ts',
+      spec: './index.js',
+      expect: false,
+    },
+    {
+      // 目标不在登记的四个功能根里:本形态只管 mesh 内部,功能根 → 基础层 / core 的边
+      // 由 renderer-foundation 等既有规则管,不得由这一档顺带判红。
+      name: '功能根 → 基础层 dom/(不属 mesh)',
+      file: 'renderer/convert/convert-flow.ts',
+      spec: '../dom/refs.js',
+      expect: false,
+    },
+    {
+      name: '功能根 → core/(不属 mesh)',
+      file: 'renderer/convert/convert-flow.ts',
+      spec: '../../core/text/error-message.js',
+      expect: false,
+    },
+    {
+      // 逃出 src/:解析不出两段,根不等于任何登记根。与 layer:.. 各管一边,互不代答。
+      name: '逃出 src/(peer 不命中)',
+      file: 'renderer/convert/convert-flow.ts',
+      spec: '../../../main/ipc/channels.js',
+      expect: false,
+    },
+  ];
+  for (const testCase of cases) {
+    const hits = ruleHits(meshRule(FORBID), {
+      file: testCase.file,
+      spec: testCase.spec,
+      ...classifySpecifier(testCase.spec),
+      typeOnly: false,
+    });
+    if (hits !== testCase.expect) {
+      problems.push(
+        `peer 形态自检失守「${testCase.name}」:期望${testCase.expect ? '命中' : '不命中'},实际${hits ? '命中' : '不命中'}`
+        + '(恒绿或恒红都是失效)',
+      );
+    }
+  }
+  // scope 命中面本身:四个功能根逐个命中,基础层 / 样式层 / 直属文件不命中。
+  // 走 scopeMatches 而不是直接测数组 —— 「scope 真的接进了这一档」才是本组要钉的失效,
+  // 少测一层就会漏掉「数组对了但 scope 分支漏写」这种恒绿。
+  //
+  // ⚠ 夹具清单**刻意展开字面**而不从 RENDERER_FEATURE_ROOTS `.map` 派生:派生的话,
+  // 从常量里删掉一个功能根会连带删掉它自己那条夹具,自检照样全绿(实测踩到:mutation ②
+  // 只报出一条 peer 失守,scope 那一半是恒绿的)。自检锚点必须独立于被检常量,否则常量
+  // 写漏一个名字时夹具跟着写漏 —— 与 selfCheckTreeLayout 里 layerCases 同一纪律。
+  /** @type {{ name: string, file: string, expect: boolean }[]} */
+  const scopeCases = [
+    { name: '功能根 convert/ 命中', file: 'renderer/convert/probe.ts', expect: true },
+    { name: '功能根 settings/ 命中', file: 'renderer/settings/probe.ts', expect: true },
+    { name: '功能根 ui/ 命中', file: 'renderer/ui/probe.ts', expect: true },
+    { name: '功能根 wizard/ 命中', file: 'renderer/wizard/probe.ts', expect: true },
+    { name: '基础层 dom/ 不命中(它是叶子,不是 peer)', file: 'renderer/dom/refs.ts', expect: false },
+    { name: '基础层 state/ 不命中', file: 'renderer/state/pure.ts', expect: false },
+    { name: '样式层 style/ 不命中', file: 'renderer/style/base.css', expect: false },
+    { name: 'renderer 直属文件不命中(它在任何功能根之外)', file: 'renderer/renderer.ts', expect: false },
+  ];
+  for (const testCase of scopeCases) {
+    const matched = scopeMatches('renderer-features', testCase.file);
+    if (matched !== testCase.expect) {
+      problems.push(
+        `renderer-features scope 自检失守「${testCase.name}」:期望${testCase.expect ? '命中' : '不命中'},实际${matched ? '命中' : '不命中'}`
+        + '(恒绿或恒红都是失效)',
+      );
+    }
+  }
+  // 两张 renderer 表的关系:功能根必须是已登记一级目录的子集。
+  // 少这条断言的话,把某个根从 RENDERER_FEATURE_ROOTS 删掉只会让 scope 静默缩小命中面
+  // (恒绿的一半),而两张表「后者是前者的子集」这句话就只剩注释在守。
+  for (const root of RENDERER_FEATURE_ROOTS) {
+    if (!RENDERER_TOP_DIRS.includes(root)) {
+      problems.push(
+        `renderer 布局自检失守:RENDERER_FEATURE_ROOTS 里的「${root}/」不在 RENDERER_TOP_DIRS 内`
+        + `(${RENDERER_TOP_DIRS.join('/')})—— 两张表的关系是子集,任何 scope 枚举与 peer 根列表`
+        + '都只能从前者派生,不得两处各写一遍名字',
+      );
+    }
+  }
+  // 当前排除面为空:这是一个需要被看见的事实(见 RENDERER_FEATURE_SCOPE_EXCEPT_FILES 的注释),
+  // 不是默默留着。将来第一条 peer 规则要豁免时,删掉这条断言并写明豁免理由。
+  if (RENDERER_FEATURE_SCOPE_EXCEPT_FILES.length !== 0) {
+    problems.push(
+      `renderer-features scope 的排除面不再为空(${RENDERER_FEATURE_SCOPE_EXCEPT_FILES.join('、')}):`
+      + '本自检刻意按「当前为空」钉住这个事实,加豁免时删掉本条并写明理由',
+    );
+  }
+  return problems;
 }
 
 /**
@@ -1859,6 +2162,40 @@ export function selfCheckTreeLayout(root) {
   for (const line of analyzeSrcTopLayers(path.join(root, 'src'))) {
     problems.push(`层向规则自检失守:${line}`);
   }
+  // renderer 内层的同一形态:未登记的一级目录判红。放在与 analyzeSrcTopLayers 同一处
+  // (前缀同样用「层向规则自检失守:」,理由见本函数的头注:层向 allow-list 与树边界
+  // 是两件事,前缀混用会把诊断引人到错误的树上去找原因)。
+  // ⚠ 这一处对沙盒**跳过**(analyzeRendererTopDirs 在目录不存在时返回空):沙盒只铺局部
+  // 树(有只铺 gates/.keep 的),在那里判 renderer 的目录会因目录压根不存在而恒红。
+  // 真实仓库侧永远有声的保证在 main() 里那条不跳过的独立调用(见那段注释)。
+  for (const line of analyzeRendererTopDirs(path.join(root, 'src', 'renderer'))) {
+    problems.push(`层向规则自检失守:${line}`);
+  }
+  // 合成清单的双向锚点:与上面 layerCases 同一形态,清单同样**展开字面**而不从
+  // RENDERER_TOP_DIRS 派生 —— 自检锚点必须独立于被检常量,否则常量漏登记一个名字时
+  // 夹具跟着漏,恒绿。恒红方向由「全部已登记」那条兜住。
+  const rendererDirCases = [
+    {
+      name: '全部已登记(应判绿)',
+      dirs: ['convert', 'dom', 'settings', 'state', 'style', 'ui', 'wizard'],
+      expect: 0,
+    },
+    {
+      name: '多出一个未登记一级目录(应判红)',
+      dirs: ['convert', 'dom', 'settings', 'state', 'style', 'ui', 'wizard', 'omega'],
+      expect: 1,
+    },
+    { name: '两个未登记一级目录(应判红)', dirs: ['convert', 'omega', 'psi'], expect: 2 },
+  ];
+  for (const testCase of rendererDirCases) {
+    const hits = findUnregisteredRendererDirs(testCase.dirs);
+    if (hits.length !== testCase.expect) {
+      problems.push(
+        `renderer 布局规则自检失守「${testCase.name}」:期望命中 ${testCase.expect} 处,实际 ${hits.length} 处`
+        + '(规则恒绿或恒红都是失效)',
+      );
+    }
+  }
 
   for (const rule of TREE_RULES) {
     const scopeDir = TREE_DIRS[rule.scope];
@@ -1956,6 +2293,36 @@ export async function main(argv = []) {
     console.error(`[boundary:fail] 层向文本判据自检失败:${error.message}`);
     return 1;
   }
+  // peer: 形态与 renderer-features scope 的双向自检:同上一段,纯判定层、夹具全是内联串。
+  // 这两样机制此刻没有规则在用,故它们的失效形态(恒绿)不会体现在任何真实仓库输出里 ——
+  // 不在此自检,它们就完全没有牙齿(理由见 selfCheckPeerMesh 的头注)。
+  try {
+    const peerSelfCheckProblems = selfCheckPeerMesh();
+    if (peerSelfCheckProblems.length > 0) {
+      for (const problem of peerSelfCheckProblems) console.error(`[boundary:fail] ${problem}`);
+      return 1;
+    }
+  } catch (error) {
+    console.error(`[boundary:fail] peer 形态自检失败:${error.message}`);
+    return 1;
+  }
+  // renderer 内层布局判据:固定锚在真实仓库的 src/renderer,**不跳过**。
+  //
+  // 为什么上面 selfCheckTreeLayout 里那一处之外还要这条独立调用:那一处对沙盒跳过
+  // (沙盒只铺局部树,那里没有 renderer/ 目录),所以它证明的是「合成清单与那处接线有效」;
+  // 而本仓 src/renderer/ 是常驻目录,真实仓库侧必须**永远有声** —— 若只靠那一处,
+  // 某次接线被挪走或改成跳过时,真实仓库这一侧会静默失守。理由与 ROOT_COMPUTE_SCAN_DIRS
+  // 那段同源:树布局纪律判的是**本仓**,不是 --src 指过来的那棵子树。
+  //
+  // 不并进 treeBoundaryProblems 那一组:它是 renderer 内层的层向 allow-list,与仓根四棵树
+  // 无关,混进去会让诊断前缀把人引到错误的树上去找原因。
+  let rendererTopDirProblems;
+  try {
+    rendererTopDirProblems = analyzeRendererTopDirs(path.join(projectRoot, 'src', 'renderer'));
+  } catch (error) {
+    console.error(`[boundary:fail] renderer 内层目录扫描失败:${error.message}`);
+    return 1;
+  }
   for (const line of result.info) console.log(`[info] boundary:${line}`);
   // pending 命中汇总:必须独立成行。逐处 info 行只在 info 非空时才有,而「零命中」与
   // 「有命中但被静默吞掉」在那一处无从区分 —— 退出码两者都是 0,故这里显式报出
@@ -1974,7 +2341,9 @@ export async function main(argv = []) {
         + 'T2 搬完文件后逐条删掉对应规则的 `pending: true` 即转 fail-closed,删标记就是 T2 的进度记录',
     );
   }
-  const allProblems = [...result.problems, ...rootComputeProblems, ...treeBoundaryProblems];
+  const allProblems = [
+    ...result.problems, ...rootComputeProblems, ...treeBoundaryProblems, ...rendererTopDirProblems,
+  ];
   if (allProblems.length > 0) {
     for (const problem of allProblems) console.error(`[boundary:fail] ${problem}`);
     console.error(`[boundary:fail] 依赖声明与 import 层向自检失败,共 ${allProblems.length} 项`);
