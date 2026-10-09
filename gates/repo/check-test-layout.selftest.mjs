@@ -1466,7 +1466,7 @@ const CASES = [
   // 顶层 `export function assert` 且自带 `throw`(它们是断言实现本体)。若实现扫全 `test/**`,
   // 它会去红它自己要收敛的那个源。少了下面那条反向锚点,这个收窄无人守。
   {
-    name: "#08 族一:段内顶层 assert 函数体自带 throw → 报告(info 通道,不计退出码)",
+    name: "#08 族一:段内顶层 assert 函数体自带 throw → 判红(fail-closed;该族已于 2026-10-07 转正,命中进 problems 通道、不计 info)",
     judgeOnly: true,
     extra: {
       [`${TEST_REL}/core/local-assert.test.js`]: [
@@ -1486,8 +1486,11 @@ const CASES = [
         "",
       ].join("\n"),
     },
-    expectInfo: new RegExp(`${TEST_REL}/core/local-assert\\.test\\.js:\\d+ → test-segment-local-assert-impl:.*自带 throw`),
-    expect: null,
+    // 转正前这条是 expectInfo + expect: null(只钉「info 里有、problems 里没有」);
+    // 转正后命中进 problems 通道 ⇒ 改钉 expect(problems 里有),expectInfo 置 null(单向钉)。
+    // 判据的判定逻辑一行未改,变的只是它落在哪个通道。
+    expect: new RegExp(`${TEST_REL}/core/local-assert\\.test\\.js:\\d+ → test-segment-local-assert-impl:.*自带 throw`),
+    expectInfo: null,
   },
   {
     // **反向锚点(仓内实例数为 0,本夹具现造)**:ADR-071 明确合规形态是 `@returns {asserts cond}`
