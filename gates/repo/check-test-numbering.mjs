@@ -101,6 +101,7 @@ const SNIPPET_MAX = 72;
  * @property {string} literal 所在字面量原文(含引号)
  * @property {string} lineSource 命中所在源码行
  * @property {string} lineHead 命中所在源码行里、所在字面量起始引号之前的部分
+ * @property {string} message 人可读诊断(判红文案本体,CLI 与驱动器的归一层共用这一份)
  */
 
 /**
@@ -298,12 +299,16 @@ function snippet(literal) {
 }
 
 /**
- * 扫描单个文件,返回其中的编号命中。
+ * 扫描单个文件的**文本**,返回其中的编号命中(纯函数:不碰盘,文本由调用方注入)。
+ *
+ * 这是「判定本体」与「自检夹具」共用的那一条路径:自测注入的是临时目录里的源码正文,
+ * 若它改跑 IO 壳 `scanFile`,验的就是真实仓库而不是夹具 —— 那正是恒绿防护最怕的形态
+ * (夹具漂移了而真实仓库没漂移,于是全绿)。
  * @param {string} rel 仓库相对 POSIX 路径
+ * @param {string} text 源码文本
  * @returns {{ hits: NumberHit[], literalCount: number }}
  */
-export function scanFile(rel) {
-  const text = readFileSync(path.join(projectRoot, ...rel.split('/')), 'utf8');
+export function scanSource(rel, text) {
   const lines = text.split('\n');
   /** 每行起始偏移(列号换算用) */
   const lineStarts = [0];
@@ -320,15 +325,17 @@ export function scanFile(rel) {
       const lineStart = lineStarts[line - 1] ?? 0;
       const column = literal.start + 1 + offset - lineStart + 1;
       const lineSource = lines[line - 1] ?? '';
+      const literalText = `${literal.quote}${literal.content}${literal.quote}`;
       hits.push({
         file: rel,
         line,
         column,
         token: m[0],
-        literal: `${literal.quote}${literal.content}${literal.quote}`,
+        literal: literalText,
         lineSource,
         // 字面量起始引号之前的部分:用来判「这个编号是某个键的值」(如 `title: "F7"`)
         lineHead: lineSource.slice(0, literal.start - lineStart),
+        message: `${rel}:${line} → ${m[0]} → 「${snippet(literalText)}」`,
       });
     }
   }
@@ -336,19 +343,42 @@ export function scanFile(rel) {
 }
 
 /**
+ * 扫描仓内单个文件(IO 壳:读一个文件,再把文本交给判定本体)。
+ * 全树遍历 / 扫描面三判据都在 analyze,此处只负责那一次读盘。
+ * @param {string} rel 仓库相对 POSIX 路径
+ * @returns {ReturnType<typeof scanSource>}
+ */
+export function scanFile(rel) {
+  return scanSource(rel, readFileSync(path.join(projectRoot, ...rel.split('/')), 'utf8'));
+}
+
+/**
  * 全树判定。返回 { problems, allowHits, allowCold, files, literals };allowHits/allowCold
  * 是白名单统计(命中条数 / 按设计不在扫描面内的条数),只作输出,不参与 exit code。
+ *
+ * 入参**带默认值** ⇒ 零参调用与拆解前逐字等价(门禁注册表的指针仍取本函数、不带参);
+ * 自测夹具注入合成根与读取函数,验的就是真判定而不是「进程跑一遍」的间接证据。
+ *
+ * ⚠ 扫描面三判据(等式 / 镜像 / 下限)**刻意不在这里判定**,仍留在 main:它们的判红形态是
+ * 「返回一个 problem 就够」,而 main 现在是「判红即返回、不打汇总行」。一旦并进
+ * `problems`,同一处判红会多打出「共 N 项」汇总与白名单 info 行 —— 那是**输出形态的改变**,
+ * 不是等价重构。三层各司:判定本体报内容问题,scanSurface 三判据报扫描面问题,main 定呈现。
+ * @param {{ root?: string, readText?: (rel: string) => string }} [io] 注入的 IO 面
+ *   root:求值根(默认仓内项目根);readText:按仓库相对 POSIX 路径读源码(默认读 root 下同路径)
  * @returns {{ problems: NumberHit[], allowHits: number, allowCold: number, files: number, literals: number, staleAllow: string[] }}
  */
-export function analyze() {
-  const files = listScanFiles(projectRoot);
+export function analyze({
+  root = projectRoot,
+  readText = (rel) => readFileSync(path.join(root, ...rel.split('/')), 'utf8'),
+} = {}) {
+  const files = listScanFiles(root);
   /** @type {NumberHit[]} */
   const problems = [];
   const allowUsed = new Set();
   let literals = 0;
 
   for (const rel of files) {
-    const scanned = scanFile(rel);
+    const scanned = scanSource(rel, readText(rel));
     literals += scanned.literalCount;
     const seen = new Set();
     for (const hit of scanned.hits) {
@@ -433,7 +463,7 @@ export async function main(argv = []) {
 
   if (result.problems.length > 0) {
     for (const hit of result.problems) {
-      console.error(`[numbering:fail] ${hit.file}:${hit.line} → ${hit.token} → 「${snippet(hit.literal)}」`);
+      console.error(`[numbering:fail] ${hit.message}`);
     }
     console.error(
       `[numbering:fail] 测试树规划编号扫描失败,共 ${result.problems.length} 项`

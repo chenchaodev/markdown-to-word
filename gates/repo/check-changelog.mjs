@@ -504,7 +504,7 @@ export function auditScanSurface(region) {
 
 /**
  * 扫描条目区,返回违规命中(白名单条目在此处扣除)。
- * 纯函数:analyze 与自检夹具共用这一条路径,否则夹具验的就不是真规则。
+ * 纯函数:判定本体(judgeChangelog)与自检夹具共用这一条路径,否则夹具验的就不是真规则。
  * @param {string[]} lines 全文按行切分
  * @param {number} startLine 条目区首行的行号(1 起)
  * @returns {{ hits: ChangelogHit[], allowUsed: Set<number> }}
@@ -584,12 +584,16 @@ export function staleAllowlistIds(allowUsed) {
 }
 
 /**
- * 全量判定(判定本体;注册表把本函数登记为这道门禁的指针)。
+ * 全量判定(纯函数:判定输入是 CHANGELOG 文本,不含任何 IO)。
+ *
+ * 这是「判定本体」与「自检夹具」共用的那一条路径:自检夹具注入的是临时目录里的一份
+ * CHANGELOG 正文,若它改跑 IO 壳 `analyze()`,验的就是真实仓库而不是夹具 —— 那正是
+ * 恒绿防护最怕的形态(夹具漂移了而真实仓库没漂移,于是全绿)。
+ * @param {string} text CHANGELOG 全文
  * @returns {{ problems: ChangelogHit[], allowHits: number, allowCold: number, staleAllow: string[],
  *   region: { startLine: number, versionHeadings: number, nonEmpty: number } | null }}
  */
-export function analyze() {
-  const text = readFileSync(path.join(projectRoot, ...CHANGELOG_REL.split('/')), 'utf8');
+export function judgeChangelog(text) {
   const lines = text.split('\n');
   const region = locateEntryRegion(lines);
   if (region === null) {
@@ -605,6 +609,16 @@ export function analyze() {
   };
 }
 
+/**
+ * 全量判定的 IO 壳:读仓内那份 CHANGELOG,再交给判定本体(注册表把本函数登记为这道门禁的
+ * 指针,故导出名保持不变)。**判定本体与 IO 分层**:main 与自检都不该各自复制一遍扫描逻辑。
+ * @returns {ReturnType<typeof judgeChangelog>}
+ */
+export function analyze() {
+  const text = readFileSync(path.join(projectRoot, ...CHANGELOG_REL.split('/')), 'utf8');
+  return judgeChangelog(text);
+}
+
 export async function main(argv = []) {
   if (argv.includes('--help')) {
     console.log(USAGE);
@@ -616,9 +630,9 @@ export async function main(argv = []) {
     return 1;
   }
 
-  let lines;
+  let text;
   try {
-    lines = readFileSync(path.join(projectRoot, ...CHANGELOG_REL.split('/')), 'utf8').split('\n');
+    text = readFileSync(path.join(projectRoot, ...CHANGELOG_REL.split('/')), 'utf8');
   } catch (error) {
     // 文件读不到 ⇒ 判红。**这条不能靠「扫不到东西所以恒绿」蒙过去**:扫描面为空是最坏的失效形态
     // (路径写错时若静默按空集通过,门禁从那一刻起什么也没查,而输出是 exit 0)。
@@ -630,7 +644,7 @@ export async function main(argv = []) {
     return 1;
   }
 
-  const region = locateEntryRegion(lines);
+  const { problems, allowHits, allowCold, staleAllow, region } = judgeChangelog(text);
   const surfaceProblems = auditScanSurface(region);
   if (surfaceProblems.length > 0) {
     for (const item of surfaceProblems) console.error(`[changelog:fail] ${item.message}`);
@@ -638,19 +652,18 @@ export async function main(argv = []) {
   }
   const { startLine, versionHeadings, nonEmpty } = /** @type {NonNullable<typeof region>} */ (region);
 
-  const scanned = scanLines(lines, startLine);
-  for (const id of staleAllowlistIds(scanned.allowUsed)) {
+  for (const id of staleAllow) {
     console.log(`[info] changelog:白名单条目本次零命中(可能已失效,请复核是否可删):${id}`);
   }
 
-  if (scanned.hits.length > 0) {
-    for (const hit of scanned.hits) console.error(`[changelog:fail] ${hit.message}`);
+  if (problems.length > 0) {
+    for (const hit of problems) console.error(`[changelog:fail] ${hit.message}`);
     console.error(
-      `[changelog:fail] CHANGELOG 版本条目区口径不合规,共 ${scanned.hits.length} 项`
+      `[changelog:fail] CHANGELOG 版本条目区口径不合规,共 ${problems.length} 项`
       + `(条目区自第 ${startLine} 行起 / 非空 ${nonEmpty} 行;${RULES.length} 类判据`
       + `(${RULES.map((rule) => rule.label).join(' / ')});白名单 ${ALLOWLIST.length} 条,`
-      + `本次命中 ${scanned.allowUsed.size} 条,按设计零命中 `
-      + `${ALLOWLIST.filter((entry) => entry.cold === true).length} 条)`,
+      + `本次命中 ${allowHits} 条,按设计零命中 `
+      + `${allowCold} 条)`,
     );
     console.error(
       '[changelog:fail] CHANGELOG 只写用户在界面/文档/行为上可观察到的变化,共六类判据:'
@@ -669,8 +682,8 @@ export async function main(argv = []) {
   console.log(
     `[ok] CHANGELOG 口径扫描通过:条目区自第 ${startLine} 行起(非空 ${nonEmpty} 行 / 版本标题 `
     + `${versionHeadings} 个),${RULES.length} 类判据零命中;白名单 ${ALLOWLIST.length} 条(本次命中 `
-    + `${scanned.allowUsed.size} 条,按设计零命中 `
-    + `${ALLOWLIST.filter((entry) => entry.cold === true).length} 条)`,
+    + `${allowHits} 条,按设计零命中 `
+    + `${allowCold} 条)`,
   );
   return 0;
 }

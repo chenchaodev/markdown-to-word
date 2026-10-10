@@ -178,8 +178,7 @@ export const GATE_INDEX = Object.freeze(
       npmScripts: ["check:archive-index", "gen:archive-index"],
       access: ACCESS_CHAIN,
       modulePath: "gates/repo/gen-archive-index.mjs",
-      // ⚠ 判定体尚未抽成注入式纯函数,指针暂取 CLI 的 main(判定与呈现仍在同一函数内)。
-      judgment: { module: "gates/repo/gen-archive-index.mjs", export: "main", shaped: "退出码(0 = 通过)" },
+      judgment: { module: "gates/repo/gen-archive-index.mjs", export: "judgeArchiveIndex", shaped: "{ problems: string[], offForm, fileNames, want, dash }" },
     },
     "gate-ids-table": {
       id: "gate-ids-table",

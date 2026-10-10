@@ -74,27 +74,18 @@ function listHostFiles() {
   return found.sort();
 }
 
-/** 宿主文件内容缓存(文件名 → 文本),按需读取 */
-function makeHostIndex() {
-  /** @type {{ rel: string, text: string }[]} */
-  const hosts = listHostFiles().map((rel) => ({ rel, text: readFileSync(path.join(docsDir, rel), 'utf8') }));
-  return (fileName) => hosts.find((h) => h.text.includes(fileName))?.rel ?? null;
-}
-
 /**
- * 归档原文清单:docs/evidence/ 下 *.md,排除 INDEX.md 与 README.md,按文件名升序。
- * @returns {string[]} 文件名(不含目录)
+ * 宿主文件内容(`readHostFiles()` 的产物):`docs/` 下参与「分流去向」检索的全部 *.md 正文。
+ * IO 留在本函数,判定本体只收它返回的这份数据 —— 见 `judgeArchiveIndex` 的入参说明。
+ * @returns {{ rel: string, text: string }[]} 宿主文件内容清单(docs/ 相对 posix 路径 → 正文)
  */
-function listArchiveFiles() {
-  return readdirSync(evidenceDir, { withFileTypes: true })
-    .filter((e) => e.isFile() && e.name.endsWith('.md') && !ARCHIVE_EXCLUDED.has(e.name))
-    .map((e) => e.name)
-    .sort();
+function readHostFiles() {
+  return listHostFiles().map((rel) => ({ rel, text: readFileSync(path.join(docsDir, rel), 'utf8') }));
 }
 
 /**
  * docs/evidence/ 下全部 *.md 文件名(**含**本索引与说明页)。形态断言要用它而不是
- * `listArchiveFiles()` 的结果:枚举已把 ARCHIVE_EXCLUDED 滤掉,若断言复用枚举结果,
+ * `selectArchiveNames` 的结果:后者已把 ARCHIVE_EXCLUDED 滤掉,若断言复用枚举结果,
  * 「塞一份形态不对的特例文件」就会静默混过门禁,而本目录本来就存过一批历史偏差命名。
  * @returns {string[]} 文件名(不含目录)
  */
@@ -105,13 +96,25 @@ function listArchiveDirMd() {
 }
 
 /**
+ * 归档原文清单(names → 排除两个不登记进表的文件,按文件名升序)。
+ * @param {string[]} names docs/evidence/ 下全部 *.md 文件名(不含目录)
+ * @returns {string[]} 文件名(不含目录)
+ */
+function selectArchiveNames(names) {
+  return names
+    .filter((name) => !ARCHIVE_EXCLUDED.has(name))
+    .sort();
+}
+
+/**
  * 归档原文文件名形态断言:非豁免文件必须匹配 `TIMESTAMP_PREFIX_RE`。
  * 放在目录枚举门禁里(而不是只写进 README 约定)是因为本目录的历史偏差命名正是
  * 「靠散文约定慢慢滑过来」的产物 —— 偏差只有当场变红才拦得住。
+ * @param {string[]} names docs/evidence/ 下全部 *.md 文件名(不含目录)
  * @returns {string[]} 不合规文件名(空数组 = 通过)
  */
-function findOffFormNames() {
-  return listArchiveDirMd()
+export function selectOffFormNames(names) {
+  return names
     .filter((name) => !ARCHIVE_EXCLUDED.has(name) && !NAME_FORM_EXEMPT_RE.test(name) && !TIMESTAMP_PREFIX_RE.test(name))
     .sort();
 }
@@ -129,11 +132,17 @@ function topicOf(fileName) {
 /**
  * 生成索引正文。链接列一律相对链接:文件列指向同目录的归档原文,「分流去向」列指向
  * `docs/` 内的宿主文件(须经 `../` 上溯一级)。
- * @param {string[]} fileNames 归档文件名(已排序)
- * @param {(fileName: string) => string | null} findHost 宿主文件检索
+ *
+ * 纯数据入参:`fileNames` 是归档文件名(已过滤),`hosts` 是宿主文件内容清单
+ * (`readHostFiles()` 的产物,由调用方注入)。**不在本函数里读盘** —— 判定本体与自检夹具
+ * 共用这一条路径,否则夹具验的就是真实仓而不是它自己注入的那棵树。
+ * @param {string[]} fileNames 归档文件名(已过滤、已排序)
+ * @param {{ rel: string, text: string }[]} hosts 宿主文件内容清单
  * @returns {string} 索引全文(以 \n 结尾)
  */
-function buildIndex(fileNames, findHost) {
+export function buildArchiveIndex(fileNames, hosts) {
+  /** 「分流去向」判据:第一个按名提到本归档文件名的宿主,null = 未被任何常驻条目引用 */
+  const findHost = (fileName) => hosts.find((h) => h.text.includes(fileName))?.rel ?? null;
   const header = [
     '# evidence/ 索引（生成式）',
     '',
@@ -184,42 +193,105 @@ function diffSummary(diskText, wantText) {
 // 落盘路径不归一(写出的形态就是 LF),只有比对需要。
 const normalizeEol = (/** @type {string} */ s) => s.replace(/\r\n/g, '\n');
 
+/**
+ * 形态不合规的判红文案(单一来源:判定本体与 main 的提前判红共用这一份,避免两处漂移)。
+ * @param {string[]} offForm 不合规文件名
+ * @returns {string[]} 逐行文案(main 打印时加 `[gen-archive-index:fail] ` 前缀)
+ */
+function offFormProblems(offForm) {
+  return [
+    `docs/evidence/ 下 ${offForm.length} 份文件名不符合 \`YYYYMMDD-HHMMSS-<主题>.md\` 形态`
+    + `(豁免仅 ${[...ARCHIVE_EXCLUDED].join(' / ')} 与 user-guide-vX.Y.md):`,
+    ...offForm.map((name) => `  ${name}`),
+    '改成 6 位时间戳后重跑(原名只到分钟,秒位无信息就补 `00`);改名走 `git mv` 以保历史可追,'
+    + '改完跑 `npm run gen:archive-index`',
+  ];
+}
+
+/**
+ * 归档索引的**判定本体**(纯函数:IO 全部门由 main 读好后进参)。
+ *
+ * 入参形态就是 main 读盘得到的三样东西:
+ *   - `archiveNames`:`docs/evidence/` 下全部 *.md 文件名(含 INDEX.md 与 README.md ——
+ *     形态断言要看全量,过滤只在内部做);
+ *   - `hosts`:宿主文件内容清单(`readHostFiles()` 的产物);
+ *   - `indexText`:磁盘现有索引原文;`null` = 索引文件不存在。
+ *
+ * 内部顺序与现状一致:先形态断言(不合规直接返、不产出 want/比对),再 diffSummary。
+ * @param {{ archiveNames: string[], hosts: { rel: string, text: string }[], indexText: string | null }} input
+ * @returns {{ problems: string[], offForm: string[], fileNames: string[], want: string, dash: number }}
+ *   problems 非空 = 判红(文案即 CLI 逐行打印的内容,已含缩进);offForm 是形态不合规文件名清单;
+ *   fileNames/want/dash 供 CLI 打印与生成模式写盘
+ */
+export function judgeArchiveIndex({ archiveNames, hosts, indexText }) {
+  const offForm = selectOffFormNames(archiveNames);
+  if (offForm.length > 0) {
+    return { problems: offFormProblems(offForm), offForm, fileNames: [], want: '', dash: 0 };
+  }
+
+  const fileNames = selectArchiveNames(archiveNames);
+  const want = buildArchiveIndex(fileNames, hosts);
+  const dash = fileNames.filter((n) => hosts.find((h) => h.text.includes(n)) === undefined).length;
+
+  if (indexText === null) {
+    return {
+      problems: [`${INDEX_REL} 不存在(应生成),跑 \`npm run gen:archive-index\``],
+      offForm,
+      fileNames,
+      want,
+      dash,
+    };
+  }
+
+  const diskLf = normalizeEol(indexText);
+  const wantLf = normalizeEol(want);
+  if (diskLf !== wantLf) {
+    const { total, shown } = diffSummary(diskLf, wantLf);
+    return {
+      problems: [
+        `${INDEX_REL} 与目录实际内容不一致(共 ${total} 行不同),前几处:`,
+        ...shown.map((entry) => `  ${entry}`),
+        '索引须由脚本生成,跑 `npm run gen:archive-index` 重生成(勿手改)',
+      ],
+      offForm,
+      fileNames,
+      want,
+      dash,
+    };
+  }
+  return { problems: [], offForm, fileNames, want, dash };
+}
+
 export function main(argv) {
   if (argv.some((a) => !['--check'].includes(a))) {
     console.error(`[gen-archive-index] 无法识别的参数:${argv.filter((a) => a !== '--check').join(' ')}(${USAGE})`);
     return 1;
   }
   const check = argv.includes('--check');
-  // 形态断言排在生成/比对之前:不合规时宁可不写索引 —— 写出去的表会把偏差固化成「已登记」
-  const offForm = findOffFormNames();
+
+  // ---- IO 层:全部读盘集中在此,判定本体只收纯数据 ----
+  // 形态断言排在生成/比对之前:不合规时宁可不写索引 —— 写出去的表会把偏差固化成「已登记」。
+  // 它先于宿主文件读取,故文案与判定本体共用 offFormProblems 一份(不在此处另写一遍)。
+  const archiveNames = listArchiveDirMd();
+  const offForm = selectOffFormNames(archiveNames);
   if (offForm.length > 0) {
-    console.error(
-      `[gen-archive-index:fail] docs/evidence/ 下 ${offForm.length} 份文件名不符合 \`YYYYMMDD-HHMMSS-<主题>.md\` 形态(豁免仅 ${[...ARCHIVE_EXCLUDED].join(' / ')} 与 user-guide-vX.Y.md):`,
-    );
-    for (const name of offForm) console.error(`  ${name}`);
-    console.error('[gen-archive-index:fail] 改成 6 位时间戳后重跑(原名只到分钟,秒位无信息就补 `00`);改名走 `git mv` 以保历史可追,改完跑 `npm run gen:archive-index`');
+    for (const problem of offFormProblems(offForm)) console.error(`[gen-archive-index:fail] ${problem}`);
     return 1;
   }
-  const fileNames = listArchiveFiles();
-  const findHost = makeHostIndex();
-  const want = buildIndex(fileNames, findHost);
+
+  const hosts = readHostFiles();
   const indexFile = path.join(projectRoot, 'docs', INDEX_REL);
-  const dash = fileNames.filter((n) => findHost(n) === null).length;
+  const indexText = existsSync(indexFile) ? readFileSync(indexFile, 'utf8') : null;
+
+  const { problems, fileNames, want, dash } = judgeArchiveIndex({ archiveNames, hosts, indexText });
+  // `--check` 才打判定问题;**生成模式忽略它们** —— indexText 为 null / 与盘上不一致正是
+  // 生成要修的东西(首次生成时索引还不存在),不是拒绝写盘的理由。形态断言已在上面拦过。
+  if (check && problems.length > 0) {
+    for (const problem of problems) console.error(`[gen-archive-index:fail] ${problem}`);
+    return 1;
+  }
 
   if (check) {
-    if (!existsSync(indexFile)) {
-      console.error(`[gen-archive-index:fail] ${INDEX_REL} 不存在(应生成),跑 \`npm run gen:archive-index\``);
-      return 1;
-    }
-    const diskLf = normalizeEol(readFileSync(indexFile, 'utf8'));
-    const wantLf = normalizeEol(want);
-    if (diskLf !== wantLf) {
-      const { total, shown } = diffSummary(diskLf, wantLf);
-      console.error(`[gen-archive-index:fail] ${INDEX_REL} 与目录实际内容不一致(共 ${total} 行不同),前几处:`);
-      for (const entry of shown) console.error(`  ${entry}`);
-      console.error('[gen-archive-index:fail] 索引须由脚本生成,跑 `npm run gen:archive-index` 重生成(勿手改)');
-      return 1;
-    }
     console.log(
       `[ok] 归档索引与目录实际内容一致:${fileNames.length} 份归档原文(其中 ${dash} 份未被常驻条目按名引用,记 —),跑 \`npm run gen-archive-index\` 可重生成`,
     );
