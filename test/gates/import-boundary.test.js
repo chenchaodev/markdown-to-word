@@ -46,6 +46,7 @@ import {
   PENDING_PREFIX,
   RENDERER_FEATURE_ROOTS,
   RENDERER_FEATURE_SCOPE_EXCEPT_FILES,
+  RENDERER_PEER_ROOTS,
   RENDERER_TOP_DIRS,
   RESOURCE_ONLY_DEPENDENCIES,
   SRC_TOP_LAYERS,
@@ -1698,10 +1699,11 @@ export async function run() {
     });
 
     // ============ (11) 三样新机制(peer: 形态 / renderer-features scope / renderer 内层布局)============
-    // 本组只验**机制**,不验「有规则在用」:这一步刻意不挂任何规则(LAYER_RULES 一条未增),
-    // 所以这三样机制此刻**恒绿是它们的正常态**,而恒绿正是这类机制最贵的失效形态。
-    // 因此本组的全部断言都是「原语级双向 + 门禁自检零问题」,不含任何「某规则判红」形态 ——
-    // 那种断言属于挂规则那一步,写在这里会立刻恒红(规则还不存在)。
+    // 本组的主体验**机制**,不验「renderer-features 档已有规则」:那一档的规则属 ADR-075
+    // 阶段③(挂 pending 的 peer mesh 规则),此刻仍为空 ⇒ 这部分机制**恒绿是它们的正常态**,
+    // 而恒绿正是这类机制最贵的失效形态。故机制断言全部是「原语级双向 + 门禁自检零问题」。
+    // ⚠ 例外是 11f/11g:`peer:` 形态自阶段②起已被 renderer-foundation-no-feature-dep 换用,
+    // 那一条必须由**真实仓库之外的合成树**证明它能判红 —— 真实仓库零命中与恒绿不可区分。
     await suite.describe("(11) 三样新机制(peer: 形态 / renderer-features scope / renderer 内层布局)", async (s) => {
       await s.case("11a resolveOwner 解析原语(深度无关取前两段)", () => {
         // 11a. resolveOwner:独立于被测内部夹具再钉一遍「深度无关」与「两段根」。
@@ -1803,7 +1805,7 @@ export async function run() {
       });
 
       // 11d. 门禁本体的自检必须零问题。selfCheckPeerMesh 是这两样机制唯一的牙齿 ——
-      // 它们没有规则在用,恒绿不会体现在任何真实仓库输出里,只在这里露出来。
+      // 恒绿不会体现在任何真实仓库输出里,只在这里露出来。
       // 门禁自身(main 接线那一处)也跑同一批,故两处独立。
       await s.case("11d 门禁本体的 peer 形态自检零问题", () => {
         const peerSelfCheck = selfCheckPeerMesh();
@@ -1813,18 +1815,45 @@ export async function run() {
         );
       });
 
-      await s.case("11e 本步不挂任何规则(规则表与 pending 计数一字未动)", () => {
-        // 11e. **本步不挂任何规则**:规则表与规则 id 清单都必须一字未动。
-        // 这不是形式检查 —— 若有人顺手在自检组里加了一条规则,「peer 机制已就位」这句话
-        // 就与事实不符(挂规则是另一步,带着它自己的 pending / 结论行改动一起走)。
-        const addedPeers = LAYER_RULES.filter((r) => r.forbid.startsWith("peer:"));
+      await s.case("11e peer 规则恰好一条且无 renderer-features 条目(阶段② 换形态)", () => {
+        // 11e. 这两条断言当初钉的是阶段①「刻意不挂规则」,阶段②(ADR-075)起**前提已变**:
+        // renderer-foundation-no-feature-dep 已从 `prefix:` 换成 `peer:`。故从「一条 peer 规则
+        // 都没有」改为「peer 规则**恰好**是这一条」—— 钉「恰好」而非「至少」是刻意的:
+        // 阶段③ 挂第二条 peer 规则(pending)时,这条会当场变红提醒同批改这里。
+        const peerRules = LAYER_RULES.filter((r) => r.forbid.startsWith("peer:"));
         assert(
-          addedPeers.length === 0,
-          `本步只加机制、不挂规则,LAYER_RULES 里不应出现 peer: 形态的规则,实际 ${addedPeers.map((r) => r.id).join(",")}`,
+          peerRules.length === 1 && peerRules[0]?.id === "renderer-foundation-no-feature-dep",
+          `peer: 形态的规则应恰好是 renderer-foundation-no-feature-dep 这一条`
+            + `(阶段③ 挂第二条时同批改本断言),实际 ${peerRules.length} 条:${peerRules.map((r) => r.id).join(",")}`,
+        );
+        // 换形态的两条机械证据:根名由派生表拼出 + scope 未被顺手扩到整个 renderer
+        //
+        // ⚠ 取值一律经 `?.` + `??` 兜底再断言,不用 `!` 非空断言:`noUncheckedIndexedAccess`
+        // 下「peerRules[0] 可能不存在」正是**要断言的事实本身**(长度不为 1 时它就该是
+        // undefined),写成 `!` 等于把那道类型检查关掉,类型面就盖不到「规则被删了」这个形态。
+        const foundationRule = peerRules.at(0);
+        const foundationForbid = foundationRule?.forbid ?? "(peer 规则缺失)";
+        const foundationScope = foundationRule?.scope ?? "(peer 规则缺失)";
+        assert(
+          foundationForbid === `peer:${RENDERER_PEER_ROOTS.join(",")}`,
+          `renderer-foundation-no-feature-dep 的 forbid 应逐字等于 peer: + RENDERER_PEER_ROOTS 拼出的串`
+            + `(不得手写第二份名字),实际 ${foundationForbid}`,
+        );
+        assert(
+          foundationScope === "renderer-foundation",
+          `renderer-foundation-no-feature-dep 的 scope 应仍是 renderer-foundation(只管 dom/ 与 state/),实际 ${foundationScope}`,
+        );
+        // 派生一致性(与门禁 selfCheckPeerMesh 里那组同纪律,但**不**直接消费那个函数:
+        // 本段是消费侧的外壳证据,两处任一被摘掉另一处还在)
+        assert(
+          RENDERER_PEER_ROOTS.length === RENDERER_FEATURE_ROOTS.length
+            && RENDERER_FEATURE_ROOTS.every((root, i) => RENDERER_PEER_ROOTS[i] === `renderer/${root}`),
+          `RENDERER_PEER_ROOTS 应是 RENDERER_FEATURE_ROOTS 的两段逐项派生(长度相等且逐项等于 renderer/<root>),`
+            + `实际 ${JSON.stringify(RENDERER_PEER_ROOTS)} vs ${JSON.stringify(RENDERER_FEATURE_ROOTS)}`,
         );
         assert(
           LAYER_RULES.filter((r) => r.scope === "renderer-features").length === 0,
-          "本步只加机制、不挂规则,LAYER_RULES 里不应出现 renderer-features scope 的规则",
+          "renderer-features scope 仍应无规则在用(该档的规则属阶段③;阶段② 只把已有规则换成 peer: 形态,scope 未动)",
         );
         // 且一条 pending 都没有新增:pending 计数由规则表派生,结论行里的那个数必须不变
         const pendingCount = [...LAYER_RULES, ...LAYER_TEXT_RULES].filter((r) => r.pending === true).length;
@@ -1834,9 +1863,85 @@ export async function run() {
         );
       });
 
+      // 11f. **负向夹具**(ADR-075 阶段②的验收核心):证明换后的规则真能判红。
+      // 只有「零命中」那一步与恒绿不可区分 —— 真实仓库零命中在「forbid 写裸名恒假」与
+      // 「forbid 正确」两种实现下输出完全一样,故必须有一棵合成树把它钉死。
+      await s.case("11f 负向夹具:换后的 peer 规则能判红(证明它不是恒绿)", () => {
+        // 构造:dom/refs.ts 从基础层反向 import 功能目录 convert/。
+        // 刻意挑**深一层**的形态(dom/refs.ts 是 renderer/dom/refs.ts,spec 必为 ../convert/…)
+        // 来覆盖旧 prefix: 形态的语义;11g 再钉「深两层的子目录」这条旧形态真会漏判的边。
+        const pkg = { dependencies: { docx: "9.0.0" } };
+        const sb = createSandbox(pkg, {
+          "renderer/dom/refs.ts": 'import { convertFlow } from "../convert/convert-flow.js";\nexport { convertFlow };\n',
+          "renderer/convert/convert-flow.ts": "export const convertFlow = () => null;\n",
+        });
+        track(sb.dir);
+        const relevant = analyze(sb.srcDir, pkg, FLAVORS.src).problems
+          .map(String)
+          .filter((p) => /renderer-foundation-no-feature-dep/.test(p));
+        assert(
+          relevant.length === 1,
+          `合成树上 dom/refs.ts → convert/ 必须命中 renderer-foundation-no-feature-dep 一次,实际 ${relevant.length} 次:${relevant.join(" | ")}`,
+        );
+        // 点名:诊断须同时含 rule id、源文件与那条说明符(只判「命中过一次」不足以定位是谁的边)
+        //
+        // 同上,取值经 `?? ""` 兜底:上面那条 `relevant.length === 1` 断言失败时本段仍要能
+        // 给出可读消息,而不是在读 `relevant[0]` 时先崩成一个 TypeError。
+        const firstHit = relevant.at(0) ?? "";
+        assert(
+          firstHit.includes("renderer/dom/refs.ts")
+            && firstHit.includes("../convert/convert-flow.js")
+            && firstHit.includes("renderer-foundation-no-feature-dep"),
+          `诊断应点名源文件、说明符与规则 id,实际:${firstHit}`,
+        );
+        // 判绿对照(恒红同样是失效):基础层 → 基础层 / 基础层 → core/ 都不得命中本规则。
+        // 错方向的那条 —— 禁「dom → core」而不是「dom → 功能目录」—— 会让下面第一个变红。
+        const legalSb = createSandbox(pkg, {
+          "renderer/dom/refs.ts": 'import { x } from "../state/pure.js";\nexport { x };\n',
+          "renderer/state/pure.ts": "export const x = 1;\n",
+          "renderer/state/store.ts": 'import { x } from "../../core/text/error-message.js";\nexport { x };\n',
+          "core/text/error-message.ts": "export const x = 1;\n",
+        });
+        track(legalSb.dir);
+        const legalRelevant = analyze(legalSb.srcDir, pkg, FLAVORS.src).problems
+          .map(String)
+          .filter((p) => /renderer-foundation-no-feature-dep/.test(p));
+        assert(
+          legalRelevant.length === 0,
+          `基础层 → 基础层 与 基础层 → core/ 是合法边,不得命中本规则,实际 ${legalRelevant.length} 次:${legalRelevant.join(" | ")}`,
+        );
+      });
+
+      // 11g. 换形态换掉的那条**真实漏判**:深两层的子目录发 ../../ui/。
+      // 旧 forbid 是 `prefix:../ui/`(比说明符字面),`../../ui/dom-ops.js` 不以 `../ui/`
+      // 开头 ⇒ 旧形态对这条边恒绿;新形态按解析结果判,深度无关。
+      await s.case("11g 换形态换掉的正是深目录漏判(旧 prefix: 恒绿、新 peer: 判红)", async () => {
+        const pkg = { dependencies: { docx: "9.0.0" } };
+        const sb = createSandbox(pkg, {
+          // state/store/ 下的深一层子目录:spec 是 ../../ui/,旧形态漏判它
+          "renderer/state/store/slice.ts": 'import { domOps } from "../../ui/dom-ops.js";\nexport { domOps };\n',
+          "renderer/ui/dom-ops.ts": "export const domOps = 1;\n",
+        });
+        track(sb.dir);
+        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assertFailure(
+          result,
+          /renderer\/state\/store\/slice\.ts.*违反层向规则 renderer-foundation-no-feature-dep/s,
+          "深两层的 state/store/ → ui/ 边必须判红",
+        );
+        // 反证旧形态为何漏判:同一个说明符对 `prefix:../ui/` 恒绿。
+        // 这条不是测被测实现,而是把「旧写法错在哪」写成可执行的证据,免得下一个读者
+        // 以为两形态等价(它们只在一层子目录上等价)。
+        const spec = "../../ui/dom-ops.js";
+        assert(
+          !spec.startsWith("../ui/"),
+          "本组夹具的前提:深目录的说明符不以 ../ui/ 开头,故旧 prefix: 形态对它恒绿 —— 前提不成立时本组无意义",
+        );
+      });
+
       await s.case("11e 结论行逐字钉住(零行为变化的机械证据)", async () => {
-        // 结论行逐字钉住(最强的「零行为变化」判据):本步新增了三样机制,一条规则,
-        // 而结论行必须仍提到「当前这 4 条判据带 pending 标记」且不提任何 renderer 内层布局。
+        // 结论行逐字钉住(最强的「零行为变化」判据):阶段②把 foundation 规则换了 forbid 形态,
+        // 机制侧新增了派生表,结论行必须仍提到「当前这 4 条判据带 pending 标记」且不提任何 renderer 内层布局。
         const sb = createSandbox({ dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } }, {
           "core/markdown/parse.ts": "export const parse = () => null;\n",
         });
@@ -1857,7 +1962,9 @@ export async function run() {
         + "(resolveOwner 深度无关取前两段 / 两张 renderer 表的子集关系 / 排除面当前为空;"
           + "renderer 内层布局真实仓库零未登记 + 合成未登记目录判红并点名 + 目录不存在时跳过 + 原语双向;"
           + "peer 与 renderer-features 自检零问题;"
-          + "本步不挂规则的机械证据:LAYER_RULES 无 peer:/renderer-features 条目、pending 仍为 4 条、结论行不提 RENDERER_TOP_DIRS)",
+          + "阶段②换形态:peer 规则恰好一条且 forbid 逐字等于派生表、renderer-features 档仍无规则、pending 仍为 4 条;"
+          + "负向夹具:dom/refs → convert 判红并点名 + 合法边判绿 + 深目录旧 prefix: 漏判边现判红;"
+          + "结论行不提 RENDERER_TOP_DIRS)",
       );
     });
   } finally {

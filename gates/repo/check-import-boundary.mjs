@@ -133,6 +133,49 @@ export const CORE_NODE_BUILTIN_FILES = Object.freeze([
 ]);
 
 /**
+ * renderer 下的四个**功能根**:convert / settings / ui / wizard。
+ *
+ * ⚠ 它是 `RENDERER_TOP_DIRS`(声明在本常量之后)的**子集**,两张表的关系必须写在脸上:
+ * 将来任何「scope 枚举」与「peer 根列表」都**只能从本表派生**,不得在别处再写一遍这四个
+ * 名字 —— 两处各写一遍时,新增一个功能根那天只改一处就会让另一处的判据恒绿,而那个洞
+ * 正是这两张表要堵的那个(未登记的名字静默放行)。自检里有一条断言专门钉这条子集关系。
+ *
+ * 为什么单列一张表而不让 `renderer-foundation` 之类的 scope 直接读 RENDERER_TOP_DIRS
+ * 再取差集:差集要在判定期每次重算,读出来的差是「此刻不是基础层的目录」——新增一个
+ * 非基础层的一级目录会自动落进功能根侧,而那正是「没人决定过它算什么」的情形。
+ * 显式列出四个名字,新增功能根是一次**需要人做的决定**,而不是一次集合运算的副作用。
+ *
+ * ⚠ **本常量(与下面的 RENDERER_PEER_ROOTS)刻意声明在 LAYER_RULES 之前**,这不是排版偏好:
+ * LAYER_RULES 的 `forbid` 由 RENDERER_PEER_ROOTS 拼出,而 `const` 在模块求值期处于 TDZ ——
+ * 若把这两张表挪到 LAYER_RULES 之后,模块一被 import 就抛
+ * `Cannot access 'RENDERER_PEER_ROOTS' before initialization`。RENDERER_TOP_DIRS 不受此限
+ * (只有函数在运行期读它),所以它留在原处。
+ */
+export const RENDERER_FEATURE_ROOTS = Object.freeze(['convert', 'settings', 'ui', 'wizard']);
+
+/**
+ * RENDERER_FEATURE_ROOTS 的**两段形态**:`renderer/convert` 之类。
+ *
+ * **为什么必须两段(裸名会让规则从建起就恒绿)**:resolveOwner 解析说明符后取**前两段**
+ * 返回(`renderer/convert/events/x.ts` 发 `../../ui/dom-ops.js` ⇒ `renderer/ui`),而
+ * `peer:` 分支(ruleHits 那个分支)的判定是 `roots.includes(target) && self !== target`。
+ * 若 forbid 里写**裸名**(`peer:convert,settings,ui,wizard`),拿 `convert` 去比
+ * `renderer/convert` **恒为假** —— 规则永远零命中,即恒绿。而恒绿正是本族最贵的失效形态:
+ * 判据看起来在、真判红时才发现它从没生效过。
+ *
+ * **为什么不反过来改分支去比 `target.split('/')[1]`(即让 forbid 写裸名)**:那会让
+ * **扫描根之外**的目标也可能撞上裸名 —— `renderer/convert/x.ts` 发 `../../../main/ipc/ipc.js`
+ * 时第二段是 `ipc`,一旦某个功能根恰好叫 `ipc` 就误判;把「二元语义(目标 ≠ 自身)」
+ * 换成「名字巧合」。故两段根是唯一稳妥形态,而它必须**派生**而不能手写第二份名字。
+ *
+ * 单一来源仍是 RENDERER_FEATURE_ROOTS;规则体用 `peer:${RENDERER_PEER_ROOTS.join(',')}`
+ * 拼出 forbid。自检(selfCheckPeerMesh)钉住本表的派生一致性。
+ */
+export const RENDERER_PEER_ROOTS = Object.freeze(
+  RENDERER_FEATURE_ROOTS.map((root) => `renderer/${root}`),
+);
+
+/**
  * 层向规则。scope 匹配相对路径;forbid 语义:
  *   bare:<包名>     —— 该 bare specifier 不得出现在此范围内
  *   layer:<层,层>   —— 不得 import 解析后落在这些层下的模块。`..` 是可取值:
@@ -140,7 +183,10 @@ export const CORE_NODE_BUILTIN_FILES = Object.freeze([
  *   prefix:<前缀>   —— 不得使用以此前缀开头的相对 specifier
  *   peer:<根,根>    —— 不得 import 解析后归属这些**功能根**、且与 from 侧自身根不同的模块。
  *                      二元语义(「目标 ≠ 自身」)而非目标集合语义,理由见 ruleHits 该分支。
- *                      机制已就位、当前无规则在用(挂规则是另一步)
+ *                      根必须写**两段**(renderer/convert 之类),裸名会让判定恒假 ⇒ 恒绿,
+ *                      理由见 RENDERER_PEER_ROOTS 的注释。当前在用的规则只有
+ *                      renderer-foundation-no-feature-dep 一条(peer mesh 那条挂 pending
+ *                      是另一步,见 ADR-075 阶段③)
  */
 export const LAYER_RULES = Object.freeze([
   {
@@ -282,7 +328,22 @@ export const LAYER_RULES = Object.freeze([
     // 教训:改正令时**连带改正它旁边写的数字**(若两侧都有),否则下一个读者仍读到旧值。
     // 它守住的是两条语义:pure.ts「零 DOM 依赖」与 refs.ts「无业务知识」;一旦反向
     // 依赖,这两条不变量就名存实亡(比如 refs 里塞进设置项判断)。
-    forbid: 'prefix:../convert/,../settings/,../ui/,../wizard/',
+    //
+    // ⚠ forbid 由 `prefix:` 换成 `peer:` 是 ADR-075 阶段②,原因是一条**漏判**:
+    // 旧形态 `prefix:../convert/` 比的是**说明符字面**是否以 `../convert/` 开头,只在
+    // from 文件恰在 renderer 的**一层子目录**时成立。dom/ 与 state/ 下面的文件一旦深过
+    // 一层(现在还没有),`../../convert/x.js` 就不以 `../convert/` 开头 ⇒ 漏判,且这种漏判
+    // **随目录生长而悄悄出现**(建规则时零命中,长出子目录那天起静默失效)。`peer:` 按解析
+    // 结果判、与深度无关。
+    //
+    // 两段根(`renderer/convert`)而不是裸名(`convert`),以及为什么不得改成比第二段 ——
+    // 见 RENDERER_PEER_ROOTS 的注释(裸名会让 `roots.includes(target)` 恒假 ⇒ 恒绿)。
+    // 单一来源是 RENDERER_FEATURE_ROOTS,故这里**不重写那四个名字**。
+    //
+    // scope 仍是 `renderer-foundation`(只管 dom/ 与 state/ 两层),没动;也**刻意不加
+    // `exceptFiles`** —— LAYER_RULES 的求值循环不读那个字段,挂上去会被静默忽略
+    // (ADR-075 禁令 2)。
+    forbid: `peer:${RENDERER_PEER_ROOTS.join(',')}`,
     reason: 'renderer 基础层(dom/ 元素映射、state/ 纯函数核与 store)是所有功能模块的共同底座,不得反向依赖任何功能目录;唯一合法的向上引用是 ../../core/(跨进程契约单源)',
   },
   {
@@ -450,19 +511,13 @@ export const RENDERER_TOP_DIRS = Object.freeze([
 ]);
 
 /**
- * renderer 下的四个**功能根**:convert / settings / ui / wizard。
+ * renderer 下的四个**功能根**与它们的**两段形态**:RENDERER_FEATURE_ROOTS / RENDERER_PEER_ROOTS。
  *
- * ⚠ 它是 `RENDERER_TOP_DIRS` 的**子集**(那七项里的四个),两张表的关系必须写在脸上:
- * 将来任何「scope 枚举」与「peer 根列表」都**只能从本表派生**,不得在别处再写一遍这四个
- * 名字 —— 两处各写一遍时,新增一个功能根那天只改一处就会让另一处的判据恒绿,而那个洞
- * 正是这两张表要堵的那个(未登记的名字静默放行)。自检里有一条断言专门钉这条子集关系。
+ * ⚠ 两张表声明在**本段之前**(LAYER_RULES 之前):LAYER_RULES 的 forbid 由后者拼出,
+ * 放在其后会在模块求值期撞 TDZ。理由与完整注释见那两处声明。
  *
- * 为什么单列一张表而不让 `renderer-foundation` 之类的 scope 直接读 RENDERER_TOP_DIRS
- * 再取差集:差集要在判定期每次重算,读出来的差是「此刻不是基础层的目录」——新增一个
- * 非基础层的一级目录会自动落进功能根侧,而那正是「没人决定过它算什么」的情形。
- * 显式列出四个名字,新增功能根是一次**需要人做的决定**,而不是一次集合运算的副作用。
+ * 本段只留 RENDERER_TOP_DIRS,它不受那条约束(仅在函数运行期被读)。
  */
-export const RENDERER_FEATURE_ROOTS = Object.freeze(['convert', 'settings', 'ui', 'wizard']);
 
 /**
  * 找出 renderer 下未登记的一级目录名(判据的纯函数本体,便于自检与测试直接消费)。
@@ -1339,9 +1394,11 @@ export function resolveOwner(file, spec) {
 /**
  * `renderer-features` 这一档 scope 的**逐文件排除**。
  *
- * 排除**刻意当前为空**:这一档的机制先落,LAYER_RULES 里还没有任何规则用它,故没有需要
- * 豁免的文件。第一条 peer 规则落地时若确有正当豁免,在这一行按**去扩展名**逐个加 ——
- * 同一份登记同时约束 src 的 .ts 源与 dist 的 .js 产物,不必两处各维护一份。
+ * 排除**刻意当前为空**:这一档 scope 的机制先落,LAYER_RULES 里还没有任何规则用它,故没有需要
+ * 豁免的文件。第一条 `renderer-features` scope 的规则落地时若确有正当豁免,在这一行按
+ * **去扩展名**逐个加 —— 同一份登记同时约束 src 的 .ts 源与 dist 的 .js 产物,不必两处各维护一份。
+ * (⚠ 已换用 `peer:` 的 renderer-foundation-no-feature-dep 用的是 `renderer-foundation` scope,
+ * 不落在这一档,故它的存在不改变本行「为空」的事实。)
  *
  * 为什么它住在 scope 档而不是规则体的 `exceptFiles`:LAYER_RULES 的求值循环不读那个字段
  * (只有 LAYER_TEXT_RULES 的 findTextLayerViolations 读它),挂上去会被静默忽略 ——
@@ -1350,7 +1407,7 @@ export function resolveOwner(file, spec) {
  * ⚠ 空数组是一处**刻意留白**,不是「忘了填」:本文件多处强调过「除某文件外一律成立」
  * 一旦泛化、登记缺失就退化成静默放行,而这里没有规则需要它,凭空登记一个名字反而是给
  * 下一个读者一个假的既有豁免。自检(selfCheckPeerMesh)钉住「当前为空」这个事实,将来
- * 第一条 peer 规则要豁免时那一处断言会提醒连同理由一起改。
+ * 第一条落在这一档 scope 上的规则要豁免时那一处断言会提醒连同理由一起改。
  */
 export const RENDERER_FEATURE_SCOPE_EXCEPT_FILES = Object.freeze([]);
 
@@ -1504,14 +1561,20 @@ function ruleHits(rule, entry) {
 /**
  * `peer:` 形态与 `renderer-features` 这一档 scope 的**双向自检**(纯判定层,不碰真实仓库)。
  *
- * 为什么必须有:这两样机制此刻**没有任何规则在用**,于是它们最危险的失效形态不是「判红
- * 错了」而是**恒绿** —— 一份写错却什么都不报的机制比没有机制更坏(下一个人会以为 peer
- * 纪律已经在跑)。而「恒绿」在没有规则的前提下不会体现在任何真实仓库输出里,故只能靠
- * 内联夹具在此钉死。方向各一,判绿对照每条都挑了**有牙齿**的那种:
+ * 为什么必须有:`renderer-features` 这一档 scope **此刻仍无规则在用**,而 `peer:` 已被
+ * `renderer-foundation-no-feature-dep` 换用(ADR-075 阶段②)。后者的危险失效形态不是
+ * 「判红错了」而是**恒绿** —— 一份写错却什么都不报的机制比没有机制更坏(下一个人会以为 peer
+ * 纪律已经在跑)。恒绿在任何真实仓库输出里都看不出来(真实仓库确实零命中,这正是「绿」),
+ * 故只能靠内联夹具在此钉死。方向各一,判绿对照每条都挑了**有牙齿**的那种:
  *   - 去掉归一化(`..` 不折叠)→ 「深目录发 ../../ 」那条立刻变绿;
  *   - 去掉「≠ 自身根」二元语义 → 「同 feature 自环」那条立刻变红;
  *   - 把 scope 的命中面从 RENDERER_FEATURE_ROOTS 派生改成写死字面 → 删常量里的名字时
- *     这条自检会红(见下面那条子集断言)。
+ *     这条自检会红(见下面那条子集断言);
+ *   - 把 RENDERER_PEER_ROOTS 写漏一项 / 改成裸名 → 派生一致性那一组会红,而真实规则的
+ *     forbid 与本夹具的 FORBID 同读它,不钉它就是两边一起错、互相盖不住。
+ *
+ * ⚠ 本函数**验机制,不验真实仓库零命中**:真实仓库零命中与「恒绿」在输出上不可区分,
+ * 那条负向证据在 test/gates/import-boundary.test.js 的合成树上(ADR-075 阶段②验收)。
  *
  * 夹具刻意用**真实命名形态**(renderer/convert/events/… → ../../ui/dom-ops.js):
  * 机制按相对路径解析 scope 与根,换一套假名字就测不到「它到底覆不覆盖真实布局」。
@@ -1519,9 +1582,11 @@ function ruleHits(rule, entry) {
  */
 export function selfCheckPeerMesh() {
   const problems = [];
-  // 合成规则对象(不入 LAYER_RULES —— 本步不挂任何规则,规则表与结论行一字不动)
+  // 合成规则对象(不入 LAYER_RULES —— 本自检查的是**机制**,规则表的增删另有其处的断言;
+  // 唯一在用 peer: 形态的真实规则 renderer-foundation-no-feature-dep 由本函数末尾那条
+  // 「派生一致性」断言连起来:它读的就是下面这个 RENDERER_PEER_ROOTS)
   const meshRule = (forbid) => ({ id: 'peer-mesh-selfcheck', scope: 'renderer-features', forbid });
-  const FORBID = `peer:${RENDERER_FEATURE_ROOTS.map((root) => `renderer/${root}`).join(',')}`;
+  const FORBID = `peer:${RENDERER_PEER_ROOTS.join(',')}`;
   /** @type {{ name: string, file: string, spec: string, expect: boolean }[]} */
   const cases = [
     // ---- 判红方向:跨 feature 的边(深度无关才是本形态存在的理由) ----
@@ -1617,6 +1682,62 @@ export function selfCheckPeerMesh() {
         `renderer 布局自检失守:RENDERER_FEATURE_ROOTS 里的「${root}/」不在 RENDERER_TOP_DIRS 内`
         + `(${RENDERER_TOP_DIRS.join('/')})—— 两张表的关系是子集,任何 scope 枚举与 peer 根列表`
         + '都只能从前者派生,不得两处各写一遍名字',
+      );
+    }
+  }
+  // ---- RENDERER_PEER_ROOTS 的派生一致性(ADR-075 阶段②) ----
+  // 为什么必须钉:这张表是 peer: forbid 的**唯一名字来源**,而 peer: 的判定是
+  // `roots.includes(target)`,target 恒为两段 ⇒ 两张表一旦不同源(漏派生一项、多出一项、
+  // 或写成裸名),本函数上面那组夹具**全绿而真实规则恒绿** —— 因为夹具的 FORBID 与真实规则的
+  // forbid 都读这张表,改错了它两边一起错,互相盖不住。锚点必须独立于被检常量:所以下面
+  // 逐项对着 RENDERER_FEATURE_ROOTS 的**长度与每项的 `renderer/${root}` 字面**核,
+  // 而不是拿两张表互比(那仍是「派生自它」的同一条证据链)。
+  if (RENDERER_PEER_ROOTS.length !== RENDERER_FEATURE_ROOTS.length) {
+    problems.push(
+      `renderer 布局自检失守:RENDERER_PEER_ROOTS 长度 ${RENDERER_PEER_ROOTS.length}`
+      + ` ≠ RENDERER_FEATURE_ROOTS 长度 ${RENDERER_FEATURE_ROOTS.length}`
+      + '(两段形态必须由四个裸名逐项派生,不多不少 —— 少一项即那条功能根的边静默放行)',
+    );
+  }
+  RENDERER_FEATURE_ROOTS.forEach((root, index) => {
+    const expected = `renderer/${root}`;
+    if (RENDERER_PEER_ROOTS[index] !== expected) {
+      problems.push(
+        `renderer 布局自检失守:RENDERER_PEER_ROOTS[${index}] = ${String(RENDERER_PEER_ROOTS[index])},`
+        + `应为 ${expected} —— peer: 的判定是 \`roots.includes(target)\` 而 target 恒为两段`
+        + '(resolveOwner 取前两段),写成裸名即恒假 ⇒ 规则恒绿',
+      );
+    }
+  });
+  // 当前在用的真实规则:forbid 必须逐字等于「peer: + 派生表」。少了这一条,把真实规则的
+  // forbid 改成手写字面(哪怕此刻逐字相同)或退回 prefix: 时,上面的夹具照样全绿 ——
+  // 它验的是机制,不是「这条规则真的接在派生表上」。阶段③ 挂第二条 peer 规则时,
+  // 这里会提醒连同断言一起改(同本文件「排除面当前为空」那条的处置方式)。
+  const foundationRule = LAYER_RULES.find((r) => r.id === 'renderer-foundation-no-feature-dep');
+  if (foundationRule === undefined) {
+    problems.push('renderer 布局自检失守:LAYER_RULES 里找不到 renderer-foundation-no-feature-dep');
+  } else {
+    const expectedForbid = `peer:${RENDERER_PEER_ROOTS.join(',')}`;
+    if (foundationRule.forbid !== expectedForbid) {
+      problems.push(
+        `renderer 布局自检失守:renderer-foundation-no-feature-dep 的 forbid 逐字应为 ${expectedForbid},`
+        + `实际 ${foundationRule.forbid} —— 根名必须由 RENDERER_PEER_ROOTS 拼出,不得手写第二份`,
+      );
+    }
+    // scope 仍是 renderer-foundation(只管 dom/ 与 state/);若有人顺手扩到整个 renderer,
+    // 阶段③ 的 peer mesh 规则与它会重叠,而重叠的两条判据迟早有一条被白名单压掉
+    if (foundationRule.scope !== 'renderer-foundation') {
+      problems.push(
+        `renderer 布局自检失守:renderer-foundation-no-feature-dep 的 scope 应为 renderer-foundation,`
+        + `实际 ${String(foundationRule.scope)}`,
+      );
+    }
+    // ADR-075 禁令 2:exceptFiles 在 LAYER_RULES 里**不被读取**,挂上去会被静默忽略 ——
+    // 「挂完发现怎么没生效」的第一嫌疑就是它,故钉住「当前没有这个字段」。
+    if ('exceptFiles' in foundationRule) {
+      problems.push(
+        'renderer 布局自检失守:renderer-foundation-no-feature-dep 上挂了 exceptFiles —— '
+        + 'LAYER_RULES 的求值循环从不读该字段(只有 LAYER_TEXT_RULES 读),它会被静默忽略',
       );
     }
   }
