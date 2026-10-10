@@ -42,7 +42,8 @@
 //      名字」—— `@returns {asserts cond}` 的委派型窄化壳(体内只调 harness 断言)合规,
 //      裁决见 `docs/adr/ADR-071-两处判据的形态裁决.md`。判定面是**段**,不是 `test/**`:
 //      `test/harness/case.js` 自己就有一个自带 throw 的顶层 assert,按 test/** 全扫会去红
-//      它自己要收敛的那个源。两族当前都是 report-only(转正 = 删 `CRITERIA` 那行的 pending)。
+//      它自己要收敛的那个源。⚠ **本族与 ⑬ 已转 fail-closed**;本文件里仍是 report-only 的只有
+//      ③ `test-top-dirs-exact` 与 ⑭ `gates-selftest-named-case`(转正 = 删 `CRITERIA` 那行的 pending)。
 //   ⑬ test-segment-named-case(REQ-220 #08 族二):每段必须 import case 契约模块**且**至少
 //      有一处 `.case(` 调用 ⇒ 否则判红。两个条件缺一不可(见下「两族的判定面与读盘」)。
 //   ⑭ gates-selftest-named-case(REQ-221 #09 族一):**门禁树侧**的同一形态 ——
@@ -63,6 +64,9 @@
 //      ⚠ **它与 ⑭ `gates-selftest-named-case` 判的不是一件事**:⑭ 判「有没有接契约」
 //      (import + 至少一处 `.case(`),接了之后**删掉一整个 case 不改变任何可数的东西**
 //      ——import 还在、`.case(` 仍 ≥1 处。本族补的正是这个缺口。
+//      ⚠ **本族已转 fail-closed**(命中进 problems、参与退出码),⑭ 仍是 report-only。
+//      两者**分属不同通道**:本族转正后「未接入」与「名册漂移」在读数上才真的分得开 ——
+//      转正前两者都只在 info 通道,一条 info 混着两族语义时无法归因。
 //
 // ---- ⑯ 本族的三条自述边界(下一个会话读到这里时按这三条判断本族能顶什么)----
 //
@@ -77,7 +81,7 @@
 //     但「把策略改错而抽出 0 条」也是红 —— 两向差集天然响(册非空而源侧空 ⇒ 全档「册有源无」)。
 //     登记表**不可注入**(与 `CRITERIA` / `LAYER_RULES` 同层):能传参就能把自己摘出去,那是 fail-open。
 //   - **名册**(sidecar)自身失效三档**判红而非当空表**:读不到 / 缺 `cases` 数组 / 低于
-//     {@link MIN_GATE_CASE_NAMES} 条下限。⚠ 当空表会让两侧同时为空 ⇒ 差集恒空 ⇒ **恒绿**,
+//     {@link MIN_GATE_CASE_ROSTER} 条下限。⚠ 当空表会让两侧同时为空 ⇒ 差集恒空 ⇒ **恒绿**,
 //     而恒绿是纯文本门禁最坏的失效形态。**恒绿防护的顺序因此是「先断非空,再断差集命中」。**
 //
 //   **(三)反扫放宽的方向:本族判的是「名还在不在」,不是「名对不对」。**
@@ -85,6 +89,21 @@
 //   一个名配一条被放宽的期望,两边照样相等、照样绿。靠搬迁手法(ADR-074 后果节「搬迁四步」):
 //   搬迁时把断言**逐字**带过去,而不是让同一批 case 名配上一份被就地放宽的期望。
 //   ⚠ 别因本族兜住了「删一条」就以为它也兜住了「削弱一条」。
+//
+// ---- 登记表怎么维护(改某份自测的用例档之后,按这三步走)----
+//
+// **① 先跑本族看它报什么**:`node gates/repo/check-test-layout.mjs`。增删档会报「源有册无」
+// (新档)或「册有源无」(删掉的档),两条诊断都点名了具体档名与该改哪一处。
+// **② 同批改名册**:把新档名加进 / 把删掉的档名从 `<基名>.case-roster.json` 的 `cases` 删掉。
+// **③ 若换的是「名从哪儿抽」**(那份自测改了用例表的名字或形态),同批改
+// `GATE_SELFTEST_CASE_SOURCES` 里那一行的 `strategies` —— 本表写的是**名从哪儿抽**,
+// 不是「有多少条」,条数对不上时先怀疑策略与源码脱节(那一档会直接判红并点名策略)。
+//
+// ⚠ **「抽出条数 == 该自测自报分母」是播种/改策略时的核对项,不是常驻门禁**:
+// 常驻门禁比的是「名册 ⟷ 源码」两向差集,不比条数 —— 两侧同删时条数相等而差集也为空。
+// 逐份取分母的命令(一次跑完 20 份,各跑各的自报末行):
+//
+//   for f in gates/{fixtures,repo,smoke}/*.selftest.mjs; do node "$f" | tail -1; done
 //
 // ---- L4 为什么必须判「零命中」而不是只判「import 落在别处」 ----
 // 一条只检查「不许 import 别层」的规则,在**一个本层主体都没 import** 的段上会全绿 ——
@@ -538,15 +557,20 @@ export const GATE_SELFTEST_CASE_SOURCES_FILE = "gates/repo/check-test-layout.mjs
  *
  * @typedef {object} GateCaseSource
  * @property {string} file 门禁自测路径(仓相对 POSIX)
- * @property {readonly {kind: string, table?: string, field?: string, wrapper?: string}[]} strategies
+ * @property {readonly {kind: string, table?: string, field?: string, wrapper?: string, call?: string}[]} strategies
  *   取名策略列表(一份自测可能同时用几类,如「表内用例走表 + 表外 bespoke 逐条内联」)。
- *   四类取值(⚠ 全部经 `extractGateCaseNames` 落成同一形状:抽出的字符串数组):
+ *   五类取值(⚠ 全部经 `extractGateCaseNames` 落成同一形状:抽出的字符串数组):
  *   - `inline-case`:内联字面量 `suite.case('…')` 的首参;
- *   - `table-field`:某个 `[A-Z_]+ = [...]` 表里 `field` 字段的字面量值
+ *   - `table-field`:某个 `[A-Z_]+ = [...]` **顶层**表里 `field` 字段的字面量值
  *     (`{table:"CASES", field:"name"}` / `{table:"MUTATIONS", field:"id"}`);
- *   - `wrapper-first-arg`:本地 wrapper 的首参字面量(`{wrapper:"check"}`);
- *   - `suite-arg`:形如 `await suite.case(testCase.name, …)` 的**间接**取名 ——
- *     抽出该调用点的首参标识符名(此处即 `testCase`),再取它指向的表的 `name` 字段。
+ *   - `call-cases-field`:内联在 harness 调用实参里的 `cases: [...]` 数组中 `field`
+ *     字段的字面量值(`{call:"runSyntheticRootCases", field:"name"}`)—— 与上一类只差
+ *     「表在哪」,不是同一形态;
+ *   - `wrapper-first-arg`:本地 wrapper 的首参字面量(`{wrapper:"check"}`)。
+ *
+ * ⚠ **登记表只准写已实现的 kind**:未实现的 kind 会落进「抽出 0 条 ⇒ 判红」那一档
+ * (响而不哑),但那是**误报**不是保护 —— 真需要新形态时,先在 `extractGateCaseNames`
+ * 里实现该分支、再登记,并补一条取名层直测夹具钉住它。
  */
 
 /**
@@ -555,15 +579,16 @@ export const GATE_SELFTEST_CASE_SOURCES_FILE = "gates/repo/check-test-layout.mjs
  * 形态照 `check-html-const-mirror.mjs` 的 `MIRROR_PAIRS` 先例:**登记表是判定本体的常量**。
  * ⚠ 它**刻意不注入 ctx**:能传表就能把自己摘出去,那本身是 fail-open
  * (与 `CRITERIA` / `LAYER_RULES` 同层纪律)。自测靠「在合成树里造同路径的自测 + 同一份名册」
- * 来覆盖四类策略,不需要换表。
+ * 来覆盖各类策略,不需要换表。
  *
  * ⚠ **本表必须逐份齐全:少一行即判红**(树里有那份自测而表里没有它 ⇒ 那一档判红)。
  * 这是「登记表自身漂移」的唯一看守 —— 少登记一个文件等于那一份自测**静默退出本族判定面**,
  * 而症状是「全绿」(与恒绿同族)。反过来多一行(树里已无这份自测)也判红(stale)。
  *
  * 逐行的取名策略怎么定的:{@link extractGateCaseNames} 在本表每一行上跑出的条数与该自测
- * **自己打印的分母**逐份相等(实测 20 份全部对上,合计 546 条;取数命令见文件头
- * 「登记表怎么维护」)。改动某份自测的用例表(增删档)时,**先跑本族看它报什么**,
+ * **自己打印的分母**逐份相等(20/20;取数命令见文件头「登记表怎么维护」——
+ * ⚠ 那是**指针**而不是条数快照:条数随夹具增删变,把它抄进注释就会变成一处会腐化的数字)。
+ * 改动某份自测的用例表(增删档)时,**先跑本族看它报什么**,
  * 再同批改本表 —— 本表里写的是「名从哪儿抽」,不是「有多少条」。
  *
  * @type {readonly GateCaseSource[]}
@@ -580,6 +605,8 @@ export const GATE_SELFTEST_CASE_SOURCES = Object.freeze([
     file: "gates/repo/check-changelog.selftest.mjs",
     // ⚠ 表驱动档**分三张表**:JUDGE_CASES 走合成根 harness(它自己汇成 case)、
     // JUDGE_GREEN_CASES 是「零问题」判绿档、CLI_CASES 是进程级(退出码 + 输出)。
+    // ⚠ CLI_CASES 的档内含 `expect: /…\`## \[\` 版本条目/` 这类**正则字面量**,
+    // 而 lexSource 不掩正则 ⇒ 配平必须跳被 `\` 转义的方括号(见 matchingBracket)。
     strategies: Object.freeze([
       Object.freeze({ kind: "table-field", table: "JUDGE_CASES", field: "name" }),
       Object.freeze({ kind: "table-field", table: "JUDGE_GREEN_CASES", field: "name" }),
@@ -595,7 +622,7 @@ export const GATE_SELFTEST_CASE_SOURCES = Object.freeze([
   }),
   Object.freeze({
     file: "gates/repo/check-copy-sites.selftest.mjs",
-    // 纯内联档:五组夹具逐组一条 `await suite.case('…')`,没有用例表。
+    // 纯内联档:逐组一条 `await suite.case('…')`,没有用例表。
     strategies: Object.freeze([Object.freeze({ kind: "inline-case" })]),
   }),
   Object.freeze({
@@ -620,10 +647,14 @@ export const GATE_SELFTEST_CASE_SOURCES = Object.freeze([
   }),
   Object.freeze({
     file: "gates/repo/check-src-layout.selftest.mjs",
+    // ⚠ **唯一一份「内联表」形态**:表驱动档走三张顶层表,而白名单 / 塌缩那 4 组把
+    // `cases: [...]` **就地内联**在 `runSyntheticRootCases({...})` 的实参里 ——
+    // 顶层表定位看不见它们,必须单列 `call-cases-field`(缺了它少抽 4 条)。
     strategies: Object.freeze([
       Object.freeze({ kind: "table-field", table: "JUDGE_CASES", field: "name" }),
       Object.freeze({ kind: "table-field", table: "JUDGE_GREEN_CASES", field: "name" }),
       Object.freeze({ kind: "table-field", table: "CLI_CASES", field: "name" }),
+      Object.freeze({ kind: "call-cases-field", call: "runSyntheticRootCases", field: "name" }),
     ]),
   }),
   Object.freeze({
@@ -635,8 +666,10 @@ export const GATE_SELFTEST_CASE_SOURCES = Object.freeze([
   }),
   Object.freeze({
     file: "gates/repo/check-test-layout.selftest.mjs",
-    // ⚠ 单一表档:143 条全在 `CASES`(表外两处是夹具**源码字符串**里的 `suite.case(`,
-    // 已被 inString 掩码排除 —— 它们是被判据读的字面量,不是本自测自己的 case)。
+    // ⚠ 单一表档:全部夹具都在顶层 `CASES` 里(表外两处是夹具**源码字符串**里的
+    // `suite.case(`,已被 inString 掩码排除 —— 它们是被判据读的字面量,不是本自测自己的 case)。
+    // ⚠ 而**定位**也必须过那道掩码:那份合成 `TABLE_NAME_SELFTEST` 里有一份
+    // `const CASES = Object.freeze([` 在字面量内部且排在真表之前(见 arrayLiteralSpans)。
     strategies: Object.freeze([Object.freeze({ kind: "table-field", table: "CASES", field: "name" })]),
   }),
   Object.freeze({
@@ -669,12 +702,12 @@ export const GATE_SELFTEST_CASE_SOURCES = Object.freeze([
   }),
   Object.freeze({
     file: "gates/repo/gen-gate-ids-table.selftest.mjs",
-    // 纯内联档:12 条逐条 `await suite.case("…")`,零用例表。
+    // 纯内联档:逐条 `await suite.case("…")`,零用例表。
     strategies: Object.freeze([Object.freeze({ kind: "inline-case" })]),
   }),
   Object.freeze({
     file: "gates/repo/release-notes.selftest.mjs",
-    // 纯内联档:14 条逐条内联(它不进 harness,单引号形态)。
+    // 纯内联档:逐条内联(它不进 harness,单引号形态)。
     strategies: Object.freeze([Object.freeze({ kind: "inline-case" })]),
   }),
   Object.freeze({
@@ -695,7 +728,7 @@ export const GATE_SELFTEST_CASE_SOURCES = Object.freeze([
   Object.freeze({
     file: "gates/smoke/smoke-report.selftest.mjs",
     // ⚠ **唯一一份 wrapper 档**:它把本地 runner `check()` 接到 `suite.case(name, …)`,
-    // 32 条档名全是 `await check('<档名>', body)` 的首参字面量 —— 没有一处内联 `.case(`。
+    // 档名全是 `await check('<档名>', body)` 的首参字面量 —— 没有一处内联 `.case(`。
     strategies: Object.freeze([Object.freeze({ kind: "wrapper-first-arg", wrapper: "check" })]),
   }),
 ]);
@@ -983,30 +1016,15 @@ export const CRITERIA = Object.freeze([
       + "(两侧同改 ⇒ 差集仍空),本族只抓**单侧**漂移,**不宣称「断言一条未删有机器保证」**;"
       + "⚠ 本族判的是「名还在不在」,**期望正则被放宽那类削弱不在射程内**(靠 ADR-074 后果节"
       + "「搬迁四步」)",
-    // 按 ADR-071 决定一的「先报告后转正」挂 report-only。转正前置与半齿上限:
+    // ⚠ **已转正**(删 `pending: true` 即 fail-closed)。转正前置:20 份真实名册全部就位
+    // 且**逐份非空** —— 这一族上「退出码 0」不足以证明名册齐全(空册同样「全绿」),
+    // 故播种时逐份核过「抽出条数 == 该自测自报分母」。
     //
-    // ⚠ **转正的前置是 20 份真实名册全部就位**,而本批只交付判据 + 一份自测夹具 ——
-    // 真实名册随各批迁移同批写(逐份:搬完那份自测就同批写它的名册)。
-    // 名册未就位时本族在真实仓上恒红(名册读不到),故**本批不转正**;
-    // 全绿后才删本行这两项,那是下一件事(独立一笔)。
-    //
-    // ⚠ **本族不能因为「全绿」就转正**:「全绿」在这族上有一个与别族不同的含义 ——
-    // 若 20 份名册同时是空的,两向差集恒空 ⇒ 也「全绿」。判红的方向靠
-    // `MIN_GATE_CASE_ROSTER` 非空下限守死(空册判红),但**转正前必须逐份看过名册非空**,
-    // 不能只看门禁退出码。
-    pending: true,
-    pendingReason:
-      "本族随 #09 批次七上链,按 ADR-071 决定一「新判据不设豁免 · 先报告后转正」挂 report-only。"
-      + "转正的前置是**20 份真实名册全部落地** —— 本批只交付判据与一份自测夹具,"
-      + "真实名册随各批自测迁移同批写。⚠ **半齿上限(转正也不消除)**:名册型看守的通病是"
-      + "「删 case + 同批删册」是**一次**改动,判据看不见(两侧同改 ⇒ 差集仍为空);"
-      + "本族只抓**单侧**漂移(册有源无 / 源有册无),⚠ **不得把「名册在册」读成"
-      + "「断言一条未删有机器保证」** —— 两侧同改靠 code review 的并排 diff 与 ADR-074"
-      + "后果节的「搬迁四步」。⚠ 另一条边界:本族判「名还在不在」而非「名对不对」,"
-      + "**期望正则被放宽那类削弱不在本族射程内**(名配一条被放宽的期望,两边照样相等),"
-      + "同样靠「搬迁四步」而非本族兜。⚠ 转正前须确认 20 份名册**逐份非空** —— "
-      + "`MIN_GATE_CASE_ROSTER` 的非空下限只挡「空册」这一个形态,而「退出码 0」"
-      + "在这一族上不足以证明名册齐全。",
+    // ⚠ **半齿上限不因转正而消除**:名册型看守的通病是「删 case + 同批删册」是**一次**
+    // 改动,判据看不见(两侧同改 ⇒ 差集仍为空)。本族只抓**单侧**漂移。⚠ **不得把
+    // 「名册在册」读成「断言一条未删有机器保证」** —— 两侧同改靠 code review 的并排
+    // diff 与 ADR-074 后果节的「搬迁四步」。另一条边界同样不受转正影响:本族判
+    // 「名还在不在」而非「名对不对」,期望正则被放宽那类削弱不在射程内。
   }),
   ]);
 
@@ -1205,57 +1223,144 @@ export function caseRosterRelFor(selftestRel) {
 }
 
 /**
- * 抽一个 `[A-Z_]+ = [` 数组字面量的**下标区间**(含两侧方括号)。
+ * 从某个左括号起配平到**对应的**那个右括号(返回右括号下标;配平不到末尾 ⇒ null)。
  *
- * ⚠ **括号配平必须过 `inString` 掩码**,不是逐字符数 —— 实测踩到:自测里大量档名含
- * `## [待发版]` 这类**字符串内部的方括号**(`check-changelog` 5 处、其余若干),
- * 不掩码就把深度算错、结果永远配不平(那一版的 `CLI_CASES` 抽出 0 条且**不报错**,
- * 是典型的「静默退化成空集」)。
+ * ⚠ **两层遮罩都要过,缺一层都会静默退化成空集**:
+ *   ① `inString` —— 档名里的 `## [待发版]` 这类**字符串内部的方括号**
+ *     (`check-changelog` 5 处、其余若干)。不掩码就把深度算错、永远配不平。
+ *   ② **转义** —— `lexSource` 掩字符串与注释但**不掩正则字面量**,故正则里的
+ *     `\[` 会以「一个真的左方括号」的身份进配平(`check-changelog.selftest.mjs`
+ *     的 `expect: /…没有任何 \`## \[\` 版本条目/`,实测让 `CLI_CASES` 整张表抽出 0 条
+ *     且**不报错**)。跳过后一字符即可:`\[` 只可能出现在正则里(字符串已被 ① 掩掉,
+ *     而裸代码里的反斜杠只出现在正则中),真括号永不被反斜杠前置。
+ *
+ * ⚠ **两侧括号由入参给齐,不得拿一对括号去配平另一种**:对象字面量 `{…}` 里也有
+ * `[]`,用 `[]` 去配 `{` 起点会一路数到某个内嵌数组的 `]` 就收工,span 覆盖到调用之外
+ * ⇒ 抽出条数虚高(实测同一份 case 名被收两遍)。
  *
  * @param {string} code `lexSource(...).code`(注释已抹、字符串内容保留)
  * @param {Uint8Array} inString `lexSource(...).inString`
- * @param {string} table 表名(如 `CASES`)
- * @returns {{ start: number, end: number } | null} 区间下标;找不到该表或配平不到末尾时 null
+ * @param {number} start 左括号下标
+ * @param {string} open 左括号字符(`[` 或 `{`)
+ * @param {string} close 右括号字符(`]` 或 `}`)
+ * @returns {number | null} 右括号下标;配平不到末尾时 null
  */
-function arrayLiteralSpan(code, inString, table) {
-  const decl = new RegExp(`(?:const|let)\\s+${table}\\s*=\\s*(?:Object\\.freeze\\()?\\s*\\[`);
-  const m = decl.exec(code);
-  if (m === null) return null;
-  const start = m.index + m[0].length - 1;
+function matchingBracket(code, inString, start, open, close) {
   let depth = 0;
   for (let i = start; i < code.length; i += 1) {
     if (inString[i] === 1) continue;
     const ch = code[i];
-    if (ch === "[") depth += 1;
-    else if (ch === "]") {
+    // ⚠ 转义跳步必须在配平**之前**:正则字面量未被 `lexSource` 掩码(见上)。
+    if (ch === "\\") {
+      i += 1;
+      continue;
+    }
+    if (ch === open) depth += 1;
+    else if (ch === close) {
       depth -= 1;
-      if (depth === 0) return { start, end: i };
+      if (depth === 0) return i;
     }
   }
   return null;
 }
 
 /**
+ * 抽一个 `[A-Z_]+ = [` 数组字面量的**下标区间**(含两侧方括号;同一表名取**第一处不在字符串内**的声明)。
+ *
+ * ⚠ **定位阶段也必须过 `inString` 掩码**,不是只让配平阶段过:一份自测的夹具会把
+ * **源码字符串**原样写进自己(如 `check-test-layout.selftest.mjs` 里那份合成
+ * `const CASES = Object.freeze([` 的 `TABLE_NAME_SELFTEST`),那份声明在**字面量内部**
+ * 且排在真表**之前**。定位不过掩码 ⇒ 抽到夹具里那份、只穿透拿到零星几条
+ * (实测 2 条 / 应 160 条),而症状是「抽出条数不对」而不是任何一条判红
+ * ⇒ 按错误结果播种名册就等于把假凭证写进仓里。跳过它继续找下一个候选。
+ *
+ * @param {string} code `lexSource(...).code`(注释已抹、字符串内容保留)
+ * @param {uint8Array} inString `lexSource(...).inString`
+ * @param {string} table 表名(如 `CASES`)
+ * @returns {{ start: number, end: number }[]} 区间下标;找不到该表(或配平不到末尾)时零个
+ */
+function arrayLiteralSpans(code, inString, table) {
+  const decl = new RegExp(`(?:const|let)\\s+${table}\\s*=\\s*(?:Object\\.freeze\\()?\\s*\\[`, "g");
+  for (const m of code.matchAll(decl)) {
+    // ⚠ 定位过掩码:字面量内部那份同名声明不是本自测自己的表(理由见上)。
+    if (inString[m.index] === 1) continue;
+    const start = m.index + m[0].length - 1;
+    const end = matchingBracket(code, inString, start, "[", "]");
+    // ⚠ 配平不到末尾即**零个区间**而不是「继续找下一处同名声明」:配平失败说明这份源码
+    // 自身不可解析,再往后找会抽到另一处不相干的声明,把一个真失效形态洗成「抽出若干条」。
+    if (end === null) return [];
+    return [{ start, end }];
+  }
+  return [];
+}
+
+/**
+ * 抽「传给某个 harness 调用的**内联** `cases: [...]` 字面量数组」的下标区间。
+ *
+ * 形态:像 `await runSyntheticRootCases({ group, judge, cases: [ { name: … } ], suite })`
+ * 那样把用例表**就地内联**在实参对象里 —— 与「`const X = [...]` 顶层表」是两种形态,
+ * 后者由 {@link arrayLiteralSpan} 覆盖,本函数覆盖前者(`check-src-layout.selftest.mjs`
+ * 有 4 处,四类既有策略都覆盖不到 ⇒ 实测少抽 4 条)。
+ *
+ * ⚠ **先配平到调用的实参对象末尾、再在对象内找 `cases: [`**:直接对全文找
+ * `cases\s*:\s*\[` 会命中「某个恰好没有内联 cases 的 harness 调用之前、另一个调用之内」
+ * 的跨调用片段,症状同样是「抽出条数不对」而不是判红。
+ *
+ * @param {string} code `lexSource(...).code`
+ * @param {Uint8Array} inString `lexSource(...).inString`
+ * @param {string} call harness 函数名(如 `runSyntheticRootCases`)
+ * @returns {{ start: number, end: number }[]} 每个内联 `cases:` 数组的区间(按出现顺序)
+ */
+function callCasesSpans(code, inString, call) {
+  /** @type {{ start: number, end: number }[]} */
+  const spans = [];
+  // 前瞻 `(?<![\w$.])` 排除属性访问与标识符内嵌(与 `wrapper-first-arg` 同款理由)。
+  const re = new RegExp(`(?<![\\w$.])${call}\\s*\\(\\s*\\{`, "g");
+  for (const m of code.matchAll(re)) {
+    if (inString[m.index] === 1) continue;
+    const objStart = m.index + m[0].length - 1;
+    // ⚠ 实参对象是 `{…}`:必须用花括号配平(用方括号配会收到内嵌 `cases:` 数组的 `]`,
+    // span 溢出到调用之外 ⇒ 同一条 case 名被收两遍)。
+    const objEnd = matchingBracket(code, inString, objStart, "{", "}");
+    if (objEnd === null) continue;
+    const inner = new RegExp(`(?:^|[\\s{,])cases\\s*:\\s*\\[`, "g");
+    for (const hit of code.slice(objStart, objEnd + 1).matchAll(inner)) {
+      const start = objStart + (hit.index ?? 0) + hit[0].length - 1;
+      if (inString[start] === 1) continue;
+      const end = matchingBracket(code, inString, start, "[", "]");
+      if (end !== null) spans.push({ start, end });
+    }
+  }
+  return spans;
+}
+
+/**
  * 按登记的取名策略,从一份门禁自测正文抽出它实际的 case 名集合(⑯ 族的「源侧」)。
  *
- * 四类策略(逐类写清判据形状与它的失效形态,理由见
+ * **五类**策略(逐类写清判据形状与它的失效形态,理由见
  * {@link GATE_SELFTEST_CASE_SOURCES} 的表项注释):
  *   - `inline-case` —— `suite.case('字面量', …)` 的首参;`inline-literal`;
- *   - `table-field` —— `[A-Z_]+ = [` 表内 `field:` 字段的字面量值;`table-field`;
- *   - `wrapper-first-arg` —— `wrapper('字面量', …)` 的首参;`wrapper-first-arg`;
- *   - `suite-arg` —— `await suite.case(testCase.name, …)` 的间接取名:抽出该调用点首参
- *     的**标识符**(`testCase`),再取它绑定的那张表的 `name` 字段;`suite-arg`。
+ *   - `table-field` —— `[A-Z_]+ = [` **顶层**表内 `field:` 字段的字面量值;`table-field`;
+ *   - `call-cases-field` —— **内联**在 harness 调用实参里的 `cases: [...]` 数组中
+ *     `field:` 字段的字面量值(与上一类只差「表在哪」:顶层声明 vs 调用实参,
+ *     见 {@link callCasesSpans});`call-cases-field`;
+ *   - `wrapper-first-arg` —— `wrapper('字面量', …)` 的首参;`wrapper-first-arg`。
+ *
+ * ⚠ **本函数只实现上面四类**。登记表若出现未实现的 kind,会一路走到末尾「抽出 0 条」
+ * 那一档判红 —— 那是误报,不是保护(见 `GATE_SELFTEST_CASE_SOURCES` 头注的告诫)。
  *
  * ⚠ **全部 matchAll 的结果都要过 `inString` 掩码**(与 `caseContractState` /
  * `findTopLevelAssertDecls` 同款):`check-test-layout.selftest.mjs` 里那 11 处
  * `suite.case(` **在夹具源码字符串内部**(被本族读的字面量,不是它自己的 case),
  * 不过掩码会把它们算成源侧的 case 名,与名册一比就报出一堆**假的**「源有册无」。
+ * ⚠ **定位阶段同样要过**:见 {@link arrayLiteralSpans} 的注释 —— 只让配平过掩码而
+ * 定位不过,会抽到夹具源码串里那份同名声明(实测 2 条 / 应 160 条)。
  *
  * ⚠ **抽不到就是抽不到,不静默返回空数组**:调用方拿到空数组时会先撞「低于
  * {@link MIN_GATE_CASE_ROSTER} 条下限」那一档(判红),而不是拿它去算一个恒空的差集。
  *
  * @param {string} text 门禁自测正文
- * @param {readonly {kind: string, table?: string, field?: string, wrapper?: string}[]} strategies 取名策略
+ * @param {readonly {kind: string, table?: string, field?: string, wrapper?: string, call?: string}[]} strategies 取名策略
  * @returns {string[]} 抽出的 case 名(按出现顺序,未去重)
  */
 export function extractGateCaseNames(text, strategies) {
@@ -1268,14 +1373,21 @@ export function extractGateCaseNames(text, strategies) {
         if (lexed.inString[m.index ?? 0] === 1) continue;
         names.push(m[2] ?? "");
       }
-    } else if (strategy.kind === "table-field") {
-      const span = arrayLiteralSpan(lexed.code, lexed.inString, String(strategy.table));
-      if (span === null) continue;
-      const re = new RegExp(`(?:^|[\\s{,])${String(strategy.field)}\\s*:\\s*(['"\`])([\\s\\S]*?)\\1`, "g");
-      for (const m of lexed.code.slice(span.start, span.end + 1).matchAll(re)) {
-        const at = span.start + (m.index ?? 0) + (m[1]?.length ?? 0);
-        if (lexed.inString[at] === 1) continue;
-        names.push(m[2] ?? "");
+    } else if (strategy.kind === "table-field" || strategy.kind === "call-cases-field") {
+      const field = String(strategy.field);
+      const re = new RegExp(`(?:^|[\\s{,])${field}\\s*:\\s*(['"\`])([\\s\\S]*?)\\1`, "g");
+      // ⚠ 两类共用「在给定区间里收 `field:` 字面量值」这半段,只有**区间怎么来**不同:
+      // 顶层表走声明定位,内联表走 harness 调用实参定位。区间取不到 ⇒ 抽出 0 条
+      // (落进调用方那一档判红),不是静默跳过。
+      const spans = strategy.kind === "table-field"
+        ? arrayLiteralSpans(lexed.code, lexed.inString, String(strategy.table))
+        : callCasesSpans(lexed.code, lexed.inString, String(strategy.call));
+      for (const span of spans) {
+        for (const m of lexed.code.slice(span.start, span.end + 1).matchAll(re)) {
+          const at = span.start + (m.index ?? 0) + (m[1]?.length ?? 0);
+          if (lexed.inString[at] === 1) continue;
+          names.push(m[2] ?? "");
+        }
       }
     } else if (strategy.kind === "wrapper-first-arg") {
       const wrapper = String(strategy.wrapper);
@@ -2728,8 +2840,8 @@ export function checkTestLayout(base = {}) {
           `${file} → gates-selftest-case-roster:该门禁自测在取名策略登记表 ${GATE_SELFTEST_CASE_SOURCES_FILE} 里`
             + "**没有登记行** —— 它因此静默退出本族的判定面(case 名集合与名册两向差集无人核对),"
             + "而症状是「全绿」。处置:在登记表里补一行,`strategies` 写明名从哪儿抽"
-            + "(四类:内联 `suite.case('…')` 字面量 / 用例表的 `name:` 字段 / 本地 wrapper 首参 /"
-            + " 变异实验表的 `id:` 字段)",
+            + "(五类:内联 `suite.case('…')` 字面量 / 顶层表的 `name:`(或变异实验表的 `id:`)字段 /"
+            + " 内联在 harness 调用实参里的 `cases:` 数组的 `name:` 字段 / 本地 wrapper 首参)",
         );
       }
       // ② 登记表多一行(stale):树里已无这份自测(改名 / 删除 / 搬走)⇒ 判红。

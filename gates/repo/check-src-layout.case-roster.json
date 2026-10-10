@@ -1,0 +1,27 @@
+{
+  "_comment": "`case 登记名册`:本族(gates-selftest-case-roster)判的是**名还在不在**,不是「断言一条未删」。\n\n**半齿上限(转正也不消除)**:「删 case + 同批删名册这一条」是**一次**改动,判据看不见\n(两侧同时变 ⇒ 两向差集仍为空)。本族只抓**单侧**漂移:册有源无(有人删了 case 忘了删册)、\n源有册无(源码新增的档没进册)。⚠ 不得把「名册在册」读成「断言一条未删有机器保证」。\n两侧同改靠 code review 的并排 diff 与 ADR-074 后果节的「搬迁四步」。\n\n**播种声明**:本名册于 2026-10-10 按当前源码播种,**对播种之前的删除零证明力** ——\n迁移期 case 是逐字搬过去的,若有删除,两侧同样旧 ⇒ 差集恒空而门禁照样绿。\n迁移期逐字对账的证据在 REQ-221 提交正文里,不在本文件。\n**自播种之日起**才有看守力。\n\n取名策略(见 gates/repo/check-test-layout.mjs#GATE_SELFTEST_CASE_SOURCES 那一行):table-field:JUDGE_CASES.name + table-field:JUDGE_GREEN_CASES.name + table-field:CLI_CASES.name + call-cases-field.name:runSyntheticRootCases。\ncases 保持**源码出现顺序**(先按策略登记序,策略内按出现序)—— 判据逐条点名时靠它对号入座。\n本册 22 条,与判据在该文件上抽出的条数逐条相等(播种时核对过该自测自报的分母)。",
+  "cases": [
+    "src-file-header:首行直接是 import → 判红并点名路径与行号",
+    "src-file-header:shebang 之后那一行不是注释头 → 判红在第 2 行(不是第 1 行)",
+    "src-file-header:首行是单星注释而不是双星 → 判红",
+    "src-no-duplicate-basename:同层两个非 index 同名文件 → 判红并点名两个完整路径",
+    "src-no-duplicate-basename:第四组未登记的同名仍判红(白名单不是 core 整层放行)",
+    "src-no-duplicate-basename:.mjs 也在判据二的扫描面内(两个同名 .mjs 同层)→ 判红",
+    "src-no-duplicate-basename:同组三个同名文件仍只报一条并点名全部路径",
+    "夹具基线(首行全带注释头、三个对位实现组已登记、同名组只有登记过的那三组)→ 零判红",
+    "src-file-header:首行是斜杠星号星号注释块 → 判绿",
+    "src-file-header:shebang 文件以 shebang 之后的第一行计(带注释头 → 判绿)",
+    "src-no-duplicate-basename:index 不参与同名判定(两个 index.ts 同层)→ 判绿",
+    "src-no-duplicate-basename:跨顶层目录同名不判红 → 判绿",
+    "默认模式判红时仍 exit 0(报告模式)",
+    "--enforce 与默认模式退出码不同(同一棵有判红的树:0 vs 1)",
+    "--enforce 在无判红时仍 exit 0(反向锚点:证明上一条的红来自判红而非开关本身)",
+    "默认模式输出两族计数并点名判红文件(验收口径 ①)",
+    "未知参数(不得静默按报告模式跑一遍)",
+    "真实仓库:默认模式 exit 0 且输出两族计数",
+    "白名单死登记(登记的第二个路径搬走了)→ 判红",
+    "白名单缺 why → 判红(人工复核的唯一依据不得留空)",
+    "白名单登记的路径 basename 与 base 不同名 → 判红",
+    "扫描面塌缩(文件数掉到下限以下)→ 判红"
+  ]
+}

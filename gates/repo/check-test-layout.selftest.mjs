@@ -534,6 +534,8 @@ const WRAPPER_DEMO = registeredDemoFor((e) => e.strategies.length === 1 && e.str
 const MUTATION_ID_DEMO = registeredDemoFor(
   (e) => e.strategies.some((s) => s.field === "name") && e.strategies.some((s) => s.field === "id"),
 );
+/** 在册 · 内联 `cases:` 档(取名策略⑤)—— 取「有 `call-cases-field` 那一行」。 */
+const INLINE_CASES_DEMO = registeredDemoFor((e) => e.strategies.some((s) => s.kind === "call-cases-field"));
 
 /**
  * 名册族夹具用的**未在册自测路径**(验「登记表缺行判红」那一档)。
@@ -670,6 +672,36 @@ const EMPTY_CASE_SELFTEST = [
   "export async function run() {",
   "  const suite = createCaseSuite();",
   "  void suite;",
+  "  return { cases: suite.results };",
+  "}",
+  "",
+].join("\n");
+
+/**
+ * 取名策略⑤:用例表**就地内联**在 harness 调用的实参对象里(`cases: [...]`),
+ * 而不是 `const X = [...]` 顶层表 —— `check-src-layout.selftest.mjs` 的形态。
+ * ⚠ **合成正文必须与那一行登记的策略逐字同形**:该行除 `call-cases-field` 外还登记了
+ * 三张顶层表,而本夹具**刻意不铺**它们(那三档抽出 0 条是合法的:表不存在 ⇒ 该档无产出)。
+ * 多铺一张不在登记表里的表反而会让名册对不上(源有册无)。
+ * ⚠ 下面那句 `await suite.case(...)` 是**夹具纪律①**要求的(不接契约就先被
+ * `gates-selftest-named-case` 命中,两条 info 混在一起分不清红的是哪一族);
+ * 该行**未登记** `inline-case` 策略 ⇒ 它不产任何源侧 case 名,名册不受影响。
+ */
+const INLINE_CASES_SELFTEST = [
+  "// @ts-check",
+  `import { createCaseSuite } from "${contractSpecifierFor(INLINE_CASES_DEMO)}";`,
+  "export async function run() {",
+  "  const suite = createCaseSuite();",
+  "  await suite.case('契约接通用的真档', () => {});",
+  "  await runSyntheticRootCases({",
+  "    group: '内联组',",
+  "    judge: () => [],",
+  "    cases: [",
+  "      { name: '内联一', files: {} },",
+  "      { name: '内联二', files: {} },",
+  "    ],",
+  "    suite,",
+  "  });",
   "  return { cases: suite.results };",
   "}",
   "",
@@ -2071,10 +2103,15 @@ const CASES = [
   //
   // ⚠ **两条夹具纪律**(各自都对应一条会让夹具失去意义的坑):
   //   ① 合成自测**必须自带 case 契约 import + 至少一处 `.case(`** —— 否则
-  //      `gates-selftest-named-case` 那一族先命中,而两族都是 report-only(info 通道),
-  //      两条 info 混在一起会让人分不清红的是哪一族(症状离根因隔着一族判据)。
+  //      `gates-selftest-named-case` 那一族先命中。⚠ **本族转正后两者已分属不同通道**
+  //      (本族进 problems、⑭ 仍在 info),纪律**仍然要守**:两条并存时,读 `expectInfo`
+  //      的那几档会被 ⑭ 的 info 顶成非空,而落在 `expect`(problems)上的本族诊断
+  //      反而看不见 —— 症状离根因隔着一族判据。
   //   ② 名册与自测**必须成对铺**:只铺自测不铺名册会命中「名册读不到」那一档,
   //      它会 `continue` 掉差集判定 ⇒ 后面几档验的就不是差集而是读表档。
+  //
+  // ⚠ **转正后本族夹具一律改钉 `expect`(problems)通道**,`expectInfo` 只在
+  // 「反向锚点」(info 必须为空)那几档保留 —— 与 #08 族一转正时的做法同款。
   {
     // 档 1(取名策略①内联字面量):全部 `await suite.case('…')`,名册逐条对齐 ⇒ 零命中。
     // **反向锚点**:没有它,下面那几条可能只是「恒红」—— 而恒红与「这一族根本没生效」
@@ -2127,6 +2164,21 @@ const CASES = [
     expect: null,
   },
   {
+    // 档 5(取名策略⑤内联 `cases:` 数组):证明判据认「表在 harness 实参里」这一形态 ——
+    // 只认顶层表的话,`check-src-layout.selftest.mjs` 那 4 处在册自测会静默少抽 4 条,
+    // 而症状是「名册条数对不上」而不是判红(差集两向都不响)。
+    // ⚠ 名册按登记的**策略序**写(该行四档策略里只有 `call-cases-field` 有产出)。
+    name: "#09 名册族·取名策略⑤内联 cases: 数组(表在 harness 实参里):源码与名册逐条相等 → 零命中",
+    judgeOnly: true,
+    extra: {
+      ...C3_TREE_IDENTITY,
+      [INLINE_CASES_DEMO]: INLINE_CASES_SELFTEST,
+      [ROSTER_OF(INLINE_CASES_DEMO)]: roster(["内联一", "内联二"]),
+    },
+    expectInfo: null,
+    expect: null,
+  },
+  {
     // 差集方向一「册有源无」:名册多一条源码里没有的 ⇒ 判红(那条 case 被删了而册没删)。
     // ⚠ 这正是本族存在的理由:那一档在 `gates-selftest-named-case` 眼里**完全不可见**
     // (import 还在、`.case(` 仍 ≥1 处),删掉一整个 case 不改变任何可数的东西。
@@ -2137,8 +2189,9 @@ const CASES = [
       [INLINE_DEMO]: INLINE_CASE_SELFTEST,
       [ROSTER_OF(INLINE_DEMO)]: roster(["甲档", "乙档", "已删的丙档"]),
     },
-    expectInfo: /已删的丙档.*已被删除\(或改了档名\)而名册没同批删/s,
-    expect: null,
+    expectInfo: null,
+    // ⚠ 转正后本族进 **problems**:断言从 `expectInfo` 改钉 `expect`,单向(不再要求 info 里没有)。
+    expect: /已删的丙档.*已被删除\(或改了档名\)而名册没同批删/s,
   },
   {
     // 差集方向二「源有册无」:源码新增一条而名册没跟 ⇒ 判红。
@@ -2149,8 +2202,8 @@ const CASES = [
       [INLINE_DEMO]: INLINE_CASE_SELFTEST,
       [ROSTER_OF(INLINE_DEMO)]: roster(["甲档"]),
     },
-    expectInfo: /乙档.*没登记它/s,
-    expect: null,
+    expectInfo: null,
+    expect: /乙档.*没登记它/s,
   },
   {
     // 登记表缺行判红:树里有份自测而登记表里**没有它** ⇒ 它静默退出判定面(症状是全绿)。
@@ -2164,12 +2217,12 @@ const CASES = [
       [UNREGISTERED_DEMO]: INLINE_CASE_SELFTEST,
       [ROSTER_OF(UNREGISTERED_DEMO)]: roster(["甲档", "乙档"]),
     },
-    expectInfo: new RegExp(
+    expectInfo: null,
+    expect: new RegExp(
       `${UNREGISTERED_DEMO.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} → `
       + "gates-selftest-case-roster:.*没有登记行",
       "s",
     ),
-    expect: null,
   },
   {
     // 名册非空下限(恒绿防护第一道):名册 `cases` 为空 ⇒ 判红。
@@ -2177,6 +2230,9 @@ const CASES = [
     // 缺了它,一份空名册会让本族看起来「一切正常」,而它什么也没核对。
     // ⚠ 源侧**也**零 case(`EMPTY_CASE_SELFTEST`)—— 否则验的就只是「空册判红」,
     // 验不到「空册 + 空源 ⇒ 差集恒空」那个真失效形态。
+    // ⚠ **本档刻意不钉 `expectInfo`**:那份合成正文只建 suite、一次不调 `.case(` ⇒
+    // 它**必然**同时命中 ⑭ `gates-selftest-named-case`(info 通道),而那是**预期**的
+    // (理由见 `EMPTY_CASE_SELFTEST` 的注释)。转正后本族进 problems,两者分属不同通道。
     name: "#09 名册族·恒绿防护:名册 cases 为空(两侧同时为空时差集恒空)→ 判红",
     judgeOnly: true,
     extra: {
@@ -2184,11 +2240,10 @@ const CASES = [
       [TABLE_NAME_DEMO]: EMPTY_CASE_SELFTEST,
       [ROSTER_OF(TABLE_NAME_DEMO)]: roster([]),
     },
-    expectInfo: new RegExp(
+    expect: new RegExp(
       `只有 0 条\\(下限 ${MIN_GATE_CASE_ROSTER}\\).*两侧同时为空时两向差集恒空`,
       "s",
     ),
-    expect: null,
   },
   {
     // 名册读不到(第一档 fail-closed):路径在、自测在,就是没那份 sidecar ⇒ 判红。
@@ -2198,8 +2253,8 @@ const CASES = [
       ...C3_TREE_IDENTITY,
       [INLINE_DEMO]: INLINE_CASE_SELFTEST,
     },
-    expectInfo: /case 登记名册读不到或不是合法 JSON.*本族会「全绿」/s,
-    expect: null,
+    expectInfo: null,
+    expect: /case 登记名册读不到或不是合法 JSON.*本族会「全绿」/s,
   },
   {
     // 名册缺 `cases` 键(第二档 fail-closed)⇒ 判红,且**点名名册路径**。
@@ -2210,8 +2265,8 @@ const CASES = [
       [INLINE_DEMO]: INLINE_CASE_SELFTEST,
       [ROSTER_OF(INLINE_DEMO)]: `${JSON.stringify({ _comment: "缺 cases 键", names: ["甲档"] }, null, 2)}\n`,
     },
-    expectInfo: /case 登记名册缺 cases 数组/,
-    expect: null,
+    expectInfo: null,
+    expect: /case 登记名册缺 cases 数组/,
   },
   {
     // 恒绿防护第二道 + 「策略与源码脱节」:策略指向的表在源码里不存在 ⇒ 抽出 0 条
@@ -2226,9 +2281,12 @@ const CASES = [
     },
     // ⚠ 断言「**不**出现册有源无那一档」:它证明实现把「抽出 0 条」单列了,
     // 而没有拿一个空源侧去比非空名册、报出一堆「表内一已被删除」这种误导诊断。
-    expectInfoAbsent: /已被删除\(或改了档名\)而名册没同批删/,
-    expectInfo: /按登记的取名策略抽出 \*\*0 条\*\* case 名.*策略与源码脱节/s,
-    expect: null,
+    // ⚠ 转正后本族诊断进 **problems** ⇒ 这一格从 `expectInfoAbsent` 改钉 `expectAbsent`:
+    // 留在 info 通道上它恒成立(info 里没有本族任何东西),断言就此退化成恒绿。
+    // `expectInfo: null` 是第二道(⑭ 那族在 info 通道,这里顺带钉它没命中)。
+    expectInfo: null,
+    expect: /按登记的取名策略抽出 \*\*0 条\*\* case 名.*策略与源码脱节/s,
+    expectAbsent: /已被删除\(或改了档名\)而名册没同批删/,
   },
   {
     // stale 行判红:登记表登记了某份自测而树里没有它 ⇒ 判红(ratchet)。
@@ -2242,16 +2300,17 @@ const CASES = [
       [ROSTER_OF(INLINE_DEMO)]: roster(["甲档", "乙档"]),
     },
     minSelftestFiles: 1,
-    expectInfo: new RegExp(
+    expectInfo: null,
+    expect: new RegExp(
       `登记表登记了 ${TABLE_NAME_DEMO.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")},.*本次扫描的树里不存在`,
       "s",
     ),
     // ⚠ **反向锚点**:在册且真在树里的那一行**不得**被报成 stale。
     // 少这一格,「把所有在册行都报一遍」的实现也能过上面那条断言。
-    expectInfoAbsent: new RegExp(
+    // ⚠ 转正后本族诊断进 **problems** ⇒ 这一格随之从 info 通道改钉 problems 通道。
+    expectAbsent: new RegExp(
       `登记表登记了 ${INLINE_DEMO.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")},`,
     ),
-    expect: null,
   },
   {
     // 取名层直测 · 四类策略**并在一段源码里**:证明四类都真被抽到、各抽各的,
@@ -2319,6 +2378,97 @@ const CASES = [
     ].join("\n"),
     strategies: [{ kind: "table-field", table: "CLI_CASES", field: "name" }],
     expectNames: ["防空过:锚点 ## [待发版] 被改名 → 判红", "防空过:条目区无任何版本条目 → 判红"],
+  },
+  {
+    // 取名层直测 · **内联 `cases:` 与顶层表各抽各的**:两类共用「在区间里收 `name:`」,
+    // 只差区间怎么来。这条钉住它们**不互相吞**:顶层表那份与 harness 实参里那份
+    // 都要收到,且不重复收(实测曾因「用方括号去配平花括号」把同一条收两遍)。
+    name: "#09 名册族·取名层直测:内联 cases: 数组与顶层表各抽各的(不互相吞、不重复收)",
+    caseExtract: true,
+    text: [
+      "const CASES = Object.freeze([",
+      "  { name: '顶层一', files: {} },",
+      "]);",
+      "await runHarness({",
+      "  group: '内联组',",
+      "  cases: [",
+      "    { name: '内联一', files: {} },",
+      "    { name: '内联二', files: {} },",
+      "  ],",
+      "  suite,",
+      "});",
+    ].join("\n"),
+    strategies: [
+      { kind: "table-field", table: "CASES", field: "name" },
+      { kind: "call-cases-field", call: "runHarness", field: "name" },
+    ],
+    expectNames: ["顶层一", "内联一", "内联二"],
+  },
+  {
+    // 取名层直测 · **内联档的负向锚点:调用点必须过 `inString` 掩码**。
+    // 那段 `runHarness({ cases: [...] })` 在夹具源码字符串内部 —— 它是被判据读的
+    // 字面量,不是这份自测自己的用例表。少了它,夹具里那份会被收成源侧 case 名,
+    // 在真实仓上表现为满屏假的「源有册无」。
+    name: "#09 名册族·取名层直测:夹具源码字符串内部的 runHarness({ cases: }) 不得被抽成源侧",
+    caseExtract: true,
+    text: [
+      "const SEG = [",
+      '  "  await runHarness({ cases: [ { name: \'字符串里的假档\' } ] });",',
+      '].join("\\n");',
+      "await runHarness({",
+      "  cases: [",
+      "    { name: '真档' },",
+      "  ],",
+      "});",
+    ].join("\n"),
+    strategies: [{ kind: "call-cases-field", call: "runHarness", field: "name" }],
+    expectNames: ["真档"],
+  },
+  {
+    // 取名层直测 · **顶层表定位也过 `inString` 掩码**(缺陷一那条):
+    // 下面第一行是**被拼进夹具的源码字符串**里的 `const CASES = Object.freeze([`,
+    // 它排在真表**之前**。定位不过掩码就会抽到它、只穿透拿到零星几条
+    // (实测 2 条 / 应 3 条),而症状是「条数不对」—— 任何一条判据都不响。
+    name: "#09 名册族·取名层直测:顶层表定位跳过夹具源码字符串内部那份同名声明",
+    caseExtract: true,
+    text: [
+      "const SEG = [",
+      '  "const CASES = Object.freeze([",',
+      '  "  { name: \'字符串里的假档\', files: {} },",',
+      '  "]);",',
+      '].join("\\n");',
+      "const CASES = Object.freeze([",
+      "  { name: '真一', files: {} },",
+      "  { name: '真二', files: {} },",
+      "  { name: '真三', files: {} },",
+      "]);",
+    ].join("\n"),
+    strategies: [{ kind: "table-field", table: "CASES", field: "name" }],
+    expectNames: ["真一", "真二", "真三"],
+  },
+  {
+    // 取名层直测 · **正则字面量里的转义方括号不破坏表区间配平**(缺陷二那条):
+    // `lexSource` 掩字符串与注释但**不掩正则**,故 `expect: /…\[…/` 里的 `\[`
+    // 会以「一个真的左方括号」进配平。真实形态:`check-changelog.selftest.mjs` 的
+    // `expect: /在锚点之后没有任何 \`## \[\` 版本条目/`。
+    // ⚠ 与上面那条「档名里的方括号」**互不替代**:那条验的是字符串内的真方括号
+    // (`## [待发版]`,它是配对的),这条验的是正则内**不成对**的转义方括号。
+    name: "#09 名册族·取名层直测:正则字面量里的 \\[ 不破坏表区间配平(lexSource 不掩正则)",
+    caseExtract: true,
+    text: [
+      "const CLI_CASES = Object.freeze([",
+      "  {",
+      "    name: '防空过:条目区无任何版本条目 → 判红',",
+      "    expect: /在锚点之后没有任何 `## \\[` 版本条目/,",
+      "  },",
+      "  {",
+      "    name: '防空过:CHANGELOG 路径不存在 → 判红',",
+      "    expect: /扫描失败/,",
+      "  },",
+      "]);",
+    ].join("\n"),
+    strategies: [{ kind: "table-field", table: "CLI_CASES", field: "name" }],
+    expectNames: ["防空过:条目区无任何版本条目 → 判红", "防空过:CHANGELOG 路径不存在 → 判红"],
   },
   {
     // 取名层直测 · **wrapper 不误收属性访问与标识符内嵌**:
