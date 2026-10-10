@@ -1699,9 +1699,9 @@ export async function run() {
     });
 
     // ============ (11) 三样新机制(peer: 形态 / renderer-features scope / renderer 内层布局)============
-    // 本组的主体验**机制**,不验「renderer-features 档已有规则」:那一档的规则属 ADR-075
-    // 阶段③(挂 pending 的 peer mesh 规则),此刻仍为空 ⇒ 这部分机制**恒绿是它们的正常态**,
-    // 而恒绿正是这类机制最贵的失效形态。故机制断言全部是「原语级双向 + 门禁自检零问题」。
+    // 本组的主体验**机制**:`renderer-features` 这一档 scope 自 ADR-075 阶段③ 起已挂上规则
+    // (renderer-features-no-cross-import,带 pending 只报告),故「这一档恒绿」不再是它的正常态 ——
+    // 恒绿正是这类机制最贵的失效形态,必须由合成树证明它能判红。
     // ⚠ 例外是 11f/11g:`peer:` 形态自阶段②起已被 renderer-foundation-no-feature-dep 换用,
     // 那一条必须由**真实仓库之外的合成树**证明它能判红 —— 真实仓库零命中与恒绿不可区分。
     await suite.describe("(11) 三样新机制(peer: 形态 / renderer-features scope / renderer 内层布局)", async (s) => {
@@ -1737,7 +1737,7 @@ export async function run() {
         );
       });
 
-      await s.case("11b 两张 renderer 表是子集关系且排除面当前为空", () => {
+      await s.case("11b 两张 renderer 表是子集关系且排除面恰好只有组合根", () => {
         // 11b. 两张 renderer 表的关系:功能根是已登记一级目录的**子集**。
         // 这条不是形式检查 —— 少了它,把某个根从 RENDERER_FEATURE_ROOTS 删掉只会静默缩小
         // scope 命中面,而那个洞正是两张表要堵的(未登记的名字静默放行)。
@@ -1751,11 +1751,55 @@ export async function run() {
           RENDERER_FEATURE_ROOTS.length < RENDERER_TOP_DIRS.length,
           `功能根应是 renderer 一级目录的真子集(基础层与样式层不在其中),实际 ${RENDERER_FEATURE_ROOTS.length}/${RENDERER_TOP_DIRS.length}`,
         );
-        // 排除面当前刻意为空:这是需要被看见的事实,不是默默留着
+        // 排除面:**恰好只登记组合根一个**,逐字钉住(ADR-075 阶段③)。
+        // 豁免的是组合根,理由:它是唯一合法的跨 feature 引用方(ADR-065)—— 跨功能协作经组合根
+        // 以构造参数注入,组合根按定义要引四个功能目录(实测 8 条),那是目标形态本身而非违反。
+        //
+        // ⚠ 钉「恰好一条且逐字相同」而非「至少含它」:多登记一个即意味着某个功能目录被整体豁免,
+        // 那正是 ADR-065 目标形态的反面;换成泛化前缀(长度不变)会让「除组合根外一切」静默成立。
         assert(
-          RENDERER_FEATURE_SCOPE_EXCEPT_FILES.length === 0,
-          `renderer-features 的排除面当前应为空(机制先落、无规则需要豁免),实际 ${RENDERER_FEATURE_SCOPE_EXCEPT_FILES.join("、")}`,
+          RENDERER_FEATURE_SCOPE_EXCEPT_FILES.length === 1
+            && RENDERER_FEATURE_SCOPE_EXCEPT_FILES[0] === "renderer/renderer.ts",
+          `renderer-features 的排除面应恰好是组合根一个(renderer/renderer.ts —— 豁免的是组合根,`
+            + `理由:它是唯一合法的跨 feature 引用方,ADR-065),实际 ${RENDERER_FEATURE_SCOPE_EXCEPT_FILES.join("、") || "(空)"}`,
         );
+        // 判绿对照:组合根引全部四个功能目录**不判红**(ADR-065 的目标形态本身)。
+        //
+        // ⚠ 实测这条为绿的原因**不是**排除面承重,而是 scope 命中面为 `renderer/<功能根>/` 前缀、
+        // 组合根作为 `renderer/` 直属文件本就不在其中 ⇒ **排除面这一行当前不承重**
+        // (带它 / 去掉它,renderer-features-no-cross-import 的命中数一字不变,见 11e)。
+        // 保留这条断言的理由是它守住**可观察行为**(组合根的 import 不判红),而不只是登记的字面;
+        // scopeMatches 未导出,故经 analyze 实测而不是直调原语。
+        {
+          const pkg = { dependencies: { docx: "9.0.0" } };
+          const sb = createSandbox(pkg, {
+            "renderer/renderer.ts": [
+              'import { convertFlow } from "./convert/convert-flow.js";',
+              'import { bindSettings } from "./settings/settings-bindings.js";',
+              'import { domOps } from "./ui/dom-ops.js";',
+              "export const w = [convertFlow, bindSettings, domOps];",
+            ].join("\n"),
+            "renderer/convert/convert-flow.ts": "export const convertFlow = () => null;\n",
+            "renderer/settings/settings-bindings.ts": "export const bindSettings = () => null;\n",
+            "renderer/ui/dom-ops.ts": "export const domOps = () => null;\n",
+            // 同树里放一条真违规:证明上面那三条判绿不是因为整档规则恒绿
+            "renderer/wizard/probe.ts": 'import { domOps } from "../ui/dom-ops.js";\nexport { domOps };\n',
+          });
+          track(sb.dir);
+          const result = analyze(sb.srcDir, pkg, FLAVORS.src);
+          const peerHits = [...result.info, ...result.problems]
+            .map(String)
+            .filter((line) => line.includes("renderer-features-no-cross-import"));
+          assert(
+            peerHits.length === 1 && peerHits[0]?.includes("renderer/wizard/probe.ts") === true,
+            `组合根的 3 条跨 feature import 应判绿、同树的 wizard/ → ui/ 应判红(证明不是整档恒绿),`
+              + `实际 ${peerHits.length} 处:${peerHits.join(" | ")}`,
+          );
+          assert(
+            result.problems.length === 0,
+            `本沙盒不应有 problem(该规则带 pending,命中只进 info),实际 ${result.problems.length} 项:${result.problems.join(" | ")}`,
+          );
+        }
       });
 
       // 11c. renderer 内层布局判据:真实仓库零未登记 + 合成未登记目录判红并点名。
@@ -1815,16 +1859,17 @@ export async function run() {
         );
       });
 
-      await s.case("11e peer 规则恰好一条且无 renderer-features 条目(阶段② 换形态)", () => {
-        // 11e. 这两条断言当初钉的是阶段①「刻意不挂规则」,阶段②(ADR-075)起**前提已变**:
-        // renderer-foundation-no-feature-dep 已从 `prefix:` 换成 `peer:`。故从「一条 peer 规则
-        // 都没有」改为「peer 规则**恰好**是这一条」—— 钉「恰好」而非「至少」是刻意的:
-        // 阶段③ 挂第二条 peer 规则(pending)时,这条会当场变红提醒同批改这里。
+      await s.case("11e peer 规则恰好两条(阶段③ 挂第二条)、renderer-features 档恰好一条且带 pending", () => {
+        // 11e. 这条断言当初钉的是阶段①「刻意不挂规则」,阶段②(ADR-075)改为「peer 恰好一条」,
+        // 阶段③ 又挂上第二条。**每一次都是刻意钉「恰好」而非「至少」**:多一条当场变红,
+        // 提醒同批改这里 —— 规则表是 deny-list,「至少」的断言在新增规则那天恒绿。
         const peerRules = LAYER_RULES.filter((r) => r.forbid.startsWith("peer:"));
         assert(
-          peerRules.length === 1 && peerRules[0]?.id === "renderer-foundation-no-feature-dep",
-          `peer: 形态的规则应恰好是 renderer-foundation-no-feature-dep 这一条`
-            + `(阶段③ 挂第二条时同批改本断言),实际 ${peerRules.length} 条:${peerRules.map((r) => r.id).join(",")}`,
+          peerRules.length === 2
+            && peerRules[0]?.id === "renderer-foundation-no-feature-dep"
+            && peerRules[1]?.id === "renderer-features-no-cross-import",
+          `peer: 形态的规则应恰好是 renderer-foundation-no-feature-dep 与 renderer-features-no-cross-import 这两条`
+            + `(同族两条、scope 互补),实际 ${peerRules.length} 条:${peerRules.map((r) => r.id).join(",")}`,
         );
         // 换形态的两条机械证据:根名由派生表拼出 + scope 未被顺手扩到整个 renderer
         //
@@ -1843,6 +1888,23 @@ export async function run() {
           foundationScope === "renderer-foundation",
           `renderer-foundation-no-feature-dep 的 scope 应仍是 renderer-foundation(只管 dom/ 与 state/),实际 ${foundationScope}`,
         );
+        // 阶段③ 新挂那条的登记:同一张派生表拼出 forbid(不手写第二份名字)+ scope 落在那一档
+        // + **必须带 pending**(阶段④ 拆边期间不得判红;阶段⑥ 转正时删标记即转 fail-closed)。
+        const featuresRule = LAYER_RULES.find((r) => r.id === "renderer-features-no-cross-import");
+        assert(
+          featuresRule !== undefined,
+          "LAYER_RULES 里应找得到 renderer-features-no-cross-import(ADR-075 阶段③ 挂的那条)",
+        );
+        assert(
+          featuresRule?.forbid === `peer:${RENDERER_PEER_ROOTS.join(",")}`,
+          `renderer-features-no-cross-import 的 forbid 应与 foundation 那条逐字同形(同一张派生表),`
+            + `实际 ${featuresRule?.forbid ?? "(规则缺失)"}`,
+        );
+        assert(
+          featuresRule?.pending === true,
+          `renderer-features-no-cross-import 应带 pending: true(阶段③ 只报告不判红;`
+            + `阶段⑥ 转正时删标记即转 fail-closed),实际 ${String(featuresRule?.pending)}`,
+        );
         // 派生一致性(与门禁 selfCheckPeerMesh 里那组同纪律,但**不**直接消费那个函数:
         // 本段是消费侧的外壳证据,两处任一被摘掉另一处还在)
         assert(
@@ -1851,14 +1913,21 @@ export async function run() {
           `RENDERER_PEER_ROOTS 应是 RENDERER_FEATURE_ROOTS 的两段逐项派生(长度相等且逐项等于 renderer/<root>),`
             + `实际 ${JSON.stringify(RENDERER_PEER_ROOTS)} vs ${JSON.stringify(RENDERER_FEATURE_ROOTS)}`,
         );
+        // renderer-features 那一档:阶段① 是 0 条,阶段③ 起恰好一条且就是新挂的那条。
+        //
+        // ⚠ **阶段④ 拆边期间本断言仍成立**(改的是 import,不是规则表);阶段⑥ 转正删掉
+        // `pending: true` 后**仍成立**(那条断言只数条数与 id,不读 pending)。
+        const featureScoped = LAYER_RULES.filter((r) => r.scope === "renderer-features");
         assert(
-          LAYER_RULES.filter((r) => r.scope === "renderer-features").length === 0,
-          "renderer-features scope 仍应无规则在用(该档的规则属阶段③;阶段② 只把已有规则换成 peer: 形态,scope 未动)",
+          featureScoped.length === 1 && featureScoped[0]?.id === "renderer-features-no-cross-import",
+          `renderer-features scope 应恰好挂着 renderer-features-no-cross-import 这一条`
+            + `(阶段④ 拆边期间与阶段⑥ 转正后均不变 —— 本断言只数条数与 id,不读 pending),`
+            + `实际 ${featureScoped.length} 条:${featureScoped.map((r) => r.id).join(",")}`,
         );
-        // 且一条 pending 都没有新增:pending 计数由规则表派生,结论行里的那个数必须不变
+        // pending 计数由规则表派生,结论行里的那个数跟着 +1(阶段② 是 4)
         const pendingCount = [...LAYER_RULES, ...LAYER_TEXT_RULES].filter((r) => r.pending === true).length;
         assert(
-          pendingCount === 4,
+          pendingCount === 5,
           `pending 判据条数应与结论行一致(新增 pending 会改动结论行的那个数),实际 ${pendingCount}`,
         );
       });
@@ -1912,6 +1981,71 @@ export async function run() {
         );
       });
 
+      // 11h. 阶段③ 新挂那条的**负向夹具**:证明 renderer-features-no-cross-import 真能命中。
+      //
+      // 为什么必须单独一条:它带 `pending: true`,命中**不进 problems**,而真实仓库当前命中 44 处
+      // —— 「它恒绿」与「它命中 44 处」在只读真实仓库输出时看着都是「没判红」,不可区分。
+      // 故必须有一棵合成树证明它会命中,否则「pending 汇总行里那个 44」也可能只是恒绿的另一种说法。
+      //
+      // ⚠ 断言打在 `info` 通道而非 `problems`:这条规则此刻带 pending,**不得判红**
+      // (阶段④ 拆边期间门禁仍须 exit 0)。阶段⑥ 转正删掉 pending 后,同一棵树的这条命中
+      // 会从 info 移到 problems —— 届时本断言须同批改(把 info 改成 problems)。
+      await s.case("11h 负向夹具:阶段③ 新挂的 peer 规则能命中且走 info 通道(pending 期间不判红)", () => {
+        const pkg = { dependencies: { docx: "9.0.0" } };
+        const sb = createSandbox(pkg, {
+          // 三个方向各一条,覆盖 scope 命中面的形状:一层 / 两层子目录 / 目标在另一功能根
+          "renderer/convert/file-list.ts": 'import { domOps } from "../ui/dom-ops.js";\nexport { domOps };\n',
+          "renderer/convert/events/drop.ts": 'import { draw } from "../../wizard/book-wizard.js";\nexport { draw };\n',
+          "renderer/settings/settings-drawer.ts": 'import { convertFlow } from "../convert/convert-flow.js";\nexport { convertFlow };\n',
+          "renderer/ui/dom-ops.ts": "export const domOps = 1;\n",
+          "renderer/wizard/book-wizard.ts": "export const draw = 1;\n",
+          "renderer/convert/convert-flow.ts": "export const convertFlow = 1;\n",
+          // 判绿对照:同 feature 自环 + feature → 基础层/样式层,都不得命中本规则
+          "renderer/convert/convert-self.ts": 'import { domOps } from "./file-list.js";\nexport { domOps };\n',
+          "renderer/convert/to-dom.ts": 'import { refs } from "../dom/refs.js";\nexport { refs };\n',
+          "renderer/dom/refs.ts": "export const refs = 1;\n",
+        });
+        track(sb.dir);
+        const result = analyze(sb.srcDir, pkg, FLAVORS.src);
+        const infoHits = result.info.map(String).filter((l) => l.includes("renderer-features-no-cross-import"));
+        assert(
+          infoHits.length === 3,
+          `合成树上 convert→ui、convert/events→wizard、settings→convert 三条边必须各命中一次,`
+            + `实际 ${infoHits.length} 次:${infoHits.join(" | ")}`,
+        );
+        // 点名:诊断须含源文件、说明符与规则 id(只数次数不足以定位是谁的边)
+        for (const needle of [
+          "renderer/convert/file-list.ts",
+          "../ui/dom-ops.js",
+          "renderer/convert/events/drop.ts",
+          "../../wizard/book-wizard.js",
+          "renderer/settings/settings-drawer.ts",
+          "../convert/convert-flow.js",
+          "renderer-features-no-cross-import",
+        ]) {
+          assert(
+            infoHits.some((line) => line.includes(needle)),
+            `诊断应点名「${needle}」,实际:${infoHits.join(" | ")}`,
+          );
+        }
+        // 判绿对照(恒红同样是失效):同 feature 自环与 feature → 基础层都不该命中
+        assert(
+          !infoHits.some((line) => line.includes("convert-self.ts") || line.includes("to-dom.ts")),
+          `同 feature 自环与 feature → 基础层是合法边,不得命中本规则,实际:${infoHits.join(" | ")}`,
+        );
+        // ⚠ pending 期间**不得判红**:命中只进 info,problems 里一条也不该有
+        assert(
+          result.problems.length === 0,
+          `带 pending 的规则命中不得进 problems(阶段④ 拆边期间门禁仍须 exit 0),`
+            + `实际 ${result.problems.length} 项:${result.problems.join(" | ")}`,
+        );
+        assert(
+          (result.pendingHits.get("renderer-features-no-cross-import") ?? 0) === 3,
+          `pendingHits 应把该规则的 3 处命中逐条计上(汇总行「命中 N 处」由它拼出),`
+            + `实际 ${result.pendingHits.get("renderer-features-no-cross-import") ?? 0} 处`,
+        );
+      });
+
       // 11g. 换形态换掉的那条**真实漏判**:深两层的子目录发 ../../ui/。
       // 旧 forbid 是 `prefix:../ui/`(比说明符字面),`../../ui/dom-ops.js` 不以 `../ui/`
       // 开头 ⇒ 旧形态对这条边恒绿;新形态按解析结果判,深度无关。
@@ -1941,7 +2075,10 @@ export async function run() {
 
       await s.case("11e 结论行逐字钉住(零行为变化的机械证据)", async () => {
         // 结论行逐字钉住(最强的「零行为变化」判据):阶段②把 foundation 规则换了 forbid 形态,
-        // 机制侧新增了派生表,结论行必须仍提到「当前这 4 条判据带 pending 标记」且不提任何 renderer 内层布局。
+        // 机制侧新增了派生表,结论行必须仍提到「当前这 5 条判据带 pending 标记」且不提任何
+        // renderer 内层布局。阶段③ 新挂的 pending 使这个数从 4 变成 5 —— 该数**由规则表派生**
+        // (门禁自己按 `filter(r => r.pending === true).length` 取),故它不是手写的期望值,
+        // 而是真跑出来的口径。
         const sb = createSandbox({ dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } }, {
           "core/markdown/parse.ts": "export const parse = () => null;\n",
         });
@@ -1949,8 +2086,8 @@ export async function run() {
         const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assert(result.code === 0, `本组涉及的合法沙盒应零退出,实际 ${result.code}:${result.output}`);
         assert(
-          result.output.includes("当前这 4 条判据带 pending 标记"),
-          `结论行的 pending 条数应仍为 4(本步未新增 pending),实际:${result.output}`,
+          result.output.includes("当前这 5 条判据带 pending 标记"),
+          `结论行的 pending 条数应仍为 5(阶段③ 新挂 renderer-features-no-cross-import 一条 pending),实际:${result.output}`,
         );
         assert(
           !result.output.includes("RENDERER_TOP_DIRS"),
@@ -1959,11 +2096,13 @@ export async function run() {
       });
       console.log(
         "[ok] import-boundary:三样新机制探针通过"
-        + "(resolveOwner 深度无关取前两段 / 两张 renderer 表的子集关系 / 排除面当前为空;"
+        + "(resolveOwner 深度无关取前两段 / 两张 renderer 表的子集关系 / 排除面恰好只登记组合根 renderer/renderer.ts"
+          + "且组合根 import 判绿、同树真违规仍判红;"
           + "renderer 内层布局真实仓库零未登记 + 合成未登记目录判红并点名 + 目录不存在时跳过 + 原语双向;"
           + "peer 与 renderer-features 自检零问题;"
-          + "阶段②换形态:peer 规则恰好一条且 forbid 逐字等于派生表、renderer-features 档仍无规则、pending 仍为 4 条;"
+          + "阶段③挂规则:peer 规则恰好两条(forbid 逐字同形)、renderer-features 档恰好一条且带 pending、pending 共 5 条;"
           + "负向夹具:dom/refs → convert 判红并点名 + 合法边判绿 + 深目录旧 prefix: 漏判边现判红;"
+          + "阶段③规则负向夹具:三条跨 feature 边各命中一次且点名、走 info 不判红、同 feature 自环判绿;"
           + "结论行不提 RENDERER_TOP_DIRS)",
       );
     });

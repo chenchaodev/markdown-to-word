@@ -184,9 +184,9 @@ export const RENDERER_PEER_ROOTS = Object.freeze(
  *   peer:<根,根>    —— 不得 import 解析后归属这些**功能根**、且与 from 侧自身根不同的模块。
  *                      二元语义(「目标 ≠ 自身」)而非目标集合语义,理由见 ruleHits 该分支。
  *                      根必须写**两段**(renderer/convert 之类),裸名会让判定恒假 ⇒ 恒绿,
- *                      理由见 RENDERER_PEER_ROOTS 的注释。当前在用的规则只有
- *                      renderer-foundation-no-feature-dep 一条(peer mesh 那条挂 pending
- *                      是另一步,见 ADR-075 阶段③)
+ *                      理由见 RENDERER_PEER_ROOTS 的注释。当前在用**两条**:基础层那侧
+ *                      renderer-foundation-no-feature-dep(fail-closed)、功能目录之间那侧
+ *                      renderer-features-no-cross-import(挂 pending,只报告,见 ADR-075 阶段③)
  */
 export const LAYER_RULES = Object.freeze([
   {
@@ -345,6 +345,37 @@ export const LAYER_RULES = Object.freeze([
     // (ADR-075 禁令 2)。
     forbid: `peer:${RENDERER_PEER_ROOTS.join(',')}`,
     reason: 'renderer 基础层(dom/ 元素映射、state/ 纯函数核与 store)是所有功能模块的共同底座,不得反向依赖任何功能目录;唯一合法的向上引用是 ../../core/(跨进程契约单源)',
+  },
+  {
+    // ADR-075 阶段③:peer mesh 规则,**建起即带 `pending: true`**(转正在阶段⑥)。
+    //
+    // 与上一条 renderer-foundation-no-feature-dep 是同族两条、方向互补而非重复:那一条从
+    // **基础层**侧看(底座不得反过来依赖功能目录,已 fail-closed),本条从**功能目录之间**看
+    // (peer 互不 import)。两条的 scope 不重叠(一个是 renderer-foundation、一个是
+    // renderer-features),故不存在同一批 import 被两条各判一次的情形。
+    id: 'renderer-features-no-cross-import',
+    scope: 'renderer-features',
+    // 与 foundation 那条**逐字同形**:同一张派生表(RENDERER_PEER_ROOTS)、同一种两段根。
+    // 差异只在 scope —— 一个 scope 换掉另一条规则的命中间(见 11e 的断言与
+    // selfCheckPeerMesh 末尾那条一致性检查),而非各自维护一份名字。
+    forbid: `peer:${RENDERER_PEER_ROOTS.join(',')}`,
+    // ⚠ pending 期间**不得判红**:命中归入 info 通道、不进 problems、不参与退出码。删掉这一行
+    // 即转 fail-closed,那个动作就是 ADR-075 阶段⑥ 的进度记录(与既有 pending 规则同一节奏)。
+    pending: true,
+    // 组合根 renderer/renderer.ts 按定义要引全部四个功能目录(实测 8 条),它是唯一合法的
+    // 跨 feature 引用方,已在 RENDERER_FEATURE_SCOPE_EXCEPT_FILES 逐文件登记(理由与「该登记
+    // 当前不承重」这一实测事实见那处的注释)。
+    //
+    // ⚠ **已知边界:动态 `import()` 与拼接 specifier 不在本判据覆盖内**(ADR-065 §后果已点名)。
+    // 「零 import」因此有一个已知可绕过的口子:写成 `await import('../' + name)` 这类动态形式即
+    // 逃过本判据(collectImports 只抽静态 import/export from 与 require())。不要留给下一个人
+    // 发现 —— 转正时本句仍须留在规则注释里。
+    reason: 'renderer 的四个功能目录(convert / settings / ui / wizard)是**平铺协作的 peer 而非层级**:'
+      + '它们彼此之间有向边密布、还夹着若干对双向,故不对它们断言「方向」—— ADR-065 §决定只钉'
+      + '「互不 import」这一条边,不主张 renderer 内部整体分层。跨功能协作经组合根以构造参数注入,'
+      + '故任何 feature → 另一 feature 的静态 import 都是绕过组合根的接线(它同时让两条被协作的'
+      + '边耦合成不可拆的一对,改一个功能的行为要同时改另一个)。先报告后转正(ADR-071),'
+      + '转正前置是边拆完(ADR-075 阶段④⑤)',
   },
   {
     id: 'core-pdf-no-fs',
@@ -1394,22 +1425,43 @@ export function resolveOwner(file, spec) {
 /**
  * `renderer-features` 这一档 scope 的**逐文件排除**。
  *
- * 排除**刻意当前为空**:这一档 scope 的机制先落,LAYER_RULES 里还没有任何规则用它,故没有需要
- * 豁免的文件。第一条 `renderer-features` scope 的规则落地时若确有正当豁免,在这一行按
- * **去扩展名**逐个加 —— 同一份登记同时约束 src 的 .ts 源与 dist 的 .js 产物,不必两处各维护一份。
- * (⚠ 已换用 `peer:` 的 renderer-foundation-no-feature-dep 用的是 `renderer-foundation` scope,
- * 不落在这一档,故它的存在不改变本行「为空」的事实。)
+ * **当前登记一个文件:`renderer/renderer.ts`(组合根)。** 按 **去扩展名**书写,故同一份登记
+ * 同时约束 src 的 .ts 源与 dist 的 .js 产物,不必两处各维护一份(同 i18n-dom 的先例)。
+ *
+ * **登记它的理由:组合根是唯一合法的跨 feature 引用方。** ADR-065 §决定把目标形态写成
+ * 「四个功能目录互不 import,一切跨功能协作经组合根 `renderer/renderer.ts` 以构造参数注入」——
+ * 组合根按定义要引全部四个功能目录(实测 8 条:convert ×2 · settings ×4 · ui ×2),那是该目标
+ * 形态本身而非它的违反。规则与它要保护的决定直接冲突时,豁免的是那个**唯一合法的例外**
+ * (同 LAYER_TEXT_RULES 表头里 core-i18n-dom-only 那段论证:判据把「唯一该做这件事的文件」
+ * 也判红,规则就与它要保护的不变量打架)。
+ *
+ * ⚠⚠ **实测:这一行当前是「防御性登记」,不是承重件 —— 删掉它,命中数一字不变**(ADR-075 阶段③
+ * 实测,见该 ADR 后果节)。原因:`renderer-features` 的命中面是 `renderer/<功能根>/` **前缀**
+ * (见下面 scopeMatches 那一段),而组合根是 `renderer/` 的**直属文件**,前缀本就不匹配它 ⇒
+ * 它在排除之前就已经落在 scope 之外。实测两侧:带本行 44 处 / 去掉本行 44 处,`renderer.ts`
+ * 的 8 条 import 两侧都不报。
+ * ⇒ **不要**把这一行读成「不豁免就会第一跑判红」——那是错的。保留它的理由是另一条:
+ * 它把 ADR-065 那条「唯一合法例外」写成**机械可读的一条登记**,而不是只活在注释里;若将来
+ * 有人把 scope 的命中面从「前缀枚举」改成「renderer 下排除基础层/样式层的全部文件」,
+ * 这一行就是让组合根继续合法的**唯一**依据,否则那次改动会把目标形态判红。
+ * ⚠ 反过来说:因为它当前不承重,**它也证明不了自己是对的** —— 那条证据是 selfCheckPeerMesh 里
+ * 「renderer 直属文件不命中」那条 scope 夹具(它走 scopeMatches,命中面若变宽就会翻脸)。
+ *
+ * ⚠ 不得写成「凡 `renderer/*.ts` 顶层文件除外」或「组合根除外的一切」——「除某文件外一律成立」
+ * 一旦泛化,登记缺失就退化成静默放行(本文件多处批过的同一形态)。逐个列文件是这一档的纪律。
+ * 新增第二个豁免时要重新回答同一个问题:「它是不是一个**按定义**必须引多个功能目录的组合根?」
+ * 普通的顶层文件(about.ts 之类)不在豁免面内 —— 将来若命中面变宽,它引功能目录即判红。
  *
  * 为什么它住在 scope 档而不是规则体的 `exceptFiles`:LAYER_RULES 的求值循环不读那个字段
  * (只有 LAYER_TEXT_RULES 的 findTextLayerViolations 读它),挂上去会被静默忽略 ——
  * 与 `allowTypeOnly` 只被 `prefix:` 分支读同一类 fail-open。详见 scopeMatches 里那段注释。
  *
- * ⚠ 空数组是一处**刻意留白**,不是「忘了填」:本文件多处强调过「除某文件外一律成立」
- * 一旦泛化、登记缺失就退化成静默放行,而这里没有规则需要它,凭空登记一个名字反而是给
- * 下一个读者一个假的既有豁免。自检(selfCheckPeerMesh)钉住「当前为空」这个事实,将来
- * 第一条落在这一档 scope 上的规则要豁免时那一处断言会提醒连同理由一起改。
+ * ⚠ 空数组曾是一处**刻意留白**,不是「忘了填」:本文件多处强调过「除某文件外一律成立」
+ * 一旦泛化、登记缺失就退化成静默放行,而那时没有规则需要它,凭空登记一个名字反而是给
+ * 下一个读者一个假的既有豁免。ADR-075 阶段③ 起登记组合根(见上),自检(selfCheckPeerMesh)
+ * 钉住「恰好只有组合根一个」这个事实。
  */
-export const RENDERER_FEATURE_SCOPE_EXCEPT_FILES = Object.freeze([]);
+export const RENDERER_FEATURE_SCOPE_EXCEPT_FILES = Object.freeze(['renderer/renderer.ts']);
 
 function scopeMatches(scope, file) {
   if (scope === 'preload') return file === 'main/preload.cts' || file === 'main/preload.cjs';
@@ -1741,12 +1793,27 @@ export function selfCheckPeerMesh() {
       );
     }
   }
-  // 当前排除面为空:这是一个需要被看见的事实(见 RENDERER_FEATURE_SCOPE_EXCEPT_FILES 的注释),
-  // 不是默默留着。将来第一条 peer 规则要豁免时,删掉这条断言并写明豁免理由。
-  if (RENDERER_FEATURE_SCOPE_EXCEPT_FILES.length !== 0) {
+  // 排除面:**恰好只登记组合根一个**,且它逐字是 `renderer/renderer.ts`(ADR-075 阶段③)。
+  // 钉「恰好」而非「至少」:多登记一个即意味着某个功能目录被整体豁免,那正是 ADR-065 目标形态
+  // 的反面;少登记一个则组合根失去它在 ADR-065 里那条「唯一合法例外」地位的机械依据。
+  //
+  // ⚠ **这一行当前不承重**(实测:带它 / 去掉它,renderer-features-no-cross-import 双侧命中数
+  // 一字不变,组合根那 8 条 import 两侧都不报)—— 因为 scope 的命中面是 `renderer/<功能根>/`
+  // 前缀,组合根作为 `renderer/` 的直属文件本就不在其中。理由与该实测的完整说明见
+  // RENDERER_FEATURE_SCOPE_EXCEPT_FILES 的注释。
+  //
+  // ⚠ 为什么这一条必须逐字比对而不是只比长度:数组换成 `renderer/` 之类泛化前缀时长度不变,
+  // 而泛化会让「除组合根外一切」静默成立(本文件多处批过的「除某文件外一旦泛化,登记缺失即
+  // 静默放行」)。scopeCases 里「renderer 直属文件不命中」那条是本登记**真正承重的那块证据**
+  // ——它走 scopeMatches,命中面若变宽(改成排除基础层/样式层的全 renderer)就会翻脸。
+  if (RENDERER_FEATURE_SCOPE_EXCEPT_FILES.length !== 1
+    || RENDERER_FEATURE_SCOPE_EXCEPT_FILES[0] !== 'renderer/renderer.ts') {
     problems.push(
-      `renderer-features scope 的排除面不再为空(${RENDERER_FEATURE_SCOPE_EXCEPT_FILES.join('、')}):`
-      + '本自检刻意按「当前为空」钉住这个事实,加豁免时删掉本条并写明理由',
+      'renderer 布局自检失守:renderer-features scope 的排除面应恰好是组合根一个'
+      + `(renderer/renderer.ts —— 豁免的是组合根,理由:它是唯一合法的跨 feature 引用方,ADR-065),`
+      + `实际 ${RENDERER_FEATURE_SCOPE_EXCEPT_FILES.join('、') || '(空)'}:`
+      + '加第二个豁免时要重新回答「它是不是一个按定义必须引多个功能目录的组合根」,'
+      + '不得泛化成「某类文件除外」—— 登记缺失即静默放行',
     );
   }
   return problems;
