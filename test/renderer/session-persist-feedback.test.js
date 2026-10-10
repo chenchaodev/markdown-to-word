@@ -313,6 +313,34 @@ export async function run() {
     const refs = await load("../../dist/renderer/dom/refs.js");
     const { dropZone, histCount, historyBar, statusEl, tocInput } = refs;
     for (const exported of Object.values(refs)) hardenElementShape(exported);
+    /**
+     * ADR-075 阶段④:`ui/recent-files` 与 `ui/first-run-guide` 的跨功能协作改为收
+     * deps 形参(由组合根 renderer.ts 组装;这两个模块不再静态 import convert/settings/wizard)。
+     * 桩带计数而非空函数:本段驱动的两条路径(清空最近 / 离开空态收起)按理都不触达
+     * 协作面,若哪条经它们走了,下面的断言当场变红 —— 空桩会把断链静默放过(fail-open)。
+     * @type {string[]}
+     */
+    const crossFeatureCalls = [];
+    /** @type {import("../../dist/renderer/ui/recent-files.js").RecentFilesDeps} */
+    const recentFilesDeps = {
+      applySelection: (files) => { crossFeatureCalls.push(`applySelection:${files.length}`); },
+      runConvert: (filePath, format) => {
+        crossFeatureCalls.push(`runConvert:${filePath}:${format}`);
+        return Promise.resolve();
+      },
+      syncSuppressCompleteDialog: (checked) => {
+        crossFeatureCalls.push(`syncSuppressCompleteDialog:${checked}`);
+      },
+      applyDrawerOpenState: (open) => {
+        crossFeatureCalls.push(`applyDrawerOpenState:${open}`);
+      },
+    };
+    /** @type {import("../../dist/renderer/ui/first-run-guide.js").FirstRunGuideDeps} */
+    const firstRunGuideDeps = {
+      openBookWizard: () => { crossFeatureCalls.push("openBookWizard"); },
+    };
+    // 长度经函数取,不被前面的 `length === 0` 断言收窄成字面量 0(见 8b 的注)
+    const callCount = () => crossFeatureCalls.length;
     // state / i18n 为进程级单例(验收 runner 顺序跑段):本段会改语言与设置,
     // 收尾必须复位,否则后续段的文案/状态断言会被污染。
     const { setLanguage } = await load("../../dist/core/i18n/index.js");
@@ -473,13 +501,19 @@ export async function run() {
       !historyBar.classList.contains("hidden"),
       "写失败不应把历史条隐藏成已清空的样子",
     );
+    // 注入桩可观测性:渲染/清空这两条路径按理都不触达 convert·settings 的协作面,
+    // 一旦某天悄悄直连过去(或桩退化成空函数),这条会先红。空桩会让它恒绿。
+    assert(
+      crossFeatureCalls.length === 0,
+      `清空最近路径不应触达跨功能协作面,实际调用 ${JSON.stringify(crossFeatureCalls)}`,
+    );
     });
 
     // ---- 8. 首启引导(first-run-guide):写失败同一反馈口径,收起态保留 ----
     // 直接构造"空态 + firstRun"后离开空态:引导收起并写回 firstRun=false
     state.firstRun = true;
     dropZone.dataset.stage = "empty";
-    firstRunGuide.initFirstRunGuide();
+    firstRunGuide.initFirstRunGuide(firstRunGuideDeps);
     dropZone.dataset.stage = "single"; // 离开空态 → 视为已引导 → 写回 firstRun=false
     firstRunGuide.syncFirstRunGuide();
     await flush();
@@ -494,6 +528,34 @@ export async function run() {
       `首启引导状态写失败应给出同一失败文案,实际 ${JSON.stringify(statusEl.textContent)}`,
     );
     console.log("[ok] ui-state-failure-feedback:完成弹窗/抽屉开合/清空最近/首启引导 四处静默点统一反馈 断言通过");
+    });
+
+    // ---- 8b. 注入面:必填形参 + 桩本身可观测(两条都防「静默不生效」) ----
+    await suite.case("跨功能协作面是必填形参且注入桩真的在记录", () => {
+      // ① arity:port 若被改成「带默认值的可选形参」,缺接线时运行期静默不生效
+      //    (fail-open),门禁与本段其余断言都看不见这一层,只有 arity 会当场翻脸。
+      //    JS 侧形参带默认值 ⇒ Function.length 不计它 ⇒ 退化即 length 变小。
+      assert(
+        recentFiles.initUiStateRestore.length === 1
+          && recentFiles.bindRecentFilesEvents.length === 1,
+        "recent-files 真正用到协作面的两个入口应各自必收 deps 形参(不得设为可选/带默认值)",
+      );
+      assert(
+        firstRunGuide.initFirstRunGuide.length === 1,
+        "initFirstRunGuide 应必收 deps 形参(不得设为可选/带默认值)",
+      );
+      // ② 桩自检:直接打一次桩并确认记录到了 —— 否则「路径不应触达协作面」那条
+      //    断言在「桩其实是空函数」时恒绿,等于没写。
+      //    长度经 helper 取:紧邻的 `length === 0` 断言会把 TS 的类型收窄成字面量 0,
+      //    随后的 `=== 1` 就被判为「两型无交集」(TS2367),而收窄本身是假信号。
+      assert(crossFeatureCalls.length === 0,
+        `前七步不应触达跨功能协作面,实际 ${JSON.stringify(crossFeatureCalls)}`);
+      recentFilesDeps.applySelection(["C:\\probe\\only.md"]);
+      assert(
+        callCount() === 1 && crossFeatureCalls[0] === "applySelection:1",
+        `注入桩应当真的记录调用(空函数会让协作面断言恒绿),实际 ${JSON.stringify(crossFeatureCalls)}`,
+      );
+      crossFeatureCalls.length = 0;
     });
 
     // ---- 9. 设置保存失败(persistSettings):保留编辑内容与控件,不回滚到 main cache ----

@@ -3,7 +3,9 @@
  * 不挤压任何元素;行渲染走 rrow 模式(图标 + 文件名 + 格式徽标 + mono 时间)。
  * 不变量:初始一律收起(浮层语义下默认展开即默认遮挡),仅在 空→有文件 跃迁时自动收起一次;
  * 转换成功后由 convert-flow 经 state.recentRefreshHandler 回调刷新(打破 recent-files
- * ↔ convert-flow ESM 环)。依赖方向:recent-files → file-list/convert-flow/settings-drawer。
+ * ↔ convert-flow ESM 环)。依赖方向:本模块 → dom/refs + state/pure + dom-ops + first-run-guide
+ * (同一 ui 根内);对 convert(file-list / convert-flow)与 settings(panel / drawer)的跨功能
+ * 协作一律走组合根注入的 RecentFilesDeps 形参,不再有静态 import。
  */
 import {
   histCount,
@@ -14,15 +16,32 @@ import {
   statusEl,
 } from "../dom/refs.js";
 import type { RecentFile, UiState } from "../../core/ipc-contract.js";
-import { applySelection } from "../convert/file-list.js";
-import { runConvert } from "../convert/convert-flow.js";
 import { baseName, errorMessage, formatRecentTime } from "../state/pure.js";
 import { setError, setStatus } from "./dom-ops.js";
 import { state } from "../state/state.js";
-import { syncSuppressCompleteDialog } from "../settings/settings-panel.js";
-import { applyDrawerOpenState } from "../settings/settings-drawer.js";
 import { syncFirstRunGuide } from "./first-run-guide.js";
 import { t, type I18nKey } from "../../core/i18n/index.js";
+
+/**
+ * 跨功能协作面(ADR-075 阶段④:组合根组装 · 本模块接形参 · 类型由本 feature 自报)。
+ * 四个功能根是平铺协作的 peer 而非层级,故不新建共享 ports 文件 —— 共享一份等于给
+ * peer mesh 装枢纽,边数不降反增。传函数本身(不传模块命名空间):传模块等于换一种
+ * 形式把跨 feature 面全量暴露出去,拆边就白做了。
+ *
+ * **不许给任一项设默认值/可选参数**:port 缺失必须在 typecheck 处编译不过,
+ * 而静默不生效(fail-open)比编译不过更糟 —— 它让接线错误在运行期无声溜过。
+ */
+export interface RecentFilesDeps {
+  /** convert/file-list:替换选择载入列表(本模块只用它的单文件列表分支,
+   *  不经 skipped/duplicates 两个提示参数)。 */
+  applySelection: (files: string[]) => void;
+  /** convert/convert-flow:按条目记录的格式直接重转。 */
+  runConvert: (filePath: string, format: "docx" | "pdf") => Promise<void>;
+  /** settings/settings-panel:完成弹窗「不再提示」勾选态同步(不写回)。 */
+  syncSuppressCompleteDialog: (checked: boolean) => void;
+  /** settings/settings-drawer:启动恢复时的抽屉可见态。 */
+  applyDrawerOpenState: (open: boolean) => void;
+}
 
 /** 展示上限(与主进程 ui-state.ts 的 MAX_RECENT_FILES 一致;主进程已截断,防御性再截断)。
  *  本值必须与 main 侧 ui-state.ts MAX_RECENT_FILES 恒等(恒等断言由 test 守护);
@@ -54,7 +73,10 @@ function evaluateAutoCollapse(): void {
 }
 
 /* ---------- 历史条渲染 ---------- */
-/** 重建历史行;空列表隐藏整个历史条(含标题条与「清空记录」);首次渲染收起。 */
+/** 重建历史行;空列表隐藏整个历史条(含标题条与「清空记录」);首次渲染收起。
+ *  不接 deps:本函数与其下的 renderRecentRow 是纯 DOM 产出(行的单击装载由
+ *  bindRecentFilesEvents 里 recentList 上的事件委托统一派发,不在渲染链上),
+ *  故渲染链上没有任何跨功能协作点。 */
 export function renderRecentList(recent: RecentFile[]): void {
   const items = recent.slice(0, MAX_RECENT_FILES);
   historyBar.classList.toggle("hidden", items.length === 0);
@@ -152,7 +174,7 @@ function renderRecentRow(item: RecentFile): HTMLLIElement {
  * lastSessionFiles → 主进程保序过滤存在性(缺失剔除,不提示)→ 单文件态/多文件态恢复;
  * 历史条首次渲染(在会话恢复之后,折叠自动判定以最终舞台状态一次到位)。
  */
-export async function initUiStateRestore(): Promise<void> {
+export async function initUiStateRestore(deps: RecentFilesDeps): Promise<void> {
   let ui: UiState;
   try {
     ui = await window.api.uiStateGet();
@@ -160,23 +182,26 @@ export async function initUiStateRestore(): Promise<void> {
     return; // 读取失败:保持默认(不恢复会话/面板/历史条)
   }
   // panelOpen → 设置抽屉可见态(开合写回已迁至 settings-drawer,此处只恢复)
-  applyDrawerOpenState(ui.panelOpen.page);
+  deps.applyDrawerOpenState(ui.panelOpen.page);
   // 完成弹窗「不再提示」→ 同步弹窗内 checkbox 与内存态(不写回,避免启动写盘)
-  syncSuppressCompleteDialog(ui.suppressCompleteDialog);
+  deps.syncSuppressCompleteDialog(ui.suppressCompleteDialog);
   // 首启引导标志 → 内存态,并据当前舞台状态决定是否呈现引导卡
   state.firstRun = ui.firstRun;
   syncFirstRunGuide();
   // 会话文件恢复:逐项校验存在性(主进程 filterExistingPaths 保序过滤,缺失剔除)
   try {
     const existing = await window.api.filterExistingPaths(ui.lastSessionFiles);
-    if (existing.length > 0) applySelection(existing);
+    if (existing.length > 0) deps.applySelection(existing);
   } catch {
     /* 静默:过滤失败不恢复会话 */
   }
   renderRecentList(ui.recentFiles);
 }
 
-/** 转换成功后刷新历史条(uiStateGet 重新拉取;失败保持当前展示)。 */
+/** 转换成功后刷新历史条(uiStateGet 重新拉取;失败保持当前展示)。
+ *  ⚠ 本函数**不接 deps**:它是纯 DOM 刷新(渲染链上无跨功能协作点,见
+ *  renderRecentList 的注),因此 state.recentRefreshHandler 仍可直接指向它 ——
+ *  那条槽之所以合法,是因为「转换成功后刷新」这个时刻没有任何调用栈能连到 ui。 */
 export async function refreshRecentFiles(): Promise<void> {
   try {
     const ui = await window.api.uiStateGet();
@@ -195,7 +220,7 @@ export async function refreshRecentFiles(): Promise<void> {
  * data-action 分派(重新转换 / 打开所在文件夹),其余点击落在行上 = 仅加载到列表
  * (不转换)。历史条不在拖放区内部,无需拦截冒泡。
  */
-export function bindRecentFilesEvents(): void {
+export function bindRecentFilesEvents(deps: RecentFilesDeps): void {
   // 舞台状态变化 → 自动收起判定(反向注册,file-list.renderSelection 调用)
   state.stageChangedHandler = evaluateAutoCollapse;
 
@@ -218,7 +243,7 @@ export function bindRecentFilesEvents(): void {
       if (actionBtn.dataset.action === "reconvert") {
         // 按该条目记录的格式直接重转
         const format = (actionBtn.dataset.format ?? state.selectedFormat) as "docx" | "pdf";
-        void runConvert(filePath, format);
+        void deps.runConvert(filePath, format);
       } else if (actionBtn.dataset.action === "reveal") {
         // 打开源文件所在文件夹(白名单外路径主进程返回 { ok:false, error })
         void window.api
@@ -233,7 +258,7 @@ export function bindRecentFilesEvents(): void {
       return;
     }
     const row = target.closest<HTMLElement>(".rrow");
-    if (row?.dataset.path) loadRecentItem(row.dataset.path);
+    if (row?.dataset.path) loadRecentItem(deps, row.dataset.path);
   });
 
   // 「清空记录」:清空并隐藏整条(以主进程合并结果为准;失败路径见 clearRecentFiles)
@@ -241,7 +266,8 @@ export function bindRecentFilesEvents(): void {
 }
 
 /** 清空最近记录:以主进程合并结果为准重渲染;写失败保留当前列表并给出可见反馈
- *  (main 侧记录仍在,不能显示成已清空)。导出供直测断言该失败路径。 */
+ *  (main 侧记录仍在,不能显示成已清空)。导出供直测断言该失败路径。
+ *  不接 deps:清空 + 重渲染这条链上无跨功能协作点(同 renderRecentList 的注)。 */
 export function clearRecentFiles(): Promise<void> {
   return window.api
     .uiStateSet({ recentFiles: [] })
@@ -253,8 +279,8 @@ export function clearRecentFiles(): Promise<void> {
 }
 
 /** 单击加载:替换选择载入列表(不转换),状态区提示文件名。 */
-function loadRecentItem(filePath: string): void {
-  applySelection([filePath]);
+function loadRecentItem(deps: RecentFilesDeps, filePath: string): void {
+  deps.applySelection([filePath]);
   setStatus(t("recent.loaded", { name: baseName(filePath) }));
   statusEl.title = filePath; // 悬浮可看完整路径(applySelection 的 title 被覆盖后补回)
 }

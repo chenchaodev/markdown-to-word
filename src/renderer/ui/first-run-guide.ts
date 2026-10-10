@@ -4,21 +4,31 @@
  * 绝不强制打开设置抽屉。引导可跳过(写 firstRun=false 持久化);
  * 用户离开空态(开始使用)亦视为已引导,不再出现。
  *
- * 依赖方向单向:本模块 → state / refs / wizard / i18n;不反向引用组合根,
+ * 依赖方向单向:本模块 → state / refs / dom-ops / i18n;不反向引用组合根,
  * 经 initUiStateRestore 在读取到 firstRun 后调用 syncFirstRunGuide 触发首屏呈现。
  * 舞台状态变化经 MutationObserver 监听 #dropZone 的 data-stage(避免与 file-list
  * 形成 ESM 环),离开空态即收起并标记已引导。
+ * 对 wizard 的协作经组合根注入的 FirstRunGuideDeps 形参,不再有静态 import。
  */
 import { state } from "../state/state.js";
 import { dropZone } from "../dom/refs.js";
 import { setError } from "./dom-ops.js";
-import { openBookWizard } from "../wizard/book-wizard.js";
 import { t } from "../../core/i18n/index.js";
+
+/**
+ * 跨功能协作面(ADR-075 阶段④:组合根组装 · 本模块接形参 · 类型由本 feature 自报;
+ * 不新建共享 ports 文件,理由同 ui/recent-files 的同名类型)。
+ * **不许给任一项设默认值/可选参数**:port 缺失必须编译不过,不得静默不生效。
+ */
+export interface FirstRunGuideDeps {
+  /** wizard/book-wizard:打开成书向导(引导卡步骤②,用户显式点击才触发)。 */
+  openBookWizard: () => void;
+}
 
 let guideEl: HTMLElement | null = null;
 
 /** 初始装配:接线跳过/步骤按钮 + 监听舞台状态变化(离开空态即视为已引导)。 */
-export function initFirstRunGuide(): void {
+export function initFirstRunGuide(deps: FirstRunGuideDeps): void {
   guideEl = document.getElementById("firstRunGuide");
   if (!guideEl) return;
 
@@ -35,7 +45,7 @@ export function initFirstRunGuide(): void {
         if (action === "preset") {
           document.getElementById("quickPreset")?.focus();
         } else if (action === "wizard") {
-          openBookWizard();
+          deps.openBookWizard();
         }
       });
     });

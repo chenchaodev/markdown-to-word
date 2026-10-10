@@ -60,14 +60,20 @@ export async function run() {
     const listBody = SRC.slice(allIdx, SRC.indexOf("])", allIdx));
     assert(/settleInit\(\s*"loadSettings"\s*,\s*loadSettings\(\)\s*\)/.test(listBody),
       `屏障 Promise.all 应汇合 loadSettings,实际参数列表=${JSON.stringify(listBody)}`);
-    assert(/settleInit\(\s*"initUiStateRestore"\s*,\s*initUiStateRestore\(\)\s*\)/.test(listBody),
-      `屏障 Promise.all 应汇合 initUiStateRestore,实际参数列表=${JSON.stringify(listBody)}`);
+    // uiStateRestore 收 deps 形参(ADR-075 阶段④:组合根注入跨功能协作面),故此处
+    // 匹配「传了一个实参」而非零参 —— 保住原意图:屏障仍汇合这一路,且它没有被
+    // 拆成独立启动。刻意不把 \s* 放宽到允许空参列表:那会让「忘了接线」也判绿。
+    assert(/settleInit\(\s*"initUiStateRestore"\s*,\s*initUiStateRestore\(\s*[A-Za-z_$][\w$]*\s*\)\s*\)/.test(listBody),
+      `屏障 Promise.all 应汇合 initUiStateRestore(带 deps 实参),实际参数列表=${JSON.stringify(listBody)}`);
   });
 
   // ---- 2. 旧的「各自 void 启动」写法不得复现(否则又变回两路各自绘制) ----
   await suite.case("旧的两路各自 void 启动写法不复现", () => {
     assert(!/void\s+loadSettings\(\)\s*;/.test(SRC), "不应再有独立的 void loadSettings() 启动");
-    assert(!/void\s+initUiStateRestore\(\)\s*;/.test(SRC), "不应再有独立的 void initUiStateRestore() 启动");
+    // initUiStateRestore 现有 deps 实参,故此处匹配任意实参列表而非空参列表:
+    // 只认 `()` 的话,改成 `void initUiStateRestore(recentFilesDeps);` 反而判绿,
+    // 正是本条要防的「各自启动」形态。
+    assert(!/void\s+initUiStateRestore\(\s*[^)]*\)\s*;/.test(SRC), "不应再有独立的 void initUiStateRestore() 启动");
   });
 
   // ---- 3. 隐藏早于 await 屏障;揭示在 finally(失败路径不白屏) ----
@@ -92,9 +98,12 @@ export async function run() {
   await suite.case("事件绑定先于屏障的时序不变量", () => {
     const bindIdx = SRC.indexOf("bindEvents();");
     assert(bindIdx > 0 && bindIdx < barrierIdx, "bindEvents() 应早于启动屏障调用(时序不变量)");
-    const firstRunIdx = SRC.indexOf("initFirstRunGuide();");
+    // initFirstRunGuide 现有 deps 实参,锚点改用正则:既保住「这是一次真调用」(不是注释、
+    // 不是只有名字),也保住它带上了注入的协作面。刻意不接受零参形态 —— 零参会放过
+    // 「忘了接线」;这里要钉的是「同步装配早于屏障」这条顺序不变量。
+    const firstRunIdx = SRC.search(/initFirstRunGuide\(\s*\{/);
     assert(firstRunIdx > 0 && firstRunIdx < barrierIdx,
-      "initFirstRunGuide()(同步装配)应早于屏障调用");
+      "initFirstRunGuide()(同步装配,带 deps 实参)应早于屏障调用");
   });
 
   // ---- 6. 首屏焦点:揭示之后再落焦,且落在舞台容器(主入口) ----

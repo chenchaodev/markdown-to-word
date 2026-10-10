@@ -7,21 +7,41 @@
  * 子模块私有符号)。
  */
 import { state } from "./state/state.js";
-import { updateActionButtons } from "./convert/file-list.js";
+import { applySelection, updateActionButtons } from "./convert/file-list.js";
 import { bindEvents } from "./convert/events/index.js";
 import { bindSettingsEvents } from "./settings/settings-bindings.js";
-import { bindSettingsDrawerEvents } from "./settings/settings-drawer.js";
+import { bindSettingsDrawerEvents, applyDrawerOpenState } from "./settings/settings-drawer.js";
 import { aboutOpenBtn, dropZone } from "./dom/refs.js";
-import { loadSettings, initSettingsTabs } from "./settings/settings-panel.js";
+import {
+  loadSettings,
+  initSettingsTabs,
+  syncSuppressCompleteDialog,
+} from "./settings/settings-panel.js";
+import { runConvert } from "./convert/convert-flow.js";
+import { openBookWizard } from "./wizard/book-wizard.js";
 import {
   bindRecentFilesEvents,
   initUiStateRestore,
   refreshRecentFiles,
+  type RecentFilesDeps,
 } from "./ui/recent-files.js";
 import { initFirstRunGuide } from "./ui/first-run-guide.js";
 import { setError } from "./ui/dom-ops.js";
 import { errorMessage } from "../core/text/error-message.js";
 import { t } from "../core/i18n/index.js";
+
+/**
+ * ui/recent-files 的跨功能协作面在此组装(ADR-075 阶段④:组合根组装 · feature 侧接形参)。
+ * 四个功能根是平铺协作的 peer,任何 feature → 另一 feature 的静态 import 都判红
+ * (`renderer-features-no-cross-import`,阶段⑥ 转正),故这些协作一律经本处注入。
+ * 传函数本身而非模块命名空间;**不给默认值** —— 漏一项要在 typecheck 处编译不过。
+ */
+const recentFilesDeps: RecentFilesDeps = {
+  applySelection,
+  runConvert,
+  syncSuppressCompleteDialog,
+  applyDrawerOpenState,
+};
 
 /**
  * window.api 类型单源在 core(PreloadApi,src/core/preload-api.ts),preload 以它标注
@@ -90,7 +110,7 @@ async function runInitBarrier(): Promise<void> {
   try {
     await Promise.all([
       settleInit("loadSettings", loadSettings()),
-      settleInit("initUiStateRestore", initUiStateRestore()),
+      settleInit("initUiStateRestore", initUiStateRestore(recentFilesDeps)),
     ]);
   } finally {
     // 读一次 offsetHeight 强制同步布局/样式刷新:两路 DOM 变更在同一帧生效,
@@ -119,7 +139,7 @@ function focusStageEntry(): void {
 // 先于 updateActionButtons / 设置回填;bindEvents 内含进度订阅与菜单订阅)
 bindEvents();
 // 最近转换区块事件绑定迁入 bind*Events 范式(原为模块顶层监听)
-bindRecentFilesEvents();
+bindRecentFilesEvents(recentFilesDeps);
 // 初始无选中:按钮按当前状态置灰(HTML 中 convertBtn 已写死 disabled);
 // footer 快捷键 hint 由 updateActionButtons 按模式维护
 updateActionButtons();
@@ -134,11 +154,13 @@ aboutOpenBtn.addEventListener("click", () => {
   window.api.openAbout();
 });
 // 首启引导装配(接线跳过/步骤按钮 + 监听舞台状态;首屏呈现由 initUiStateRestore 触发)
-initFirstRunGuide();
+initFirstRunGuide({ openBookWizard });
 // 设置回填 + UI 状态恢复并行汇合于启动屏障,汇合后统一重绘一次(见屏障区块)
 void runInitBarrier();
 // 转换成功后刷新最近区块的回调接线(convert-flow 经 state 调用,
-// 不再 import recent-files,打破 recent-files ↔ convert-flow 的 ESM 环)
+// 不再 import recent-files,打破 recent-files ↔ convert-flow 的 ESM 环)。
+// refreshRecentFiles 本身不接 deps(纯 DOM 刷新,渲染链上无跨功能协作点),
+// 故仍可直接指向它 —— 这条槽合法的前提是那个时刻没有任何调用栈能连到 ui。
 state.recentRefreshHandler = refreshRecentFiles;
 // 标题区版本号。不阻塞界面,但**失败不许静默**:取不到版本号时徽标恒空、只留一条
 // unhandled rejection,不报任何错 —— 这正是上一轮把一处断链放大成「门禁等 5s 无解释」
