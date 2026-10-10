@@ -46,7 +46,7 @@ import {
   rememberFocusOrigin,
   restoreFocusOrigin,
   trapFocus,
-} from "./dom-ops.js";
+} from "../dom/dom-ops.js";
 import { updateActionButtons } from "../convert/file-list.js";
 import { batchSuccessPaths } from "../state/pure.js";
 import { formatWarning, t } from "../../core/i18n/index.js";

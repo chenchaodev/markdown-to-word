@@ -12,7 +12,7 @@
 import { dropSkipped, dropSkippedList, dropSkippedToggle, dropZone } from "../../dom/refs.js";
 import { state } from "../../state/state.js";
 import { baseName, errorMessage } from "../../state/pure.js";
-import { setError, setStatus } from "../../ui/dom-ops.js";
+import { setError, setStatus } from "../../dom/dom-ops.js";
 import { appendSelection, clearDragState } from "../file-list.js";
 import { t } from "../../../core/i18n/index.js";
 

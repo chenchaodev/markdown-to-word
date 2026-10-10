@@ -11,7 +11,7 @@
 import { t } from "../../core/i18n/index.js";
 import { headerLogoClearBtn, headerLogoPickBtn } from "../dom/refs.js";
 import { state } from "../state/state.js";
-import { setError } from "../ui/dom-ops.js";
+import { setError } from "../dom/dom-ops.js";
 import { errorMessage } from "../state/pure.js";
 import {
   bindControlGroup,

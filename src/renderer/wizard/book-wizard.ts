@@ -21,13 +21,13 @@
  * `wizardDraft.cover`,付印时随 `runMerge` 传入,不写 settings。
  *
  * 依赖方向单向:本模块 → wizard-runtime/fields/steps/steps-delivery(渲染)/
- * ui/dom-ops(焦点陷阱)/ settings-drawer / convert-flow(runMerge)/ wizard-state(纯 reducer);
+ * dom/dom-ops(焦点陷阱)/ settings-drawer / convert-flow(runMerge)/ wizard-state(纯 reducer);
  * 不反向引用组合根,closeBookWizard 供 dialogs-events 的 Esc 链调用。
  */
 import { t, applyStaticTexts } from "../../core/i18n/index.js";
 import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
 import { state } from "../state/state.js";
-import { trapFocus } from "../ui/dom-ops.js";
+import { trapFocus } from "../dom/dom-ops.js";
 import { afterModalClosed } from "../ui/dialogs.js";
 import {
   isBackgroundCommandBlocked,

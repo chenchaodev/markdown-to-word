@@ -4,8 +4,11 @@
  * 原在 `state/utils.ts`。搬家的理由:该文件实为 DOM 工具箱(13 个导出里只有依赖
  * `state.errorFlashTimer` 的状态区写入,其余全是元素读写与焦点管理),而 `state/`
  * 这个目录名会让读者误以为 renderer 各模块只应单向依赖 `state/` —— 实际每个功能
- * 目录都深度依赖本模块的副作用。移到 `ui/` 并改名 `dom-ops` 后,`state/` 只剩
+ * 目录都深度依赖本模块的副作用。移到 `dom/` 并改名 `dom-ops` 后,`state/` 只剩
  * 真正的 store(`state.ts`)与纯函数核(`pure.ts`),目录名与内容一致。
+ *
+ * 二次搬家(ADR-076):原在 `ui/dom-ops.ts`,因零 feature 依赖却在功能目录内被卷进
+ * peer mesh(17 条跨 feature 边指向它与 `dom/toast.ts`),归入基础层 `dom/`。
  *
  * 纯函数(isMarkdown/errorMessage 等)单源 `state/pure.ts`(零 DOM 依赖,可 Node 直测)。
  * 只依赖 `dom/refs.ts` 的元素映射与 `state/state.ts` 的 errorFlashTimer,无环。
@@ -22,7 +25,7 @@ import {
   progressText,
   progressTrack,
   statusEl,
-} from "../dom/refs.js";
+} from "./refs.js";
 import { state } from "../state/state.js";
 import { t, type I18nKey } from "../../core/i18n/index.js";
 

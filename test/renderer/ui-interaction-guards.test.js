@@ -65,7 +65,7 @@ import { installDomStub, fireListener, makeElement, makeKeyEvent } from "./dom-s
  *   (6)(7) AI 清理分档与 tocMode 下拉的显隐重算;
  * - `settings/settings-bindings-app.ts` —— (2) 语言切换钩子 `appWriteHooks.languageSelect`
  *   与 `refreshDynamicSettingsText` 那条链;
- * - `ui/dom-ops.ts` —— (3) 复制反馈与读屏播报写入的那一侧;
+ * - `dom/dom-ops.ts` —— (3) 复制反馈与读屏播报写入的那一侧;
  * - `convert/convert-flow.ts` —— 命令锁与预检收口(被上述几条共同驱动);
  * - `index.html` —— (2) 「动态状态节点一律不带 data-i18n」与静态回退逐字一致那两组断言。
  *
@@ -79,7 +79,7 @@ export const covers = [
   "src/renderer/state/state.ts",
   "src/renderer/settings/settings-panel.ts",
   "src/renderer/settings/settings-bindings-app.ts",
-  "src/renderer/ui/dom-ops.ts",
+  "src/renderer/dom/dom-ops.ts",
   "src/renderer/convert/convert-flow.ts",
   "src/renderer/index.html",
 ];
@@ -736,7 +736,7 @@ export async function run() {
     // (5) 转换忙碌态:进度区启停同时把消息槽标 aria-busy。
     // 百分比之外读屏还需要一个「正在转换」的整体状态位 —— 挂在消息槽上,
     // 与状态行(role=status)的阶段播报分工:一个说「在做什么」,一个说「忙」。
-    const utils = await import(distUrl("renderer/ui/dom-ops.js"));
+    const utils = await import(distUrl("renderer/dom/dom-ops.js"));
     const messageSlot = dom.elementFor("messageSlot");
     utils.showProgress();
     await suite.case("(5) showProgress 把消息槽标 aria-busy=true", () => {

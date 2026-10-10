@@ -35,7 +35,7 @@ const { assert } = createAsserter("focus-return-guards");
  * 主体依据(头注 + 实现位置):头注写「契约(浮层「关掉后焦点回到哪」是键盘可用性的地基):
  * 打开前记下来源(rememberFocusOrigin),关闭时原样归还(restoreFocusOrigin)」,并逐条点名
  * 抽屉 / 预设保存弹窗 / 弹窗三种浮层。故声明:
- * - `ui/dom-ops.ts` —— `rememberFocusOrigin` / `restoreFocusOrigin` / `trapFocus` 的定义处
+ * - `dom/dom-ops.ts` —— `rememberFocusOrigin` / `restoreFocusOrigin` / `trapFocus` 的定义处
  *   (三个浮层模块都从它 import,「按栈记」那条语义也落在它);
  * - `settings/settings-drawer.ts` 与 `settings/settings-preset-actions.ts` —— 抽屉与预设弹窗
  *   的记/还调用点(头注「关抽屉才回顶栏 ⚙」「关弹窗只回抽屉内那一层」两格);
@@ -43,7 +43,7 @@ const { assert } = createAsserter("focus-return-guards");
  * - `state/state.ts` —— 抽屉落当前激活分组 Tab 那一格读的状态单例。
  */
 export const covers = [
-  "src/renderer/ui/dom-ops.ts",
+  "src/renderer/dom/dom-ops.ts",
   "src/renderer/settings/settings-drawer.ts",
   "src/renderer/settings/settings-preset-actions.ts",
   "src/renderer/ui/dialogs.ts",

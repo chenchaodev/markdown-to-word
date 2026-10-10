@@ -17,7 +17,7 @@ import {
   setStatusTone,
   showProgress,
   translate,
-} from "../ui/dom-ops.js";
+} from "../dom/dom-ops.js";
 import { actionableError, baseName, errorMessage } from "../state/pure.js";
 import {
   precheckFileLabels,

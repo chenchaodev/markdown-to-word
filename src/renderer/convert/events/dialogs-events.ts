@@ -7,7 +7,7 @@
  * - 常驻汇总条:打开所在文件夹 / 打开文件 / 失败详情(重开批量弹窗);
  * - Esc 关闭:另存为预设 → 完成 → 批量,按可见性互斥处理;
  * - 菜单转发:「文件 → 打开文件…」复用 selection.openDialog(false) 链路。
- * 依赖方向单向:本模块 → dom/ui/dom-ops/dialogs/file-list/convert-flow/
+ * 依赖方向单向:本模块 → dom/dom-ops/dialogs/file-list/convert-flow/
  * settings-panel/同目录 selection(仅 openDialog),无环;
  * 另存为预设弹窗的 Esc 关闭 import settings-preset-actions(closePresetSaveDialog)。
  */
@@ -30,7 +30,7 @@ import {
   summaryRevealBtn,
 } from "../../dom/refs.js";
 import { state } from "../../state/state.js";
-import { setError } from "../../ui/dom-ops.js";
+import { setError } from "../../dom/dom-ops.js";
 import { batchRetryPaths, batchSuccessPaths, errorMessage } from "../../state/pure.js";
 import {
   hideBatchDialog,

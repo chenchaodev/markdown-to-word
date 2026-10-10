@@ -4,7 +4,7 @@
  * - 2.4s 自动消失;显隐走 .show 类(CSS 过渡已就绪),只陈述事实不阻塞操作。
  * 依赖方向:本模块 → dom/refs,无反向引用。
  */
-import { toastEl } from "../dom/refs.js";
+import { toastEl } from "./refs.js";
 
 /** 自动消失时长(ms;与 ui-guidelines「2.4s 自动消失」一致)。 */
 const TOAST_DURATION_MS = 2400;

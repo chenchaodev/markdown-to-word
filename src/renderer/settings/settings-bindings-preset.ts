@@ -24,8 +24,8 @@ import {
   templatePresetSelect,
 } from "../dom/refs.js";
 import { state } from "../state/state.js";
-// 预设切换即时反馈(toast 单实例,ui/toast)
-import { showToast } from "../ui/toast.js";
+// 预设切换即时反馈(toast 单实例,dom/toast)
+import { showToast } from "../dom/toast.js";
 import {
   applySettingsToControls,
   importDocxTemplate,

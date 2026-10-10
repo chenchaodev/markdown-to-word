@@ -2,7 +2,7 @@
  * renderer 纯函数层(零 DOM 依赖,可 Node 直测):isMarkdown / baseName /
  * truncateMiddle / STAGE_TEXT / stageText / STAGE_PERCENT 等。
  * 除 `errorMessage` 外本文件零 import(纯函数);该一个改为 re-export core 的实现单源
- * (见下方说明)。`ui/dom-ops.ts` re-export 本文件以保持 renderer 内部导入路径不变。
+ * (见下方说明)。`dom/dom-ops.ts` re-export 本文件以保持 renderer 内部导入路径不变。
  */
 export function isMarkdown(filePath: string): boolean {
   return /\.(md|markdown)$/i.test(filePath);

@@ -47,7 +47,7 @@ const { assert } = createAsserter("version-chip");
  */
 export const covers = [
   "src/renderer/renderer.ts",
-  "src/renderer/ui/dom-ops.ts",
+  "src/renderer/dom/dom-ops.ts",
 ];
 
 const here = path.dirname(fileURLToPath(import.meta.url));

@@ -26,7 +26,7 @@ import {
   type RecentFilesDeps,
 } from "./ui/recent-files.js";
 import { initFirstRunGuide } from "./ui/first-run-guide.js";
-import { setError } from "./ui/dom-ops.js";
+import { setError } from "./dom/dom-ops.js";
 import { errorMessage } from "../core/text/error-message.js";
 import { t } from "../core/i18n/index.js";
 

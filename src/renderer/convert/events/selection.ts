@@ -7,7 +7,7 @@
  *   清空列表覆盖其语义);
  * - 多文件列表交互:点击委托(移除)、双击/回车预览、键盘 Alt+↑↓ 排序、
  *   拖拽排序(dragstart/dragover/drop/dragend,含插入指示与边缘自动滚动)。
- * 依赖方向:本模块 → dom/ui/dom-ops/file-list/pure/core/i18n 与同目录
+ * 依赖方向:本模块 → dom/dom-ops/file-list/pure/core/i18n 与同目录
  * dialogs-events(仅 openPreviewFor);不反向引用组合根。
  */
 import {
@@ -22,7 +22,7 @@ import {
 } from "../../dom/refs.js";
 import { state } from "../../state/state.js";
 import { baseName, errorMessage, isMarkdown } from "../../state/pure.js";
-import { setError, setStatus } from "../../ui/dom-ops.js";
+import { setError, setStatus } from "../../dom/dom-ops.js";
 import {
   applySelection,
   appendSelection,

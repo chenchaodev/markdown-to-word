@@ -28,7 +28,7 @@ import {
   rememberFocusOrigin,
   restoreFocusOrigin,
   trapFocus,
-} from "../ui/dom-ops.js";
+} from "../dom/dom-ops.js";
 import { errorMessage } from "../state/pure.js";
 import { afterModalClosed } from "../ui/dialogs.js";
 import {

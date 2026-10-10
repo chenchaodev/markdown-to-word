@@ -3,8 +3,9 @@
  * 不挤压任何元素;行渲染走 rrow 模式(图标 + 文件名 + 格式徽标 + mono 时间)。
  * 不变量:初始一律收起(浮层语义下默认展开即默认遮挡),仅在 空→有文件 跃迁时自动收起一次;
  * 转换成功后由 convert-flow 经 state.recentRefreshHandler 回调刷新(打破 recent-files
- * ↔ convert-flow ESM 环)。依赖方向:本模块 → dom/refs + state/pure + dom-ops + first-run-guide
- * (同一 ui 根内);对 convert(file-list / convert-flow)与 settings(panel / drawer)的跨功能
+ * ↔ convert-flow ESM 环)。依赖方向:本模块 → dom/refs + state/pure + dom/dom-ops +
+ * first-run-guide(dom-ops 自 ADR-076 起在基础层 `dom/`,其余在同一 ui 根内);
+ * 对 convert(file-list / convert-flow)与 settings(panel / drawer)的跨功能
  * 协作一律走组合根注入的 RecentFilesDeps 形参,不再有静态 import。
  */
 import {
@@ -17,7 +18,7 @@ import {
 } from "../dom/refs.js";
 import type { RecentFile, UiState } from "../../core/ipc-contract.js";
 import { baseName, errorMessage, formatRecentTime } from "../state/pure.js";
-import { setError, setStatus } from "./dom-ops.js";
+import { setError, setStatus } from "../dom/dom-ops.js";
 import { state } from "../state/state.js";
 import { syncFirstRunGuide } from "./first-run-guide.js";
 import { t, type I18nKey } from "../../core/i18n/index.js";

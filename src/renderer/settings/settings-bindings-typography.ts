@@ -31,7 +31,7 @@ import {
   marginError,
 } from "../dom/refs.js";
 import { state } from "../state/state.js";
-import { hideFieldError, showFieldError } from "../ui/dom-ops.js";
+import { hideFieldError, showFieldError } from "../dom/dom-ops.js";
 import {
   bindControlGroup,
   type WriteHooksOf,

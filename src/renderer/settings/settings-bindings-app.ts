@@ -12,9 +12,9 @@ import { DEFAULT_SETTINGS, type AppSettings } from "../../core/settings/settings
 import { applyStaticTexts, setLanguage, t, type Language } from "../../core/i18n/index.js";
 import { drawerResetBtn } from "../dom/refs.js";
 import { state } from "../state/state.js";
-import { setStatus } from "../ui/dom-ops.js";
+import { setStatus } from "../dom/dom-ops.js";
 import { renderSelection } from "../convert/file-list.js";
-import { showToast } from "../ui/toast.js";
+import { showToast } from "../dom/toast.js";
 import {
   bindControlGroup,
   resetSettingsToDefaults,
