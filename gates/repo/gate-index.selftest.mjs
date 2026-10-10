@@ -99,10 +99,27 @@
 // 「判定函数恒返回空数组」这一种退化实现能让全部负向夹具通过 —— 那是最坏的失效形态。
 // 另两处:① 每族都有**空表 / 零发现**那一档(零判定面上的全绿与「真查过了」不可区分);
 // ② `enforcement` 与 ⑤ 族各有一处**覆盖面自检**(整条删掉时零 problems 不该成立)。
+//
+// ---- 形态:接 case 契约;**不接 harness**,**也不搬判定体**(ADR-074 决定一 + 两档结论)----
+//
+// 夹具表 41 条逐条收进 `await suite.case(档名, () => runCase(档))`,「档数」由此成为可机械计数的
+// 单位(`gates-selftest-named-case` 判的就是它),迁移后分母由 `suite.results.length` 给出(= 41)。
+// 门禁树接的是落在 `shared/` 的真实现:`gates-stay-in-gates` 的允许面只有 `gates` / `shared` /
+// `test/fixtures`,`test/` 整棵树不在其中,故引不到 `test/harness/case.js`(ADR-074 决定一)。
+//
+// **不接 harness**:本载体的入参是**表对象**(`GATE_INDEX` 数据表 + 可注入 loader),既不是
+// 「树型路径 → 正文」也不是「问题清单」,与 harness schema **入参与返回双侧不对型** ——
+// 塞进去是假接入(ADR-068:bespoke 留在原处)。
+//
+// ⚠ **也不搬判定体**(与 ADR-074 背景二原写的那句相反 —— **该条前提已作废**):那六个
+// `audit*` 带着 `spawnSync(git)` 等 IO,而 `gate-index.mjs` 是**零 import 的纯数据表**、且被别的
+// 门禁消费,搬进去等于给数据表塞 IO,也与本文件头「为什么『审计』住在载体里、不住在表里」自相矛盾。
+// 「进 harness」与「接契约」分属两档:本份入档的是「接契约」这一档,harness 那一档不适用。
 
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import path from "node:path";
+import { assert, createCaseSuite } from "../../shared/case.js";
 import { ROOT } from "../../shared/paths.js";
 import { GATE_INDEX, GATE_INDEX_MODULE_REL } from "./gate-index.mjs";
 
@@ -913,42 +930,65 @@ const CASES = [
   },
 ];
 
-/* ---------- 跑 ---------- */
+/* ---------- 跑:夹具表逐档收进 case ---------- */
 
-/** @type {string[]} */
-const failures = [];
-for (const testCase of CASES) {
+const suite = createCaseSuite();
+
+/**
+ * 跑一档:调该档的 `check()` 拿 problems,按 `expect` 结算,**最后用一条 `assert` 抛**。
+ *
+ * 搬迁口径:原 `failures.push(...)` 的每一处逐字改成给 `problem` 赋值(消息一字不改),原来那条
+ * 「夹具抛异常」的 catch 分支改成赋同一条消息,末尾一条 `assert` 抛出、由 case 级 catch 收成
+ * **该档**失败 —— 一样不打断后续档(旧实现是 push 后 `continue`)。
+ * 「非数组一律判失败」那一档恒绿防护原样保留(它防的是「判定函数没回吐 problems」这种退化实现)。
+ * @param {{ name: string, check: () => string[] | Promise<string[]>, expect: RegExp | null }} testCase
+ *   夹具表里的一档(`name` 逐字沿用 `CASES` 元素的 `name` 字段)
+ * @returns {Promise<void>}
+ */
+async function runCase(testCase) {
+  /** @type {string | null} */
+  let problem = null;
   try {
     const raw = await testCase.check();
     if (!Array.isArray(raw)) {
-      failures.push(`${testCase.name}:判定函数返回的不是数组(恒绿防护:非数组一律判失败)`);
-      continue;
-    }
-    const joined = raw.join("\n");
-    if (testCase.expect === null) {
-      if (raw.length === 0) {
-        console.log(`[ok] gate-index-selftest:${testCase.name}(零判红)`);
-      } else {
-        failures.push(`${testCase.name}:期望零判红,实际 ${raw.length} 条\n${joined}`);
-      }
-      continue;
-    }
-    if (testCase.expect.test(joined)) {
-      console.log(`[ok] gate-index-selftest:${testCase.name}(漂移被拦截 / ${raw.length} 条)`);
+      problem = `${testCase.name}:判定函数返回的不是数组(恒绿防护:非数组一律判失败)`;
     } else {
-      failures.push(`${testCase.name}:期望判红项匹配 ${testCase.expect},实际\n${joined || "(零判红)"}`);
+      const joined = raw.join("\n");
+      if (testCase.expect === null) {
+        if (raw.length === 0) {
+          console.log(`[ok] gate-index-selftest:${testCase.name}(零判红)`);
+        } else {
+          problem = `${testCase.name}:期望零判红,实际 ${raw.length} 条\n${joined}`;
+        }
+      } else if (testCase.expect.test(joined)) {
+        console.log(`[ok] gate-index-selftest:${testCase.name}(漂移被拦截 / ${raw.length} 条)`);
+      } else {
+        problem = `${testCase.name}:期望判红项匹配 ${testCase.expect},实际\n${joined || "(零判红)"}`;
+      }
     }
   } catch (error) {
     // 一条夹具的构造/求值抛异常只登记,不让它打断整批(否则后面的夹具一条都跑不到)
-    failures.push(
-      `${testCase.name}:抛异常:${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
-    );
+    problem = `${testCase.name}:抛异常:${error instanceof Error ? (error.stack ?? error.message) : String(error)}`;
   }
+  assert(problem === null, problem ?? "(无失败消息)");
 }
 
-if (failures.length > 0) {
-  for (const failure of failures) console.error(`[gate-index-selftest:fail] ${failure}`);
-  console.error(`[gate-index-selftest:fail] 门禁索引回归守护失败,共 ${failures.length}/${CASES.length} 条`);
+// 档名即 case 名(逐字沿用搬迁前 `failures.push` 记账用的 `testCase.name`)。
+for (const testCase of CASES) {
+  await suite.case(testCase.name, () => runCase(testCase));
+}
+
+/* ---------- 汇总:段级成败按 case 结果判 ---------- */
+// 与搬迁前 `failures[]` 判定等价(任一档失败即非零退出),**分母也是同一个**:搬迁前写
+// `CASES.length`,搬迁后由 `suite.results.length` 自然给出。两侧一旦不等,说明有档没接进 case
+// —— 那正是 `gates-selftest-named-case` 要抓的形态。
+const cases = suite.results;
+const failedCases = suite.failures;
+if (failedCases.length > 0) {
+  for (const failure of failedCases) {
+    console.error(`[gate-index-selftest:fail] ${failure.name}:${failure.message ?? "(无失败消息)"}`);
+  }
+  console.error(`[gate-index-selftest:fail] 门禁索引回归守护失败,共 ${failedCases.length}/${cases.length} 条`);
   process.exit(1);
 }
-console.log(`[ok] gate-index-selftest:${CASES.length} 条夹具全部符合预期(未漂移通过 / 漂移拦截)`);
+console.log(`[ok] gate-index-selftest:${cases.length} 条夹具全部符合预期(未漂移通过 / 漂移拦截)`);
