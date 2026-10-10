@@ -10,7 +10,7 @@
 // ——区分它需要判断「这段到底在断言什么」,而那已实测无法机器判(见 REQ-185/REQ-189)。
 // 另注:同一族判据换个口径,实测结果能差 6.6 倍 ⇒ 选错口径就会产出一批无法归因的红。
 //
-// ---- 判据一览(八族 + 扫描面两档)----
+// ---- 判据一览(编号 ①–⑯,族数**不复述**:取它跑 `node -e "import('./gates/repo/check-test-layout.mjs').then(m=>console.log(m.CRITERIA.length))`")----
 //   ① test-layer-self-hosted(L4):`test/<R>/**/<m>.test.js` 必须 import **至少一个**
 //      解析后落在 `<R>/` 对应主体根内的模块。零命中即判红并点名该段。
 //   ② test-layer-cross-import(L5):`test/<L>/**` 不得 import **别的层**的
@@ -56,6 +56,35 @@
 //      发现规则写错 / `gates/` 被搬走),复用会让两者的强制等级读数无法分别归因。
 //      而 `scan-surface-missing` **复用**:它的 title 本就写成「读不到(test/ 或 src/)子树」
 //      的双树形态,处置两树完全相同。
+//   ⑯ gates-selftest-case-roster(REQ-221 #09 族二):**case 名集合 ⟷ 登记名册两向差集**。
+//      每份 `gates/**/*.selftest.mjs` 旁有一份同名 sidecar 名册(`<基名>.case-roster.json`),
+//      判据按登记表的取名策略从源码抽出实际 case 名,与名册**两个方向**对账:
+//      册有源无(册里那条 case 已不存在)/ 源有册无(源码里那条没进册)。
+//      ⚠ **它与 ⑭ `gates-selftest-named-case` 判的不是一件事**:⑭ 判「有没有接契约」
+//      (import + 至少一处 `.case(`),接了之后**删掉一整个 case 不改变任何可数的东西**
+//      ——import 还在、`.case(` 仍 ≥1 处。本族补的正是这个缺口。
+//
+// ---- ⑯ 本族的三条自述边界(下一个会话读到这里时按这三条判断本族能顶什么)----
+//
+//   **(一)半齿上限:名册型看守的通病,本族不宣称「断言一条未删」。**
+//   「删 case + 同批删册」是**一次**改动,判据看不见(两侧同时变 ⇒ 差集仍为空)。
+//   本族能抓的是**单侧**漂移:册里留着而源码已删(有人删了 case 忘了删册)、或源码新增而册没跟。
+//   ⚠ **因此不得把「名册在册」读成「断言一条未删有机器保证」** —— 后者不成立。
+//   两侧同改要靠别的机制:code review 的 diff 并排可见,以及 ADR-074 后果节的「搬迁四步」。
+//
+//   **(二)登记表与名册各自的可绕面(两者都不是「写了就一定守住」)。**
+//   - **登记表**({@link GATE_SELFTEST_CASE_SOURCES})少一行 ⇒ **判红**(树里有那份自测而表里没有它);
+//     但「把策略改错而抽出 0 条」也是红 —— 两向差集天然响(册非空而源侧空 ⇒ 全档「册有源无」)。
+//     登记表**不可注入**(与 `CRITERIA` / `LAYER_RULES` 同层):能传参就能把自己摘出去,那是 fail-open。
+//   - **名册**(sidecar)自身失效三档**判红而非当空表**:读不到 / 缺 `cases` 数组 / 低于
+//     {@link MIN_GATE_CASE_NAMES} 条下限。⚠ 当空表会让两侧同时为空 ⇒ 差集恒空 ⇒ **恒绿**,
+//     而恒绿是纯文本门禁最坏的失效形态。**恒绿防护的顺序因此是「先断非空,再断差集命中」。**
+//
+//   **(三)反扫放宽的方向:本族判的是「名还在不在」,不是「名对不对」。**
+//   期望正则被放宽(把 `/x/` 改成 `/x|y/`)那类削弱**不在本族射程内** —— 本族只数名,
+//   一个名配一条被放宽的期望,两边照样相等、照样绿。靠搬迁手法(ADR-074 后果节「搬迁四步」):
+//   搬迁时把断言**逐字**带过去,而不是让同一批 case 名配上一份被就地放宽的期望。
+//   ⚠ 别因本族兜住了「删一条」就以为它也兜住了「削弱一条」。
 //
 // ---- L4 为什么必须判「零命中」而不是只判「import 落在别处」 ----
 // 一条只检查「不许 import 别层」的规则,在**一个本层主体都没 import** 的段上会全绿 ——
@@ -466,6 +495,212 @@ export const GATES_SELFTEST_ROOT = GATES_TREE.slice(0, -1);
 export const GATES_SELFTEST_EXT = ".selftest.mjs";
 
 /**
+ * **case 登记名册 sidecar 的扩展名**(⑯ `gates-selftest-case-roster` 族判据面的另一半)。
+ *
+ * 形态:与被看护的自测**同名同目录**、只把后缀从 `.selftest.mjs` 换成 `.case-roster.json`
+ * (如 `gates/repo/check-docs.case-roster.json` 配 `gates/repo/check-docs.selftest.mjs`)。
+ * **同目录而不是全部堆进 `gates/repo/`**:20 份自测分属四棵子树(`repo`/`smoke`/`fixtures`/
+ * 未来新增),名册与它的自测同目录 ⇒ 新增自测时名册的位置是**看文件名就知道**的,
+ * 而一张集中表会让「谁的名册在哪」变成第二道要人记的知识。
+ *
+ * ⚠ 派生而非登记:{@link caseRosterRelFor} 由自测路径**算**出名册路径,两处各写一份
+ * 「后缀映射」就是一处会与发现规则漂移的副本。
+ * @type {string}
+ */
+export const GATE_CASE_ROSTER_EXT = ".case-roster.json";
+
+/**
+ * 名册条数下限(`cases` 数组少于它 ⇒ 判红)。
+ *
+ * ⚠ **恒绿防护的第一道**:两侧同时为空时两向差集恒为空 ⇒ 本族「全绿」。
+ * 那个形态必须被判红而不是放过 —— 名册是「这条 case 存在过」的人工凭证,
+ * 空名册不证明任何事,只证明没人填。
+ *
+ * 取 1(而不是「必须等于源码抽出的条数」):条数相等由两向差集**自然**给出
+ * (两个等势集合差集为空 ⇔ 条数相等),下限这一档只负责挡「两侧同时为空」。
+ * @type {number}
+ */
+export const MIN_GATE_CASE_ROSTER = 1;
+
+/**
+ * 取名策略登记表在**源码里的位置**的可 grep 锚(只出现在诊断文案里)。
+ *
+ * ⚠ 它是本文件自身的路径 + 导出名,不是另一个文件 —— 登记表是**判定本体的常量**
+ * (形态理由见 {@link GATE_SELFTEST_CASE_SOURCES}),与另三张 sidecar 表不同。
+ * 单列成常量而不是在诊断文案里各写一遍:那句文案出现两次以上,两处各写一份
+ * 就是一处会与导出名漂移的副本,而漂移的后果是「诊断点名一个不存在的锚」。
+ * @type {string}
+ */
+export const GATE_SELFTEST_CASE_SOURCES_FILE = "gates/repo/check-test-layout.mjs#GATE_SELFTEST_CASE_SOURCES";
+
+/**
+ * 一份门禁自测的**取名策略**(⑯ 族登记表 {@link GATE_SELFTEST_CASE_SOURCES} 的行形状)。
+ *
+ * @typedef {object} GateCaseSource
+ * @property {string} file 门禁自测路径(仓相对 POSIX)
+ * @property {readonly {kind: string, table?: string, field?: string, wrapper?: string}[]} strategies
+ *   取名策略列表(一份自测可能同时用几类,如「表内用例走表 + 表外 bespoke 逐条内联」)。
+ *   四类取值(⚠ 全部经 `extractGateCaseNames` 落成同一形状:抽出的字符串数组):
+ *   - `inline-case`:内联字面量 `suite.case('…')` 的首参;
+ *   - `table-field`:某个 `[A-Z_]+ = [...]` 表里 `field` 字段的字面量值
+ *     (`{table:"CASES", field:"name"}` / `{table:"MUTATIONS", field:"id"}`);
+ *   - `wrapper-first-arg`:本地 wrapper 的首参字面量(`{wrapper:"check"}`);
+ *   - `suite-arg`:形如 `await suite.case(testCase.name, …)` 的**间接**取名 ——
+ *     抽出该调用点的首参标识符名(此处即 `testCase`),再取它指向的表的 `name` 字段。
+ */
+
+/**
+ * ⚠ **⑯ 族的取名策略登记表**(判定本体的常量、**不是 CLI 可传项**)。
+ *
+ * 形态照 `check-html-const-mirror.mjs` 的 `MIRROR_PAIRS` 先例:**登记表是判定本体的常量**。
+ * ⚠ 它**刻意不注入 ctx**:能传表就能把自己摘出去,那本身是 fail-open
+ * (与 `CRITERIA` / `LAYER_RULES` 同层纪律)。自测靠「在合成树里造同路径的自测 + 同一份名册」
+ * 来覆盖四类策略,不需要换表。
+ *
+ * ⚠ **本表必须逐份齐全:少一行即判红**(树里有那份自测而表里没有它 ⇒ 那一档判红)。
+ * 这是「登记表自身漂移」的唯一看守 —— 少登记一个文件等于那一份自测**静默退出本族判定面**,
+ * 而症状是「全绿」(与恒绿同族)。反过来多一行(树里已无这份自测)也判红(stale)。
+ *
+ * 逐行的取名策略怎么定的:{@link extractGateCaseNames} 在本表每一行上跑出的条数与该自测
+ * **自己打印的分母**逐份相等(实测 20 份全部对上,合计 546 条;取数命令见文件头
+ * 「登记表怎么维护」)。改动某份自测的用例表(增删档)时,**先跑本族看它报什么**,
+ * 再同批改本表 —— 本表里写的是「名从哪儿抽」,不是「有多少条」。
+ *
+ * @type {readonly GateCaseSource[]}
+ */
+export const GATE_SELFTEST_CASE_SOURCES = Object.freeze([
+  Object.freeze({
+    file: "gates/fixtures/gen-fixtures.selftest.mjs",
+    strategies: Object.freeze([
+      Object.freeze({ kind: "table-field", table: "CASES", field: "name" }),
+      Object.freeze({ kind: "inline-case" }),
+    ]),
+  }),
+  Object.freeze({
+    file: "gates/repo/check-changelog.selftest.mjs",
+    // ⚠ 表驱动档**分三张表**:JUDGE_CASES 走合成根 harness(它自己汇成 case)、
+    // JUDGE_GREEN_CASES 是「零问题」判绿档、CLI_CASES 是进程级(退出码 + 输出)。
+    strategies: Object.freeze([
+      Object.freeze({ kind: "table-field", table: "JUDGE_CASES", field: "name" }),
+      Object.freeze({ kind: "table-field", table: "JUDGE_GREEN_CASES", field: "name" }),
+      Object.freeze({ kind: "table-field", table: "CLI_CASES", field: "name" }),
+    ]),
+  }),
+  Object.freeze({
+    file: "gates/repo/check-ci-contract.selftest.mjs",
+    strategies: Object.freeze([
+      Object.freeze({ kind: "table-field", table: "CASES", field: "name" }),
+      Object.freeze({ kind: "inline-case" }),
+    ]),
+  }),
+  Object.freeze({
+    file: "gates/repo/check-copy-sites.selftest.mjs",
+    // 纯内联档:五组夹具逐组一条 `await suite.case('…')`,没有用例表。
+    strategies: Object.freeze([Object.freeze({ kind: "inline-case" })]),
+  }),
+  Object.freeze({
+    file: "gates/repo/check-coverage-zero.selftest.mjs",
+    strategies: Object.freeze([
+      Object.freeze({ kind: "table-field", table: "CASES", field: "name" }),
+      Object.freeze({ kind: "inline-case" }),
+    ]),
+  }),
+  Object.freeze({
+    file: "gates/repo/check-docs.selftest.mjs",
+    strategies: Object.freeze([Object.freeze({ kind: "table-field", table: "CASES", field: "name" })]),
+  }),
+  Object.freeze({
+    file: "gates/repo/check-samples.selftest.mjs",
+    // ⚠ 唯一一份**两套字段名**的:基线档取 `CASES.name`,变异实验取 `MUTATIONS.id`
+    // (mutation.id 是它的档名,与基线不同源 —— 见那份自测的注释)。
+    strategies: Object.freeze([
+      Object.freeze({ kind: "table-field", table: "CASES", field: "name" }),
+      Object.freeze({ kind: "table-field", table: "MUTATIONS", field: "id" }),
+    ]),
+  }),
+  Object.freeze({
+    file: "gates/repo/check-src-layout.selftest.mjs",
+    strategies: Object.freeze([
+      Object.freeze({ kind: "table-field", table: "JUDGE_CASES", field: "name" }),
+      Object.freeze({ kind: "table-field", table: "JUDGE_GREEN_CASES", field: "name" }),
+      Object.freeze({ kind: "table-field", table: "CLI_CASES", field: "name" }),
+    ]),
+  }),
+  Object.freeze({
+    file: "gates/repo/check-temp-cleanup.selftest.mjs",
+    strategies: Object.freeze([
+      Object.freeze({ kind: "table-field", table: "CASES", field: "name" }),
+      Object.freeze({ kind: "inline-case" }),
+    ]),
+  }),
+  Object.freeze({
+    file: "gates/repo/check-test-layout.selftest.mjs",
+    // ⚠ 单一表档:143 条全在 `CASES`(表外两处是夹具**源码字符串**里的 `suite.case(`,
+    // 已被 inString 掩码排除 —— 它们是被判据读的字面量,不是本自测自己的 case)。
+    strategies: Object.freeze([Object.freeze({ kind: "table-field", table: "CASES", field: "name" })]),
+  }),
+  Object.freeze({
+    file: "gates/repo/check-test-numbering.selftest.mjs",
+    strategies: Object.freeze([
+      Object.freeze({ kind: "table-field", table: "JUDGE_CASES", field: "name" }),
+      Object.freeze({ kind: "table-field", table: "JUDGE_GREEN_CASES", field: "name" }),
+      Object.freeze({ kind: "table-field", table: "CLI_CASES", field: "name" }),
+    ]),
+  }),
+  Object.freeze({
+    file: "gates/repo/check-transform-dispatch.selftest.mjs",
+    strategies: Object.freeze([Object.freeze({ kind: "table-field", table: "CASES", field: "name" })]),
+  }),
+  Object.freeze({
+    file: "gates/repo/check-tscheck-coverage.selftest.mjs",
+    strategies: Object.freeze([Object.freeze({ kind: "table-field", table: "CASES", field: "name" })]),
+  }),
+  Object.freeze({
+    file: "gates/repo/gate-index.selftest.mjs",
+    strategies: Object.freeze([Object.freeze({ kind: "table-field", table: "CASES", field: "name" })]),
+  }),
+  Object.freeze({
+    file: "gates/repo/gen-archive-index.selftest.mjs",
+    strategies: Object.freeze([
+      Object.freeze({ kind: "table-field", table: "CHECK_CASES", field: "name" }),
+      Object.freeze({ kind: "table-field", table: "PREPARE_CASES", field: "name" }),
+      Object.freeze({ kind: "table-field", table: "CLI_CASES", field: "name" }),
+    ]),
+  }),
+  Object.freeze({
+    file: "gates/repo/gen-gate-ids-table.selftest.mjs",
+    // 纯内联档:12 条逐条 `await suite.case("…")`,零用例表。
+    strategies: Object.freeze([Object.freeze({ kind: "inline-case" })]),
+  }),
+  Object.freeze({
+    file: "gates/repo/release-notes.selftest.mjs",
+    // 纯内联档:14 条逐条内联(它不进 harness,单引号形态)。
+    strategies: Object.freeze([Object.freeze({ kind: "inline-case" })]),
+  }),
+  Object.freeze({
+    file: "gates/smoke/check-build-fresh.selftest.mjs",
+    strategies: Object.freeze([
+      Object.freeze({ kind: "table-field", table: "PURE_CASES", field: "name" }),
+      Object.freeze({ kind: "table-field", table: "CLI_CASES", field: "name" }),
+      Object.freeze({ kind: "inline-case" }),
+    ]),
+  }),
+  Object.freeze({
+    file: "gates/smoke/smoke-proc.selftest.mjs",
+    strategies: Object.freeze([
+      Object.freeze({ kind: "table-field", table: "CASES", field: "name" }),
+      Object.freeze({ kind: "inline-case" }),
+    ]),
+  }),
+  Object.freeze({
+    file: "gates/smoke/smoke-report.selftest.mjs",
+    // ⚠ **唯一一份 wrapper 档**:它把本地 runner `check()` 接到 `suite.case(name, …)`,
+    // 32 条档名全是 `await check('<档名>', body)` 的首参字面量 —— 没有一处内联 `.case(`。
+    strategies: Object.freeze([Object.freeze({ kind: "wrapper-first-arg", wrapper: "check" })]),
+  }),
+]);
+
+/**
  * 扫描面(门禁自测)文件数下限:`.selftest.mjs` 的发现规则写错 / `gates/` 被搬走时,这一族
  * 判据会在零扫描面下「全绿」,而恒绿是纯文本门禁最坏的失效形态(没人会去看一个总是
  * exit 0 的脚本)。取实测值的约 3/4(实测 20 份 → 下限 15),只在「塌缩」这一档报红,
@@ -733,6 +968,46 @@ export const CRITERIA = Object.freeze([
       "门禁自测扫描面塌缩(`.selftest.mjs` 份数掉到下限以下):新族在零扫描面下会全绿,判红"
       + "(下限独立于段侧那一档 —— 两棵树的分母集合不同,共用一个数字会让改任一棵连带改另一棵)",
   }),
+  Object.freeze({
+    // ⚠ **它与 `gates-selftest-named-case` 判的不是一件事,故不复用那个 id**:那一族判
+    // 「有没有接 case 契约」(import + 至少一处 `.case(`),而**接了之后删掉一整个 case
+    // 不改变任何可数的东西** —— import 还在、`.case(` 仍 ≥1 处。本族补的正是这个缺口:
+    // 「名还在不在」。并表会让「没接入」与「名册漂移」在读数上无法分别归因。
+    id: "gates-selftest-case-roster",
+    title:
+      "case 名集合 ⟷ 登记名册两向差集:每份 `gates/**/*.selftest.mjs` 旁的"
+      + "`<基名>.case-roster.json` 与按登记表策略抽出的实际 case 名**两个方向**对账"
+      + "(册有源无 = 那条 case 已删但册没删 / 源有册无 = 源码新增的 case 没进册),"
+      + "另判「名册缺行(登记表少一行或多了 stale 行)」「名册读不到 / 缺 cases / 低于非空下限」"
+      + "与「按策略抽出 0 条」。⚠ **半齿上限**:「删 case + 同批删册」是一次改动、判据看不见"
+      + "(两侧同改 ⇒ 差集仍空),本族只抓**单侧**漂移,**不宣称「断言一条未删有机器保证」**;"
+      + "⚠ 本族判的是「名还在不在」,**期望正则被放宽那类削弱不在射程内**(靠 ADR-074 后果节"
+      + "「搬迁四步」)",
+    // 按 ADR-071 决定一的「先报告后转正」挂 report-only。转正前置与半齿上限:
+    //
+    // ⚠ **转正的前置是 20 份真实名册全部就位**,而本批只交付判据 + 一份自测夹具 ——
+    // 真实名册随各批迁移同批写(逐份:搬完那份自测就同批写它的名册)。
+    // 名册未就位时本族在真实仓上恒红(名册读不到),故**本批不转正**;
+    // 全绿后才删本行这两项,那是下一件事(独立一笔)。
+    //
+    // ⚠ **本族不能因为「全绿」就转正**:「全绿」在这族上有一个与别族不同的含义 ——
+    // 若 20 份名册同时是空的,两向差集恒空 ⇒ 也「全绿」。判红的方向靠
+    // `MIN_GATE_CASE_ROSTER` 非空下限守死(空册判红),但**转正前必须逐份看过名册非空**,
+    // 不能只看门禁退出码。
+    pending: true,
+    pendingReason:
+      "本族随 #09 批次七上链,按 ADR-071 决定一「新判据不设豁免 · 先报告后转正」挂 report-only。"
+      + "转正的前置是**20 份真实名册全部落地** —— 本批只交付判据与一份自测夹具,"
+      + "真实名册随各批自测迁移同批写。⚠ **半齿上限(转正也不消除)**:名册型看守的通病是"
+      + "「删 case + 同批删册」是**一次**改动,判据看不见(两侧同改 ⇒ 差集仍为空);"
+      + "本族只抓**单侧**漂移(册有源无 / 源有册无),⚠ **不得把「名册在册」读成"
+      + "「断言一条未删有机器保证」** —— 两侧同改靠 code review 的并排 diff 与 ADR-074"
+      + "后果节的「搬迁四步」。⚠ 另一条边界:本族判「名还在不在」而非「名对不对」,"
+      + "**期望正则被放宽那类削弱不在本族射程内**(名配一条被放宽的期望,两边照样相等),"
+      + "同样靠「搬迁四步」而非本族兜。⚠ 转正前须确认 20 份名册**逐份非空** —— "
+      + "`MIN_GATE_CASE_ROSTER` 的非空下限只挡「空册」这一个形态,而「退出码 0」"
+      + "在这一族上不足以证明名册齐全。",
+  }),
   ]);
 
 /**
@@ -811,6 +1086,14 @@ const USAGE = "用法: node gates/repo/check-test-layout.mjs [--write-l5-exempti
  * @property {number} gatesNoNamedCase 未接入具名 case 的门禁自测份数(门禁树侧族)
  * @property {number} gatesNoCaseImport 其中「没 import 契约模块」的份数
  * @property {number} gatesNoCaseCall 其中「import 了却一次没调 `.case(`」的份数
+ * @property {number} gateRosterChecked 进入名册两向差集判定的门禁自测份数(⑯ 族)
+ * @property {number} gateRosterUnlisted 自测份数在取名策略登记表里**没有登记**(少一行)
+ * @property {number} gateRosterStale 登记表的行在树里**已无对应自测**(多一行)
+ * @property {number} gateRosterTableProblems 名册自身失效(读不到 / 缺 cases / 非空下限)条数
+ * @property {number} gateRosterEmptyExtraction 按策略抽出 0 条的份数(策略与源码脱节)
+ * @property {number} gateRosterOnlyInRoster 「册有源无」条数(册里那条 case 源码已无)
+ * @property {number} gateRosterOnlyInSource 「源有册无」条数(源码里那条 case 没进册)
+ * @property {number} gateRosterNames 名册侧 case 名总数(读数用,与判红数不同口径)
  */
 
 /**
@@ -903,6 +1186,165 @@ export function collectTestFiles(ctx) {
  */
 export function collectGateSelftestFiles(ctx) {
   return collectFilesUnder(ctx, GATES_SELFTEST_ROOT, (rel) => rel.endsWith(GATES_SELFTEST_EXT));
+}
+
+/**
+ * 一份门禁自测的 case 登记名册落在哪(⑯ 族的 sidecar 路径,**派生**)。
+ *
+ * ⚠ 它是 `GATES_SELFTEST_EXT` → `GATE_CASE_ROSTER_EXT` 的**唯一**换算处:
+ * 判定面、名册读表、自测夹具三处都调它 —— 三处各写一份后缀映射就是三处会漂移的副本,
+ * 而漂移的失效形态是「名册读不到 ⇒ 判红」或更糟的「名册读到另一份文件」。
+ *
+ * 非 `.selftest.mjs` 结尾 ⇒ 返回 null(那不是本族的名册载体,不硬造一个路径)。
+ * @param {string} selftestRel 门禁自测路径(仓相对 POSIX)
+ * @returns {string | null} 名册路径;入参不是自测时 null
+ */
+export function caseRosterRelFor(selftestRel) {
+  if (!selftestRel.endsWith(GATES_SELFTEST_EXT)) return null;
+  return `${selftestRel.slice(0, -GATES_SELFTEST_EXT.length)}${GATE_CASE_ROSTER_EXT}`;
+}
+
+/**
+ * 抽一个 `[A-Z_]+ = [` 数组字面量的**下标区间**(含两侧方括号)。
+ *
+ * ⚠ **括号配平必须过 `inString` 掩码**,不是逐字符数 —— 实测踩到:自测里大量档名含
+ * `## [待发版]` 这类**字符串内部的方括号**(`check-changelog` 5 处、其余若干),
+ * 不掩码就把深度算错、结果永远配不平(那一版的 `CLI_CASES` 抽出 0 条且**不报错**,
+ * 是典型的「静默退化成空集」)。
+ *
+ * @param {string} code `lexSource(...).code`(注释已抹、字符串内容保留)
+ * @param {Uint8Array} inString `lexSource(...).inString`
+ * @param {string} table 表名(如 `CASES`)
+ * @returns {{ start: number, end: number } | null} 区间下标;找不到该表或配平不到末尾时 null
+ */
+function arrayLiteralSpan(code, inString, table) {
+  const decl = new RegExp(`(?:const|let)\\s+${table}\\s*=\\s*(?:Object\\.freeze\\()?\\s*\\[`);
+  const m = decl.exec(code);
+  if (m === null) return null;
+  const start = m.index + m[0].length - 1;
+  let depth = 0;
+  for (let i = start; i < code.length; i += 1) {
+    if (inString[i] === 1) continue;
+    const ch = code[i];
+    if (ch === "[") depth += 1;
+    else if (ch === "]") {
+      depth -= 1;
+      if (depth === 0) return { start, end: i };
+    }
+  }
+  return null;
+}
+
+/**
+ * 按登记的取名策略,从一份门禁自测正文抽出它实际的 case 名集合(⑯ 族的「源侧」)。
+ *
+ * 四类策略(逐类写清判据形状与它的失效形态,理由见
+ * {@link GATE_SELFTEST_CASE_SOURCES} 的表项注释):
+ *   - `inline-case` —— `suite.case('字面量', …)` 的首参;`inline-literal`;
+ *   - `table-field` —— `[A-Z_]+ = [` 表内 `field:` 字段的字面量值;`table-field`;
+ *   - `wrapper-first-arg` —— `wrapper('字面量', …)` 的首参;`wrapper-first-arg`;
+ *   - `suite-arg` —— `await suite.case(testCase.name, …)` 的间接取名:抽出该调用点首参
+ *     的**标识符**(`testCase`),再取它绑定的那张表的 `name` 字段;`suite-arg`。
+ *
+ * ⚠ **全部 matchAll 的结果都要过 `inString` 掩码**(与 `caseContractState` /
+ * `findTopLevelAssertDecls` 同款):`check-test-layout.selftest.mjs` 里那 11 处
+ * `suite.case(` **在夹具源码字符串内部**(被本族读的字面量,不是它自己的 case),
+ * 不过掩码会把它们算成源侧的 case 名,与名册一比就报出一堆**假的**「源有册无」。
+ *
+ * ⚠ **抽不到就是抽不到,不静默返回空数组**:调用方拿到空数组时会先撞「低于
+ * {@link MIN_GATE_CASE_ROSTER} 条下限」那一档(判红),而不是拿它去算一个恒空的差集。
+ *
+ * @param {string} text 门禁自测正文
+ * @param {readonly {kind: string, table?: string, field?: string, wrapper?: string}[]} strategies 取名策略
+ * @returns {string[]} 抽出的 case 名(按出现顺序,未去重)
+ */
+export function extractGateCaseNames(text, strategies) {
+  const lexed = lexSource(text);
+  /** @type {string[]} */
+  const names = [];
+  for (const strategy of strategies) {
+    if (strategy.kind === "inline-case") {
+      for (const m of lexed.code.matchAll(/\.\s*case\s*\(\s*(['"`])([\s\S]*?)\1/g)) {
+        if (lexed.inString[m.index ?? 0] === 1) continue;
+        names.push(m[2] ?? "");
+      }
+    } else if (strategy.kind === "table-field") {
+      const span = arrayLiteralSpan(lexed.code, lexed.inString, String(strategy.table));
+      if (span === null) continue;
+      const re = new RegExp(`(?:^|[\\s{,])${String(strategy.field)}\\s*:\\s*(['"\`])([\\s\\S]*?)\\1`, "g");
+      for (const m of lexed.code.slice(span.start, span.end + 1).matchAll(re)) {
+        const at = span.start + (m.index ?? 0) + (m[1]?.length ?? 0);
+        if (lexed.inString[at] === 1) continue;
+        names.push(m[2] ?? "");
+      }
+    } else if (strategy.kind === "wrapper-first-arg") {
+      const wrapper = String(strategy.wrapper);
+      // 前瞻 `(?<![\w$.])` 排除属性访问与标识符内嵌(`obj.check(` 不是 wrapper 调用)。
+      const re = new RegExp(`(?<![\\w$.])${wrapper}\\s*\\(\\s*(['"\`])([\\s\\S]*?)\\1`, "g");
+      for (const m of lexed.code.matchAll(re)) {
+        if (lexed.inString[m.index ?? 0] === 1) continue;
+        names.push(m[2] ?? "");
+      }
+    }
+    // ⚠ **未知 kind 刻意不静默跳过也不抛异常**:它落在下面调用方的「抽出 0 条 ⇒ 判红」那一档
+    // (两向差集天然响)。抛异常会把「策略写错」变成整场崩溃,盖住其余判红。
+  }
+  return names;
+}
+
+/**
+ * 读一份门禁自测的 case 登记名册 sidecar。**三档 fail-closed**(与另三张表同形):
+ * ① 读不到 / 非法 JSON → 判红;② 缺 `cases` 数组 → 判红;③ 低于
+ * {@link MIN_GATE_CASE_ROSTER} 条 → 判红(**恒绿防护的第一道**,见该常量注释)。
+ *
+ * ⚠ **为什么「读不到」必须判红而不是当空名册**:空名册 + 空源侧 ⇒ 差集恒空 ⇒ 本族「全绿」。
+ * 那是本族唯一的最坏失效形态 —— 门禁从那一刻起什么也没查而输出是绿的。
+ * 三个可数的理由(与 `loadGateSubjectExemptions` 的注释同源):症状仍然看起来「正确」
+ * (没有差异)、归因彻底错位(诊断指向 case 而真因是名册不见了)、
+ * 「没查过」与「查过且无差异」在门禁上不可区分。
+ *
+ * ⚠ **不校验表项内容**:名册里写了什么这一族不判(它判的是「名还在不在」不是「名对不对」,
+ * 见文件头第(三)条);只要求它是一个非空字符串数组。
+ *
+ * @param {string} rosterRel 名册路径(仓相对 POSIX)
+ * @param {string} root 求值根
+ * @returns {{ cases: string[], problems: string[] }}
+ */
+export function loadGateCaseRoster(rosterRel, root = ROOT) {
+  /** @type {string[]} */
+  let cases = [];
+  /** @type {string[]} */
+  const problems = [];
+  let raw;
+  try {
+    raw = JSON.parse(readFileSync(path.join(root, ...rosterRel.split("/")), "utf8"));
+  } catch (error) {
+    return {
+      cases,
+      problems: [`case 登记名册读不到或不是合法 JSON:${rosterRel}(${error instanceof Error ? error.message : String(error)})`
+        + " —— 名册读不到时若按空册处理,两侧同时为空而差集恒空,本族会「全绿」"
+        + "(门禁什么也没查而输出是绿的)。故判红"],
+    };
+  }
+  const list = Array.isArray(raw?.cases) ? raw.cases : null;
+  if (list === null) {
+    return { cases, problems: [`case 登记名册缺 cases 数组:${rosterRel}`] };
+  }
+  const names = [];
+  for (const [index, item] of list.entries()) {
+    if (typeof item !== "string" || item === "") {
+      problems.push(`case 登记名册 ${rosterRel}:第 ${index + 1} 项不是非空字符串`
+        + ` —— 本族只要求「名还在不在」,故不判名的内容,但表的形状坏了必须说出来`);
+      continue;
+    }
+    names.push(item);
+  }
+  if (problems.length === 0 && names.length < MIN_GATE_CASE_ROSTER) {
+    problems.push(`case 登记名册 ${rosterRel}:只有 ${names.length} 条(下限 ${MIN_GATE_CASE_ROSTER})`
+      + " —— 空名册不证明任何 case 存在过,只证明没人填;而两侧同时为空时两向差集恒空"
+      + "(这是本族最坏的失效形态:恒绿)。故判红");
+  }
+  return { cases: names, problems };
 }
 
 /**
@@ -1816,6 +2258,14 @@ export function checkTestLayout(base = {}) {
     gatesNoNamedCase: 0,
     gatesNoCaseImport: 0,
     gatesNoCaseCall: 0,
+    gateRosterChecked: 0,
+    gateRosterUnlisted: 0,
+    gateRosterStale: 0,
+    gateRosterTableProblems: 0,
+    gateRosterEmptyExtraction: 0,
+    gateRosterOnlyInRoster: 0,
+    gateRosterOnlyInSource: 0,
+    gateRosterNames: 0,
   };
 
   /** @type {string[]} */
@@ -2243,6 +2693,122 @@ export function checkTestLayout(base = {}) {
             + "但正文里没有任何 `.case(` 调用(只建了 suite 或只用裸断言)—— import 了契约却不接进去,"
             + "等于「声明了却不用」,case 级粒度名存实亡。处置:把断言收进 suite.case(...) 之内",
         );
+      }
+    }
+
+    // ---- 族:case 名集合 ⟷ 登记名册两向差集(与上面「有没有接」那一族**不同 id**)----
+    //
+    // ⚠ **整段与上一节同受 `indexInRoot` 约束**(理由同款,不重述):合成根里没有 `gates/`,
+    // 「这份自测的 case 名册是什么」在那棵树上不是事实而是范畴错误。
+    //
+    // ⚠ **读盘**:名册与自测正文各读一次。与上一节同款理由(同一批文件读两次会让
+    // 「是否命中」不可复现),且名册**必须**现读 —— 它是本族判定面的另一半,不读就是恒绿。
+    const sourceByFile = new Map(GATE_SELFTEST_CASE_SOURCES.map((entry) => [entry.file, entry]));
+    const selftestSet = new Set(gateSelftests);
+    const liveSourceRows = GATE_SELFTEST_CASE_SOURCES.filter((entry) => selftestSet.has(entry.file));
+    // ⚠ **本族整段判定面收窄在「这一棵树与登记表有交集」之后**(=liveSourceRows 非空),
+    // 与 C3 / L11b / L5 的 stale 收窄同款范畴边界:登记表描述的是**真实仓库**那 20 份自测,
+    // 而自检在合成根里铺的自测(`check-demo.selftest.mjs` 之类)与它**零重合** ——
+    // 那不是「少登记了一行」而是「这张表描述的不是这棵树」。
+    // ⇒ 收窄之后:真实仓上 20 行全在 ⇒ 本族照常判;合成根上零重合 ⇒ 本族整段不适用。
+    // ⚠ **收窄本身开的那个洞**(20 份**全部**被删/改名 ⇒ 交集为空 ⇒ 本族静默)由
+    // `gates-selftest-surface-collapsed` 兜住(份数掉到下限以下即判红),不是无人守。
+    // 自检要验本族时铺的是**在册路径**(如 `gates/repo/check-docs.selftest.mjs`)的合成正文,
+    // 那样交集非空、本族正常生效 —— 见 selftest 里那几档的做法。
+    if (liveSourceRows.length === 0) {
+      // 整段不适用,不做任何报告(静默是**正确**方向:那一族此刻没有判定面)。
+    } else {
+      // ① 登记表少一行:树里有这份自测而表里没有它 ⇒ 它**静默退出本族判定面**。
+      //    这是「登记表自身漂移」的唯一看守(少一行 = 少一个被看护的文件,且症状是全绿)。
+      for (const file of gateSelftests) {
+        if (sourceByFile.has(file)) continue;
+        stats.gateRosterUnlisted += 1;
+        report(
+          "gates-selftest-case-roster",
+          `${file} → gates-selftest-case-roster:该门禁自测在取名策略登记表 ${GATE_SELFTEST_CASE_SOURCES_FILE} 里`
+            + "**没有登记行** —— 它因此静默退出本族的判定面(case 名集合与名册两向差集无人核对),"
+            + "而症状是「全绿」。处置:在登记表里补一行,`strategies` 写明名从哪儿抽"
+            + "(四类:内联 `suite.case('…')` 字面量 / 用例表的 `name:` 字段 / 本地 wrapper 首参 /"
+            + " 变异实验表的 `id:` 字段)",
+        );
+      }
+      // ② 登记表多一行(stale):树里已无这份自测(改名 / 删除 / 搬走)⇒ 判红。
+      //    与 L5 / C3 的 stale 同款取舍:ratchet 的全部意义就是防「表项只增不减」。
+      //
+      // ⚠ **但这一档额外收窄在「这一棵树完整」之后** —— 即 `minSelftestFiles > 0`
+      // 且**扫到的份数已达下限**。理由与 `scan-surface-collapsed` 同源:「表里这一行
+      // 当前不在树上」是**关于这棵树完整性**的断言,而一棵只铺了 1 份自测的合成树
+      // 根本谈不上完整(合成根上铺的那份与另外 19 行零重合)。少这一条收窄,
+      // 每一条只铺一份在册自测的夹具都会被另外 19 条 stale 顶住 —— 症状离根因
+      // 隔着一整族判据,且**每档夹具验的到底是哪一族再也分不清**。
+      // ⇒ 真实仓(20 份 ≥ 下限 15)照常判;合成根默认(`minSelftestFiles: 0`)不适用。
+      const treeIsComplete = ctx.minSelftestFiles > 0 && gateSelftests.length >= ctx.minSelftestFiles;
+      for (const entry of treeIsComplete ? GATE_SELFTEST_CASE_SOURCES : []) {
+        if (selftestSet.has(entry.file)) continue;
+        stats.gateRosterStale += 1;
+        report(
+          "gates-selftest-case-roster",
+          `${GATE_SELFTEST_CASE_SOURCES_FILE} → gates-selftest-case-roster:登记表登记了 ${entry.file},`
+            + "但该门禁自测在本次扫描的树里不存在 —— 它已改名 / 被删 / 被搬走,"
+            + "登记项必须同批改成新路径(否则表项只增不减、失效项永远占位)",
+        );
+      }
+      // ③ 两向差集本体:逐份读自测正文与名册,两个方向各报。
+      for (const file of gateSelftests) {
+        const source = sourceByFile.get(file);
+        if (source === undefined) continue;
+        stats.gateRosterChecked += 1;
+        const rosterRel = /** @type {string} */ (caseRosterRelFor(file));
+        const roster = loadGateCaseRoster(rosterRel, ctx.root);
+        if (roster.problems.length > 0) {
+          stats.gateRosterTableProblems += roster.problems.length;
+          for (const problem of roster.problems) {
+            report("gates-selftest-case-roster", `${rosterRel} → gates-selftest-case-roster:${problem}`);
+          }
+          // ⚠ **名册自身失效时不继续判差集**:那一档已经判红,再拿一个空册去比只会
+          // 报出满屏「册有源无」,把真因(表坏了)埋在一堆派生症状里(诊断指向 A、真因是 B)。
+          continue;
+        }
+        stats.gateRosterNames += roster.cases.length;
+        const names = extractGateCaseNames(ctx.readText(file), source.strategies);
+        // ⚠ **恒绿防护的第二道 + 「策略与源码脱节」那一档**:抽出 0 条时名册非空 ⇒ 全档
+        // 「册有源无」。不单独点破的话,读的人会以为「那 N 条 case 全被删了」,
+        // 而真因是登记表里的策略名写错了(表名/字段名/包装器名),改策略即可。
+        if (names.length === 0) {
+          stats.gateRosterEmptyExtraction += 1;
+          report(
+            "gates-selftest-case-roster",
+            `${file} → gates-selftest-case-roster:按登记的取名策略抽出 **0 条** case 名`
+              + `(策略 ${source.strategies.map((s) => `${s.kind}${s.table === undefined ? "" : `:${s.table}${s.field === undefined ? "" : `.${s.field}`}`}${s.wrapper === undefined ? "" : `:${s.wrapper}`}`).join(" + ")})`
+              + " —— 策略与源码脱节(表名 / 字段名 / 包装器名写错,或取名那一档整个被删了)。"
+              + `若取名那一档确实已不存在,应把它同批删掉并从 ${GATE_SELFTEST_CASE_SOURCES_FILE} 撤登记;`
+              + "⚠ 这与「那份自测的 case 全被删光」在读数上同形,而后者不该由本族来报"
+              + "(`gates-selftest-named-case` 那一族报的是「有没有接」,不是「有多少条」)",
+          );
+          continue;
+        }
+        const inRoster = new Set(roster.cases);
+        const inSource = new Set(names);
+        for (const name of roster.cases) {
+          if (inSource.has(name)) continue;
+          stats.gateRosterOnlyInRoster += 1;
+          report(
+            "gates-selftest-case-roster",
+            `${rosterRel} → gates-selftest-case-roster:名册登记了 case「${name}」,`
+              + `但 ${file} 里按策略抽不出它 —— 那条 case 已被删除(或改了档名)而名册没同批删。`
+              + "处置:档确实已删 ⇒ 同批删名册这一条;档只是改了名 ⇒ 同批把名册改成新名",
+          );
+        }
+        for (const name of inSource) {
+          if (inRoster.has(name)) continue;
+          stats.gateRosterOnlyInSource += 1;
+          report(
+            "gates-selftest-case-roster",
+            `${file} → gates-selftest-case-roster:源码里有 case「${name}」,但名册 ${rosterRel} 没登记它`
+              + " —— 新增 / 改名的那一档没进册(名册是「这条 case 存在过」的人工凭证,漏登记它"
+              + "就等于这条 case 在名册侧不存在)。处置:把该档名补进名册的 cases 数组",
+          );
+        }
       }
     }
   }
@@ -2704,6 +3270,16 @@ export function main(argv = []) {
       + `(未 import 契约模块 ${stats.gatesNoCaseImport} / import 了却一次没调 .case( ${stats.gatesNoCaseCall};`
       + `分母是 ${GATES_SELFTEST_ROOT}/** 下全部 ${stats.gateSelftests} 份 ${GATES_SELFTEST_EXT})`
       + enforcement("gates-selftest-named-case"),
+    `case 名 ⟷ 登记名册 gates-selftest-case-roster 判红 ${
+      stats.gateRosterUnlisted + stats.gateRosterStale + stats.gateRosterTableProblems
+      + stats.gateRosterOnlyInRoster + stats.gateRosterOnlyInSource
+    } 项(参与判定 ${stats.gateRosterChecked} 份 / 名册侧 case 名 ${stats.gateRosterNames} 条`
+      + ` / 登记表缺行 ${stats.gateRosterUnlisted} / stale 行 ${stats.gateRosterStale}`
+      + ` / 名册自身失效 ${stats.gateRosterTableProblems} / 抽出 0 条 ${stats.gateRosterEmptyExtraction}`
+      + ` / 册有源无 ${stats.gateRosterOnlyInRoster} / 源有册无 ${stats.gateRosterOnlyInSource};`
+      + `分母是全部 ${stats.gateSelftests} 份自测)`
+      + ` ⚠ 半齿上限:「删 case + 同批删册」是一次改动、判据看不见 —— 本族只抓**单侧**漂移`
+      + enforcement("gates-selftest-case-roster"),
   ].join(";");
   const named = problems.map((problem) => problem.split(" → ")[0] ?? problem);
 
