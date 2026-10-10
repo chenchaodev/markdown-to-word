@@ -12,11 +12,28 @@
 //
 // ⚠ 已沉淀的教训:临时产物必须在 finally 清理 —— 中途断言失败抛异常时同样要删,否则系统
 // 临时区会堆满夹具树。本脚本全部写操作都落在 mkdtemp 出来的目录里,**不碰真实工作树**。
+//
+// ---- 形态:case 契约接入,但**不接 harness**(ADR-074 决定一 / ADR-068 bespoke 留在原处)----
+//
+// CASES 表(16 元素)与 runner 的三型分派(`unit: true` 走 fn / `realRepo|cli` 走 spawn /
+// 其余走 run)结构不动,for 循环体整块收进 `await suite.case(档名, () => runCase(档))`,
+// `run()`/`fn` 的「返回 null = 过 / 字符串 = 失败消息」协议原样留在本地 `runCase` 里。
+// 门禁树接的是**落在 shared/ 的真实现**:`gates-stay-in-gates` 的允许面只有 `gates` /
+// `shared` / `test/fixtures`,`test/` 整棵树不在其中,引不到 `test/harness/case.js`。
+// case 内	assert 失败即抛、由 case 级 catch 收成**该 case** 失败,不中断后续 case。
+//
+// **不用合成根 harness**:9 条 run() 档另需 tsconfig 正文 / exemptDirs / minGuardedFiles
+// 三个注入面,而 harness 的表只收「树型路径 → 正文 + 问题清单正则」、不接 options;4 条 unit
+// 档的入参连一棵树都不是(行数组 / 无参夹具);3 条进程级档含真实仓 spawn —— judge 契约
+// (`(合成根) => string[]`)完全不对型,塞进去是假接入。接 case 契约解决的是另一件事:让
+// 「档数」成为可机械计数的单位(`gates-selftest-named-case` 判的就是它),迁移后分母由
+// `suite.results.length` 给出(= 16)。
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { assert, createCaseSuite } from "../../shared/case.js";
 import { ROOT } from "../../shared/paths.js";
 import {
   analyze,
@@ -235,44 +252,68 @@ const CASES = [
   },
 ];
 
-/** @type {string[]} */
-const failures = [];
-for (const testCase of CASES) {
+const suite = createCaseSuite();
+
+/**
+ * 跑一档夹具并按该档声明的期望核对结果(收进 `suite.case` 的断言体,抛错只记该档失败、
+ * 不中断后续档)。
+ *
+ * 三型分派的结构与搬迁前一致:`unit: true` 走 `fn`、`realRepo|cli` 走 spawn、其余走
+ * `run()` —— **`run()`/`fn` 的「返回 null = 过 / 字符串 = 失败消息」协议原样保留在这里**,
+ * 不改成 throw-only(那一协议同时被表内 13 条 run/fn 档使用,改它等于改夹具表)。
+ *
+ * 搬迁口径:原 `failures.push(...)` 逐条改成 `assert(条件, 消息)` —— **消息逐字沿用**,原
+ * `[ok]` 打印保留。原来那条「夹具抛错」的 catch 分支改成重新抛出**同一条消息**,由 case
+ * 级 catch 收成「该档失败」—— 一样不打断后续档,消息也一字不改。
+ * @param {object} testCase 夹具表里的一档
+ */
+function runCase(testCase) {
   try {
     if (testCase.unit === true) {
       const bad = testCase.fn();
       if (bad === null) console.log(`[ok] tscheck-coverage-selftest:${testCase.name}`);
-      else failures.push(`${testCase.name}:${bad}`);
-      continue;
+      else assert(bad === null, `${testCase.name}:${bad}`);
+      return;
     }
     if (testCase.realRepo === true || testCase.cli === true) {
       const cwd = testCase.realRepo === true ? ROOT : mkdtempSync(join(tmpdir(), "m2w-tscheck-cli-"));
       try {
         const { code, output } = runAt(cwd, testCase.args ?? []);
         if (code !== testCase.expectCode) {
-          failures.push(`${testCase.name}:期望 exit ${testCase.expectCode},实际 ${code}\n${output}`);
+          assert(false, `${testCase.name}:期望 exit ${testCase.expectCode},实际 ${code}\n${output}`);
         } else if (!testCase.expect.test(output)) {
-          failures.push(`${testCase.name}:期望输出匹配 ${testCase.expect},实际\n${output}`);
+          assert(false, `${testCase.name}:期望输出匹配 ${testCase.expect},实际\n${output}`);
         } else {
           console.log(`[ok] tscheck-coverage-selftest:${testCase.name}(exit ${code})`);
         }
       } finally {
         if (testCase.realRepo !== true) rmSync(cwd, { recursive: true, force: true });
       }
-      continue;
+      return;
     }
     const bad = testCase.run();
     if (bad === null) console.log(`[ok] tscheck-coverage-selftest:${testCase.name}`);
-    else failures.push(`${testCase.name}:${bad}`);
+    else assert(bad === null, `${testCase.name}:${bad}`);
   } catch (error) {
-    failures.push(`${testCase.name}:夹具抛错 ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`${testCase.name}:夹具抛错 ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
-if (failures.length > 0) {
-  for (const f of failures) console.error(`[fail] tscheck-coverage-selftest:${f}`);
-  console.error(`[tscheck-coverage-selftest] ${failures.length}/${CASES.length} 条夹具未通过`);
+// 夹具表逐档收进 case:**档名即 case 名**(逐字沿用搬迁前 `failures.push` 记账用的 `testCase.name`)。
+for (const testCase of CASES) {
+  await suite.case(testCase.name, () => runCase(testCase));
+}
+
+/* ---------- 汇总:段级成败按 case 结果判 ---------- */
+// 与搬迁前 `failures[]` 判定等价(任一档失败即非零退出),**分母也是同一个**:搬迁前写
+// `CASES.length`(= 16),搬迁后由 `suite.results.length` 自然给出。两侧一旦不等,说明有档没接进
+// case —— 那正是 `gates-selftest-named-case` 要抓的形态。
+const cases = suite.results;
+const failedCases = suite.failures;
+if (failedCases.length > 0) {
+  for (const failure of failedCases) console.error(`[fail] tscheck-coverage-selftest:${failure.name}:${failure.message ?? '(无失败消息)'}`);
+  console.error(`[tscheck-coverage-selftest] ${failedCases.length}/${cases.length} 条夹具未通过`);
   process.exitCode = 1;
 } else {
-  console.log(`[ok] tscheck-coverage-selftest:${CASES.length} 条夹具全部符合预期(未漂移通过 / 漂移拦截)`);
+  console.log(`[ok] tscheck-coverage-selftest:${cases.length} 条夹具全部符合预期(未漂移通过 / 漂移拦截)`);
 }

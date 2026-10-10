@@ -69,10 +69,30 @@
 //     会让全绿变成假通过;
 //   - 注入/撤销成对:同一份 result 只换退出码,判红必须跟着输入翻面。
 
+// ---- 形态:case 契约接入,但**不接 harness**(ADR-074 决定一 / ADR-068 bespoke 留在原处)----
+//
+// 32 处 `await check('<档名>', body)` 调用点**一字不动**,只把本地 runner `check()` 接到
+// `shared/case.js` 的具名 case 契约上:档名即 case 名,档内多条 `must`/`eq` 攒进局部
+// `errors[]`、档末一次性 `assert`(与同族已迁的 smoke-proc.selftest.mjs 的 `wrong[]` + assert
+// 同构)。门禁树接的是**落在 shared/ 的真实现**:`gates-stay-in-gates` 的允许面只有
+// `gates` / `shared` / `test/fixtures`,`test/` 整棵树不在其中,引不到 `test/harness/case.js`。
+// case 内 assert 失败即抛、由 case 级 catch 收成**该 case** 失败,不中断后续 case;「跑之前
+// 自增 caseCount」(夹具抛异常的档也占一个 case 位)由 suite 的「先登记后执行」天然承袭。
+//
+// **不用合成根 harness**,两条理由缺一不可:
+//   1. 合成根的表只收**纯数据** case(树型路径 → 正文 + 问题清单正则),不含函数;而本份
+//      **每一档都是回调**(输入构造、判定调用、恒绿防护全写在闭包里)。
+//   2. harness 的 judge 契约是 `(合成根) => string[]`,而本份的判定入参是 result 对象 /
+//      输出字符串 / exe 路径,返回的是 report 对象或 marker 数组 —— 入参与返回两侧都不对型,
+//      塞进去是假接入。
+// 接 case 契约解决的是另一件事:让「档数」成为可机械计数的单位(`gates-selftest-named-case`
+// 判的就是它),迁移后分母由 `suite.results.length` 给出(= 32)。
+
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { assert, createCaseSuite } from '../../shared/case.js';
 import { SMOKE_MARKERS, collectSmokeProblems } from './smoke-proc.mjs';
 import {
   DEGRADATION_TOKENS,
@@ -94,11 +114,10 @@ import { main } from './smoke-report/cli.mjs';
 /** 夹具诊断前缀(消费端传的是 'unpacked' / 'dev' 这类来源标签) */
 const LABEL = 'unpacked';
 
-/** @type {string[]} */
-const failures = [];
-
-/** 档位计数(由 check 自增,汇总处读它 —— 手写常数会与实际档位漂移,而漂移方向的误差是「报得太满」) */
-let caseCount = 0;
+// case 契约:一条档位一条 case,档名即 case 名。搬迁前这里是一个 `failures[]` 累积器 +
+// 手写自增的 `caseCount`(汇总处读它) —— 分母手写会与实际档位漂移,而漂移方向的误差是
+// 「报得太满」;现在由 `suite.results.length` 自然给出(见收口段)。
+const suite = createCaseSuite();
 
 /**
  * 断言失败信息的格式化(区分 Error 与其它抛出)。
@@ -115,41 +134,46 @@ function errText(error) {
  * 为什么一档可以有多条断言(而不是第一条失败就抛):一个档位通常同时钉「判红」与「不牵连别的
  * 族」,分散成两档会让「同一形态下判定到底多说了什么」看不清;合成一档后失败信息是一整串,
  * 一次就能看出退化成了什么样。
+ *
+ * 形态:整档收进 `suite.case(档名, …)`,档内多条断言攒进局部 `errors[]`、档末一次性
+ * `assert` —— 与同族已迁的 smoke-proc.selftest.mjs 的 `wrong[]` + assert 同构。`must`/`eq`
+ * 保留「只 push 不抛」的语义,夹具执行抛异常仍收进同一个 `errors[]`;case 级 catch 把 assert
+ * 的抛出收成「该档失败」,不中断后续档。搬迁前 `caseCount += 1` 在跑之前自增(夹具抛异常的
+ * 档也占一个 case 位),这一格由 suite 的「先登记后执行」承袭。
  * @param {string} name 档名
  * @param {(api: {must: (ok: boolean, text: string) => void, eq: (actual: unknown, expected: unknown, label: string) => void}) => string | undefined | Promise<string | undefined>} body 档体;返回值为括号里显示的摘要
  */
 async function check(name, body) {
-  caseCount += 1;
-  /**
-   * @param {boolean} ok 断言是否成立
-   * @param {string} text 失败时的说明
-   */
-  const must = (ok, text) => {
-    if (!ok) errors.push(text);
-  };
-  /**
-   * @param {unknown} actual 实际值
-   * @param {unknown} expected 期望值
-   * @param {string} label 字段标签
-   */
-  const eq = (actual, expected, label) => {
-    const got = JSON.stringify(actual);
-    const want = JSON.stringify(expected);
-    if (got !== want) errors.push(`${label}:期望 ${want},实际 ${got}`);
-  };
-  /** @type {string[]} */
-  const errors = [];
-  let note = '';
-  try {
-    note = (await body({ must, eq })) ?? '';
-  } catch (error) {
-    errors.push(`夹具执行抛异常:${errText(error)}`);
-  }
-  if (errors.length > 0) {
-    failures.push(`${name}:${errors.join('; ')}`);
-  } else {
+  await suite.case(name, async () => {
+    /**
+     * @param {boolean} ok 断言是否成立
+     * @param {string} text 失败时的说明
+     */
+    const must = (ok, text) => {
+      if (!ok) errors.push(text);
+    };
+    /**
+     * @param {unknown} actual 实际值
+     * @param {unknown} expected 期望值
+     * @param {string} label 字段标签
+     */
+    const eq = (actual, expected, label) => {
+      const got = JSON.stringify(actual);
+      const want = JSON.stringify(expected);
+      if (got !== want) errors.push(`${label}:期望 ${want},实际 ${got}`);
+    };
+    /** @type {string[]} */
+    const errors = [];
+    let note = '';
+    try {
+      note = (await body({ must, eq })) ?? '';
+    } catch (error) {
+      errors.push(`夹具执行抛异常:${errText(error)}`);
+    }
+    // 判据全部核对完才结算(与搬迁前同一口径:档内全报,不撞第一条就抛)。
+    assert(errors.length === 0, `${name}:${errors.join('; ')}`);
     console.log(`[ok] smoke-report-selftest:${name}${note === '' ? '' : `(${note})`}`);
-  }
+  });
 }
 
 /**
@@ -750,14 +774,19 @@ await check('注入/撤销:同一份 result 只换退出码,problems 必须跟�
   return '注入判红、撤销判绿';
 });
 
-/* ---------- 汇总 ---------- */
-const total = caseCount;
-if (failures.length > 0) {
-  for (const failure of failures) console.error(`[smoke-report-selftest:fail] ${failure}`);
-  console.error(`[smoke-report-selftest:fail] 冒烟报告族回归守护失败,共 ${failures.length}/${String(total)} 条`);
+/* ---------- 汇总:段级成败按 case 结果判 ---------- */
+// 记账单位的变化:搬迁前同一档内的多条 push 各自累积成多条 `failures` 项(只 push 不抛),
+// 分母是手写自增的 `caseCount`;搬迁后一档一 case,分母恒为 `suite.results.length`
+// (= 32),成败读 `suite.failures`(任一条 case 红即非零退出)。档内全报的口径没变(见
+// `check()` 里的 `errors[]`):一条 case 红时,它档内所有对不上的断言仍在同一条失败消息里。
+const cases = suite.results;
+const failedCases = suite.failures;
+if (failedCases.length > 0) {
+  for (const failure of failedCases) console.error(`[smoke-report-selftest:fail] ${failure.name}:${failure.message ?? '(无失败消息)'}`);
+  console.error(`[smoke-report-selftest:fail] 冒烟报告族回归守护失败,共 ${failedCases.length}/${String(cases.length)} 条`);
   process.exit(1);
 }
-console.log(`[ok] smoke-report-selftest:${String(total)} 条夹具全部符合预期(全绿通过 / 逐族判红 / 零 spawn)`);
+console.log(`[ok] smoke-report-selftest:${String(cases.length)} 条夹具全部符合预期(全绿通过 / 逐族判红 / 零 spawn)`);
 
 /**
  * 在 mkdtemp 临时目录里跑一段**异步**夹具(CLI 档需要 await),结束必删。
