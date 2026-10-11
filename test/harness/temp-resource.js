@@ -276,6 +276,12 @@ export function pendingTempResources() {
  * 进程退出钩子:把「段崩在中途、没跑到 finally」的目录清掉;清不掉的打到 stderr。
  * 退出阶段不再抛错(Node 不保证退出码被传播),因此这一层是兜底不是保证——
  * 保证来自段末的 cleanupTempResources 断言。
+ *
+ * ⚠ **前缀为什么是 `[temp-leak]` 而不是 `[fail]`(REQ-197)**:stderr 上真实红的两种形态是
+ * 段级 `[fail] <段名>: …`(acceptance.mjs)与 case 级 `[case-fail] <段名> › <case>: …`
+ * (runner.js 的 formatCaseReport)。退出钩子打 `[fail]` 与它们同形却无 id,本会话曾把它
+ * 误判成段失败一轮。换 token 后「兜底报警」与「真红」在扫读时一眼可分;它仍是 console.error
+ * (这确实是个问题),只是不再伪装成判定结论。
  */
 function runExitHook() {
   /** @type {string[]} */
@@ -285,7 +291,7 @@ function runExitHook() {
     if (error) stuck.push(`${resource.path}(${error.message})`);
   }
   if (stuck.length > 0) {
-    console.error(`[fail] 进程退出时仍有临时资源未清理:${stuck.join(", ")}`);
+    console.error(`[temp-leak] 进程退出时仍有临时资源未清理:${stuck.join(", ")}`);
   }
 }
 
