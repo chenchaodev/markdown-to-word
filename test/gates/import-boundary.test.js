@@ -1700,8 +1700,8 @@ export async function run() {
 
     // ============ (11) 三样新机制(peer: 形态 / renderer-features scope / renderer 内层布局)============
     // 本组的主体验**机制**:`renderer-features` 这一档 scope 自 ADR-075 阶段③ 起已挂上规则
-    // (renderer-features-no-cross-import,带 pending 只报告),故「这一档恒绿」不再是它的正常态 ——
-    // 恒绿正是这类机制最贵的失效形态,必须由合成树证明它能判红。
+    // (renderer-features-no-cross-import,阶段⑥ 起已转 fail-closed),而真实仓库当前命中
+    // **0 条** —— 「零命中」与「恒绿」在只读真实仓库输出时不可区分,必须由合成树证明它能判红。
     // ⚠ 例外是 11f/11g:`peer:` 形态自阶段②起已被 renderer-foundation-no-feature-dep 换用,
     // 那一条必须由**真实仓库之外的合成树**证明它能判红 —— 真实仓库零命中与恒绿不可区分。
     await suite.describe("(11) 三样新机制(peer: 形态 / renderer-features scope / renderer 内层布局)", async (s) => {
@@ -1737,7 +1737,7 @@ export async function run() {
         );
       });
 
-      await s.case("11b 两张 renderer 表是子集关系且排除面恰好只有组合根", () => {
+      await s.case("11b 两张 renderer 表是子集关系且排除面恰好只有组合根", async () => {
         // 11b. 两张 renderer 表的关系:功能根是已登记一级目录的**子集**。
         // 这条不是形式检查 —— 少了它,把某个根从 RENDERER_FEATURE_ROOTS 删掉只会静默缩小
         // scope 命中面,而那个洞正是两张表要堵的(未登记的名字静默放行)。
@@ -1796,8 +1796,17 @@ export async function run() {
               + `实际 ${peerHits.length} 处:${peerHits.join(" | ")}`,
           );
           assert(
-            result.problems.length === 0,
-            `本沙盒不应有 problem(该规则带 pending,命中只进 info),实际 ${result.problems.length} 项:${result.problems.join(" | ")}`,
+            result.problems.length === 1
+              && String(result.problems[0]).includes("renderer-features-no-cross-import"),
+            `本条已转 fail-closed(ADR-075 阶段⑥):wizard/ → ui/ 这条边应进 problems 判红,`
+              + `实际 problems ${result.problems.length} 项:${result.problems.join(" | ")}`,
+          );
+          // ⚠ 转正后**判红方向必须由 CLI 出口证明**,不只 analyze() 的内部计数:
+          // 「命中进了 problems」与「进程因此退出非零」是两件事,后者才是 CI 看得见的那个。
+          const cli = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+          assert(
+            cli.code === 1 && cli.output.includes("renderer-features-no-cross-import"),
+            `fail-closed 后 CLI 应退出 1 并打印该规则 id,实际 code=${cli.code}:${cli.output.slice(0, 200)}`,
           );
         }
       });
@@ -1889,7 +1898,7 @@ export async function run() {
           `renderer-foundation-no-feature-dep 的 scope 应仍是 renderer-foundation(只管 dom/ 与 state/),实际 ${foundationScope}`,
         );
         // 阶段③ 新挂那条的登记:同一张派生表拼出 forbid(不手写第二份名字)+ scope 落在那一档
-        // + **必须带 pending**(阶段④ 拆边期间不得判红;阶段⑥ 转正时删标记即转 fail-closed)。
+        // + **已不带 pending**(阶段⑥ 转正删标记即转 fail-closed;转正前置是边拆完+槽清零)。
         const featuresRule = LAYER_RULES.find((r) => r.id === "renderer-features-no-cross-import");
         assert(
           featuresRule !== undefined,
@@ -1900,10 +1909,15 @@ export async function run() {
           `renderer-features-no-cross-import 的 forbid 应与 foundation 那条逐字同形(同一张派生表),`
             + `实际 ${featuresRule?.forbid ?? "(规则缺失)"}`,
         );
+        // 钉「字段不存在」而非「值不为 true」:`pending: false` 与「没有 pending 字段」在
+        // 求值上同义,但只有后者是本仓的形态(其余 pending 规则靠**删整行**表示转正),
+        // 留一个 false 字段会让下一个人以为还有开关可拨。
         assert(
-          featuresRule?.pending === true,
-          `renderer-features-no-cross-import 应带 pending: true(阶段③ 只报告不判红;`
-            + `阶段⑥ 转正时删标记即转 fail-closed),实际 ${String(featuresRule?.pending)}`,
+          featuresRule !== undefined && !("pending" in featuresRule),
+          `renderer-features-no-cross-import 已转 fail-closed,不应再有 pending 字段`
+            + `(转正 = 删整行,不是置 false),实际字段 ${JSON.stringify(
+              featuresRule === undefined ? "(规则缺失)" : Object.keys(featuresRule),
+            )}`,
         );
         // 派生一致性(与门禁 selfCheckPeerMesh 里那组同纪律,但**不**直接消费那个函数:
         // 本段是消费侧的外壳证据,两处任一被摘掉另一处还在)
@@ -1924,11 +1938,12 @@ export async function run() {
             + `(阶段④ 拆边期间与阶段⑥ 转正后均不变 —— 本断言只数条数与 id,不读 pending),`
             + `实际 ${featureScoped.length} 条:${featureScoped.map((r) => r.id).join(",")}`,
         );
-        // pending 计数由规则表派生,结论行里的那个数跟着 +1(阶段② 是 4)
+        // pending 计数由规则表派生,结论行里的那个数跟着走(阶段② 是 4 → 阶段③ 挂规则后 5
+        // → 阶段⑥ renderer-features-no-cross-import 转正删标记,回到 4)
         const pendingCount = [...LAYER_RULES, ...LAYER_TEXT_RULES].filter((r) => r.pending === true).length;
         assert(
-          pendingCount === 5,
-          `pending 判据条数应与结论行一致(新增 pending 会改动结论行的那个数),实际 ${pendingCount}`,
+          pendingCount === 4,
+          `pending 判据条数应与结论行一致(转正删标记会改动结论行的那个数),实际 ${pendingCount}`,
         );
       });
 
@@ -1981,16 +1996,16 @@ export async function run() {
         );
       });
 
-      // 11h. 阶段③ 新挂那条的**负向夹具**:证明 renderer-features-no-cross-import 真能命中。
+      // 11h. 该规则的**负向夹具 + 转正后的 fail-closed 证明**。
       //
-      // 为什么必须单独一条:它带 `pending: true`,命中**不进 problems**,而真实仓库当前命中 44 处
-      // —— 「它恒绿」与「它命中 44 处」在只读真实仓库输出时看着都是「没判红」,不可区分。
-      // 故必须有一棵合成树证明它会命中,否则「pending 汇总行里那个 44」也可能只是恒绿的另一种说法。
+      // 为什么必须单独一条:真实仓库当前命中 **0 处**,而 fail-closed 规则在零命中时与
+      // 「恒绿」在只读真实仓库输出时**完全不可区分**。故必须有一棵合成树证明它会命中、
+      // 且会**让进程退出非零** —— 否则「门禁绿」可能只是恒绿的另一种说法。
       //
-      // ⚠ 断言打在 `info` 通道而非 `problems`:这条规则此刻带 pending,**不得判红**
-      // (阶段④ 拆边期间门禁仍须 exit 0)。阶段⑥ 转正删掉 pending 后,同一棵树的这条命中
-      // 会从 info 移到 problems —— 届时本断言须同批改(把 info 改成 problems)。
-      await s.case("11h 负向夹具:阶段③ 新挂的 peer 规则能命中且走 info 通道(pending 期间不判红)", () => {
+      // ⚠ 本条随转正改写过一次(阶段⑥ 删 pending 之前它断言「命中只进 info、problems
+      // 为空」):转正后同一棵树的命中从 info 移到 problems,并且 CLI 由 0 变 1。改动时
+      // 保住的是**意图**(证明这条判据有牙且真会拦人),不是当时那个通道选择。
+      await s.case("11h 负向夹具:该规则命中即判红并让 CLI 退出非零(转正后的 fail-closed)", async () => {
         const pkg = { dependencies: { docx: "9.0.0" } };
         const sb = createSandbox(pkg, {
           // 三个方向各一条,覆盖 scope 命中面的形状:一层 / 两层子目录 / 目标在另一功能根
@@ -2007,7 +2022,11 @@ export async function run() {
         });
         track(sb.dir);
         const result = analyze(sb.srcDir, pkg, FLAVORS.src);
-        const infoHits = result.info.map(String).filter((l) => l.includes("renderer-features-no-cross-import"));
+        // ⚠ 转正前命中落在 info 通道,转正后移到 problems —— 这里**同时**读两通道;
+        // 「命中共 3 条」与「命中在 problems 里」是两条独立断言,后者另有一条钉。
+        const infoHits = [...result.info, ...result.problems]
+          .map(String)
+          .filter((l) => l.includes("renderer-features-no-cross-import"));
         assert(
           infoHits.length === 3,
           `合成树上 convert→ui、convert/events→wizard、settings→convert 三条边必须各命中一次,`
@@ -2033,15 +2052,20 @@ export async function run() {
           !infoHits.some((line) => line.includes("convert-self.ts") || line.includes("to-dom.ts")),
           `同 feature 自环与 feature → 基础层是合法边,不得命中本规则,实际:${infoHits.join(" | ")}`,
         );
-        // ⚠ pending 期间**不得判红**:命中只进 info,problems 里一条也不该有
+        // ⚠ 转正后**命中必须进 problems**:这是 fail-closed 的定义(判红 + 影响退出码),
+        // 阶段③～⑤ 期间本条带 pending 时相反(只进 info、problems 一条也不该有)。
+        // 保留与「pendingHits 计数」并列为两条:前者是通道,后者是计数,两者可各自单独坏。
         assert(
-          result.problems.length === 0,
-          `带 pending 的规则命中不得进 problems(阶段④ 拆边期间门禁仍须 exit 0),`
-            + `实际 ${result.problems.length} 项:${result.problems.join(" | ")}`,
+          result.problems.length === 3
+            && result.problems.every((line) => String(line).includes("renderer-features-no-cross-import")),
+          `转正后命中应全部进 problems(共 3 条),实际 ${result.problems.length} 项:${result.problems.join(" | ")}`,
         );
+        // 转正后该规则**不再经 pending 通道计数**:pendingHits 只收 pending 规则的命中,
+        // 所以这里必须恒为 0。它是「已离开 pending 机制」的机械证据 —— 与上面那条
+        // 「命中进了 problems」互为另一侧,任一侧坏掉都说明转正只做了一半。
         assert(
-          (result.pendingHits.get("renderer-features-no-cross-import") ?? 0) === 3,
-          `pendingHits 应把该规则的 3 处命中逐条计上(汇总行「命中 N 处」由它拼出),`
+          (result.pendingHits.get("renderer-features-no-cross-import") ?? 0) === 0,
+          `转正后该规则不应再被 pendingHits 计数(汇总行的 pending 命中数由它拼出),`
             + `实际 ${result.pendingHits.get("renderer-features-no-cross-import") ?? 0} 处`,
         );
       });
@@ -2075,10 +2099,10 @@ export async function run() {
 
       await s.case("11e 结论行逐字钉住(零行为变化的机械证据)", async () => {
         // 结论行逐字钉住(最强的「零行为变化」判据):阶段②把 foundation 规则换了 forbid 形态,
-        // 机制侧新增了派生表,结论行必须仍提到「当前这 5 条判据带 pending 标记」且不提任何
-        // renderer 内层布局。阶段③ 新挂的 pending 使这个数从 4 变成 5 —— 该数**由规则表派生**
-        // (门禁自己按 `filter(r => r.pending === true).length` 取),故它不是手写的期望值,
-        // 而是真跑出来的口径。
+        // 机制侧新增了派生表,结论行必须仍提到「当前这 4 条判据带 pending 标记」且不提任何
+        // renderer 内层布局。该数**由规则表派生**(门禁自己按 `filter(r => r.pending ===
+        // true).length` 取),故它不是手写的期望值,而是真跑出来的口径 —— 阶段③ 挂 pending
+        // 时它从 4 变 5,阶段⑥ 转正删标记后回到 4。
         const sb = createSandbox({ dependencies: { docx: "9.0.0" }, devDependencies: { electron: "43.0.0" } }, {
           "core/markdown/parse.ts": "export const parse = () => null;\n",
         });
@@ -2086,8 +2110,8 @@ export async function run() {
         const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assert(result.code === 0, `本组涉及的合法沙盒应零退出,实际 ${result.code}:${result.output}`);
         assert(
-          result.output.includes("当前这 5 条判据带 pending 标记"),
-          `结论行的 pending 条数应仍为 5(阶段③ 新挂 renderer-features-no-cross-import 一条 pending),实际:${result.output}`,
+          result.output.includes("当前这 4 条判据带 pending 标记"),
+          `结论行的 pending 条数应仍为 4(阶段③ 挂规则时 5,阶段⑥ 转正删标记后回到 4),实际:${result.output}`,
         );
         assert(
           !result.output.includes("RENDERER_TOP_DIRS"),
@@ -2100,9 +2124,10 @@ export async function run() {
           + "且组合根 import 判绿、同树真违规仍判红;"
           + "renderer 内层布局真实仓库零未登记 + 合成未登记目录判红并点名 + 目录不存在时跳过 + 原语双向;"
           + "peer 与 renderer-features 自检零问题;"
-          + "阶段③挂规则:peer 规则恰好两条(forbid 逐字同形)、renderer-features 档恰好一条且带 pending、pending 共 5 条;"
+          + "阶段③挂规则:peer 规则恰好两条(forbid 逐字同形)、renderer-features 档恰好一条、"
+          + "阶段⑥转正后该规则已无 pending 字段且 pending 共 4 条;"
           + "负向夹具:dom/refs → convert 判红并点名 + 合法边判绿 + 深目录旧 prefix: 漏判边现判红;"
-          + "阶段③规则负向夹具:三条跨 feature 边各命中一次且点名、走 info 不判红、同 feature 自环判绿;"
+          + "转正后负向夹具:三条跨 feature 边判红进 problems、CLI 退出 1、同 feature 自环判绿;"
           + "结论行不提 RENDERER_TOP_DIRS)",
       );
     });

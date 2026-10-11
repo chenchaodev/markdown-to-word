@@ -359,9 +359,11 @@ export const LAYER_RULES = Object.freeze([
     // 差异只在 scope —— 一个 scope 换掉另一条规则的命中间(见 11e 的断言与
     // selfCheckPeerMesh 末尾那条一致性检查),而非各自维护一份名字。
     forbid: `peer:${RENDERER_PEER_ROOTS.join(',')}`,
-    // ⚠ pending 期间**不得判红**:命中归入 info 通道、不进 problems、不参与退出码。删掉这一行
-    // 即转 fail-closed,那个动作就是 ADR-075 阶段⑥ 的进度记录(与既有 pending 规则同一节奏)。
-    pending: true,
+    // **本条已转 fail-closed**(2026-10-10,REQ-218 #10 阶段⑥):删掉 `pending: true` 即转正,
+    // 那个动作就是 ADR-075 阶段⑥ 的进度记录(与既有 pending 规则同一节奏)。
+    // 转正前置是「边拆完 + 槽清零」,两者都已落地:renderer-features 档的跨 feature import
+    // 由 44 条降到 **0 条**(17 条经 ADR-076 把 dom-ops/toast 归入基础层消掉、27 条经组合根
+    // 注入消掉),`state.stageChangedHandler` 反向注册槽亦已删除。
     // 组合根 renderer/renderer.ts 按定义要引全部四个功能目录(实测 8 条),它是唯一合法的
     // 跨 feature 引用方,已在 RENDERER_FEATURE_SCOPE_EXCEPT_FILES 逐文件登记(理由与「该登记
     // 当前不承重」这一实测事实见那处的注释)。
@@ -374,8 +376,9 @@ export const LAYER_RULES = Object.freeze([
       + '它们彼此之间有向边密布、还夹着若干对双向,故不对它们断言「方向」—— ADR-065 §决定只钉'
       + '「互不 import」这一条边,不主张 renderer 内部整体分层。跨功能协作经组合根以构造参数注入,'
       + '故任何 feature → 另一 feature 的静态 import 都是绕过组合根的接线(它同时让两条被协作的'
-      + '边耦合成不可拆的一对,改一个功能的行为要同时改另一个)。先报告后转正(ADR-071),'
-      + '转正前置是边拆完(ADR-075 阶段④⑤)',
+      + '边耦合成不可拆的一对,改一个功能的行为要同时改另一个)。**已转 fail-closed**:'
+      + '44 条现存边(17 条经 ADR-076 归基础层、27 条经组合根注入)已全部清零,'
+      + 'ADR-065 §决定「四个功能目录互不 import」自此由本条机械担保',
   },
   {
     id: 'core-pdf-no-fs',
