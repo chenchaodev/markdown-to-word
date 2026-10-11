@@ -26,7 +26,7 @@
 
 ## 下一步
 
-P1 推进中(240、236、197 已完成)。当前步:P1-L5(REQ-199)—— image-request-budget.test.js 的段内 server 加 arrived promise,超时那条 case 改为「等到达再等结果」,消掉满载抖动。
+P1 推进中(240、236、197、199 已完成)。当前步:P1-L6(REQ-238)—— check-docs.selftest.mjs 与 check-tscheck-coverage.selftest.mjs 的 runCase 把 try 收窄到只包夹具构造/判定调用,断言比较移出 try,消息文本逐字保留。
 
 ## 完成标准
 
@@ -54,7 +54,7 @@ P1 推进中(240、236、197 已完成)。当前步:P1-L5(REQ-199)—— image-r
 | P1-L2 | REQ-183 | ADR-062 补私有断言器白名单表并订正对账节口径 | `docs/adr/ADR-062-*.md` | 白名单覆盖 must( 与 createAsserter 壳与 harness assert,每条带定义处与计数法;台账行订正由主会话收口 | `npm run check:docs` | 未做 |
 | P1-L3 | REQ-236 | runner 接线 assertHostRequirementsAlive(opt-in flag,默认 false) | `test/harness/runner.js` · `test/acceptance.mjs` · `test/harness/runner-report.test.js` · `test/harness/segment-host-requirements.mjs` | 沙盒 runAll 零影响;负向夹具判红且点名 | `M2W_ONLY=runner-report npm test` · `node gates/repo/check-test-layout.mjs` · `npm run typecheck` | 通过 2026-10-11 |
 | P1-L4 | REQ-197 | 退出钩子前缀 `[fail]` 改 `[temp-leak]`;头注同步;残留归因 | `test/harness/temp-resource.js` | 新前缀与 `[fail]`/`[case-fail]` 不撞;归因有结论 | `M2W_ONLY=test-common-helpers npm test` · `npm run typecheck` | 通过 2026-10-11(归因并入终态行:9 个全空目录壳,原记 16 已漂移) |
-| P1-L5 | REQ-199 | 超时敏感段改 arrived 确定性等待 | `test/convert/image-request-budget.test.js` | 请求到达从竞态变等待;其余墙钟依赖为零 | `M2W_ONLY=image-request-budget npm test` 连跑 3 次 | 未做 |
+| P1-L5 | REQ-199 | 超时敏感段改 arrived 确定性等待 | `test/convert/image-request-budget.test.js` | 请求到达从竞态变等待;其余墙钟依赖为零 | `M2W_ONLY=image-request-budget npm test` 连跑 3 次 · `npm run typecheck` | 通过 2026-10-11 |
 | P1-L6 | REQ-238 | catch 收窄到只包夹具构造(两份自测) | `gates/repo/check-docs.selftest.mjs` · `gates/repo/check-tscheck-coverage.selftest.mjs` | 断言失败不再被贴夹具标签;消息文本逐字保留 | 两条 selftest script | 未做 |
 | P2-L1 | REQ-205 · REQ-206 | supply 5 份助手副本与 withCapturedOutput 族收口进 `test/harness/` | `test/harness/` 新增 · `test/gates/supply/supply/` · `test/gates/install-smoke.test.js` | 行内复制清零;新助手有 1:1 selftest 段(段数 140→141 显式接受) | `test/gates/supply` 与 `test/gates/install-smoke.test.js` 段 | 未做 |
 | P2-L2 | REQ-207 · REQ-208 | 新建段名反查 `npm run where`;DEV-GUIDE 测试体系节压到 ≤5 行 | `tools/` 新增 · `package.json` · `docs/DEV-GUIDE.md` | 段名反查唯一命中且有负向用例;压缩后指针不丢 | 反查脚本用例 · `npm run check:docs` | 未做 |

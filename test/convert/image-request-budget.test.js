@@ -52,6 +52,7 @@ function assert(cond, msg) {
  * @property {http.Server} server 服务实例
  * @property {number} port 实际监听端口
  * @property {() => number} getCount 已处理请求数
+ * @property {Promise<void>} arrived 首个请求到达服务端时 resolve(与计数同点;确定性等待用)
  */
 
 /**
@@ -67,6 +68,8 @@ function localResolver(timeoutMs, options = {}) {
 /**
  * 启动本地 http server:固定 status + body 响应,getCount() 返回请求次数
  * 端口为 `listen(0)` 随机分配并避开 fetch 拒连名单(共用助手 `listenFetchablePort`)。
+ * `arrived` 在**首个请求到达服务端时** resolve(与计数同点)—— 调用方等它即确定性知道
+ * 「请求已发出」,不必让「连接 + 写请求 + accept」与客户端时限赛跑(REQ-199 的抖动根因)。
  * @param {number} status 响应状态码
  * @param {string | Buffer} body 响应体
  * @param {number} [delayMs] 响应前延迟(毫秒)
@@ -74,8 +77,16 @@ function localResolver(timeoutMs, options = {}) {
  */
 async function startServer(status, body, delayMs = 0) {
   let count = 0;
+  /** @type {() => void} */
+  let markArrived = () => {};
+  /** 首个请求到达时 resolve;没人请求时永不 settle(等待方因此挂起,是比错计数更响的失败) */
+  /** @type {Promise<void>} */
+  const arrived = new Promise((resolve) => {
+    markArrived = () => resolve();
+  });
   const server = http.createServer((_req, res) => {
     count += 1;
+    markArrived();
     setTimeout(() => {
       try {
         if (res.destroyed || res.writableEnded) return;
@@ -87,7 +98,7 @@ async function startServer(status, body, delayMs = 0) {
     }, delayMs);
   });
   const port = await listenFetchablePort(server, LABEL);
-  return { server, port, getCount: () => count };
+  return { server, port, getCount: () => count, arrived };
 }
 
 /**
@@ -146,12 +157,16 @@ export async function run() {
       });
       // 请求时限:慢响应 + 极短 request.timeoutMs → 中止返回 null
       // 响应延迟必须明显长于请求级时限,否则时限不会触发、这段测不到东西。
-      // 时限不能定在 30ms 那一档:断言「请求已发出」靠的是服务端收到请求（计数在到达时增）,
-      // 而 TCP 连接 + 写请求 + accept 必须在时限前完成 —— CI 容器一乱就可能为 0。给派发留 1s、响应放到 3s。
+      // 「请求已发出」改为确定性等待(REQ-199):旧写法让「连接 + 写请求 + accept」与 1000ms
+      // 时限赛跑,CI 容器一乱计数就为 0 假红(实测满载时全链 1/143 段红、隔离连跑 4 次全绿
+      // 的负载敏感形态);现在先等请求真的到达服务端(计数同点递增)再等它被时限中止 ——
+      // 满载只是慢,不会错。
       await suite.case("request.timeoutMs 中止慢响应且请求确已发出", async () => {
         const slow = await startServer(200, fixtureBytes, 3000);
         try {
-          const timedOut = await localResolver()(slow.port ? `http://127.0.0.1:${slow.port}/slow.png` : "", requestOf({ timeoutMs: 1000 }));
+          const pending = localResolver()(`http://127.0.0.1:${slow.port}/slow.png`, requestOf({ timeoutMs: 1000 }));
+          await slow.arrived;
+          const timedOut = await pending;
           assert(timedOut === null, "request.timeoutMs 应中止慢响应并返回 null");
           assert(slow.getCount() === 1, `超时场景应已发出 1 次请求,实际 ${slow.getCount()}`);
         } finally {

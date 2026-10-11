@@ -72,7 +72,6 @@
 | 号 | 标题 | 状态 | 为什么停在这 | 什么条件下重看 | 分析在哪 |
 |---|---|---|---|---|---|
 | REQ-183 | ADR-197 的拆分对账对策失效 | 在办 | **已拍板：随 REQ-184 的大文件拆分一起修，不单独动。** 实测失效两处：`:198` 点名的「同名 case 撞车被静默覆盖」**不成立**（三份 62 条 case 名跨文件**零重名**）；`:197` 第二道证据「叠加 `test:coverage` 的 0% 集合比对」**无效**（该集合 5 条全是 `src/**`、无一条是测试段）。第一道（断言调用数对账）仍唯一有效，但对 2/9 个候选失效 ⇒ **要补的是第二道证据，不是重写判据**。拆分批次定下来时一并订正 ADR。 | 随 REQ-184 的大文件拆分一起做（断言器白名单的补充）；ADR-062 `:197` 已于 2026-10-04 订正 | docs/adr/ADR-062-测试树位置即身份与门禁元框架瘦身.md |
-| REQ-199 | image-request-budget 超时敏感段会抖动 | 在办 | 该段「超时场景应已发出 1 次请求」走 `startServer(status, body, delayMs)` 的 `setTimeout` 延迟路径 ⇒ **超时敏感**。实测机器满载时全链内抖动报红（`1/143 段失败`），而**隔离连跑 4 次全绿**、且同段在抖动前那轮全链里是过的（`合计: 217 case`）⇒ 属**负载敏感的 flake**，非功能回归。 | CI 上再报同一段红时（先判是否负载相关：隔离连跑 4 次）；或给它加确定性等待替代固定 setTimeout | test/convert/image-request-budget.test.js |
 | REQ-238 | 自测case内判定失败被自身catch错标为夹具异常 | 在办 | 迁移到case契约后,case体内的判定失败被该case自己的catch包上「夹具执行抛异常/夹具抛错」前缀——消息文本完整、只是标签错标,不丢断言。已在check-docs(批次三)与check-tscheck-coverage(批次六)两份实测同形,其余批次同款。要改须连同已落盘的若干份一起,且每份改完都要重跑验证,故不随手改。修法已知(catch只包夹具构造、不包断言,或加sentinel区分),归因与逐份清单见对应提交正文。 | 下次动这几份自测的失败消息形态时顺手修;或有人统一「档内失败消息」口径时。不拖进#10。 | docs/adr/ADR-074-自测用例契约搬shared与表格化护栏边界.md(后果节·搬迁四步)· 提交 70c183f / 9ba4346 正文 |
 
 ## 已完成
@@ -248,6 +247,7 @@
 | REQ-240 | 门禁树侧 named-case 族转 fail-closed | 已完成 | 已闭合:⑭ 族删 pending 两行转 fail-closed,判定本体零改动;三条合成夹具与跨族锚点按 #08 先例切 problems 通道,L11b 两条合成夹具补契约桩消噪声;selftest 165/165 绿、真实树 0 命中 exit 0。转正前置(20 份接入)由 #09 交付。 | 无 | docs/adr/ADR-074-自测用例契约搬shared与表格化护栏边界.md;判据表见 gates/repo/check-test-layout.mjs 的 CRITERIA |
 | REQ-236 | 段宿主需求表的存活性自检无调用点,双向无看守 | 已完成 | 已闭合:runAll 加 opt-in hostRequirements(默认 false、零段轮跳过),acceptance 仅未筛选顶层轮开启;3 条夹具进 runner-report 段(68/68 绿);过期注释订正。16/16 键实测在盘。 | 无 | test/harness/segment-host-requirements.mjs · docs/evidence/20261007-092537-REQ-219宿主分档撤步裁决.md |
 | REQ-197 | 临时资源泄漏只报警不拦，真保证仅 3/143 段 | 已完成 | 已闭合:退出钩子前缀换 [temp-leak](与真红 [fail]/[case-fail] 不撞),头注写明理由;归因:9 个 m2w-tmp-* 全空目录壳(内容已清,EPERM 只落最后 rmdir,原记 16 已漂移);退出码方向未做。 | 有人要退出钩子参与退出码时 | test/harness/temp-resource.js:249（cleanupTempResources）· :275-290（退出钩子与头注） |
+| REQ-199 | image-request-budget 超时敏感段会抖动 | 已完成 | 已闭合:段内 server 加 arrived promise(计数同点 resolve),超时 case 改「等到达再等中止」;连跑 3 次全绿、typecheck 干净。教训:test 树 .js 按 ESM 直跑,@ts-check 不转译,TS 类型实参会被 node --check 抓。 | 该段再现随机红时(先判是否负载相关:隔离连跑 4 次) | test/convert/image-request-budget.test.js |
 ## 已作废
 
 = 需求被**终审否决**，行**永久保留**、**号永不复用**。否决理由与复活条件在本行；长篇依据在「分析在哪」。
