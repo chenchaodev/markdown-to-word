@@ -12,8 +12,8 @@
 
 | 项 | 值 |
 |---|---|
-| 已用最大号 | REQ-239 |
-| 下一个可用号 | REQ-240 |
+| 已用最大号 | REQ-241 |
+| 下一个可用号 | REQ-242 |
 
 「已用最大号」= 下方四节里出现过的最大号，**含待拍板与未开工的行** —— 那些需求已经占号，不因尚未开工而退回池子。
 
@@ -68,6 +68,8 @@
 | REQ-237 | lint 目标漏 shared，其 no-undef 块空转 | 待拍板 | 实测 lint 串不含 shared/，而 eslint.config.js:95 的 no-undef 块声明 files 含 shared/** —— 该块对 shared/ 恒不生效（脚本从不传该目录），DEV-GUIDE 门禁接入点表却写「lint 覆盖面含三棵非 tsc program 的树」，与实测不符。非 #09 造成：shared/ 下 10 个文件今天已脱扫；REQ-221 会加重（case.js 196 行含模块级可变状态搬进去）。未顺手改：改 lint 目标串不在本工作项写域。 | 有人要动 shared/ 下的文件、或 DEV-GUIDE 那句表述被当作已有覆盖的证据引用时 | docs/adr/ADR-074-自测用例契约搬shared与表格化护栏边界.md（后果节） |
 | REQ-238 | 自测case内判定失败被自身catch错标为夹具异常 | 待拍板 | 迁移到case契约后,case体内的判定失败被该case自己的catch包上「夹具执行抛异常/夹具抛错」前缀——消息文本完整、只是标签错标,不丢断言。已在check-docs(批次三)与check-tscheck-coverage(批次六)两份实测同形,其余批次同款。要改须连同已落盘的若干份一起,且每份改完都要重跑验证,故不随手改。修法已知(catch只包夹具构造、不包断言,或加sentinel区分),归因与逐份清单见对应提交正文。 | 下次动这几份自测的失败消息形态时顺手修;或有人统一「档内失败消息」口径时。不拖进#10。 | docs/adr/ADR-074-自测用例契约搬shared与表格化护栏边界.md(后果节·搬迁四步)· 提交 70c183f / 9ba4346 正文 |
 | REQ-239 | 舞台浮层自动收起行为零断言覆盖 | 待拍板 | 阶段⑤删 state.stageChangedHandler 时变异实测确认:把 onStageChanged() 换成不通知后,10 个受影响段 337 case 仍全绿、零条变红。该语义自 evidence 阶段起就无任何断言钉过(§五 已登记 test/renderer 对两个 handler 零断言)。本刀沿用原调用时机故行为未变,但没有测试能证明它没变。ADR-071 豁免的 recentRefreshHandler 很可能同形。 | 下次动 renderSelection / applySelection / recent-files 的浮层收起路径,或补 renderer 段断言时一并做 | docs/evidence/20261006-141113-三份只读测绘事实地图与接手须知.md §五;变异实测见 #10 阶段⑤ 提交正文 |
+| REQ-240 | 门禁树侧 named-case 族转 fail-closed | 待拍板 | CRITERIA 20 族里仍 pending 的两条之一(另一条 test-top-dirs-exact 属更早那批)。该族判「gates/**/*.selftest.mjs 必须 import case 契约且至少一处 .case( 调用」,实测未接入 0 份,迁移已做完,但它只报告不判红 —— 删掉某份自测里的 .case( 调用不会被拦。 | 下次动 gates 自测或 case 契约时顺手做;它与 REQ-221 原声明冲突,那一行已于 2026-10-11 订正 | docs/adr/ADR-074-自测用例契约搬shared与表格化护栏边界.md;判据表见 gates/repo/check-test-layout.mjs 的 CRITERIA |
+| REQ-241 | renderer 模块级可变状态收敛进 store | 待拍板 | ADR-065 §决定第三条(模块级可变状态收敛进 state/)未做:state/state.ts 自述「全部模块级可变状态收敛于此」已失效。三档分类与退出条件写在 PLAN #10 右注(export let/var 清零 · 档A真跨feature必收敛 · 档B派生值登记为不动并写明理由 · 档C单文件闭环显式登记为不动)。ADR-076 把 dom-ops 搬进基础层后,trapStack/focusOriginStack 的归属需在该步重新裁决。 | 下次动 renderer 的模块级 let/var、或 ADR-065 §决定第三条要销号时 | docs/PLAN.md #10 右注;docs/adr/ADR-065-renderer功能层注入式重构.md §决定;docs/adr/ADR-076-dom-ops与toast归入基础层.md 后果节 |
 
 ## 在办
 
@@ -75,7 +77,6 @@
 
 | 号 | 标题 | 状态 | 为什么停在这 | 什么条件下重看 | 分析在哪 |
 |---|---|---|---|---|---|
-| REQ-218 | renderer 功能层注入式重构 | 在办 | 开工:阶段①(判据机制扩三样)已于 8017b50 落地且零行为变化,阶段②(foundation 规则换解析形态)未做 —— 当前仍是裸 prefix: 形态。跨 feature 边实测 44 条全为 run-time 值(import type 一个都摘不掉)、文件级 0 环,故拆边不涉及 ESM 初始化顺序。执行裁决见新立 ADR。 | 无(已拍板要做，见 ADR-065) | docs/evidence/20261006-104227-最优架构评审事实地图与三处订正.md |
 
 ## 已完成
 
@@ -245,7 +246,8 @@
 | REQ-232 | 局部设置块是整块重置而非逐字段合并 | 已完成 | 已补断言:先播种非默认整块,再投局部块,断言省略字段回到默认(而非永真地通过)。已做变异测试——改掉期望值即判红,证明断言有牙齿而非摆设。语义与实现本就一致,本条补的是可回归的护栏,不是修缺陷。 | 任一 sanitize 器的兜底基准改变时(该用例应随之判红);或 typography 字段增删时 | docs/adr/ADR-072-设置补丁类型迁到core并在跨进程两侧一致放宽.md |
 | REQ-217 | 转换契约类型化 | 已完成 | 阶段为 ConvertStage 8 键穷尽联合,三张阶段表缺键即 TS2741(已变异实测);降级由 core 登记并透传,mcp 侧的二次解析消失,对外契约零变更。交付时确认:能力声明按 YAGNI 撤步,清单留在 convert.ts 头注。 | 新增交付面时；core 增加一种降级形态时 | docs/evidence/20261006-104227-最优架构评审事实地图与三处订正.md |
 | REQ-220 | 断言与具名 case 收敛 | 已完成 | 144 段全部接入具名 case 契约,两族判据转正 fail-closed(段内零本地断言实现 / 未接契约即判红)。交付时确认:真实收益是失败面一次看全(失败段附件快照 · 报告 case 行 · failure.log 逐条明细),不是失败消息内容。 | 无（已拍板要做） | docs/evidence/20261006-104227-最优架构评审事实地图与三处订正.md · docs/adr/ADR-071-两处判据的形态裁决.md |
-| REQ-221 | 门禁自测合成根表格化 | 已完成 | 20 份门禁自测全部接入具名 case;两族判据 + case 名集合与登记名册两向差集族均 fail-closed(实仓负向探针:删名册一条即 exit 1 并点名该 case)。逐批迁移按 ADR-074 搬迁四步对账,断言一条未删;名册自播种之日起才有看守力。 | 无（已拍板要做，见 ADR-068） | docs/adr/ADR-068-门禁自测合成根表格化.md · docs/adr/ADR-074-自测用例契约搬shared与表格化护栏边界.md |
+| REQ-221 | 门禁自测合成根表格化 | 已完成 | 20 份门禁自测全部接入具名 case(两族未接入均 0);名册两向差集族已 fail-closed。⚠ 原写「两族…均 fail-closed」失真:门禁树侧 ⑭ 号族至今仍带 pending、只报告不判红,2026-10-11 订正,转正见 REQ-240。 | 无（已拍板要做，见 ADR-068） | docs/adr/ADR-068-门禁自测合成根表格化.md · docs/adr/ADR-074-自测用例契约搬shared与表格化护栏边界.md |
+| REQ-218 | renderer 功能层注入式重构 | 已完成 | 阶段①–⑥ 全落地:跨 feature import 44→0(17 条经 ADR-076 搬迁、27 条经组合根注入)、stageChangedHandler 槽已删、该判据已转 fail-closed(判红三层证据)。③ 模块级可变状态收敛未做,属独立一步。 | 无(已拍板,见 ADR-065)。未做的③模块级可变状态收敛已单独登记为 REQ-241 | docs/evidence/20261006-104227-最优架构评审事实地图与三处订正.md |
 ## 已作废
 
 = 需求被**终审否决**，行**永久保留**、**号永不复用**。否决理由与复活条件在本行；长篇依据在「分析在哪」。
