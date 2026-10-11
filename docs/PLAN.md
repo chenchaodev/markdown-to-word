@@ -26,7 +26,7 @@
 
 ## 下一步
 
-P1 推进中(240、236、197、199、238 已完成)。当前步:P1-L2(REQ-183)—— 在 ADR-062 对账节补「本仓私有断言器白名单」表并订正两处证据的口径(第二道=低分辨率非无效;case 撞车一条的引用漂到 :220/:221)。
+P1 六条全部完成并逐条提交(240 / 236 / 197 / 199 / 238 / 183),全链 verify:ci 已绿。下一步:等用户裁决 P2(205 / 206 / 207 / 208 / 209)的开工确认 —— 届时先按「开工前重验」硬门逐条核对再翻在办。
 
 ## 完成标准
 
@@ -51,7 +51,7 @@ P1 推进中(240、236、197、199、238 已完成)。当前步:P1-L2(REQ-183)�
 | 步 | 工作项 | 目标 | 可写文件(不重叠) | 退出条件 | 门禁 | 结果 |
 |---|---|---|---|---|---|---|
 | P1-L1 | REQ-240 | 门禁树侧 named-case 族转 fail-closed:删 pending 两行 + selftest 夹具通道切换 | `gates/repo/check-test-layout.mjs` 与其 `.selftest.mjs` | ⑭ 族进 problems 通道;合成夹具逐条过(没接契约且期望 exit 0 的档补契约或并期望);真实树 0 命中 exit 0 | check-test-layout selftest · `npm run check:docs` | 通过 2026-10-11 |
-| P1-L2 | REQ-183 | ADR-062 补私有断言器白名单表并订正对账节口径 | `docs/adr/ADR-062-*.md` | 白名单覆盖 must( 与 createAsserter 壳与 harness assert,每条带定义处与计数法;台账行订正由主会话收口 | `npm run check:docs` | 未做 |
+| P1-L2 | REQ-183 | ADR-062 补私有断言器白名单表并订正对账节口径 | `docs/adr/ADR-062-*.md` | 白名单覆盖 must( 与 createAsserter 壳与 harness assert,每条带定义处与计数法;台账行订正由主会话收口 | `npm run check:docs` | 通过 2026-10-11(候选漂移订正:check-pointers-refs 已无文件,按现树重建) |
 | P1-L3 | REQ-236 | runner 接线 assertHostRequirementsAlive(opt-in flag,默认 false) | `test/harness/runner.js` · `test/acceptance.mjs` · `test/harness/runner-report.test.js` · `test/harness/segment-host-requirements.mjs` | 沙盒 runAll 零影响;负向夹具判红且点名 | `M2W_ONLY=runner-report npm test` · `node gates/repo/check-test-layout.mjs` · `npm run typecheck` | 通过 2026-10-11 |
 | P1-L4 | REQ-197 | 退出钩子前缀 `[fail]` 改 `[temp-leak]`;头注同步;残留归因 | `test/harness/temp-resource.js` | 新前缀与 `[fail]`/`[case-fail]` 不撞;归因有结论 | `M2W_ONLY=test-common-helpers npm test` · `npm run typecheck` | 通过 2026-10-11(归因并入终态行:9 个全空目录壳,原记 16 已漂移) |
 | P1-L5 | REQ-199 | 超时敏感段改 arrived 确定性等待 | `test/convert/image-request-budget.test.js` | 请求到达从竞态变等待;其余墙钟依赖为零 | `M2W_ONLY=image-request-budget npm test` 连跑 3 次 · `npm run typecheck` | 通过 2026-10-11 |
