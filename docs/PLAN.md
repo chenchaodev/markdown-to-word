@@ -26,7 +26,7 @@
 
 ## 下一步
 
-等用户裁决。P1 首步(REQ-183 + REQ-240)开工前先按上面硬门重验:核对 check-test-layout.mjs 现状与 ADR-062:197 已订正内容,通过后翻「在办」。
+P1 已开工(6 条在办,主会话直接执行)。当前步:P1-L1(REQ-240)—— 删 `check-test-layout.mjs` 的 `pending` 两行并切换 selftest 夹具通道,改完跑 `npm run check:test-layout:selftest` 与 `node gates/repo/check-test-layout.mjs`。
 
 ## 完成标准
 
@@ -50,11 +50,12 @@
 
 | 步 | 工作项 | 目标 | 可写文件(不重叠) | 退出条件 | 门禁 | 结果 |
 |---|---|---|---|---|---|---|
-| P1-L1 | REQ-183 · REQ-240 | 补对账第二道证据(断言器白名单)并订正 ADR-062:197;门禁树侧 named-case 族转 fail-closed | `gates/repo/check-test-layout.mjs` 与其 `.selftest.mjs` · `docs/adr/ADR-062-*.md` | 白名单补充后同法比对零丢失;删掉某份自测的 .case( 调用即判红 | check-test-layout selftest · `npm run check:docs` | 未做 |
-| P1-L2 | REQ-236 | `assertHostRequirementsAlive` 接线进 runner 发现路径 | `test/harness/runner.js` · 段宿主 selftest | 段改名或该登记未登记均判红并点名 | `test/harness/` 相关段 | 未做 |
-| P1-L3 | REQ-197 | 退出钩子前缀改为可分辨形态;16 个 EPERM 归因 | `test/harness/temp-resource.js` · `docs/evidence/`(归因) | report-only 与真红视觉可分辨;归因落档 | `test/harness/` 相关段 | 未做 |
-| P1-L4 | REQ-199 | 超时敏感段固定 setTimeout 改确定性等待 | `test/convert/image-request-budget.test.js` | 隔离连跑 4 次与全链内均绿 | `test/convert/image-request-budget.test.js` | 未做 |
-| P1-L5 | REQ-238 | case 内判定失败不再被自身 catch 错标为夹具异常 | 受影响的各 `gates/**/*.selftest.mjs`(逐份) | 消息标签正确且断言零丢失 | 受改 selftest 原段 | 未做 |
+| P1-L1 | REQ-240 | 门禁树侧 named-case 族转 fail-closed:删 pending 两行 + selftest 夹具通道切换 | `gates/repo/check-test-layout.mjs` 与其 `.selftest.mjs` | ⑭ 族进 problems 通道;合成夹具逐条过(没接契约且期望 exit 0 的档补契约或并期望);真实树 0 命中 exit 0 | check-test-layout selftest · `npm run check:docs` | 未做 |
+| P1-L2 | REQ-183 | ADR-062 补私有断言器白名单表并订正对账节口径 | `docs/adr/ADR-062-*.md` | 白名单覆盖 must( 与 createAsserter 壳与 harness assert,每条带定义处与计数法;台账行订正由主会话收口 | `npm run check:docs` | 未做 |
+| P1-L3 | REQ-236 | runner 接线 assertHostRequirementsAlive(opt-in flag,默认 false) | `test/harness/runner.js` · `test/acceptance.mjs` · `test/harness/runner-report.test.js` · `test/harness/segment-host-requirements.mjs` | 沙盒 runAll 零影响;负向夹具判红且点名 | `node --test test/harness/runner-report.test.js` | 未做 |
+| P1-L4 | REQ-197 | 退出钩子前缀 `[fail]` 改 `[temp-leak]`;头注同步;16 项残留归因 | `test/harness/temp-resource.js` · `docs/evidence/` | 新前缀与 `[fail]`/`[case-fail]` 不撞;归因落档 | `node --test test/harness/test-common-helpers.test.js` | 未做 |
+| P1-L5 | REQ-199 | 超时敏感段改 arrived 确定性等待 | `test/convert/image-request-budget.test.js` | 请求到达从竞态变等待;其余墙钟依赖为零 | `M2W_ONLY=image-request-budget npm test` 连跑 3 次 | 未做 |
+| P1-L6 | REQ-238 | catch 收窄到只包夹具构造(两份自测) | `gates/repo/check-docs.selftest.mjs` · `gates/repo/check-tscheck-coverage.selftest.mjs` | 断言失败不再被贴夹具标签;消息文本逐字保留 | 两条 selftest script | 未做 |
 | P2-L1 | REQ-205 · REQ-206 | supply 5 份助手副本与 withCapturedOutput 族收口进 `test/harness/` | `test/harness/` 新增 · `test/gates/supply/supply/` · `test/gates/install-smoke.test.js` | 行内复制清零;新助手有 1:1 selftest 段(段数 140→141 显式接受) | `test/gates/supply` 与 `test/gates/install-smoke.test.js` 段 | 未做 |
 | P2-L2 | REQ-207 · REQ-208 | 新建段名反查 `npm run where`;DEV-GUIDE 测试体系节压到 ≤5 行 | `tools/` 新增 · `package.json` · `docs/DEV-GUIDE.md` | 段名反查唯一命中且有负向用例;压缩后指针不丢 | 反查脚本用例 · `npm run check:docs` | 未做 |
 | P2-L3 | REQ-209 | 删 fixtures 生成器与 121 处空声明,同批改判据 | `gates/fixtures/` · `test/behavior/*.test.js` · `gen-fixtures.mjs:281` 判据 · samples 手工维护面确认 | `= null` 判据切换后全链绿 | `npm run verify:ci` | 未做 |
