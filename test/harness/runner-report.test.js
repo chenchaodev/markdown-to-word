@@ -49,6 +49,7 @@ import { ARTIFACTS_DIR, ROOT, repoRelative, segmentFailureDir } from "../harness
 import { removeFile, removeTree } from "../harness/temp-resource.js";
 import { CONCURRENCY_ENV, ONLY_ENV, describeChildExitCode, discoverSegments, formatCaseReport, resolveConcurrency, resolveIsolation, runAll, summarizeCases } from "../harness/runner.js";
 import { createCaseSuite } from "./case.js";
+import { SEGMENT_HOST_REQUIREMENTS, assertHostRequirementsAlive } from "./segment-host-requirements.mjs";
 
 /**
  * 本段测哪一层(ADR-062 L4 声明通道):**harness** ——「本层主体根就是 `test/harness/`
@@ -910,6 +911,47 @@ export async function run() {
       }
     });
     console.log("[selftest] win32 异常退出码标注:已覆盖普通码/无码/已收录异常码/未收录高位值/判读边界");
+
+    // ---- REQ-236:宿主需求表存活性自检(runner opt-in 接线) ----
+    // ⚠ 两个跑 runAll 的用例都套 withOnly("cases-,legacy-", …):同进程模型跑全盒会执行
+    // 崩溃夹具(process.exit 带走整段子进程),既有纪律见段首「模型自适应」注;套上筛子后
+    // 万一断言回归也是干净判红,不是「退出码 7 无回传」那种整段崩。
+    await suite.case("hostRequirements 缺省不跑自检:沙盒 runAll 正常跑完(既有调用零影响)", async () => {
+      const { results } = await withOnly("cases-,legacy-", () =>
+        runAll([SANDBOX], { segmentTimeoutMs: INPROC_TIMEOUT_MS, isolate: false }),
+      );
+      if (results.length !== 3) throw new Error(`沙盒应跑完 3 个安全段,实际 ${results.length}(夹具前提失效,证明不了零影响)`);
+    });
+    await suite.case("hostRequirements: true 且沙盒段名与宿主表零命中 ⇒ 判红且点名失配条数", async () => {
+      let message = "";
+      try {
+        await withOnly("cases-,legacy-", () =>
+          runAll([SANDBOX], { segmentTimeoutMs: INPROC_TIMEOUT_MS, isolate: false, hostRequirements: true }),
+        );
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+      if (message === "") throw new Error("期望 runAll 抛错(宿主表 16 条对沙盒段名全失配),实际正常返回");
+      if (!/宿主需求表有 \d+ 条匹配不到/.test(message)) {
+        throw new Error(`判红消息未点名失配计数与键名:${message.slice(0, 200)}`);
+      }
+    });
+    await suite.case("assertHostRequirementsAlive 直测:全命中不抛,一条 stale 抛错且点名该键", () => {
+      const keys = Object.keys(SEGMENT_HOST_REQUIREMENTS);
+      // 全命中 + 表外多余段 ⇒ 不抛(表只要求「登记的都在」,不阻止表外新段)
+      assertHostRequirementsAlive([...keys, "sandbox/extra.test.js"]);
+      const stale = keys[0];
+      if (stale === undefined) throw new Error("宿主需求表为空(本仓事实失效,夹具前提不成立)");
+      let message = "";
+      try {
+        assertHostRequirementsAlive(keys.slice(1));
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+      if (!message.includes(stale)) {
+        throw new Error(`stale 键未被点名:${stale}(实际消息:${message.slice(0, 200)})`);
+      }
+    });
   } finally {
     // 沙盒清理留在 run() 顶层 finally:搬进 case 会让 case 失败遮掉段级清理
     removeSandboxFile(A_USERDATA_FILE);

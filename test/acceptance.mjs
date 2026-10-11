@@ -97,6 +97,9 @@ async function work(runner) {
   if (!resolveIsolation()) {
     console.warn("[warn] M2W_ACCEPTANCE_INPROC 已启用:回退到同进程顺序 + 看门狗模型(不隔离,仅供二分定位)");
   }
+  // 段筛选词(顶层选择面输入):零段判红与宿主需求表自检共用同一表达式 —— 后者只在
+  // **未筛选**的顶层轮跑(筛选轮的发现面本就是子集,拿全集表核对必假红)。
+  const only = process.env[runner.ONLY_ENV] ?? null;
   const { results, hung } = await runAll(segmentDirs, {
     segmentTimeoutMs: Number(
       process.env.M2W_ACCEPTANCE_SEGMENT_TIMEOUT_MS ?? 180000,
@@ -105,6 +108,9 @@ async function work(runner) {
     // gates/repo/y.test.js 而不是 repo/y.test.js。testRoot 由本入口持有(runner 只拿到
     // 段目录绝对路径);缺省时回落段目录 basename,段内沙盒(在 test/ 树外)不传也干净。
     rootDir: testRoot,
+    // 宿主需求表存活性自检(REQ-236):本入口是顶层编排器(段宿主走 segment-host.mjs,
+    // 不走这里)⇒ M2W_SEGMENT_FILE 前置天然成立;只未筛选轮开。
+    hostRequirements: only === null,
   });
   // REF-024:0 段必须判红。段筛选词拼错时发现面返回空清单,旧实现照常打印
   // 「全部 0 段通过」并 return 0 —— 一个 typo 就把整轮门禁静默关掉。这比崩溃更危险:
@@ -112,7 +118,7 @@ async function work(runner) {
   // 那里可被 entry-exit-guard 段确定性断言(本段另有真实进程的端到端锚点)。
   const zeroRun = decideZeroSegmentRun({
     segmentCount: results.length,
-    only: process.env[runner.ONLY_ENV] ?? null,
+    only,
   });
   if (zeroRun.failed) {
     console.error(zeroRun.text);

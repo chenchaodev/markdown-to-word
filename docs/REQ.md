@@ -74,7 +74,6 @@
 | REQ-183 | ADR-197 的拆分对账对策失效 | 在办 | **已拍板：随 REQ-184 的大文件拆分一起修，不单独动。** 实测失效两处：`:198` 点名的「同名 case 撞车被静默覆盖」**不成立**（三份 62 条 case 名跨文件**零重名**）；`:197` 第二道证据「叠加 `test:coverage` 的 0% 集合比对」**无效**（该集合 5 条全是 `src/**`、无一条是测试段）。第一道（断言调用数对账）仍唯一有效，但对 2/9 个候选失效 ⇒ **要补的是第二道证据，不是重写判据**。拆分批次定下来时一并订正 ADR。 | 随 REQ-184 的大文件拆分一起做（断言器白名单的补充）；ADR-062 `:197` 已于 2026-10-04 订正 | docs/adr/ADR-062-测试树位置即身份与门禁元框架瘦身.md |
 | REQ-197 | 临时资源泄漏只报警不拦，真保证仅 3/143 段 | 在办 | **跑 `verify:ci` 时实测**：退出钩子（`temp-resource.js:288`）在 Windows 上真漏了一次临时资源（EPERM，同前缀积 **16** 个未清）。它**设计上 report-only**（头注：兜底非保证），而头注称保证来自段末 `cleanupTempResources` ——**实测只 3/143 段 import** ⇒ 保证分母 **2%**。⚠️ 它打 `[fail]` 前缀、与真红 `[<id>:fail]` 同形（本会话已误判一次）。 | 要改它的措辞（换前缀）或让它参与退出码时；或清理盘上残留并给那 16 个 EPERM 归因时 | test/harness/temp-resource.js:249（cleanupTempResources）· :275-290（退出钩子与头注） |
 | REQ-199 | image-request-budget 超时敏感段会抖动 | 在办 | 该段「超时场景应已发出 1 次请求」走 `startServer(status, body, delayMs)` 的 `setTimeout` 延迟路径 ⇒ **超时敏感**。实测机器满载时全链内抖动报红（`1/143 段失败`），而**隔离连跑 4 次全绿**、且同段在抖动前那轮全链里是过的（`合计: 217 case`）⇒ 属**负载敏感的 flake**，非功能回归。 | CI 上再报同一段红时（先判是否负载相关：隔离连跑 4 次）；或给它加确定性等待替代固定 setTimeout | test/convert/image-request-budget.test.js |
-| REQ-236 | 段宿主需求表的存活性自检无调用点,双向无看守 | 在办 | 表已落地(16条根因),但 assertHostRequirementsAlive 无调用点:接线属 REQ-219 写域而该步已作废。现状是知识在、判据不在 —— 段改名或删除后表静默失配且无任何运行期信号报红;反向(新段需真宿主却漏登记)亦无静态信号,双向无看守。不接线是因为最小可行形态要改既有文件(runner.js 或某个既有段),与 #08 断言收敛撞写域。 | #08 断言收敛落地后(届时 harness 有统一断言库与稳定的段级元数据通道,可零成本挂调用);或有人要增删验收段目录时顺手核对 | test/harness/segment-host-requirements.mjs · docs/evidence/20261007-092537-REQ-219宿主分档撤步裁决.md |
 | REQ-238 | 自测case内判定失败被自身catch错标为夹具异常 | 在办 | 迁移到case契约后,case体内的判定失败被该case自己的catch包上「夹具执行抛异常/夹具抛错」前缀——消息文本完整、只是标签错标,不丢断言。已在check-docs(批次三)与check-tscheck-coverage(批次六)两份实测同形,其余批次同款。要改须连同已落盘的若干份一起,且每份改完都要重跑验证,故不随手改。修法已知(catch只包夹具构造、不包断言,或加sentinel区分),归因与逐份清单见对应提交正文。 | 下次动这几份自测的失败消息形态时顺手修;或有人统一「档内失败消息」口径时。不拖进#10。 | docs/adr/ADR-074-自测用例契约搬shared与表格化护栏边界.md(后果节·搬迁四步)· 提交 70c183f / 9ba4346 正文 |
 
 ## 已完成
@@ -248,6 +247,7 @@
 | REQ-221 | 门禁自测合成根表格化 | 已完成 | 20 份门禁自测全部接入具名 case(两族未接入均 0);名册两向差集族已 fail-closed。⚠ 原写「两族…均 fail-closed」失真:门禁树侧 ⑭ 号族至今仍带 pending、只报告不判红,2026-10-11 订正,转正见 REQ-240。 | 无（已拍板要做，见 ADR-068） | docs/adr/ADR-068-门禁自测合成根表格化.md · docs/adr/ADR-074-自测用例契约搬shared与表格化护栏边界.md |
 | REQ-218 | renderer 功能层注入式重构 | 已完成 | 阶段①–⑥ 全落地:跨 feature import 44→0(17 条经 ADR-076 搬迁、27 条经组合根注入)、stageChangedHandler 槽已删、该判据已转 fail-closed(判红三层证据)。③ 模块级可变状态收敛未做,属独立一步。 | 无(已拍板,见 ADR-065)。未做的③模块级可变状态收敛已单独登记为 REQ-241 | docs/evidence/20261006-104227-最优架构评审事实地图与三处订正.md |
 | REQ-240 | 门禁树侧 named-case 族转 fail-closed | 已完成 | 已闭合:⑭ 族删 pending 两行转 fail-closed,判定本体零改动;三条合成夹具与跨族锚点按 #08 先例切 problems 通道,L11b 两条合成夹具补契约桩消噪声;selftest 165/165 绿、真实树 0 命中 exit 0。转正前置(20 份接入)由 #09 交付。 | 无 | docs/adr/ADR-074-自测用例契约搬shared与表格化护栏边界.md;判据表见 gates/repo/check-test-layout.mjs 的 CRITERIA |
+| REQ-236 | 段宿主需求表的存活性自检无调用点,双向无看守 | 已完成 | 已闭合:runAll 加 opt-in hostRequirements(默认 false、零段轮跳过),acceptance 仅未筛选顶层轮开启;3 条夹具进 runner-report 段(68/68 绿);过期注释订正。16/16 键实测在盘。 | 无 | test/harness/segment-host-requirements.mjs · docs/evidence/20261007-092537-REQ-219宿主分档撤步裁决.md |
 ## 已作废
 
 = 需求被**终审否决**，行**永久保留**、**号永不复用**。否决理由与复活条件在本行；长篇依据在「分析在哪」。

@@ -36,6 +36,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { saveFailureArtifacts } from "./artifacts.js";
 import { drainSuites } from "./case.js";
+import { assertHostRequirementsAlive } from "./segment-host-requirements.mjs";
 import { repoRelative } from "./paths.js";
 import { createTempUserData, removeTempUserData, USER_DATA_ENV } from "../../shared/userdata.js";
 
@@ -1022,14 +1023,24 @@ export function resolveIsolation(options = {}) {
  * 落盘失败只告警不中断(降级留痕,失败面仍以段级报告为准)。
  * 返回 { results, hung };results 每项 = { file, ok, ms, error?, timedOut?,
  * cases?, failureDir? }。
+ * options.hostRequirements:宿主需求表存活性自检开关(REQ-236;默认 false ⇒ 不跑)。
+ *   true = 发现段之后、执行之前,核对 `segment-host-requirements.mjs` 表里每条登记都命中
+ *   一个已发现段,否则整轮判红并点名失配键。仅**顶层未筛选**入口(acceptance.mjs)应置
+ *   true:段内沙盒调用(不过滤)不置它即零影响;零段轮跳过(让入口的零段判红先发声)。
  * @param {string[]} dirs 段目录(按此顺序发现)
- * @param {{ segmentTimeoutMs?: number, isolate?: boolean, only?: string | null, concurrency?: number, rootDir?: string }} [options]
+ * @param {{ segmentTimeoutMs?: number, isolate?: boolean, only?: string | null, concurrency?: number, rootDir?: string, hostRequirements?: boolean }} [options]
  * @returns {Promise<{ results: SegmentResultEntry[], hung: boolean }>}
  */
 export async function runAll(dirs, options = {}) {
   const timeout = Number(options.segmentTimeoutMs ?? 0);
   const isolate = resolveIsolation(options);
   const segments = await discoverSegments(dirs, { only: options.only, rootDir: options.rootDir });
+  // 宿主需求表存活性自检(REQ-236):opt-in,默认 false ⇒ 段内沙盒等既有 runAll 调用零影响。
+  // 放在发现后、执行前:表漂了就别浪费这一轮。零段轮跳过 —— 让入口的零段判红(REF-024)
+  // 先发声,别被「16 条全失配」的消息替掉归因。
+  if (options.hostRequirements === true && segments.length > 0) {
+    assertHostRequirementsAlive(segments.map((s) => s.name));
+  }
   // 解析两次是刻意的:夹取只该约束「真正派生 worker 的地方」(池内 worker 数 = min(并发, 段数)),
   // 而输出模式跟的是**请求的档位** —— 设了并发就一律走管道转发,于是「M2W_TEST_CONCURRENCY=4 +
   // 单段筛选」这种最常见的本地复现姿势也验得到读端 utf8 解码(否则该模式只在全量轮次出现,
