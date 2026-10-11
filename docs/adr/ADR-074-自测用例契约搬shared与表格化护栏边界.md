@@ -30,7 +30,7 @@ ADR-068 定的方向没有变，本条处理的是它读下去会撞到的三处
 
 ### 一、`createCaseSuite` 的落点挡住了护栏本身
 
-`docs/PLAN.md` #09 那一行写的护栏是「以 `createCaseSuite` 的 case 数为**唯一计数单位**」。但实测：门禁自测**零个**接入统一断言库 —— 20 个 `.selftest.mjs` 的断言机制有 5 种，其中 14 个是同一套「`const failures = []` + 循环 + `process.exit(1)`」的复制，`node:assert` 计数为 0。
+工作载体 #09 那一行写的护栏是「以 `createCaseSuite` 的 case 数为**唯一计数单位**」（载体已收尾删除，原文入档 [`20261011-101152-最优架构整改工作载体原文`](../evidence/20261011-101152-最优架构整改工作载体原文.md)）。但实测：门禁自测**零个**接入统一断言库 —— 20 个 `.selftest.mjs` 的断言机制有 5 种，其中 14 个是同一套「`const failures = []` + 循环 + `process.exit(1)`」的复制，`node:assert` 计数为 0。
 
 要把 case 数当计数单位，就得让 `gates/**` 能引 `test/harness/case.js`。而它今天引不到：`gates/repo/check-import-boundary.mjs:2015` 的 `gates-stay-in-gates` 是 allow-list，允许面只有 `['gates', 'shared', 'test/fixtures']`，判定按**解析后**路径、**按路径段**比前缀（`:2114-2116`）。`test/harness/` 不在其内。
 

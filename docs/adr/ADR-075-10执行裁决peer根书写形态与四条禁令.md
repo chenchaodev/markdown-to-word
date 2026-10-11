@@ -58,7 +58,7 @@ export const RENDERER_PEER_ROOTS = Object.freeze(
 
 按**机制**划而非按 feature 划：① 判据机制扩 · ② foundation 规则换解析形态 · ③ 新 peer 规则挂 `pending: true`（info 通道列出的现存边清单**就是拆边工作单**）· ④ 逐 feature 拆边（每 feature 一提交、组合根接线随该 feature 同提交）· ⑤ 清反向注册槽 · ⑥ 删 `pending: true` 转正。
 
-**六步已于 2026-10-11 全部落地**（提交序列见 `docs/PLAN.md` #10 行与各提交正文）：④ 因交汇点的真实形状拆成五刀（ui 5 → settings 10 → convert 13+3 交汇 → wizard 13 → settings 1），其中 17 条边经 [ADR-076](ADR-076-dom-ops与toast归入基础层.md) 的搬迁消掉而非注入；⑤ 删掉的是 `state.stageChangedHandler`（`recentRefreshHandler` 是 ADR-071 点名豁免的，未动）；⑥ 转正后判红能力有三层证据（合成树 · CLI 退出码 · 真实仓库负向探针）。
+**六步已于 2026-10-11 全部落地**（提交序列见本轮各提交正文；工作载体原文已入档 [`20261011-101152-最优架构整改工作载体原文`](../evidence/20261011-101152-最优架构整改工作载体原文.md)）：④ 因交汇点的真实形状拆成五刀（ui 5 → settings 10 → convert 13+3 交汇 → wizard 13 → settings 1），其中 17 条边经 [ADR-076](ADR-076-dom-ops与toast归入基础层.md) 的搬迁消掉而非注入；⑤ 删掉的是 `state.stageChangedHandler`（`recentRefreshHandler` 是 ADR-071 点名豁免的，未动）；⑥ 转正后判红能力有三层证据（合成树 · CLI 退出码 · 真实仓库负向探针）。
 
 **可回滚单元 = ①② 与 ③④⑤⑥ 两块**。理由：`DEV-GUIDE` 要求每个提交跑全量测试，而「拆 feature 边」天然不能在中间态编译通过 ⇒「按 feature 切五个提交」与「每提交绿」不相容；①② 同理（机制与它唯一的在用规则必须一起回退，否则余下的 foundation 规则会孤立地换形态）。
 
