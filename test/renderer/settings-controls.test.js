@@ -378,7 +378,9 @@ export async function run() {
   // 预设下拉选项先就位(与 loadSettings 同序)
   state.settings = structuredClone(BASE);
   panel.rebuildPresetOptions();
-  bindings.bindSettingsEvents();
+  // 编排层自工厂刀起承端口(当前是应用组的 renderSelection);本段不触发语言钩子,
+// 给一个空实现即可 —— 真跑那条钩子的段是 ui-interaction-guards。
+bindings.bindSettingsEvents({ renderSelection: () => {} });
 
   // 负探针 · unhook:<控件 id>:**摘掉**某个值控件的 change 监听(只改输入:把该元素上
   // 登记的监听器移除,断言逻辑一行不动)。表驱动收敛后「表里有条目」与「真的挂了监听」

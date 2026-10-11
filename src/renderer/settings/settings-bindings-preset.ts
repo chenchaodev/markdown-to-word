@@ -105,7 +105,8 @@ export function applyTemplatePreset(presetId: string): void {
  * 它们的关闭与保存路径要经 `closePresetSaveDialog` / `saveCustomPreset`,而那两者的
  * 收尾要调 ui 侧的「遮罩显隐重算」端口(ADR-075 §四 交汇点)。该端口的接线入口是
  * `settings-preset-actions` 自报的 `bindPresetSaveEvents(deps)`,由组合根直接调用 ——
- * 本组经公共编排层 `bindSettingsEvents`(零参)到达,那一层不承这个端口。
+ * 公共编排层 `bindSettingsEvents` 虽已承端口(应用组的 renderSelection),但**不承本组
+ * 这个**:那个端口的归属是弹窗自身的收尾路径,挂在弹窗模块自报的入口上更直白。
  */
 export function bindPresetGroup(): void {
   // 模板预设:整体套用排版与页面设置(抽屉与快速参数条两处 select

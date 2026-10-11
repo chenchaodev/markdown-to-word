@@ -968,7 +968,15 @@ export async function run() {
     let writtenLang = null;
     // 真跑语言钩子:appWriteHooks.languageSelect 就是 change 事件线上那个函数
     // (经 bindControlGroup 派发);此处直接调它,省一层与本判据无关的事件接线噪声。
-    appBindings.appWriteHooks.languageSelect(
+    // 语言钩子自工厂刀起是工厂(端口要由运行期注入),这里按工厂调。
+    // 桩**可观测**:若它退化成空函数,下面那条「钩子确实要求重渲染选择区」会恒绿。
+    let selectionRenders = 0;
+    const appGroupDeps = {
+      renderSelection: () => {
+        selectionRenders += 1;
+      },
+    };
+    appBindings.appWriteHooks(appGroupDeps).languageSelect(
       panel.settingsWriteContext,
       /** @type {any} */ ({ value: "en", checked: false, valueAsNumber: Number.NaN }),
       (/** @type {unknown} */ value) => { writtenLang = value; },
@@ -977,6 +985,14 @@ export async function run() {
     const enDict = i18n.DICT.en;
     await suite.case("(8) 语言钩子落值 en", () => {
       assert(writtenLang === "en", `语言钩子应落值 en,实际 ${JSON.stringify(writtenLang)}`);
+    });
+    // 端口确实被用上:语言切换后选择区要重渲染(convert 侧),这一条顺带钉住
+    // 「注入的 renderSelection 不是空转」—— 否则桩退化成空函数时上面几条会恒绿。
+    await suite.case("(8) 语言钩子经注入的端口要求重渲染选择区", () => {
+      assert(
+        selectionRenders === 1,
+        `语言钩子应经注入的 renderSelection 端口重渲染选择区一次,实际 ${selectionRenders} 次`,
+      );
     });
     await suite.case("(8) 语言切到 en:三处动态节点(输出目录 / PDF CSS / Logo)都重算为英文文案", () => {
       assert(

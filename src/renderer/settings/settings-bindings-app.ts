@@ -13,7 +13,6 @@ import { applyStaticTexts, setLanguage, t, type Language } from "../../core/i18n
 import { drawerResetBtn } from "../dom/refs.js";
 import { state } from "../state/state.js";
 import { setStatus } from "../dom/dom-ops.js";
-import { renderSelection } from "../convert/file-list.js";
 import { showToast } from "../dom/toast.js";
 import {
   bindControlGroup,
@@ -39,9 +38,20 @@ const themeHook: WriteHook = (_ctx, control, write) => {
   write(theme);
 };
 
+/**
+ * 本组注入的端口。`renderSelection` 来自 convert/file-list(重渲染已选文件区),
+ * 是本组仅剩的一条跨 feature 边 —— 组合根组装、feature 侧接形参(ADR-075 §四)。
+ */
+export interface AppGroupDeps {
+  /** 重渲染已选文件区(convert 侧的选择态渲染)。 */
+  renderSelection: () => void;
+}
+
 /** 界面语言:即时生效 —— 静态文案重刷 + 动态节点按新语言重算,
  *  状态栏/文件列表/最近区块等动态区域显式重渲染。 */
-const languageHook: WriteHook = (_ctx, control, write) => {
+const makeLanguageHook =
+  (deps: AppGroupDeps): WriteHook =>
+  (_ctx, control, write) => {
   const lang = control.value as Language;
   setLanguage(lang);
   mirrorLanguage(lang); // 切换落定即镜像,下次启动 lang-bootstrap.js 尽早生效
@@ -51,15 +61,25 @@ const languageHook: WriteHook = (_ctx, control, write) => {
   refreshDynamicSettingsText();
   write(lang); // 落值与持久化排在 UI 重刷之后(与旧接线同序)
   setStatus("");
-  renderSelection();
+  deps.renderSelection();
   void state.recentRefreshHandler?.();
 };
 
-/** 本组声明了写侧钩子的条目(键集由表反推,多写/漏写即 tsc 报错)。 */
-export const appWriteHooks: WriteHooksOf<"app"> = {
-  theme: themeHook,
-  languageSelect: languageHook,
-};
+/**
+ * 本组声明了写侧钩子的条目(键集由表反推,多写/漏写即 tsc 报错)。
+ *
+ * ⚠ 它是**工厂**而不是常量对象:语言钩子要在调用时用到 convert 侧的
+ * `renderSelection`,而钩子函数体在模块求值期就创建 —— 做成常量就没有任何地方能
+ * 把运行期注入的端口送进去。工厂化后端口由 `bindSettingsEvents(deps)` → 本函数
+ * 逐层透传(ADR-075 §四:形参挂在能拿到它的入口上)。
+ * 键集仍由 `WriteHooksOf<"app">` 反推校验,多写/漏写照样 tsc 报错。
+ */
+export function appWriteHooks(deps: AppGroupDeps): WriteHooksOf<"app"> {
+  return {
+    theme: themeHook,
+    languageSelect: makeLanguageHook(deps),
+  };
+}
 
 /** 应用组全部控件接线(bindSettingsEvents 编排调用)。 */
 export function bindAppGroup(hooks: WriteHooksOf<"app">): void {

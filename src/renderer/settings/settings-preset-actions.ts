@@ -91,9 +91,9 @@ export function closePresetSaveDialog(deps: PresetActionsDeps): void {
  * `saveCustomPreset`,而这两个函数的收尾要调 ui 侧的「遮罩显隐重算」端口
  * (ADR-075 §四 交汇点,原为 settings → ui/dialogs 的静态 import)。端口只能由组合根
  * 给,而 `bindPresetGroup` 的唯一调用方是 settings 目录的公共编排层
- * `bindSettingsEvents`(零参),那一层不承这个端口 ⇒ 端口落到本模块自报的这个入口,
- * 组合根一处接线即可。绑定内容与先后逐条照旧(打开钮 / 取消 / 确定 / Enter / 点遮罩),
- * 各控件仍各自只挂一个监听器。
+ * `bindSettingsEvents` —— 那一层承的是**应用组**的端口,不承本组这个 ⇒ 端口落到本模块
+ * 自报的这个入口,组合根一处接线即可。绑定内容与先后逐条照旧(打开钮 / 取消 / 确定 /
+ * Enter / 点遮罩),各控件仍各自只挂一个监听器。
  */
 export function bindPresetSaveEvents(deps: PresetActionsDeps): void {
   // 另存为预设(弹窗输入名称 → 保存当前排版+页面设置)

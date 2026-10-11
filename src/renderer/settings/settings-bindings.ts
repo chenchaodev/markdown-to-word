@@ -33,7 +33,7 @@ import {
 } from "./settings-bindings-headerwatermark.js";
 import { bindNumberingGroup } from "./settings-bindings-numbering.js";
 import { bindConvertGroup, convertWriteHooks } from "./settings-bindings-convert.js";
-import { bindAppGroup, appWriteHooks } from "./settings-bindings-app.js";
+import { bindAppGroup, appWriteHooks, type AppGroupDeps } from "./settings-bindings-app.js";
 
 /** 顶栏格式分段(抽屉外,group=mirror)的写侧钩子:转换时读的是 selectedFormat,
  *  它与 settings.format 双写,故落值前先同步镜像态。 */
@@ -43,14 +43,20 @@ const formatHook: WriteHook = (ctx, control, write) => {
   write(format);
 };
 
-/** 设置事件绑定入口(任一控件变更即时生效并持久化;须先于 loadSettings 回填)。 */
-export function bindSettingsEvents(): void {
+/**
+ * 设置事件绑定入口(任一控件变更即时生效并持久化;须先于 loadSettings 回填)。
+ *
+ * `deps` 是**编排层当前承的端口全集**:此刻只有应用组一条(语言钩子要重渲染
+ * convert 侧的选择区)。逐组接入后此处成为各组 deps 的并集 —— 哪个组需要跨功能
+ * 协作,就把它的端口在这里汇进来,而不是让该组自己去 import(ADR-075 §四)。
+ */
+export function bindSettingsEvents(deps: AppGroupDeps): void {
   bindPresetGroup();
   bindTypographyGroup(typographyWriteHooks);
   bindHeaderWatermarkGroup(headerWatermarkWriteHooks);
   bindNumberingGroup();
   bindConvertGroup(convertWriteHooks);
-  bindAppGroup(appWriteHooks);
+  bindAppGroup(appWriteHooks(deps));
 
   /* ---------- 抽屉外镜像与顶栏控件 ---------- */
   // 顶栏格式分段:同一套落值通道,只是主控在抽屉外

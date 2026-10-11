@@ -284,7 +284,7 @@ bindRecentFilesEvents(recentFilesDeps);
 // footer 快捷键 hint 由 updateActionButtons 按模式维护
 updateActionButtons();
 // 设置面板:事件绑定先于回填(时序与拆分前一致:绑定在模块加载期,回填在 await 之后)
-bindSettingsEvents();
+bindSettingsEvents({ renderSelection });
 // 设置抽屉 Tab 导航(6 组切换)初始化
 initSettingsTabs();
 // 设置抽屉开合事件(⚙/chip/遮罩/关闭按钮;Esc 走 dialogs-events 链末位)
