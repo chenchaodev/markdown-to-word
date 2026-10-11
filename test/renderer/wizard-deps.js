@@ -15,6 +15,7 @@
  * ⚠ 加端口时**两处一起改**(本文件 + 组合根),否则漏的一处会在 typecheck 处红 ——
  * 这是刻意的:deps 类型是必填形参、无默认值,漏项不可能静默通过。
  */
+import { loadConvertFlowDeps } from "./convert-flow-deps.js";
 
 /**
  * @param {(rel: string) => string} distUrl 调用方自己的 dist 路径函数
@@ -22,26 +23,35 @@
  * @returns {Promise<import("../../dist/renderer/wizard/book-wizard.js").BookWizardDeps>}
  */
 export async function loadBookWizardDeps(distUrl, prefix = "") {
-  const [flow, fileList, drawer, logic, save, presetBindings, panel] = await Promise.all([
-    import(distUrl(`${prefix}convert/convert-flow.js`)),
-    import(distUrl(`${prefix}convert/file-list.js`)),
-    import(distUrl(`${prefix}settings/settings-drawer.js`)),
-    import(distUrl(`${prefix}settings/settings-logic.js`)),
-    import(distUrl(`${prefix}settings/settings-save.js`)),
-    import(distUrl(`${prefix}settings/settings-bindings-preset.js`)),
-    import(distUrl(`${prefix}settings/settings-panel.js`)),
-  ]);
+  const [flow, fileList, drawer, logic, save, presetBindings, panel, dialogs, flowDeps] =
+    await Promise.all([
+      import(distUrl(`${prefix}convert/convert-flow.js`)),
+      import(distUrl(`${prefix}convert/file-list.js`)),
+      import(distUrl(`${prefix}settings/settings-drawer.js`)),
+      import(distUrl(`${prefix}settings/settings-logic.js`)),
+      import(distUrl(`${prefix}settings/settings-save.js`)),
+      import(distUrl(`${prefix}settings/settings-bindings-preset.js`)),
+      import(distUrl(`${prefix}settings/settings-panel.js`)),
+      import(distUrl(`${prefix}ui/dialogs.js`)),
+      loadConvertFlowDeps(distUrl, prefix),
+    ]);
   return {
-    // convert/convert-flow.js
+    // convert/convert-flow.js —— convert 刀起 runMerge / withPrecheck 各接一份呈现面
+    // deps,组合根把 deps 绑成「对 deps 形状而言的零参闭包」,测试侧同形。
     isBackgroundCommandBlocked: flow.isBackgroundCommandBlocked,
     isConvertCommandBlocked: flow.isConvertCommandBlocked,
-    runMerge: flow.runMerge,
-    withPrecheck: flow.withPrecheck,
+    runMerge: (opts) => flow.runMerge(flowDeps, opts),
+    withPrecheck: (filePaths, action) => flow.withPrecheck(flowDeps, filePaths, action),
     // convert/file-list.js
     renderSelection: fileList.renderSelection,
     // settings/settings-drawer.js
     closeSettingsDrawer: drawer.closeSettingsDrawer,
     isSettingsDrawerOpen: drawer.isSettingsDrawerOpen,
+    // ui/dialogs.js —— 向导遮罩关闭后的「遮罩显隐重算」通知(ADR-075 §四 交汇点),
+    // 同样绑成零参闭包,向导不必知道 afterModalClosed 的 deps 形状。
+    afterModalClosed: () => dialogs.afterModalClosed({
+      recomputeActionButtons: fileList.updateActionButtons,
+    }),
     // settings/settings-logic.js
     allPresets: logic.allPresets,
     headerLogoDisplayName: logic.headerLogoDisplayName,

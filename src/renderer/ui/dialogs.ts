@@ -2,6 +2,11 @@
  * renderer 结果展示:常驻汇总条(成功/失败/取消三态 + 打开引导 + 可折叠警告)、
  * 转换完成弹窗(单文件/合并)、批量结果汇总弹窗与逐条渲染。只经 state.ts 读写状态。
  * 模态关闭的唯一收尾入口 afterModalClosed 见文件末「模态关闭后的统一收尾」。
+ *
+ * 跨功能协作面(遮罩显隐变化后的动作按钮重算在 convert 侧)经 `ModalCloseDeps`
+ * 注入,由组合根组装(ADR-075 §四:组合根组装 · feature 侧接形参 · 类型本模块自报)。
+ * 全部关闭路径因此**都**要收 deps —— 这正是「遮罩显隐一变的唯一重算入口」
+ * 这条不变量在解耦后的样子:该重算只经 afterModalClosed 发生一次。
  */
 import {
   batchDialog,
@@ -47,7 +52,6 @@ import {
   restoreFocusOrigin,
   trapFocus,
 } from "../dom/dom-ops.js";
-import { updateActionButtons } from "../convert/file-list.js";
 import { batchSuccessPaths } from "../state/pure.js";
 import { formatWarning, t } from "../../core/i18n/index.js";
 import type { ConvertWarning } from "../../core/i18n/index.js";
@@ -205,11 +209,11 @@ export function showCompleteDialog(
   completeDialogTrap = trapFocus(completeDialog); // Tab 循环不逃逸到背景页
 }
 
-export function hideCompleteDialog(): void {
+export function hideCompleteDialog(deps: DialogsDeps): void {
   completeDialogTrap?.(); // 先解除陷阱,再归还焦点(不受循环限制)
   completeDialogTrap = null;
   completeDialog.classList.add("hidden");
-  afterModalClosed(); // 必须重算(见文件末「模态关闭后的统一收尾」);且在归还焦点之前
+  afterModalClosed(deps); // 必须重算(见文件末「模态关闭后的统一收尾」);且在归还焦点之前
   restoreFocusOrigin(focusActionButton); // 焦点还给触发元素;失效则退到主操作钮
 }
 
@@ -263,11 +267,11 @@ export function showBatchDialog(result: BatchResult): void {
   batchDialogTrap = trapFocus(batchDialog); // Tab 循环不逃逸到背景页
 }
 
-export function hideBatchDialog(): void {
+export function hideBatchDialog(deps: DialogsDeps): void {
   batchDialogTrap?.(); // 先解除陷阱,再归还焦点(不受循环限制)
   batchDialogTrap = null;
   batchDialog.classList.add("hidden");
-  afterModalClosed(); // 必须重算(见文件末「模态关闭后的统一收尾」);且在归还焦点之前
+  afterModalClosed(deps); // 必须重算(见文件末「模态关闭后的统一收尾」);且在归还焦点之前
   restoreFocusOrigin(focusActionButton);
 }
 
@@ -433,31 +437,37 @@ export function showPrecheckDialog(groups: PrecheckWarningGroup[]): Promise<bool
 }
 
 /** 释放陷阱并归还焦点(关闭路径共用;焦点陷阱持有者已失效时不重复解除)。 */
-function releasePrecheck(): void {
+function releasePrecheck(deps: DialogsDeps): void {
   precheckTrap?.();
   precheckTrap = null;
   precheckDialog.classList.add("hidden");
-  afterModalClosed(); // 必须重算(见文件末「模态关闭后的统一收尾」);且在归还焦点之前
+  afterModalClosed(deps); // 必须重算(见文件末「模态关闭后的统一收尾」);且在归还焦点之前
   restoreFocusOrigin(focusActionButton);
 }
 
 /** 预检报告所有关闭路径统一走此函数,确保 resolver 与 Promise 必定结算。 */
-export function closePrecheckDialog(ok: boolean): void {
-  releasePrecheck();
+export function closePrecheckDialog(ok: boolean, deps: DialogsDeps): void {
+  releasePrecheck(deps);
   precheckResolve?.(ok);
   precheckResolve = null;
   precheckPromise = null;
 }
 
-// 预检弹窗按钮与遮罩(模块加载期绑定一次):按钮 / 点遮罩 / Esc(dialogs-events 域) /
-// 窗口关闭(unload)四条路径都必须经过 closePrecheckDialog 结算,任一路径遗漏都会
-// 让预检链与命令锁永久悬挂,表现为界面此后不再响应任何转换命令。
-precheckContinue.addEventListener("click", () => closePrecheckDialog(true));
-precheckCancel.addEventListener("click", () => closePrecheckDialog(false));
-precheckDialog.addEventListener("click", (event) => {
-  // 只响应遮罩本身,点卡片内部不关闭
-  if (event.target === precheckDialog) closePrecheckDialog(false);
-});
+/** 预检弹窗按钮与遮罩。**绑定不留在模块加载期**:关闭路径要经 `DialogsDeps` 拿
+ *  convert 侧的动作按钮重算端口,而端口只能由组合根给(ADR-075 §四:组合根组装 ·
+ *  feature 侧接形参)——模块加载期没有 deps 可用。调用顺序不变:组合根在本文件
+ *  其他模块的 bind 之前调本函数,故四条关闭路径(按钮 / 遮罩 / Esc(dialogs-events 域)
+ * / 窗口关闭)仍全部经过 closePrecheckDialog 结算,任一路径遗漏都会让预检链与
+ *  命令锁永久悬挂,表现为界面此后不再响应任何转换命令。
+ */
+export function bindPrecheckDialogEvents(deps: DialogsDeps): void {
+  precheckContinue.addEventListener("click", () => closePrecheckDialog(true, deps));
+  precheckCancel.addEventListener("click", () => closePrecheckDialog(false, deps));
+  precheckDialog.addEventListener("click", (event) => {
+    // 只响应遮罩本身,点卡片内部不关闭
+    if (event.target === precheckDialog) closePrecheckDialog(false, deps);
+  });
+}
 window.addEventListener("unload", () => {
   // 窗口关闭:不再归还焦点(页面即将销毁),只解除陷阱并按取消结算
   if (precheckPromise === null) return;
@@ -469,6 +479,24 @@ window.addEventListener("unload", () => {
 });
 
 /* ---------- 模态关闭后的统一收尾(遮罩显隐改变的唯一重算入口) ---------- */
+/**
+ * 本模块的跨功能协作面(ADR-075 §四:组合根组装 · feature 侧接形参 · 类型本模块自报;
+ * 不新建共享 ports 文件 —— 四个功能根是平铺协作的 peer,共用一份等于给 peer mesh
+ * 装枢纽,边数不降反增)。传函数本身(不传模块命名空间):传模块等于换一种形式把
+ * 跨 feature 面全量暴露出去,拆边就白做了。
+ *
+ * **不许给任一项设默认值/可选参数**:port 缺失必须在 typecheck 处编译不过,
+ * 而静默不生效(fail-open)比编译不过更糟 —— 它让接线错误在运行期无声溜过。
+ */
+export interface DialogsDeps {
+  /**
+   * convert/file-list:遮罩显隐一变后的动作按钮重算(原为 ui → convert 的静态 import,
+   * 语义留在 ui、convert 的解法作为端口注入)。**同步调用**,不得改成惰性
+   * (ADR-075 §二 禁令 4:Esc 关闭链的末位语义不许交给惰性 port)。
+   */
+  recomputeActionButtons: () => void;
+}
+
 /**
  * 遮罩显隐一变就重算动作按钮可用性。**所有**关闭路径必经本函数。
  *
@@ -491,6 +519,6 @@ window.addEventListener("unload", () => {
  * bookWizard,两者同样是 .dialog-overlay)也必须调本函数 —— 它们的 closeXxx 不在本
  * 模块内,漏调就是同一个坑(向导的「付印」转换结束即复现)。
  */
-export function afterModalClosed(): void {
-  updateActionButtons();
+export function afterModalClosed(deps: DialogsDeps): void {
+  deps.recomputeActionButtons();
 }

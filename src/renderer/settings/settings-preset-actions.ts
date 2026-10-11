@@ -3,7 +3,7 @@
  * 导入导出;纯逻辑(预设映射/名校验/上限判断/名称解析)在 settings-logic.ts,
  * 本模块只保留 DOM 交互与持久化调用。拆自 settings-panel.ts(纯搬移
  * 零行为改动)。依赖方向:本模块 → settings-panel(回填/写回/选项重建单源),
- * 不反向;事件绑定侧(settings-bindings-preset)与 renderer Esc 分支 import 本模块。
+ * 不反向;事件绑定侧(settings-bindings-preset)与 renderer Esc 分支经端口调用本模块。
  */
 import { TEMPLATE_PRESETS } from "../../core/settings/presets.js";
 import { t } from "../../core/i18n/index.js";
@@ -16,8 +16,11 @@ import {
 } from "./settings-logic.js";
 import {
   presetNameInput,
+  presetSaveBtn,
+  presetSaveCancel,
   presetSaveDialog,
   presetSaveError,
+  presetSaveOk,
   quickPresetSelect,
   templatePresetSelect,
 } from "../dom/refs.js";
@@ -30,12 +33,27 @@ import {
   trapFocus,
 } from "../dom/dom-ops.js";
 import { errorMessage } from "../state/pure.js";
-import { afterModalClosed } from "../ui/dialogs.js";
 import {
   applySettingsToControls,
   persistSettings,
   rebuildPresetOptions,
 } from "./settings-panel.js";
+
+/**
+ * 本模块的跨功能协作面(ADR-075 §四:组合根组装 · feature 侧接形参 · 类型本模块自报)。
+ * 唯一一项是另存为预设弹窗关闭后的「遮罩显隐重算」通知(原为 settings → ui/dialogs
+ * 的静态 import,ADR-075 §四 交汇点;随 convert 那一刀落地)。
+ *
+ * ⚠ **零参闭包**:组合根传进来的已是绑好 ui 侧 deps 的 `notifyModalClosed`,故本模块
+ * 与 Esc 链的调用方都不必知道 `afterModalClosed` 的 deps 形状 —— 若让它们自己 import
+ * 那个类型,会造出新的 type-only 跨 feature 边(ADR-075 后果节点名的两侧分叉口)。
+ *
+ * **不许设默认值/可选参数**:port 缺失必须在 typecheck 处编译不过。
+ */
+export interface PresetActionsDeps {
+  /** ui/dialogs:遮罩显隐一变即重算动作按钮(组合根已绑成零参闭包)。同步调用。 */
+  afterModalClosed: () => void;
+}
 
 /* 另存为预设弹窗焦点陷阱句柄:打开时启用,关闭时解除 */
 let presetSaveTrap: (() => void) | null = null;
@@ -57,12 +75,41 @@ export function openPresetSaveDialog(): void {
 }
 
 /** 关闭另存为预设弹窗(导出:renderer Esc 分支与弹窗内按钮共用,统一解除焦点陷阱)。 */
-export function closePresetSaveDialog(): void {
+export function closePresetSaveDialog(deps: PresetActionsDeps): void {
   presetSaveTrap?.(); // 先解除陷阱,再归还焦点(不受循环限制)
   presetSaveTrap = null;
   presetSaveDialog.classList.add("hidden");
-  afterModalClosed(); // 遮罩显隐一变即重算动作按钮(见 dialogs.afterModalClosed)
+  deps.afterModalClosed(); // 遮罩显隐一变即重算动作按钮(见 dialogs.afterModalClosed)
   restoreFocusOrigin(); // 焦点还给触发按钮,便于键盘继续操作
+}
+
+/**
+ * 另存为预设弹窗的全部控件接线(组合根 init 处调用,与 bindSettingsEvents 同期)。
+ *
+ * ⚠ **这五条监听器为何在本模块自报入口、而不是留在 `settings-bindings-preset` 的
+ * `bindPresetGroup` 里**:它们的关闭/保存路径都经 `closePresetSaveDialog` /
+ * `saveCustomPreset`,而这两个函数的收尾要调 ui 侧的「遮罩显隐重算」端口
+ * (ADR-075 §四 交汇点,原为 settings → ui/dialogs 的静态 import)。端口只能由组合根
+ * 给,而 `bindPresetGroup` 的唯一调用方是 settings 目录的公共编排层
+ * `bindSettingsEvents`(零参),那一层不承这个端口 ⇒ 端口落到本模块自报的这个入口,
+ * 组合根一处接线即可。绑定内容与先后逐条照旧(打开钮 / 取消 / 确定 / Enter / 点遮罩),
+ * 各控件仍各自只挂一个监听器。
+ */
+export function bindPresetSaveEvents(deps: PresetActionsDeps): void {
+  // 另存为预设(弹窗输入名称 → 保存当前排版+页面设置)
+  presetSaveBtn.addEventListener("click", openPresetSaveDialog);
+  presetSaveCancel.addEventListener("click", () => closePresetSaveDialog(deps));
+  presetSaveOk.addEventListener("click", () => void saveCustomPreset(deps));
+  presetNameInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void saveCustomPreset(deps);
+    }
+  });
+  presetSaveDialog.addEventListener("click", (event) => {
+    // 只响应遮罩本身,点卡片内部不关闭
+    if (event.target === presetSaveDialog) closePresetSaveDialog(deps);
+  });
 }
 
 function showPresetSaveError(message: string): void {
@@ -75,7 +122,7 @@ function showPresetSaveError(message: string): void {
  *  页眉页脚/水印/公式编号/H1 分页不在存储范围 —— 内置 TEMPLATE_PRESETS 携带完整交付链,
  *  见 core/settings/settings-defaults.ts 的 TemplatePreset 注释;界面上的「不入预设」
  *  角标只挂在 05 转换 / 06 应用(两种预设都不含的组),03 页眉页脚与水印不挂该角标。 */
-export async function saveCustomPreset(): Promise<void> {
+export async function saveCustomPreset(deps: PresetActionsDeps): Promise<void> {
   const name = presetNameInput.value.trim();
   // 达上限不再静默截断,弹窗内明确提示先删除(校验逻辑在 settings-logic)
   const error = validatePresetName(name, state.settings.customPresets);
@@ -88,7 +135,7 @@ export async function saveCustomPreset(): Promise<void> {
   try {
     const saved = await window.api.settingsSet({ customPresets: next });
     state.settings.customPresets = saved.customPresets;
-    closePresetSaveDialog();
+    closePresetSaveDialog(deps);
     rebuildPresetOptions();
     // 显式选中新预设(值=当前设置,resolvePresetSelection 保持选中,不被硬编码项弹回)
     templatePresetSelect.value = customPresetToTemplate(entry).id;

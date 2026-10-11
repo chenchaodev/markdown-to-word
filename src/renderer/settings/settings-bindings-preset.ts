@@ -15,11 +15,6 @@ import {
   presetDeleteBtn,
   presetExportBtn,
   presetImportBtn,
-  presetNameInput,
-  presetSaveBtn,
-  presetSaveCancel,
-  presetSaveDialog,
-  presetSaveOk,
   quickPresetSelect,
   templatePresetSelect,
 } from "../dom/refs.js";
@@ -32,12 +27,9 @@ import {
   persistSettings,
 } from "./settings-panel.js";
 import {
-  closePresetSaveDialog,
   deleteCustomPreset,
   exportCustomPresets,
   importCustomPresets,
-  openPresetSaveDialog,
-  saveCustomPreset,
 } from "./settings-preset-actions.js";
 
 /**
@@ -106,7 +98,15 @@ export function applyTemplatePreset(presetId: string): void {
   );
 }
 
-/** 预设组全部控件接线(bindSettingsEvents 编排调用)。 */
+/**
+ * 预设组全部控件接线(bindSettingsEvents 编排调用)。
+ *
+ * ⚠ 另存为预设弹窗的五个控件(打开钮 / 取消 / 确定 / Enter / 点遮罩)**不在此处**:
+ * 它们的关闭与保存路径要经 `closePresetSaveDialog` / `saveCustomPreset`,而那两者的
+ * 收尾要调 ui 侧的「遮罩显隐重算」端口(ADR-075 §四 交汇点)。该端口的接线入口是
+ * `settings-preset-actions` 自报的 `bindPresetSaveEvents(deps)`,由组合根直接调用 ——
+ * 本组经公共编排层 `bindSettingsEvents`(零参)到达,那一层不承这个端口。
+ */
 export function bindPresetGroup(): void {
   // 模板预设:整体套用排版与页面设置(抽屉与快速参数条两处 select
   // 共用 applyTemplatePreset,硬编码 + 自定义预设统一走此路径)
@@ -118,20 +118,6 @@ export function bindPresetGroup(): void {
     applyTemplatePreset(quickPresetSelect.value);
   });
 
-  // 另存为预设(弹窗输入名称 → 保存当前排版+页面设置)
-  presetSaveBtn.addEventListener("click", openPresetSaveDialog);
-  presetSaveCancel.addEventListener("click", closePresetSaveDialog);
-  presetSaveOk.addEventListener("click", () => void saveCustomPreset());
-  presetNameInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      void saveCustomPreset();
-    }
-  });
-  presetSaveDialog.addEventListener("click", (event) => {
-    // 只响应遮罩本身,点卡片内部不关闭
-    if (event.target === presetSaveDialog) closePresetSaveDialog();
-  });
   // 仅自定义预设可删;删除后回退「默认」
   presetDeleteBtn.addEventListener("click", deleteCustomPreset);
   // 预设 JSON 导入 / 导出(IIFE + void,规避 no-misused-promises)

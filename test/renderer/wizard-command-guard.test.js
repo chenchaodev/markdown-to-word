@@ -15,6 +15,7 @@ import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
 import { globalSlot, setGlobalSlot } from "./dom-stub.js";
 import { loadBookWizardDeps } from "./wizard-deps.js";
+import { loadConvertFlowDeps } from "./convert-flow-deps.js";
 import { createAsserter } from "../harness/assert.js";
 import { createCaseSuite } from "../harness/case.js";
 
@@ -380,8 +381,10 @@ export async function run() {
     const fileList = await import(distUrl("convert/file-list.js"));
     // openBookWizard 自 wizard 刀起收 BookWizardDeps(ADR-075 §四),本段共用一份装配
     const bookWizardDeps = await loadBookWizardDeps(distUrl);
+    // convert 刀起结果呈现面改为组合根注入的端口(ADR-075 §四),本段共用一份装配
+    const convertFlowDeps = await loadConvertFlowDeps(distUrl);
 
-    actions.bindConvertActionsEvents();
+    actions.bindConvertActionsEvents(convertFlowDeps);
     const keydownRaw = docListeners.get("keydown");
     const convertBtn = elementFor("convertBtn");
     await suite.case("转换域在 document 上绑定快捷键", () => {
@@ -405,7 +408,7 @@ export async function run() {
       assert(btnDisabled() === false, "空闲态转换按钮应可用");
     });
 
-    const chain = flow.withPrecheck(["C:\\work\\a.md"], () => {});
+    const chain = flow.withPrecheck(convertFlowDeps, ["C:\\work\\a.md"], () => {});
     await suite.case("预检进行中转换按钮置灰且命令锁生效", async () => {
       assert(btnDisabled() === true, "预检进行中转换按钮应置灰");
       assert(flow.isConvertCommandBlocked(), "预检进行中命令锁应生效");
@@ -421,7 +424,7 @@ export async function run() {
     });
 
     // ---- 2. 预检未决时按钮点击被阻断(视觉与守卫一致),结算后恢复 ----
-    const chain2 = flow.withPrecheck(["C:\\work\\a.md"], () => {});
+    const chain2 = flow.withPrecheck(convertFlowDeps, ["C:\\work\\a.md"], () => {});
     await suite.case("预检未决时按钮点击被阻断且结算后忙态复位", async () => {
       assert(btnDisabled() === true, "第二条预检链未决时按钮应保持置灰");
       handlerOf(convertBtn, "click")();
@@ -453,7 +456,7 @@ export async function run() {
       assert(flow.isBackgroundCommandBlocked(), "向导打开时背景命令应被判定阻断");
       const precheckBeforeModal = precheckCount();
       keydown({ key: "Enter", ctrlKey: true, preventDefault() {} });
-      await flow.withPrecheck(["C:\\work\\a.md"], () => {});
+      await flow.withPrecheck(convertFlowDeps, ["C:\\work\\a.md"], () => {});
       assert(precheckCount() === precheckBeforeModal, "向导打开时不得启动新预检");
     });
 
@@ -523,6 +526,24 @@ export async function run() {
     await suite.case("付印链结算后命令锁释放且向导关闭", () => {
       assert(!flow.isConvertCommandBlocked(), "付印链结算后命令锁应释放");
       assert(overlay.classList.contains("hidden"), "付印后向导应关闭");
+    });
+
+    // ---- 5b. Esc 链末位语义(ADR-075 §二 禁令 4 的**运行期**那一半) ----
+    // 向导与设置抽屉互斥,是「向导在 Esc 链末位」的唯一前提:抽屉开着时若不先关它,
+    // Esc 会先命中抽屉分支、向导关不掉。抽屉不在链末位之前,这条就红。
+    await suite.case("打开向导前先关设置抽屉(向导作为 Esc 链末位的前提)", () => {
+      let closeDrawerCalls = 0;
+      bookWizard.openBookWizard({
+        ...bookWizardDeps,
+        isSettingsDrawerOpen: () => true,
+        closeSettingsDrawer: () => { closeDrawerCalls += 1; },
+      });
+      assert(
+        closeDrawerCalls === 1,
+        `抽屉开着时打开向导应先关抽屉(向导在 Esc 链末位),实际调用 ${closeDrawerCalls} 次`,
+      );
+      // 复原:本段后续用例要求向导处于关闭态(复开即重建)
+      bookWizard.closeBookWizard(bookWizardDeps);
     });
 
     // ---- 6. 转换进行中再付印:不并发起第二条链;结算后可再付印 ----

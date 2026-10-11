@@ -31,7 +31,7 @@ import {
   renderMultiList,
   renderSelection,
 } from "../file-list.js";
-import { runConvert, isConvertCommandBlocked } from "../convert-flow.js";
+import { runConvert, isConvertCommandBlocked, type ConvertFlowDeps } from "../convert-flow.js";
 import { t } from "../../../core/i18n/index.js";
 
 /** 列表边缘自动滚动步长(px/次,dragover 事件粒度)。 */
@@ -126,8 +126,9 @@ export async function openDialog(append = false): Promise<void> {
  * 本域注入的端口。`openWizard` 是零参闭包 —— 组合根已把 wizard 的 `BookWizardDeps`
  * 绑好(ADR-075 §四:组合根组装、feature 侧接形参),本域因此不需要知道 wizard 的 deps
  * 形状,也不必 import 那个类型(那会造出一条新的 type-only 跨 feature 边)。
+ * convert 自身的呈现面(`ConvertFlowDeps`)随 convert 那一刀并入同一份 deps。
  */
-export interface SelectionEventsDeps {
+export interface SelectionEventsDeps extends ConvertFlowDeps {
   /** 打开成书向导模态。 */
   openWizard: () => void;
 }
@@ -157,7 +158,7 @@ export function bindSelectionEvents(deps: SelectionEventsDeps): void {
           appendSelection(mdPaths.files, mdPaths.skipped.length);
           return;
         }
-        await runConvert(res.mdPath, state.selectedFormat);
+        await runConvert(deps, res.mdPath, state.selectedFormat);
       } catch (err) {
         setError(errorMessage(err)); // 复用现有错误提示
       } finally {

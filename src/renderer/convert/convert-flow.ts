@@ -5,9 +5,12 @@
  * (再加预检中)为所有入口的唯一前置校验,预检链经 withPrecheck single-flight。
  * 不变量:转换成功后经 state.recentRefreshHandler 回调刷新最近区块(组合根接线),
  * 不 import recent-files,避免 ESM 环。
+ * 结果呈现面(ui/dialogs)自 convert 刀起经 `ConvertFlowDeps` 注入:四个裸命令
+ * (withPrecheck / runConvert / runBatch / runMerge)各接一份,内部逐层透传。
  */
 import { statusEl } from "../dom/refs.js";
 import { state } from "../state/state.js";
+import type { BatchResult } from "../state/state.js";
 import type { ConvertMode, ConvertResult, OperationBusyResult } from "../../core/ipc-contract.js";
 import {
   hideProgress,
@@ -19,18 +22,57 @@ import {
   translate,
 } from "../dom/dom-ops.js";
 import { actionableError, baseName, errorMessage } from "../state/pure.js";
-import {
-  precheckFileLabels,
-  showBatchDialog,
-  showCompleteDialog,
-  showPrecheckDialog,
-  showSummary,
-  type PrecheckWarningGroup,
-} from "../ui/dialogs.js";
 import { setCommandBusyProbe, updateActionButtons } from "./file-list.js";
 import { t } from "../../core/i18n/index.js";
 import { formatWarning, type ConvertWarning, type I18nKey, type KeyedWarning } from "../../core/i18n/index.js";
 import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
+
+/**
+ * 本模块的跨功能协作面(ADR-075 §四:组合根组装 · feature 侧接形参 · 类型本模块自报;
+ * 不新建共享 ports 文件 —— 四个功能根是平铺协作的 peer,共用一份等于给 peer mesh
+ * 装枢纽,边数不降反增)。传函数本身(不传模块命名空间):传模块等于换一种形式把
+ * 跨 feature 面全量暴露出去,拆边就白做了。
+ *
+ * **不许给任一项设默认值/可选参数**:port 缺失必须在 typecheck 处编译不过,
+ * 而静默不生效(fail-open)比编译不过更糟 —— 它让接线错误在运行期无声溜过。
+ *
+ * ⚠ 下面两个入参形状是**本模块自报**的端口类型,不从 ui/dialogs import 那两个
+ * 同名 interface:`import type` 虽在编译期擦除、在 src 侧仍是一条跨 feature 边,
+ * 正是 ADR-075 后果节点名的「两侧分叉口」(src 侧数得到、产物侧数不到,两侧读数对不上)。
+ * 结构一旦漂移,组合根那一行接线即 typecheck 报错 —— 类型即契约。
+ */
+export interface ConvertFlowDeps {
+  /** ui/dialogs:预检报告弹窗(返回用户是否放行;单实例 Promise)。 */
+  showPrecheckDialog: (groups: ConvertPrecheckGroup[]) => Promise<boolean>;
+  /** ui/dialogs:预检报告的「文件显示名」口径(同名回退全路径;与合并阻断信息同源)。 */
+  precheckFileLabels: (paths: readonly string[]) => string[];
+  /** ui/dialogs:常驻汇总条(成功 / 失败 / 取消三态)。 */
+  showSummary: (opts: ConvertSummaryRequest) => void;
+  /** ui/dialogs:转换完成 / 失败弹窗。 */
+  showCompleteDialog: (outputPath: string, error?: string, fileName?: string) => void;
+  /** ui/dialogs:批量结果汇总弹窗。 */
+  showBatchDialog: (result: BatchResult) => void;
+}
+
+/** 预检报告的一组(源文件绝对路径 + 该文件的全部告警),见 `ConvertFlowDeps` 的形状注记。 */
+export interface ConvertPrecheckGroup {
+  /** 源文件绝对路径(IPC 边界处的原值) */
+  path: string;
+  /** 该文件的告警(顺序与主进程返回一致) */
+  warnings: ConvertWarning[];
+}
+
+/** 常驻汇总条的一次呈现请求,见 `ConvertFlowDeps` 的形状注记。 */
+export interface ConvertSummaryRequest {
+  kind: "ok" | "fail" | "canceled";
+  title: string;
+  outputPath?: string;
+  error?: string;
+  /** keyed 警告,展示前经 formatWarning 按当前语言格式化。 */
+  warnings?: ConvertWarning[];
+  /** 批量场景:有失败详情可回看(「失败详情」按钮重开批量弹窗)。 */
+  hasDetails?: boolean;
+}
 
 /** 错误码 → 可操作文案(EBUSY/ENOENT/EACCES/ENOSPC/长路径;未识别透传)。 */
 function displayError(message: string): string {
@@ -125,8 +167,9 @@ function isMergeBlocking(warning: ConvertWarning): warning is KeyedWarning {
 async function confirmPrecheck(
   filePaths: readonly string[],
   policy: PrecheckPolicy,
+  deps: ConvertFlowDeps,
 ): Promise<boolean> {
-  const groups: PrecheckWarningGroup[] = [];
+  const groups: ConvertPrecheckGroup[] = [];
   for (const filePath of filePaths) {
     try {
       const ws = await window.api.precheck(filePath);
@@ -150,7 +193,7 @@ async function confirmPrecheck(
       // 显示名与报告弹窗同一判据(同名回退全路径):候选集取**本次预检的全部源文件**
       // —— 同名的干净孪生文件同样会让「intro.md」指代不明,而阻断是硬阻断、用户
       // 没有「点继续」这条路可走,指代不清就得来回试错。
-      const labels = precheckFileLabels(filePaths);
+      const labels = deps.precheckFileLabels(filePaths);
       const firstIndex = filePaths.indexOf(first.group.path);
       policy.onBlocked({
         file: labels[firstIndex] ?? baseName(first.group.path),
@@ -160,7 +203,7 @@ async function confirmPrecheck(
       return false;
     }
   }
-  if (!(await showPrecheckDialog(groups))) return false;
+  if (!(await deps.showPrecheckDialog(groups))) return false;
   // 决策等待期间可能已进入转换或新模态打开:续作与其他入口共用同一前置校验
   return !isBackgroundCommandBlocked();
 }
@@ -169,10 +212,12 @@ async function confirmPrecheck(
  * 转换前预检 + renderer command single-flight。逐文件聚合告警,无问题静默继续;
  * 有问题弹报告对话。预检/用户决策/实际 action 视为同一命令,重复点击不启动第二条链。
  * 返回的 Promise 必定结算(取消/忙碌/决策后受阻/异常均收敛),调用方 void 启动即可。
+ * @param deps ui/dialogs 的结果呈现面(见 `ConvertFlowDeps`)
  * @param policy 处置口径;缺省按 single(不阻断)。成书向导只借锁、传空文件列表,
  *   故不传该参;真正的转换一律经 precheckedCommand 显式传自己的 kind。
  */
 export function withPrecheck(
+  deps: ConvertFlowDeps,
   filePaths: string[],
   action: () => void | Promise<void>,
   policy: PrecheckPolicy = { kind: "single" },
@@ -181,7 +226,7 @@ export function withPrecheck(
   if (isBackgroundCommandBlocked()) return Promise.resolve();
 
   const token = Symbol("precheck-command");
-  const operation = runPrecheckChain(token, filePaths, action, policy);
+  const operation = runPrecheckChain(token, filePaths, action, policy, deps);
   // ⚠️ 登记顺序:链体的**第一个语句必须含 await**(现为 confirmPrecheck)。
   // 链体在第一个 await 处挂起后本行才执行,故 activePrecheck 一定先于链内任何
   // 动作生效。若日后把链体改成同步起步,本行的登记会晚于链内动作,出现
@@ -201,9 +246,10 @@ async function runPrecheckChain(
   filePaths: string[],
   action: () => void | Promise<void>,
   policy: PrecheckPolicy,
+  deps: ConvertFlowDeps,
 ): Promise<void> {
   try {
-    if (!(await confirmPrecheck(filePaths, policy))) return;
+    if (!(await confirmPrecheck(filePaths, policy, deps))) return;
     // action 的首个同步段会置 state.mode;先释放预检锁,让受控 action 通过统一守卫。
     // 覆盖集在本段交接给 action(action 期间非 null,供链内续作免重复预检)。
     const covered = new Set(filePaths);
@@ -230,18 +276,20 @@ async function runPrecheckChain(
  * @param filePaths 本次转换的源文件
  * @param action 受控执行段(首个同步段即置 state.mode)
  * @param policy 处置口径(决定 blocksMerge 告警是否阻断本次命令)
+ * @param deps ui/dialogs 的结果呈现面(见 `ConvertFlowDeps`)
  */
 async function precheckedCommand(
+  deps: ConvertFlowDeps,
   filePaths: string[],
   action: () => Promise<void>,
   policy: PrecheckPolicy,
 ): Promise<void> {
   const covered = chainCovered;
-  if (covered === null) return withPrecheck(filePaths, action, policy);
+  if (covered === null) return withPrecheck(deps, filePaths, action, policy);
   const pending = filePaths.filter((filePath) => !covered.has(filePath));
   for (const filePath of pending) covered.add(filePath);
   if (pending.length > 0) {
-    if (!(await confirmPrecheck(pending, policy))) return;
+    if (!(await confirmPrecheck(pending, policy, deps))) return;
     // 补检期间(此处有 await,而外层链的锁已交给 action)若有别的命令起链,
     // 统一守卫拦下本次续作,避免两条命令并发。
     if (isBackgroundCommandBlocked()) return;
@@ -291,10 +339,10 @@ interface FailureCopy {
 }
 
 /** 抛错路径的呈现:与「返回了失败结果」走同一副骨架。 */
-function reportFailure(err: unknown, copy: FailureCopy): void {
+function reportFailure(err: unknown, copy: FailureCopy, deps: ConvertFlowDeps): void {
   const error = copy.errorText(errorMessage(err));
   setError(t(copy.statusKey, { error }));
-  showSummary({ kind: "fail", title: t(copy.titleKey), error });
+  deps.showSummary({ kind: "fail", title: t(copy.titleKey), error });
 }
 
 /**
@@ -313,25 +361,27 @@ interface FileConvertCopy extends FailureCopy {
  * @param copy 本流程的文案口径
  * @param failFileName 失败弹窗的「哪个文件」。取 thunk 而非字符串是因合并读的是
  *   state.selectedFiles,须与既有口径同刻取值(转换期间选中项可能已变)。
+ * @param deps ui/dialogs 的结果呈现面(见 `ConvertFlowDeps`)
  */
 function presentFileConvert(
   result: ConvertResult | OperationBusyResult,
   copy: FileConvertCopy,
   failFileName: () => string,
+  deps: ConvertFlowDeps,
 ): void {
   if (isBusyResult(result)) {
     setError(result.error);
   } else if (result.canceled) {
     setStatus(t("common.canceled"));
     setStatusTone("");
-    showSummary({ kind: "canceled", title: t(copy.canceledTitle) });
+    deps.showSummary({ kind: "canceled", title: t(copy.canceledTitle) });
   } else if (result.ok) {
     const outputPath = result.outputPath ?? "";
     setProgress(100);
     setStatus(t(copy.doneStatus, { outputPath }));
     setStatusTone("ok");
     statusEl.title = outputPath; // 长路径悬停可看完整
-    showSummary({
+    deps.showSummary({
       kind: "ok",
       title: t(copy.doneTitle),
       outputPath,
@@ -339,16 +389,16 @@ function presentFileConvert(
     });
     // 勾选「不再提示」后跳过弹窗(汇总条常驻展示结果)
     if (!state.suppressCompleteDialog) {
-      showCompleteDialog(outputPath); // 弹窗展示完整路径,便于复制
+      deps.showCompleteDialog(outputPath); // 弹窗展示完整路径,便于复制
     }
     void state.recentRefreshHandler?.(); // 成功后刷新最近转换区块(经 state 回调,不再 import recent-files)
   } else {
     const error = copy.errorText(result.error ?? t("common.unknownError"));
     setError(t(copy.statusKey, { error }));
-    showSummary({ kind: "fail", title: t(copy.titleKey), error });
+    deps.showSummary({ kind: "fail", title: t(copy.titleKey), error });
     // 勾选「不再提示」后失败弹窗同样跳过(汇总条已展示错误)
     if (!state.suppressCompleteDialog) {
-      showCompleteDialog("", error, failFileName()); // 失败弹窗:错误三要素
+      deps.showCompleteDialog("", error, failFileName()); // 失败弹窗:错误三要素
     }
   }
 }
@@ -394,9 +444,14 @@ function mergeFailFileName(): string {
  * 行内重转)直接调用本函数即可,既不必自带 withPrecheck,也不会漏掉预检。
  * @param filePath 源文件绝对路径
  * @param format 目标格式
+ * @param deps ui/dialogs 的结果呈现面(见 `ConvertFlowDeps`)
  */
-export function runConvert(filePath: string, format: "docx" | "pdf"): Promise<void> {
-  return precheckedCommand([filePath], () => runConvertAction(filePath, format), {
+export function runConvert(
+  deps: ConvertFlowDeps,
+  filePath: string,
+  format: "docx" | "pdf",
+): Promise<void> {
+  return precheckedCommand(deps, [filePath], () => runConvertAction(deps, filePath, format), {
     kind: "single", // 单文件里未闭合围栏只影响本文件,维持「警告 + 可继续」
   });
 }
@@ -405,13 +460,17 @@ export function runConvert(filePath: string, format: "docx" | "pdf"): Promise<vo
  * 单文件转换的受控执行段:骨架取共享编排层,本段只留单文件特有的一步 IPC 与
  * 失败弹窗的文件名。首个同步段即置 state.mode,理由见 beginControlledRun。
  */
-async function runConvertAction(filePath: string, format: "docx" | "pdf"): Promise<void> {
+async function runConvertAction(
+  deps: ConvertFlowDeps,
+  filePath: string,
+  format: "docx" | "pdf",
+): Promise<void> {
   beginControlledRun("single", t("convert.stage.converting"));
   try {
     const result = await window.api.convert(filePath, format);
-    presentFileConvert(result, SINGLE_COPY, () => baseName(filePath));
+    presentFileConvert(result, SINGLE_COPY, () => baseName(filePath), deps);
   } catch (err) {
-    reportFailure(err, SINGLE_COPY);
+    reportFailure(err, SINGLE_COPY, deps);
   } finally {
     endControlledRun();
   }
@@ -420,14 +479,19 @@ async function runConvertAction(filePath: string, format: "docx" | "pdf"): Promi
 /**
  * 批量转换:先逐文件预检(与单文件同一道防线),再每文件独立输出,完成弹汇总弹窗逐条展示。
  * 预检收口在本模块内部,故各入口直接调本函数即可,不再自带 withPrecheck 包裹。
+ * @param deps ui/dialogs 的结果呈现面(见 `ConvertFlowDeps`)
  * @param files 显式目标列表(「重试失败项」入口);缺省用当前选中列表。
  * @param format 显式格式(重试按原格式);缺省用当前格式选择。
  */
-export function runBatch(files?: string[], format?: "docx" | "pdf"): Promise<void> {
+export function runBatch(
+  deps: ConvertFlowDeps,
+  files?: string[],
+  format?: "docx" | "pdf",
+): Promise<void> {
   const targets = files ?? state.selectedFiles;
   // 主入口(不传文件)沿用「≥2 个文件」规则;重试失败项入口允许单个失败文件单独重转
   if (targets.length < (files === undefined ? 2 : 1)) return Promise.resolve();
-  return precheckedCommand(targets, () => runBatchConvert(targets, format), {
+  return precheckedCommand(deps, targets, () => runBatchConvert(deps, targets, format), {
     kind: "batch", // 批量每份各自成文,围栏不跨文件,维持「警告 + 可继续」
   });
 }
@@ -437,7 +501,11 @@ export function runBatch(files?: string[], format?: "docx" | "pdf"): Promise<voi
  * 批量窗留在本段内 —— 它们不是共用骨架的变体,收进共享层只会把分类逻辑与
  * 逐条结果塞进参数表。首个同步段即置 state.mode,理由见 beginControlledRun。
  */
-async function runBatchConvert(targets: string[], format?: "docx" | "pdf"): Promise<void> {
+async function runBatchConvert(
+  deps: ConvertFlowDeps,
+  targets: string[],
+  format?: "docx" | "pdf",
+): Promise<void> {
   const fmt = format ?? state.selectedFormat;
   state.lastBatchFormat = fmt; // 重试失败项按原格式重转
   beginControlledRun("batch", t("convert.batch.stage", { count: targets.length }));
@@ -445,7 +513,7 @@ async function runBatchConvert(targets: string[], format?: "docx" | "pdf"): Prom
     const result = await window.api.convertBatch(targets, fmt);
     if ("busy" in result) {
       setError(result.error);
-      showSummary({ kind: "fail", title: t("convert.batch.failedTitle"), error: result.error });
+      deps.showSummary({ kind: "fail", title: t("convert.batch.failedTitle"), error: result.error });
       return;
     }
     state.lastBatchResult = result;
@@ -470,17 +538,17 @@ async function runBatchConvert(targets: string[], format?: "docx" | "pdf"): Prom
       result.failCount > 0 ? "fail" : allCanceled ? "canceled" : "ok";
     setStatus(title, false, result.failCount > 0);
     setStatusTone(summaryKind === "ok" ? "ok" : "");
-    showSummary({
+    deps.showSummary({
       kind: summaryKind,
       title,
       hasDetails: result.failCount > 0,
       warnings: result.items.flatMap((item) => item.warnings ?? []),
     });
-    showBatchDialog(result); // 成败均弹窗,逐条可见
+    deps.showBatchDialog(result); // 成败均弹窗,逐条可见
     void state.recentRefreshHandler?.(); // 批量结束刷新(主进程已记录成功项;经 state 回调)
   } catch (err) {
     state.lastBatchResult = null;
-    reportFailure(err, BATCH_FAILURE);
+    reportFailure(err, BATCH_FAILURE, deps);
   } finally {
     endControlledRun();
   }
@@ -490,16 +558,18 @@ async function runBatchConvert(targets: string[], format?: "docx" | "pdf"): Prom
  * 合并转换:先逐文件预检(与单文件同一道防线),再合并为一份文档。
  * 成书向导的「付印」也走本函数 —— 它此前经 withPrecheck([]) 只借锁、并不发预检,
  * 合并路径实际是零预检的,现在由本函数内部统一收口。
+ * @param deps ui/dialogs 的结果呈现面(见 `ConvertFlowDeps`)
  * @param opts 显式文件/格式/封面元数据;缺省用当前选中与当前格式。
  */
 export function runMerge(
+  deps: ConvertFlowDeps,
   opts?: { files?: string[]; format?: "docx" | "pdf"; metadata?: DocMetadata },
 ): Promise<void> {
   const files = opts?.files ?? state.selectedFiles;
   if (files.length < 2) return Promise.resolve();
-  return precheckedCommand(files, () => runMergeConvert(files, opts), {
+  return precheckedCommand(deps, files, () => runMergeConvert(deps, files, opts), {
     kind: "merge", // 合并跨文件:未闭合围栏会吞掉后续所有文件,故直接阻断
-    onBlocked: reportMergeBlocked,
+    onBlocked: (report) => reportMergeBlocked(report, deps),
   });
 }
 
@@ -516,7 +586,7 @@ export function runMerge(
  * 阻断发生在预检段(state.mode 尚未置位、进度条未起),故这里无需任何收尾:
  * 预检链的 finally 会释放命令锁,按钮随之恢复可用(不留「永久忙碌」)。
  */
-function reportMergeBlocked(report: MergeBlockReport): void {
+function reportMergeBlocked(report: MergeBlockReport, deps: ConvertFlowDeps): void {
   const detail = formatWarning({
     key: "convert.merge.blockedUnclosedFence",
     params: { file: report.file, lineNo: report.lineNo ?? "?" },
@@ -530,7 +600,7 @@ function reportMergeBlocked(report: MergeBlockReport): void {
   // 短句的 count = 带阻断告警的文件总数(含详报的那个);卡片里的「另有 N 个」是
   // 「除首个之外」的同一组事实,两个数不要混用
   setError(t("convert.merge.blockedStatus", { count: report.moreFiles + 1 }));
-  showSummary({ kind: "fail", title: t("convert.merge.blockedTitle"), error });
+  deps.showSummary({ kind: "fail", title: t("convert.merge.blockedTitle"), error });
 }
 
 /**
@@ -538,6 +608,7 @@ function reportMergeBlocked(report: MergeBlockReport): void {
  * 失败弹窗的成品名后缀。首个同步段即置 state.mode,理由见 beginControlledRun。
  */
 async function runMergeConvert(
+  deps: ConvertFlowDeps,
   files: string[],
   opts?: { files?: string[]; format?: "docx" | "pdf"; metadata?: DocMetadata },
 ): Promise<void> {
@@ -550,9 +621,9 @@ async function runMergeConvert(
       format,
       metadata ? { metadata } : undefined,
     );
-    presentFileConvert(result, MERGE_COPY, mergeFailFileName);
+    presentFileConvert(result, MERGE_COPY, mergeFailFileName, deps);
   } catch (err) {
-    reportFailure(err, MERGE_COPY);
+    reportFailure(err, MERGE_COPY, deps);
   } finally {
     endControlledRun();
   }

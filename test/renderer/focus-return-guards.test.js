@@ -98,10 +98,19 @@ export async function run() {
     el("settingsDrawer").querySelector = (/** @type {string} */ sel) =>
       sel === ".settings-tab.active" ? activeTab : null;
 
+    // 关闭路径自 convert 刀起收 deps(遮罩显隐重算的端口,ADR-075 §四):弹窗走
+    // ui/dialogs 的 ModalCloseDeps,另存为预设弹窗走 settings 的 PresetActionsDeps。
+    // 两份都按组合根的同一份端口清单在测试侧装配。
+    const fileList = await import(distUrl("renderer/convert/file-list.js"));
+    const dialogsDeps = { recomputeActionButtons: fileList.updateActionButtons };
+    const presetActionsDeps = {
+      afterModalClosed: () => dialogs.afterModalClosed(dialogsDeps),
+    };
+
     // 段间共享:dist 模块在一个进程内只 import 一次,焦点来源栈是模块级单例。
     // 前序段(convert-command-lock 等)开过弹窗未必关,栈里会留残余;先把栈排空,
     // 否则本段第一次「关闭归还焦点」取到的是别人的条目。8 次足够覆盖现有段。
-    for (let i = 0; i < 8; i += 1) dialogs.hideCompleteDialog();
+    for (let i = 0; i < 8; i += 1) dialogs.hideCompleteDialog(dialogsDeps);
 
     // ---- 1. 完成弹窗:开 → 焦点落默认操作钮;关 → 回触发元素 ----
     await suite.case("完成弹窗默认落点与关闭归还", async () => {
@@ -118,7 +127,7 @@ export async function run() {
         dom.document.activeElement === completeDialogOk,
         `完成弹窗打开后焦点应落「确定」${idOf(completeDialogOk)},实际 ${idOf(dom.document.activeElement)}`,
       );
-      dialogs.hideCompleteDialog();
+      dialogs.hideCompleteDialog(dialogsDeps);
       assert(
         dom.document.activeElement === el("convertBtn"),
         `完成弹窗关闭后焦点应回触发元素 #convertBtn,实际 ${idOf(dom.document.activeElement)}`,
@@ -135,7 +144,7 @@ export async function run() {
         dom.document.activeElement === batchDialogOk,
         `批量弹窗打开后焦点应落「确定」${idOf(batchDialogOk)},实际 ${idOf(dom.document.activeElement)}`,
       );
-      dialogs.hideBatchDialog();
+      dialogs.hideBatchDialog(dialogsDeps);
       assert(
         dom.document.activeElement === el("batchBtn"),
         `批量弹窗关闭后焦点应回触发元素 #batchBtn,实际 ${idOf(dom.document.activeElement)}`,
@@ -152,7 +161,7 @@ export async function run() {
         dom.document.activeElement === precheckContinue,
         `预检弹窗打开后焦点应落「继续转换」${idOf(precheckContinue)},实际 ${idOf(dom.document.activeElement)}`,
       );
-      dialogs.closePrecheckDialog(false);
+      dialogs.closePrecheckDialog(false, dialogsDeps);
       assert(await decided === false, "预检关闭应按 false 结算(用户取消)");
       assert(
         dom.document.activeElement === el("mergeBtn"),
@@ -169,7 +178,7 @@ export async function run() {
         dom.document.activeElement === presetNameInput,
         `另存为弹窗打开后焦点应进名称输入框 ${idOf(presetNameInput)},实际 ${idOf(dom.document.activeElement)}`,
       );
-      presetActions.closePresetSaveDialog();
+      presetActions.closePresetSaveDialog(presetActionsDeps);
       assert(
         dom.document.activeElement === el("presetSaveBtn"),
         `另存为弹窗关闭后焦点应回 #presetSaveBtn,实际 ${idOf(dom.document.activeElement)}`,
@@ -199,7 +208,7 @@ export async function run() {
       el("presetSaveBtn").classList.remove("hidden");
       dom.document.activeElement = el("presetSaveBtn");
       presetActions.openPresetSaveDialog();
-      presetActions.closePresetSaveDialog();
+      presetActions.closePresetSaveDialog(presetActionsDeps);
       assert(
         dom.document.activeElement === el("presetSaveBtn"),
         `叠层关闭内层弹窗后焦点应回抽屉内触发钮,实际 ${idOf(dom.document.activeElement)}`,
@@ -222,7 +231,7 @@ export async function run() {
       // 单独置灰的那一档,选中数按此给(关闭时的重算会照这条规则落 disabled)
       state.selectedFiles = ["C:\\docs\\a.md", "C:\\docs\\b.md"];
       dialogs.showCompleteDialog("C:\\out\\b.docx");
-      dialogs.hideCompleteDialog();
+      dialogs.hideCompleteDialog(dialogsDeps);
       const landed = dom.document.activeElement;
       assert(
         landed === el("batchBtn"),

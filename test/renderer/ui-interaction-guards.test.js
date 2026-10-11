@@ -47,6 +47,7 @@ import { createCaseSuite } from "../harness/case.js";
 
 const { assert: harnessAssert } = createAsserter("ui-interaction-guards");
 import { installDomStub, fireListener, makeElement, makeKeyEvent } from "./dom-stub.js";
+import { loadConvertFlowDeps } from "./convert-flow-deps.js";
 
 /**
  * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
@@ -324,11 +325,17 @@ export async function run() {
     const selection = await import(distUrl("renderer/convert/events/selection.js"));
     const { state } = await import(distUrl("renderer/state/state.js"));
     const panel = await import(distUrl("renderer/settings/settings-panel.js"));
+    // convert 刀起:结果呈现面改为组合根注入的端口、关闭路径收 deps(ADR-075 §四)。
+    // 两份都按组合根同一份端口清单在测试侧装配。
+    const convertFlowDeps = await loadConvertFlowDeps((rel) => distUrl(`renderer/${rel}`));
+    const { updateActionButtons } = await import(distUrl("renderer/convert/file-list.js"));
+    const dialogsDeps = { recomputeActionButtons: updateActionButtons };
+    dialogs.bindPrecheckDialogEvents(dialogsDeps);
 
     // (1) 队列行 Enter/Space 边界
     state.selectedFiles = ["a.md", "b.md"];
     state.mode = null;
-    selection.bindSelectionEvents();
+    selection.bindSelectionEvents({ ...convertFlowDeps, openWizard: () => {} });
 
     const row = makeElement({ dataset: { index: "0" } });
     // 行目标对事件边界选择器「命中自身」(closest 返回自己),模拟真实 DOM
@@ -499,7 +506,7 @@ export async function run() {
 
     // ① 批量:真实 runBatch 走到「弹窗先开、endControlledRun 后置灰」那一刻
     precheckWarnings = [];
-    await flow.runBatch();
+    await flow.runBatch(convertFlowDeps);
     await suite.case("(1c) ① 批量:汇总弹窗可见期间六枚动作按钮应全部置灰", () => {
       assert(
         !dom.elementFor("batchDialog").classList.contains("hidden"),
@@ -511,7 +518,7 @@ export async function run() {
       );
     });
     // 确定 / 点遮罩 / Esc 三种关闭方式都经 hideBatchDialog,这里直接调该唯一关闭函数
-    dialogs.hideBatchDialog();
+    dialogs.hideBatchDialog(dialogsDeps);
     await suite.case("(1c) ① 批量:关闭汇总弹窗后动作按钮重算为可用", () => {
       assert(
         stillGreyed().length === 0,
@@ -522,7 +529,7 @@ export async function run() {
     // ② 单文件完成弹窗:与批量同一根因(弹窗在收尾重算之前打开);单文件态下
     //    六枚按钮都该可用,这一条把 convertBtn 也纳入判据
     state.selectedFiles = ["C:\\docs\\a.md"];
-    await flow.runConvert("C:\\docs\\a.md", "docx");
+    await flow.runConvert(convertFlowDeps, "C:\\docs\\a.md", "docx");
     await suite.case("(1c) ② 完成弹窗:可见期间六枚动作按钮应全部置灰", () => {
       assert(
         !dom.elementFor("completeDialog").classList.contains("hidden"),
@@ -533,7 +540,7 @@ export async function run() {
         `完成弹窗可见期间六枚动作按钮应全部置灰,实际未置灰=${JSON.stringify(notGreyedYet())}`,
       );
     });
-    dialogs.hideCompleteDialog();
+    dialogs.hideCompleteDialog(dialogsDeps);
     await suite.case("(1c) ② 完成弹窗:关闭后六枚动作按钮重算为可用(含 convertBtn)", () => {
       assert(
         stillGreyed().length === 0,
@@ -546,7 +553,7 @@ export async function run() {
     hideAllModals();
     state.mode = null;
     precheckWarnings = ["围栏未闭合"];
-    const pendingConvert = flow.runConvert("C:\\docs\\a.md", "docx"); // 不 await:先关报告
+    const pendingConvert = flow.runConvert(convertFlowDeps, "C:\\docs\\a.md", "docx"); // 不 await:先关报告
     await flush();
     await suite.case("(1c) ③ 预检报告:报告弹窗可见期间六枚动作按钮应全部置灰", () => {
       assert(
@@ -558,7 +565,7 @@ export async function run() {
         `预检报告决策期间六枚动作按钮应全部置灰(命令锁持有中),实际未置灰=${JSON.stringify(notGreyedYet())}`,
       );
     });
-    dialogs.closePrecheckDialog(true); // 「继续转换」→ 链内续作
+    dialogs.closePrecheckDialog(true, dialogsDeps); // 「继续转换」→ 链内续作
     await pendingConvert;
     await suite.case("(1c) ③ 预检放行后应完成转换并弹完成窗", () => {
       assert(
@@ -566,7 +573,7 @@ export async function run() {
         "预检放行后应完成转换并弹完成窗(本小节前提)",
       );
     });
-    dialogs.hideCompleteDialog();
+    dialogs.hideCompleteDialog(dialogsDeps);
     await suite.case("(1c) ③ 预检 → 转换 → 关闭完成弹窗后六枚动作按钮重算为可用", () => {
       assert(
         stillGreyed().length === 0,

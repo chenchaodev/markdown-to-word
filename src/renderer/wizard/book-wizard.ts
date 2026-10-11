@@ -24,15 +24,11 @@
  * dom/dom-ops(焦点陷阱)/ wizard-state(纯 reducer);对 convert、settings 的协作自
  * REQ-218 #10 阶段④ 起经组合根注入的 BookWizardDeps 形参进入(不再有跨功能静态
  * import),不反向引用组合根,closeBookWizard 供 dialogs-events 的 Esc 链调用。
- * ⚠ 对 ui 的 `afterModalClosed` 仍是静态 import(ADR-075 §四 交汇点):该通知在
- * closeBookWizard 内部,而 closeBookWizard 的调用方含 convert 的 Esc 链
- * (dialogs-events.ts:207),改它要连 Esc 链一起改 —— 随 convert 那一刀落地。
  */
 import { t, applyStaticTexts } from "../../core/i18n/index.js";
 import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
 import { state } from "../state/state.js";
 import { trapFocus } from "../dom/dom-ops.js";
-import { afterModalClosed } from "../ui/dialogs.js";
 import {
   WIZARD_TOTAL_STEPS,
   canAdvance,
@@ -85,6 +81,13 @@ import {
  * steps-delivery / fields 三层内部链路;`WizardStepsDeps` 与
  * `WizardStepsDeliveryDeps` 各自 extends `WizardFieldsDeps`,故本类型同时满足两者,
  * 组合根只需装配**一个**对象。
+ *
+ * ⚠ `closeBookWizard` **接的是同一份 deps**(不另开形参):它的三个内部调用点
+ * (closeBtn / 遮罩 / 付印后)全在 `buildWizard(deps)` 与 `finishWizard(deps)` 体内,
+ * `deps` 已在作用域内,传 `deps` 即可;另开形参会让这三处各写一遍
+ * `{ afterModalClosed: deps.afterModalClosed }` 的重包装,且 Esc 链那份零参闭包就得
+ * 再单独造一个与 `bookWizardDeps` 并存的 deps 对象 —— 同一份接线有两个来源,迟早分叉。
+ * 组合根因此只需 `closeWizard = () => closeBookWizard(bookWizardDeps)`。
  */
 export interface BookWizardDeps extends WizardStepsDeps, WizardStepsDeliveryDeps {
   /** convert/convert-flow:是否有后台命令在飞(两次转换之间的显式复检用)。 */
@@ -99,6 +102,11 @@ export interface BookWizardDeps extends WizardStepsDeps, WizardStepsDeliveryDeps
   closeSettingsDrawer: () => void;
   /** settings/settings-drawer:抽屉是否开着。 */
   isSettingsDrawerOpen: () => boolean;
+  /**
+   * ui/dialogs:遮罩显隐一变即重算动作按钮(组合根已把 ui 侧 deps 绑成零参闭包;
+   * ADR-075 §四 交汇点)。**同步调用**,不得改成惰性(§二 禁令 4:Esc 链末位语义)。
+   */
+  afterModalClosed: () => void;
 }
 
 /** 步骤标签(设计 §3.3 七步名):构建期取当前语言,
@@ -166,7 +174,7 @@ function buildWizard(deps: BookWizardDeps): HTMLElement {
   const closeBtn = h("button", { type: "button", id: "wizardCloseBtn", class: "icon-btn", dataset: { i18nAriaLabel: "wizard.close" }, "aria-label": t("wizard.close") }, [
     h("span", { html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>' }),
   ]);
-  closeBtn.addEventListener("click", () => closeBookWizard());
+  closeBtn.addEventListener("click", () => closeBookWizard(deps));
 
   const card = h("div", { class: "dialog dialog--wizard", role: "dialog", "aria-modal": "true", "aria-labelledby": "wizardTitle" }, [
     h("header", { class: "wizard-head" }, [
@@ -190,7 +198,7 @@ function buildWizard(deps: BookWizardDeps): HTMLElement {
   const overlay = h("div", { id: "bookWizard", class: "dialog-overlay hidden", role: "dialog", "aria-modal": "true", "aria-labelledby": "wizardTitle" }, [card]);
   // 点遮罩关闭(只响应遮罩本身)
   overlay.addEventListener("click", (event) => {
-    if (event.target === overlay) closeBookWizard();
+    if (event.target === overlay) closeBookWizard(deps);
   });
   return overlay;
 }
@@ -236,7 +244,7 @@ async function finishWizard(deps: BookWizardDeps): Promise<void> {
   const files = draft.sources.length ? draft.sources : state.selectedFiles;
   const metadata = cleanMetadata(draft.cover);
   const format = draft.format;
-  closeBookWizard();
+  closeBookWizard(deps);
   await deps.withPrecheck([], async () => {
     if (format === "both") {
       await deps.runMerge({ files, format: "docx", metadata });
@@ -288,7 +296,7 @@ export function openBookWizard(deps: BookWizardDeps): void {
   el.querySelector<HTMLButtonElement>("#wizardCloseBtn")?.focus();
 }
 
-export function closeBookWizard(): void {
+export function closeBookWizard(deps: BookWizardDeps): void {
   if (!wizardEl || wizardEl.classList.contains("hidden")) return;
   wizardEl.classList.add("hidden");
   releaseTrap?.();
@@ -296,7 +304,7 @@ export function closeBookWizard(): void {
   // 向导也是 .dialog-overlay,同属 isModalCommandBlocked 的判据面:遮罩显隐一变
   // 就得重算动作按钮,否则按钮停在「向导开着时算出的」那个态(向导内增删源文件
   // 即可触发,已在真机复现)
-  afterModalClosed();
+  deps.afterModalClosed();
   // 焦点归还触发按钮(与 closeSettingsDrawer 同模式)
   const btn = triggerBtn;
   triggerBtn = null;

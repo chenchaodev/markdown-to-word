@@ -153,7 +153,7 @@ export async function run() {
     });
 
     // ---- 向导外改设置 → 关闭后复开必须同步(且外壳为重建) ----
-    bookWizard.closeBookWizard(); // 复开的前置:向导处于关闭态
+    bookWizard.closeBookWizard(bookWizardDeps); // 复开的前置:向导处于关闭态
     state.settings.watermark.text = "机密";
     state.settings.headerFooter.headerText = "青崖大学文学院";
     state.settings.toc = false;
@@ -245,7 +245,7 @@ export async function run() {
     state.settings.tocMode = "static";
 
     // ---- 语言切换后复开:步骤名随语言刷新 ----
-    bookWizard.closeBookWizard();
+    bookWizard.closeBookWizard(bookWizardDeps);
     setLanguage("en");
     mark = dom.created.length;
     bookWizard.openBookWizard(bookWizardDeps);
@@ -262,7 +262,7 @@ export async function run() {
 
     // ---- 关闭:焦点兜底路径不抛错 ----
     await suite.case("关闭时焦点兜底路径不抛错", () => {
-      bookWizard.closeBookWizard();
+      bookWizard.closeBookWizard(bookWizardDeps);
     });
 
     console.log("[ok] wizard-open-sync:复开重建外壳 / 设置快照同步 / 目录模式下拉门控 / 步骤名随语言刷新 / 关闭焦点兜底 断言通过");

@@ -8,31 +8,36 @@
  * 同元素同类型,二者按键互斥,顺序无行为影响。时序不变:绑定先于设置回填。
  *
  * 端口注入:原为「组合根零感知」的零参入口,现接 `deps`(ADR-075 §四 的端口形态)。
- * 本刀只带**一个**端口 —— selection 域的「成书向导」按钮要开 wizard 的模态,而
- * `openBookWizard` 已于 wizard 刀改成收 `BookWizardDeps`;组合根持有那份 deps 并
- * 预先绑成零参闭包 `openWizard` 传进来,于是 convert 无需知道 wizard 的 deps 形状
- * (⚠ 若让 convert 侧自己 import 那个类型,会造出一条新的 type-only 跨 feature 边,
- * 正是 ADR-075 点名的两侧分叉口)。其余域的端口随 convert 那一刀接入。
+ * 组合根持有各 feature 那份 deps 并预先绑成零参闭包(如 wizard 的 `openWizard`)
+ * 传进来,于是 convert 无需知道别的 feature 的 deps 形状(⚠ 若让 convert 侧自己
+ * import 那个类型,会造出一条新的 type-only 跨 feature 边,正是 ADR-075 点名的两侧
+ * 分叉口)。
+ *
+ * convert 自身的呈现面(ui/dialogs 的五个符号)在 convert 刀里接进同一份 deps:
+ * `ConvertFlowDeps` 由 convert-flow 自报,`bindSelectionEvents` /
+ * `bindConvertActionsEvents` / `bindDialogEvents` 三域共用它 —— 组合根只需装配
+ * **一个**对象(与 `bookWizardDeps` 同一形态)。
  */
 import { bindSelectionEvents, type SelectionEventsDeps } from "./selection.js";
 import { bindDropEvents } from "./drop.js";
-import { bindConvertActionsEvents } from "./convert-actions.js";
-import { bindDialogEvents } from "./dialogs-events.js";
+import { bindConvertActionsEvents, type ConvertActionsEventsDeps } from "./convert-actions.js";
+import { bindDialogEvents, type DialogEventsDeps } from "./dialogs-events.js";
+import type { ConvertFlowDeps } from "../convert-flow.js";
 
 /**
  * 本入口注入的端口全集。**逐条随对应那一刀增补,不留空壳类型**。
  *
- * 各域自报自己那份(`SelectionEventsDeps` 等),本文件只做聚合 —— 反过来让各域从本文件
- * import 类型会造出 `index → selection → index` 的模块环。
+ * 各域自报自己那份(`SelectionEventsDeps` / `DialogEventsDeps` 等),本文件只做聚合 ——
+ * 反过来让各域从本文件 import 类型会造出 `index → selection → index` 的模块环。
  */
-export interface ConvertEventsDeps {
+export interface ConvertEventsDeps extends DialogEventsDeps {
   /** 打开成书向导模态(组合根已把 wizard 的 deps 绑好,故此处是零参闭包)。 */
   openWizard: () => void;
 }
 
 export function bindEvents(deps: ConvertEventsDeps): void {
-  bindSelectionEvents(deps satisfies SelectionEventsDeps);
+  bindSelectionEvents(deps satisfies ConvertFlowDeps & SelectionEventsDeps);
   bindDropEvents();
-  bindConvertActionsEvents();
-  bindDialogEvents();
+  bindConvertActionsEvents(deps satisfies ConvertActionsEventsDeps);
+  bindDialogEvents(deps satisfies DialogEventsDeps);
 }

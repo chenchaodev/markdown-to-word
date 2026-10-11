@@ -96,9 +96,11 @@ export async function run() {
 
   // ---- 5. 时序不变量:事件绑定先于屏障(不因防闪调换) ----
   await suite.case("事件绑定先于屏障的时序不变量", () => {
-    // 正则容忍实参(事件绑定入口自 convert 刀起收 ConvertEventsDeps),但**要求真有实参**
-    // —— 写成 indexOf("bindEvents(") 会连「忘了接线」也放过,那正是这条要防的退化。
-    const bindMatch = /bindEvents\(\s*\{[^)]*\}\s*\);/.exec(SRC);
+    // 正则容忍实参形态(事件绑定入口自 convert 刀起收 ConvertEventsDeps,且组合根把
+    // 那份 deps 装配成一个具名常量),但**要求真有实参** —— 写成 indexOf("bindEvents(")
+    // 会连「忘了接线」也放过,那正是这条要防的退化。
+    // 实参形态两种都接受:内联对象字面量 `{ … }` 或具名常量标识符。
+    const bindMatch = /bindEvents\(\s*(?:\{[^)]*\}|\w+)\s*\);/.exec(SRC);
     const bindIdx = bindMatch?.index ?? -1;
     assert(bindIdx > 0 && bindIdx < barrierIdx, "bindEvents(…) 应早于启动屏障调用(时序不变量)");
     // initFirstRunGuide 现有 deps 实参,锚点改用正则:既保住「这是一次真调用」(不是注释、

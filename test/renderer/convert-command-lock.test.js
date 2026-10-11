@@ -11,6 +11,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
 import { globalSlot, setGlobalSlot } from "./dom-stub.js";
+import { loadConvertFlowDeps } from "./convert-flow-deps.js";
 import { createAsserter } from "../harness/assert.js";
 import { createCaseSuite } from "../harness/case.js";
 
@@ -265,6 +266,21 @@ export async function run() {
     );
     const { state } = await import(stateUrl.href);
 
+    // convert 刀起结果呈现面(ui/dialogs 的五个符号)改为组合根注入的端口(ADR-075 §四),
+    // 测试侧按同一份清单装配(convert-flow-deps.js,与组合根同源于 ConvertFlowDeps)。
+    /** @param {string} rel @returns {string} */
+    const testUrlForDeps = (rel) =>
+      pathToFileURL(path.join(ROOT, "dist/renderer", rel)).href;
+    const convertFlowDeps = await loadConvertFlowDeps(testUrlForDeps);
+    // ui/dialogs 的关闭路径同理收 deps;遮罩重算用真实 file-list 出口。
+    const { updateActionButtons } = await import(
+      pathToFileURL(path.join(ROOT, "dist/renderer/convert/file-list.js")).href
+    );
+    const dialogsDeps = { recomputeActionButtons: updateActionButtons };
+    // 预检弹窗的按钮/遮罩接线自 convert 刀起由组合根带 deps 登记(原先在模块加载期),
+    // 本段要在驱动遮罩点击之前补上这一步。
+    dialogs.bindPrecheckDialogEvents(dialogsDeps);
+
     let actionCalls = 0;
     const action = () => { actionCalls++; };
 
@@ -272,8 +288,8 @@ export async function run() {
     await suite.case("withPrecheck 单飞:复用同一 Promise 且结算后释放锁", async () => {
       // 这一串必须整条跑完:结算(resolvePrecheck)是后面几条断言的前置,
       // 中途失败会让 await first 悬挂,故合成一个 case。
-      const first = flow.withPrecheck(["a.md"], action);
-      const duplicate = flow.withPrecheck(["b.md"], () => { actionCalls += 100; });
+      const first = flow.withPrecheck(convertFlowDeps, ["a.md"], action);
+      const duplicate = flow.withPrecheck(convertFlowDeps, ["b.md"], () => { actionCalls += 100; });
       assert(first === duplicate, "重复 withPrecheck 应复用同一活动 Promise");
       assert(precheckCount() === 1, "活动预检期间重复命令不应再次调用 main");
       assert(flow.isConvertCommandBlocked(), "预检期间 command lock 应为 true");
@@ -288,7 +304,7 @@ export async function run() {
       modalVisible = true;
       assert(flow.isConvertCommandBlocked(), "模态/向导可见时应阻止背景命令");
       const beforeBlockedCalls = precheckCount();
-      await flow.withPrecheck(["blocked.md"], action);
+      await flow.withPrecheck(convertFlowDeps, ["blocked.md"], action);
       assert(precheckCount() === beforeBlockedCalls, "模态期间不得启动新预检");
       modalVisible = false;
     });
@@ -310,21 +326,21 @@ export async function run() {
       const dialogPromise1 = dialogs.showPrecheckDialog([]);
       const dialogPromise2 = dialogs.showPrecheckDialog([]);
       assert(dialogPromise1 === dialogPromise2, "同一预检报告 Promise 应为单实例");
-      dialogs.closePrecheckDialog(true);
+      dialogs.closePrecheckDialog(true, dialogsDeps);
       assert((await dialogPromise1) === true, "显式关闭必须结算预检 Promise(true)");
     });
 
     // ---- 5. 取消关闭结算 ----
     await suite.case("取消关闭结算预检 Promise", async () => {
       const dialogPromise3 = dialogs.showPrecheckDialog([]);
-      dialogs.closePrecheckDialog(false);
+      dialogs.closePrecheckDialog(false, dialogsDeps);
       assert((await dialogPromise3) === false, "取消关闭必须结算预检 Promise(false)");
     });
 
     // ---- 6. Esc 统一关闭函数结算另一条 ----
     await suite.case("Esc 统一关闭函数结算预检 Promise", async () => {
       const dialogPromise4 = dialogs.showPrecheckDialog([]);
-      dialogs.closePrecheckDialog(false);
+      dialogs.closePrecheckDialog(false, dialogsDeps);
       assert((await dialogPromise4) === false, "Esc 统一关闭函数必须结算另一条预检 Promise");
     });
 
@@ -356,7 +372,7 @@ const dialogPromise6 = dialogs.showPrecheckDialog([]);
     await suite.case("结算后单实例不残留且下一次预检可放行", async () => {
       const dialogPromise7 = dialogs.showPrecheckDialog([]);
       assert(dialogPromise7 !== dialogPromise6, "结算后应可开启下一次预检(单实例不残留)");
-      dialogs.closePrecheckDialog(true);
+      dialogs.closePrecheckDialog(true, dialogsDeps);
       assert((await dialogPromise7) === true, "结算后的下一次预检同样可正常放行");
     });
 
@@ -370,6 +386,43 @@ const dialogPromise6 = dialogs.showPrecheckDialog([]);
         eventsSource.includes("closePrecheckDialog(false)") &&
         eventsSource.includes("isConvertCommandBlocked()"),
         "Esc 关闭链与菜单命令必须分别走 Promise 结算和 command lock",
+      );
+    });
+
+    // ---- 11. Esc 链末位语义(ADR-075 §二 禁令 4 的**源文本层**那一半) ----
+    // 钉的是「谁在末位」而不是「链路通」:六段的被调函数名按顺序逐段相等。
+    // 为什么读源文本:末位语义 = `else if` 的求值顺序,运行期任何一次按键只会命中
+    // 一段,单靠运行期断言量不出「顺序」这件事;而这一段一旦被改成惰性 port
+    // (void / 微任务 / 回调),末位就会静默改掉而没有任何测试变红。
+    await suite.case("Esc 链六段顺序:预检→另存为预设→完成→批量→抽屉→向导(末位)", () => {
+      const eventsSource = fs.readFileSync(
+        path.join(ROOT, "src/renderer/convert/events/dialogs-events.ts"),
+        "utf8",
+      );
+      // 只取 keydown 处理器本体:从 Esc 监听器登记处到文件末(该监听器是本域最后一段)。
+      const escStart = eventsSource.indexOf('document.addEventListener("keydown"');
+      assert(escStart > 0, "dialogs-events 应有 document keydown(Esc 关闭链)监听器");
+      const escBlock = eventsSource.slice(escStart);
+      // 按出现顺序抽出被调端口名;抽屉那段的判据(可见性查询)与动作同段,一并入列,
+      // 于是六段共七个名字 —— 判据与动作的相邻关系也被钉住。
+      const called = [...escBlock.matchAll(/deps\.(\w+)\(/g)].map((m) => m[1]);
+      const expected = [
+        "closePrecheckDialog",
+        "closePresetSave",
+        "hideCompleteDialog",
+        "hideBatchDialog",
+        "isSettingsDrawerOpen",
+        "closeSettingsDrawer",
+        "closeWizard",
+      ];
+      assert(
+        JSON.stringify(called) === JSON.stringify(expected),
+        `Esc 链六段顺序应为 预检→另存为预设→完成→批量→抽屉→向导(向导末位),实际 ${JSON.stringify(called)}`,
+      );
+      // 同段钉「同步调用」:禁令 4 的另一半,链上不得出现 void / 微任务包装。
+      assert(
+        !/\bvoid\s+deps\./.test(escBlock),
+        "Esc 链各段必须同步调用(禁令 4:末位语义不许交给惰性 port)",
       );
     });
 

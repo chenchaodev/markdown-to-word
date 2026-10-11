@@ -37,6 +37,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
 import { installDomStub, fireListener, makeElement } from "./dom-stub.js";
+import { loadConvertFlowDeps } from "./convert-flow-deps.js";
 import { createAsserter } from "../harness/assert.js";
 import { createCaseSuite } from "../harness/case.js";
 
@@ -217,6 +218,12 @@ export async function run() {
   try {
     const flow = await import(distUrl("convert/convert-flow.js"));
     const dialogs = await import(distUrl("ui/dialogs.js"));
+    // convert 刀起结果呈现面(ui/dialogs 的五个符号)改为组合根注入的端口(ADR-075 §四);
+    // ui 侧的关闭路径与 settings 的另存为弹窗关闭同理收 deps。三份都按组合根同一份清单装配。
+    const convertFlowDeps = await loadConvertFlowDeps(distUrl);
+    const { updateActionButtons } = await import(distUrl("convert/file-list.js"));
+    const dialogsDeps = { recomputeActionButtons: updateActionButtons };
+    dialogs.bindPrecheckDialogEvents(dialogsDeps);
     const i18n = await import(pathToFileURL(path.join(ROOT, "dist", "core", "i18n", "index.js")).href);
     // t / setLanguage 现由 core/i18n/index.js 一并再导出(ADR-064 把原 i18n.ts 桶溶进
     // i18n/ 后,index.ts 是唯一公开桶)。下面这一行与上一行因此取的是同一个模块 ——
@@ -238,7 +245,7 @@ export async function run() {
 
     /* ---------- 1. 合并:逐文件预检 + 决策前不转换 + 预检期单实例 ---------- */
     await suite.case("合并 · 逐文件预检且按源文件顺序", async () => {
-      mergeChain = flow.runMerge({ files: mergeFiles, format: "docx" });
+      mergeChain = flow.runMerge(convertFlowDeps, { files: mergeFiles, format: "docx" });
       await flush();
       assert(
         preCount() === 1 && precheckPaths[0] === mergeFiles[0],
@@ -247,7 +254,7 @@ export async function run() {
       assert(flow.isConvertCommandBlocked(), "预检进行中命令锁应生效(按钮随之置灰)");
       assert(mergeCount() === 0, "预检未决时不得发起合并转换");
       // 预检未决时重复发起另一条命令:复用同一条链,不并发、不多发预检
-      void flow.runBatch();
+      void flow.runBatch(convertFlowDeps);
       await flush();
       assert(
         preCount() === 1,
@@ -330,7 +337,7 @@ export async function run() {
     /* ---------- 3. 点「取消」:整条命令中止 ---------- */
     await suite.case("合并 · 点取消即中止(不调 convertMerge)", async () => {
       precheckPaths.length = 0;
-      const cancelChain = flow.runMerge({ files: mergeFiles, format: "pdf" });
+      const cancelChain = flow.runMerge(convertFlowDeps, { files: mergeFiles, format: "pdf" });
       await flush();
       settleNext([fenceWarning(1)]);
       await flush();
@@ -352,7 +359,7 @@ export async function run() {
     /* ---------- 4. 单组告警:保持扁平列表,不出现分组标识 ---------- */
     await suite.case("报告 · 单组告警保持扁平列表且确认后照常合并", async () => {
       precheckPaths.length = 0;
-      const oneGroupChain = flow.runMerge({ files: mergeFiles, format: "docx" });
+      const oneGroupChain = flow.runMerge(convertFlowDeps, { files: mergeFiles, format: "docx" });
       await flush();
       settleNext([fenceWarning(1)]);
       await flush();
@@ -376,7 +383,7 @@ export async function run() {
     await suite.case("报告 · 同名文件的组头回退全路径", async () => {
       precheckPaths.length = 0;
       const sameName = ["C:\\work\\x\\notes.md", "C:\\work\\y\\notes.md"];
-      const sameNameChain = flow.runMerge({ files: sameName, format: "docx" });
+      const sameNameChain = flow.runMerge(convertFlowDeps, { files: sameName, format: "docx" });
       await flush();
       settleNext([fenceWarning(1)]);
       await flush();
@@ -404,7 +411,7 @@ export async function run() {
         }
         return filePath === mergeFiles[1] ? [fenceWarning(5)] : [];
       });
-      const throwChain = flow.runMerge({ files: mergeFiles, format: "docx" });
+      const throwChain = flow.runMerge(convertFlowDeps, { files: mergeFiles, format: "docx" });
       await flush();
       assert(
         preCount() === 2,
@@ -428,7 +435,7 @@ export async function run() {
       precheckPaths.length = 0;
       usePrecheck(async () => ({ busy: true, error: "另一个转换正在进行" }));
       const mergesBeforeBusy = mergeCalls.length;
-      await flow.runMerge({ files: mergeFiles, format: "docx" });
+      await flow.runMerge(convertFlowDeps, { files: mergeFiles, format: "docx" });
       assert(mergeCalls.length === mergesBeforeBusy, "预检返回 busy 时应中止,不得发起合并");
       const statusText = elementFor("status").textContent;
       assert(
@@ -443,7 +450,7 @@ export async function run() {
       precheckPaths.length = 0;
       usePendingPrecheck(); // 回到挂起形态(6/7 换成了即时结算实现)
       state.selectedFiles = mergeFiles;
-      const batchChain = flow.runBatch();
+      const batchChain = flow.runBatch(convertFlowDeps);
       await flush();
       assert(
         preCount() === 1 && precheckPaths[0] === mergeFiles[0],
@@ -463,7 +470,7 @@ export async function run() {
       );
     });
     // 批量收尾会弹结果窗(模态),后续用例的模态判定需从干净态起算
-    dialogs.hideBatchDialog();
+    dialogs.hideBatchDialog(dialogsDeps);
     state.selectedFiles = [];
 
     /* ---------- 9. 粘贴直转(selection 域):此前无预检,收口后自然覆盖 ---------- */
@@ -487,7 +494,7 @@ export async function run() {
         return { ok: true, outputPath: "out.docx", warnings: [] };
       };
       const selection = await import(distUrl("convert/events/selection.js"));
-      selection.bindSelectionEvents();
+      selection.bindSelectionEvents({ ...convertFlowDeps, openWizard: () => {} });
       const pasteBtn = elementFor("pasteConvertBtn");
       pasteBtn.disabled = false;
       fireListener(pasteBtn, "click", { stopPropagation() {} });
@@ -522,7 +529,7 @@ export async function run() {
       precheckPaths.length = 0;
       usePendingPrecheck();
       state.selectedFiles = mergeFiles;
-      const blockedChain = flow.runMerge({ files: mergeFiles, format: "docx" });
+      const blockedChain = flow.runMerge(convertFlowDeps, { files: mergeFiles, format: "docx" });
       const mergesBeforeBlock = mergeCount();
       await flush();
       settleNext([blockingFence(7)]);
@@ -597,7 +604,7 @@ export async function run() {
     await suite.case("合并 · 非阻断告警照常弹报告且可继续", async () => {
       precheckPaths.length = 0;
       const mergesBeforeSoft = mergeCount();
-      const softChain = flow.runMerge({ files: mergeFiles, format: "docx" });
+      const softChain = flow.runMerge(convertFlowDeps, { files: mergeFiles, format: "docx" });
       await flush();
       settleNext([unpairedMath()]);
       await flush();
@@ -619,7 +626,7 @@ export async function run() {
     await suite.case("单文件 · 未闭合围栏仍弹报告且点继续后照常转换", async () => {
       precheckPaths.length = 0;
       state.selectedFiles = [mergeFiles[0]];
-      const singleChain = flow.runConvert(mergeFiles[0], "docx");
+      const singleChain = flow.runConvert(convertFlowDeps, mergeFiles[0], "docx");
       await flush();
       settleNext([blockingFence(7)]);
       await flush();
@@ -640,7 +647,7 @@ export async function run() {
     await suite.case("批量 · 未闭合围栏仍弹报告且点继续后照常转换", async () => {
       precheckPaths.length = 0;
       state.selectedFiles = mergeFiles;
-      const batchChain2 = flow.runBatch();
+      const batchChain2 = flow.runBatch(convertFlowDeps);
       await flush();
       settleNext([blockingFence(7)]);
       await flush();
@@ -658,14 +665,14 @@ export async function run() {
         "批量点继续后照常转换(不得被合并阻断规则波及)",
       );
     });
-    dialogs.hideBatchDialog(); // 批量收尾的结果窗是模态,后续用例需干净态
+    dialogs.hideBatchDialog(dialogsDeps); // 批量收尾的结果窗是模态,后续用例需干净态
 
     /* ---------- 15. 2 个以上文件带阻断:详报第一个 + 「另有 N 个」 ---------- */
     await suite.case("多文件阻断 · 详报第一个并补出「另有 N 个」", async () => {
       precheckPaths.length = 0;
       const threeFiles = ["C:\\work\\a.md", "C:\\work\\b.md", "C:\\work\\c.md"];
       const mergesBeforeMultiBlock = mergeCount();
-      const multiBlockChain = flow.runMerge({ files: threeFiles, format: "docx" });
+      const multiBlockChain = flow.runMerge(convertFlowDeps, { files: threeFiles, format: "docx" });
       await flush();
       settleNext([blockingFence(7)]);
       await flush();
@@ -708,8 +715,8 @@ export async function run() {
     await suite.case("向导付印 · 借锁链里同样逐文件预检且遇阻断不合并", async () => {
       precheckPaths.length = 0;
       const mergesBeforeWizard = mergeCount();
-      const wizardChain = flow.withPrecheck([], () =>
-        flow.runMerge({ files: mergeFiles, format: "docx" }),
+      const wizardChain = flow.withPrecheck(convertFlowDeps, [], () =>
+        flow.runMerge(convertFlowDeps, { files: mergeFiles, format: "docx" }),
       );
       await flush();
       settleNext([blockingFence(7)]);
@@ -736,7 +743,7 @@ export async function run() {
       precheckPaths.length = 0;
       const twinFiles = ["C:\\work\\docs\\intro.md", "C:\\work\\chapters\\intro.md"];
       const mergesBeforeTwin = mergeCount();
-      const twinChain = flow.runMerge({ files: twinFiles, format: "docx" });
+      const twinChain = flow.runMerge(convertFlowDeps, { files: twinFiles, format: "docx" });
       await flush();
       settleNext([blockingFence(7)]);
       await flush();
@@ -763,7 +770,7 @@ export async function run() {
     await suite.case("同名干净孪生 · 候选集按本次预检的文件算,仍回退全路径", async () => {
       precheckPaths.length = 0;
       const twinClean = ["C:\\work\\docs\\notes.md", "C:\\work\\chapters\\notes.md"];
-      const twinCleanChain = flow.runMerge({ files: twinClean, format: "docx" });
+      const twinCleanChain = flow.runMerge(convertFlowDeps, { files: twinClean, format: "docx" });
       await flush();
       settleNext([blockingFence(2)]);
       await flush();
@@ -789,7 +796,7 @@ export async function run() {
         mergeCalls.push({ files, format });
         return { ok: false, error: "输出目录不可写" };
       };
-      const realFailChain = flow.runMerge({ files: mergeFiles, format: "docx" });
+      const realFailChain = flow.runMerge(convertFlowDeps, { files: mergeFiles, format: "docx" });
       await flush();
       settleNext([]);
       await flush();
@@ -894,7 +901,7 @@ export async function run() {
         throw new Error("IPC 断了");
       };
       state.selectedFiles = [mergeFiles[0]];
-      await flow.runConvert(mergeFiles[0], "docx");
+      await flow.runConvert(convertFlowDeps, mergeFiles[0], "docx");
       assertThrownFailure("单文件", "convert.failed.status", "convert.failed.title", "IPC 断了");
       // 命令锁释放的行为证据:紧接着再发一条命令,应能真的走到 IPC
       const convertsBeforeRetry = convertCount();
@@ -906,7 +913,7 @@ export async function run() {
         return { ok: true, outputPath: "out.docx", warnings: [] };
       };
       precheckPaths.length = 0;
-      await flow.runConvert(mergeFiles[0], "docx");
+      await flow.runConvert(convertFlowDeps, mergeFiles[0], "docx");
       assert(
         convertCount() === convertsBeforeRetry + 1,
         `单文件失败后下一条命令仍应能发起(锁已释放),实际新增 ${convertCount() - convertsBeforeRetry} 次`,
@@ -930,7 +937,7 @@ export async function run() {
         canceledCount: 0,
       };
       state.selectedFiles = mergeFiles;
-      await flow.runBatch();
+      await flow.runBatch(convertFlowDeps);
       assertThrownFailure("批量", "convert.batch.failed", "convert.batch.failedTitle", "IPC 断了");
       assert(
         state.lastBatchResult === null,
@@ -951,13 +958,13 @@ export async function run() {
         };
       };
       precheckPaths.length = 0;
-      await flow.runBatch();
+      await flow.runBatch(convertFlowDeps);
       assert(
         batchCount() === batchesBeforeRetry + 1,
         `批量失败后下一条命令仍应能发起(锁已释放),实际新增 ${batchCount() - batchesBeforeRetry} 次`,
       );
     });
-    dialogs.hideBatchDialog(); // 成功路径的结果窗是模态,后续用例需干净态
+    dialogs.hideBatchDialog(dialogsDeps); // 成功路径的结果窗是模态,后续用例需干净态
     state.selectedFiles = [];
 
     /* ---------- 22. 合并:convertMerge 抛错 ---------- */
@@ -967,7 +974,7 @@ export async function run() {
       /** @type {any} */ (globalThis.window).api.convertMerge = async () => {
         throw new Error("IPC 断了");
       };
-      await flow.runMerge({ files: mergeFiles, format: "docx" });
+      await flow.runMerge(convertFlowDeps, { files: mergeFiles, format: "docx" });
       assertThrownFailure("合并", "convert.merge.failed", "convert.merge.failedTitle", "IPC 断了");
       const mergesBeforeRetry = mergeCount();
       /** @type {any} */ (globalThis.window).api.convertMerge = async (
@@ -978,7 +985,7 @@ export async function run() {
         return { ok: true, outputPath: `out.${format}`, warnings: [] };
       };
       precheckPaths.length = 0;
-      await flow.runMerge({ files: mergeFiles, format: "docx" });
+      await flow.runMerge(convertFlowDeps, { files: mergeFiles, format: "docx" });
       assert(
         mergeCount() === mergesBeforeRetry + 1,
         `合并失败后下一条命令仍应能发起(锁已释放),实际新增 ${mergeCount() - mergesBeforeRetry} 次`,
@@ -999,7 +1006,7 @@ export async function run() {
         throw new Error(busyMessage);
       };
       state.selectedFiles = [mergeFiles[0]];
-      await flow.runConvert(mergeFiles[0], "docx");
+      await flow.runConvert(convertFlowDeps, mergeFiles[0], "docx");
       assertThrownFailure("单文件可操作化", "convert.failed.status", "convert.failed.title", busyText);
       assert(
         !cardError().includes("EBUSY"),
@@ -1012,7 +1019,7 @@ export async function run() {
       /** @type {any} */ (globalThis.window).api.convertMerge = async () => {
         throw new Error(busyMessage);
       };
-      await flow.runMerge({ files: mergeFiles, format: "docx" });
+      await flow.runMerge(convertFlowDeps, { files: mergeFiles, format: "docx" });
       assertThrownFailure("合并可操作化", "convert.merge.failed", "convert.merge.failedTitle", busyText);
     });
     await suite.case("可操作化 · 批量刻意原样透传错误码", async () => {
@@ -1022,7 +1029,7 @@ export async function run() {
         throw new Error(busyMessage);
       };
       state.selectedFiles = mergeFiles;
-      await flow.runBatch();
+      await flow.runBatch(convertFlowDeps);
       assertThrownFailure("批量可操作化", "convert.batch.failed", "convert.batch.failedTitle", busyMessage);
       assert(
         cardError() === busyMessage,
@@ -1172,19 +1179,45 @@ export async function run() {
       "utf8",
     );
     await suite.describe("源契约 · 预检只在命令函数内部", async (s) => {
+      // ⚠ 「调用点」的允许面自 convert 刀起多了一处:组合根不再用简写属性**传递**
+      // withPrecheck 引用,而是把它绑成零参闭包 `withPrecheck: (filePaths, action) =>
+      // withPrecheck(convertFlowDeps, filePaths, action)`(与 runMerge / runConvert
+      // 同一形态,ADR-075 §四:端口挂在组合根本来就在调的入口上)。故那条简写传递
+      // 形态在本仓**已消失** —— 下面 case 2 仍监视它(组合根哪天改回简写仍被钉住),
+      // 但区分力从「调用 vs 传递」搬到了 case 1 的「根上只有一处、且形态是接线闭包」。
       await s.case("调用点不再自带 withPrecheck(唯一例外是向导借锁)", () => {
+        const unexpected = wrapCallers.filter(
+          (rel) => rel !== "wizard/book-wizard.ts" && rel !== "renderer.ts",
+        );
         assert(
-          wrapCallers.length === 1 && wrapCallers[0] === "wizard/book-wizard.ts",
-          `预检收口后调用点不应再出现 withPrecheck(唯一例外:向导借锁),实际 ${JSON.stringify(wrapCallers)}`,
+          unexpected.length === 0,
+          `预检收口后调用 withPrecheck 的只许向导借锁与组合根接线两处,实际多出 ${JSON.stringify(unexpected)}`,
+        );
+        // 两处都要在(缺一条说明那处被删了 —— 判据要能因「末位/接线位置」变化而红)
+        assert(
+          wrapCallers.includes("wizard/book-wizard.ts") && wrapCallers.includes("renderer.ts"),
+          `向导借锁与组合根接线两处调用点应都在,实际 ${JSON.stringify(wrapCallers)}`,
+        );
+        // 组合根那一处必须是**接线闭包**,不是自己起一条预检链 —— 形态钉死,
+        // 避免哪天有人把它改成在根上直接跑命令而绕开 runMerge 内部的收口。
+        const rootSource = fs.readFileSync(
+          path.join(ROOT, "src", "renderer", "renderer.ts"),
+          "utf8",
+        );
+        const rootCalls = rootSource.match(/withPrecheck\s*\(/g) ?? [];
+        assert(
+          rootCalls.length === 1 &&
+            /withPrecheck:\s*\([^)]*\)\s*=>\s*withPrecheck\(/.test(rootSource),
+          `组合根应只经一个接线闭包调用 withPrecheck(不得自己起链),实际命中 ${rootCalls.length} 处`,
         );
       });
       await s.case("传递 withPrecheck 引用的只许组合根(接线,非绕过收口)", () => {
-        // 组合根把 withPrecheck 作为 wizard 端口注入(ADR-075 §四),它**传递引用**不调用。
-        // 钉住这一点是为了:① 组合根之外再有人接线也判红;② 组合根哪天改成自己调用
-        // withPrecheck(绕过收口),它会从 passers 移进 callers,由上一条 case 判红。
+        // 组合根若哪天改回 `withPrecheck,` 简写传递,会落进 passers;只许组合根一处。
+        // (当前形态下 passers 为空 —— 组合根已用上面的接线闭包,见本 describe 的注记。)
+        const unexpected = wrapPassers.filter((rel) => rel !== "renderer.ts");
         assert(
-          wrapPassers.length === 1 && wrapPassers[0] === "renderer.ts",
-          `传递 withPrecheck 引用的只许组合根一个,实际 ${JSON.stringify(wrapPassers)}`,
+          unexpected.length === 0,
+          `传递 withPrecheck 引用的只许组合根一个,实际多出 ${JSON.stringify(unexpected)}`,
         );
       });
       // 每个命令函数一行 case:这一行就是「该入口自带 precheckedCommand 收口」

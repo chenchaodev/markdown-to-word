@@ -18,12 +18,21 @@ import { batchBtn, cancelBtn, convertBtn, mergeBtn } from "../../dom/refs.js";
 import { state } from "../../state/state.js";
 import { baseName, STAGE_INTERRUPTIBLE, STAGE_PERCENT, stageText } from "../../state/pure.js";
 import { setError, setProgress, setStatus, translate } from "../../dom/dom-ops.js";
-import { isConvertCommandBlocked, runBatch, runConvert, runMerge } from "../convert-flow.js";
+import {
+  isConvertCommandBlocked,
+  runBatch,
+  runConvert,
+  runMerge,
+  type ConvertFlowDeps,
+} from "../convert-flow.js";
 import { openDialog } from "./selection.js";
 import { t } from "../../../core/i18n/index.js";
 
+/** 本域注入的端口:convert 自身的呈现面(见 `ConvertFlowDeps`,由组合根组装)。 */
+export type ConvertActionsEventsDeps = ConvertFlowDeps;
+
 /* ---------- 本域事件绑定(index 组合入口逐域调用) ---------- */
-export function bindConvertActionsEvents(): void {
+export function bindConvertActionsEvents(deps: ConvertActionsEventsDeps): void {
   // 转换按钮:单文件(docx / pdf 均已支持)
   convertBtn.addEventListener("click", () => {
     if (isConvertCommandBlocked()) return;
@@ -33,19 +42,19 @@ export function bindConvertActionsEvents(): void {
       return;
     }
     // 预检与命令锁由 runConvert 内部收口(入口只管选中态与格式)
-    void runConvert(filePath, state.selectedFormat);
+    void runConvert(deps, filePath, state.selectedFormat);
   });
 
   // 批量转换按钮(≥2 个文件时可见)
   batchBtn.addEventListener("click", () => {
     if (isConvertCommandBlocked() || state.selectedFiles.length < 2) return;
-    void runBatch(); // 预检由 runBatch 内部收口(逐文件预检 + 报告决策)
+    void runBatch(deps); // 预检由 runBatch 内部收口(逐文件预检 + 报告决策)
   });
 
   // 合并转换按钮(≥2 个文件时可见)
   mergeBtn.addEventListener("click", () => {
     if (isConvertCommandBlocked() || state.selectedFiles.length < 2) return;
-    void runMerge(); // 预检由 runMerge 内部收口
+    void runMerge(deps); // 预检由 runMerge 内部收口
   });
 
   // 取消当前转换(单文件 / 批量 / 合并;主进程在检查点终止并返回 canceled)
@@ -101,9 +110,9 @@ export function bindConvertActionsEvents(): void {
       if (isConvertCommandBlocked()) return;
       event.preventDefault();
       if (state.selectedFiles.length === 1) {
-        void runConvert(state.selectedFiles[0]!, state.selectedFormat); // 上行已守卫 length === 1
+        void runConvert(deps, state.selectedFiles[0]!, state.selectedFormat); // 上行已守卫 length === 1
       } else if (state.selectedFiles.length >= 2) {
-        void runBatch(); // 同上:预检在 runBatch 内部
+        void runBatch(deps); // 同上:预检在 runBatch 内部
       }
     } else if (key === "o") {
       if (isConvertCommandBlocked()) return;
