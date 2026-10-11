@@ -265,38 +265,40 @@ const suite = createCaseSuite();
  * 搬迁口径:原 `failures.push(...)` 逐条改成 `assert(条件, 消息)` —— **消息逐字沿用**,原
  * `[ok]` 打印保留。原来那条「夹具抛错」的 catch 分支改成重新抛出**同一条消息**,由 case
  * 级 catch 收成「该档失败」—— 一样不打断后续档,消息也一字不改。
+ *
+ * ⚠ **REQ-238 射程订正(2026-10-11)**:原来那条 catch 包住了整个 case 体,连 `assert`(判定
+ * 失败)也被贴上「夹具抛错」—— 消息文本完整,但标签错标:夹具没抛,是断言没过。三型分派里
+ * `fn()` / `run()` / `runAt()` 全是**判定调用**,唯一构造步是 cli 分支的 `mkdtempSync`
+ * (环境失败原样上送比贴标签更诚实)⇒ 整条外层 catch 删除,判定调用、期望比对、`assert`
+ * 全部直穿到 case 级 catch,消息原样。
  * @param {object} testCase 夹具表里的一档
  */
 function runCase(testCase) {
-  try {
-    if (testCase.unit === true) {
-      const bad = testCase.fn();
-      if (bad === null) console.log(`[ok] tscheck-coverage-selftest:${testCase.name}`);
-      else assert(bad === null, `${testCase.name}:${bad}`);
-      return;
-    }
-    if (testCase.realRepo === true || testCase.cli === true) {
-      const cwd = testCase.realRepo === true ? ROOT : mkdtempSync(join(tmpdir(), "m2w-tscheck-cli-"));
-      try {
-        const { code, output } = runAt(cwd, testCase.args ?? []);
-        if (code !== testCase.expectCode) {
-          assert(false, `${testCase.name}:期望 exit ${testCase.expectCode},实际 ${code}\n${output}`);
-        } else if (!testCase.expect.test(output)) {
-          assert(false, `${testCase.name}:期望输出匹配 ${testCase.expect},实际\n${output}`);
-        } else {
-          console.log(`[ok] tscheck-coverage-selftest:${testCase.name}(exit ${code})`);
-        }
-      } finally {
-        if (testCase.realRepo !== true) rmSync(cwd, { recursive: true, force: true });
-      }
-      return;
-    }
-    const bad = testCase.run();
+  if (testCase.unit === true) {
+    const bad = testCase.fn();
     if (bad === null) console.log(`[ok] tscheck-coverage-selftest:${testCase.name}`);
     else assert(bad === null, `${testCase.name}:${bad}`);
-  } catch (error) {
-    throw new Error(`${testCase.name}:夹具抛错 ${error instanceof Error ? error.message : String(error)}`);
+    return;
   }
+  if (testCase.realRepo === true || testCase.cli === true) {
+    const cwd = testCase.realRepo === true ? ROOT : mkdtempSync(join(tmpdir(), "m2w-tscheck-cli-"));
+    try {
+      const { code, output } = runAt(cwd, testCase.args ?? []);
+      if (code !== testCase.expectCode) {
+        assert(false, `${testCase.name}:期望 exit ${testCase.expectCode},实际 ${code}\n${output}`);
+      } else if (!testCase.expect.test(output)) {
+        assert(false, `${testCase.name}:期望输出匹配 ${testCase.expect},实际\n${output}`);
+      } else {
+        console.log(`[ok] tscheck-coverage-selftest:${testCase.name}(exit ${code})`);
+      }
+    } finally {
+      if (testCase.realRepo !== true) rmSync(cwd, { recursive: true, force: true });
+    }
+    return;
+  }
+  const bad = testCase.run();
+  if (bad === null) console.log(`[ok] tscheck-coverage-selftest:${testCase.name}`);
+  else assert(bad === null, `${testCase.name}:${bad}`);
 }
 
 // 夹具表逐档收进 case:**档名即 case 名**(逐字沿用搬迁前 `failures.push` 记账用的 `testCase.name`)。

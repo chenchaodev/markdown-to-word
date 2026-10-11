@@ -1006,12 +1006,22 @@ const suite = createCaseSuite();
  * 搬迁口径:原 `failures.push(...)` 逐条改成 `assert(条件, 消息)` —— **消息逐字沿用**,原
  * `[ok]` 打印保留。原来那条「夹具执行抛异常」的 catch 分支改成重新抛出**同一条消息**,由 case
  * 级 catch 收成「该档失败」—— 一样不打断后续档,消息也一字不改。
- * @param {object} testCase 夹具表里的一档
+ *
+ * ⚠ **REQ-238 射程订正(2026-10-11)**:原来那条 catch 包住了整个 case 体,连 `assert`(判定
+ * 失败)也被贴上「夹具执行抛异常」—— 消息文本完整,但标签错标:夹具没抛,是断言没过。修法 =
+ * catch 只包**夹具构造**(`writeSyntheticRepo`;那一步抛异常才配这个标签),判定调用
+ * (`runGate`)与期望比对、`assert` 全部移出 catch,由 case 级 catch 收成该档失败、消息原样。
  */
 function runCase(testCase) {
   const dir = mkdtempSync(join(tmpdir(), 'm2w-docs-selftest-'));
   try {
-    writeSyntheticRepo(dir, testCase.overrides ?? {});
+    // 夹具构造:这一层抛异常才配「夹具执行抛异常」标签(REQ-238 射程订正)
+    try {
+      writeSyntheticRepo(dir, testCase.overrides ?? {});
+    } catch (error) {
+      throw new Error(`${testCase.name}:夹具执行抛异常:${error instanceof Error ? error.message : String(error)}`);
+    }
+    // 判定调用与期望比对在夹具 catch 之外:门禁崩/断言失败都不是夹具问题,消息原样上送
     const { code, output } = runGate(dir);
     /** @type {string[]} */
     const problems = [];
@@ -1026,9 +1036,6 @@ function runCase(testCase) {
     }
     assert(problems.length === 0, `${testCase.name}:${problems.join(';')}\n--- 输出 ---\n${output}`);
     console.log(`[ok] docs-selftest:${testCase.name}(符合预期,exit ${String(code)})`);
-  } catch (error) {
-    // 一条夹具的构造/执行异常只记本档失败(旧实现 push 后继续跑后面的档,case 级 catch 承担同一格)
-    throw new Error(`${testCase.name}:夹具执行抛异常:${error instanceof Error ? error.message : String(error)}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
