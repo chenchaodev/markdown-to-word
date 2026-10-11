@@ -71,7 +71,6 @@
 
 | 号 | 标题 | 状态 | 为什么停在这 | 什么条件下重看 | 分析在哪 |
 |---|---|---|---|---|---|
-| REQ-240 | 门禁树侧 named-case 族转 fail-closed | 在办 | CRITERIA 20 族里仍 pending 的两条之一(另一条 test-top-dirs-exact 属更早那批)。该族判「gates/**/*.selftest.mjs 必须 import case 契约且至少一处 .case( 调用」,实测未接入 0 份,迁移已做完,但它只报告不判红 —— 删掉某份自测里的 .case( 调用不会被拦。 | 下次动 gates 自测或 case 契约时顺手做;它与 REQ-221 原声明冲突,那一行已于 2026-10-11 订正 | docs/adr/ADR-074-自测用例契约搬shared与表格化护栏边界.md;判据表见 gates/repo/check-test-layout.mjs 的 CRITERIA |
 | REQ-183 | ADR-197 的拆分对账对策失效 | 在办 | **已拍板：随 REQ-184 的大文件拆分一起修，不单独动。** 实测失效两处：`:198` 点名的「同名 case 撞车被静默覆盖」**不成立**（三份 62 条 case 名跨文件**零重名**）；`:197` 第二道证据「叠加 `test:coverage` 的 0% 集合比对」**无效**（该集合 5 条全是 `src/**`、无一条是测试段）。第一道（断言调用数对账）仍唯一有效，但对 2/9 个候选失效 ⇒ **要补的是第二道证据，不是重写判据**。拆分批次定下来时一并订正 ADR。 | 随 REQ-184 的大文件拆分一起做（断言器白名单的补充）；ADR-062 `:197` 已于 2026-10-04 订正 | docs/adr/ADR-062-测试树位置即身份与门禁元框架瘦身.md |
 | REQ-197 | 临时资源泄漏只报警不拦，真保证仅 3/143 段 | 在办 | **跑 `verify:ci` 时实测**：退出钩子（`temp-resource.js:288`）在 Windows 上真漏了一次临时资源（EPERM，同前缀积 **16** 个未清）。它**设计上 report-only**（头注：兜底非保证），而头注称保证来自段末 `cleanupTempResources` ——**实测只 3/143 段 import** ⇒ 保证分母 **2%**。⚠️ 它打 `[fail]` 前缀、与真红 `[<id>:fail]` 同形（本会话已误判一次）。 | 要改它的措辞（换前缀）或让它参与退出码时；或清理盘上残留并给那 16 个 EPERM 归因时 | test/harness/temp-resource.js:249（cleanupTempResources）· :275-290（退出钩子与头注） |
 | REQ-199 | image-request-budget 超时敏感段会抖动 | 在办 | 该段「超时场景应已发出 1 次请求」走 `startServer(status, body, delayMs)` 的 `setTimeout` 延迟路径 ⇒ **超时敏感**。实测机器满载时全链内抖动报红（`1/143 段失败`），而**隔离连跑 4 次全绿**、且同段在抖动前那轮全链里是过的（`合计: 217 case`）⇒ 属**负载敏感的 flake**，非功能回归。 | CI 上再报同一段红时（先判是否负载相关：隔离连跑 4 次）；或给它加确定性等待替代固定 setTimeout | test/convert/image-request-budget.test.js |
@@ -248,6 +247,7 @@
 | REQ-220 | 断言与具名 case 收敛 | 已完成 | 144 段全部接入具名 case 契约,两族判据转正 fail-closed(段内零本地断言实现 / 未接契约即判红)。交付时确认:真实收益是失败面一次看全(失败段附件快照 · 报告 case 行 · failure.log 逐条明细),不是失败消息内容。 | 无（已拍板要做） | docs/evidence/20261006-104227-最优架构评审事实地图与三处订正.md · docs/adr/ADR-071-两处判据的形态裁决.md |
 | REQ-221 | 门禁自测合成根表格化 | 已完成 | 20 份门禁自测全部接入具名 case(两族未接入均 0);名册两向差集族已 fail-closed。⚠ 原写「两族…均 fail-closed」失真:门禁树侧 ⑭ 号族至今仍带 pending、只报告不判红,2026-10-11 订正,转正见 REQ-240。 | 无（已拍板要做，见 ADR-068） | docs/adr/ADR-068-门禁自测合成根表格化.md · docs/adr/ADR-074-自测用例契约搬shared与表格化护栏边界.md |
 | REQ-218 | renderer 功能层注入式重构 | 已完成 | 阶段①–⑥ 全落地:跨 feature import 44→0(17 条经 ADR-076 搬迁、27 条经组合根注入)、stageChangedHandler 槽已删、该判据已转 fail-closed(判红三层证据)。③ 模块级可变状态收敛未做,属独立一步。 | 无(已拍板,见 ADR-065)。未做的③模块级可变状态收敛已单独登记为 REQ-241 | docs/evidence/20261006-104227-最优架构评审事实地图与三处订正.md |
+| REQ-240 | 门禁树侧 named-case 族转 fail-closed | 已完成 | 已闭合:⑭ 族删 pending 两行转 fail-closed,判定本体零改动;三条合成夹具与跨族锚点按 #08 先例切 problems 通道,L11b 两条合成夹具补契约桩消噪声;selftest 165/165 绿、真实树 0 命中 exit 0。转正前置(20 份接入)由 #09 交付。 | 无 | docs/adr/ADR-074-自测用例契约搬shared与表格化护栏边界.md;判据表见 gates/repo/check-test-layout.mjs 的 CRITERIA |
 ## 已作废
 
 = 需求被**终审否决**，行**永久保留**、**号永不复用**。否决理由与复活条件在本行；长篇依据在「分析在哪」。

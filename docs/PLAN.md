@@ -9,7 +9,7 @@
 - `docs/adr/ADR-065-renderer功能层注入式重构.md`:③ 模块级可变状态收敛进 state/ 未做。REQ-241 的依据;ADR-076 把 dom-ops 搬进基础层后,trapStack / focusOriginStack 归属需在该步重裁。
 - `docs/adr/ADR-066-转换契约类型化.md`:能力声明按 YAGNI 撤步、清单留在 convert.ts 头注 ⇒ REQ-224 已是一个布尔常量而非结构性缺失。
 - `docs/adr/ADR-073-c8扫描面收窄到只收js产物.md`:`--include` 取值无对读。REQ-231 的依据。
-- `docs/adr/ADR-074-自测用例契约搬shared与表格化护栏边界.md`:门禁树侧 named-case 族仍 pending(REQ-240);迁移后 case 内判定失败被自身 catch 错标(REQ-238)。
+- `docs/adr/ADR-074-自测用例契约搬shared与表格化护栏边界.md`:门禁树侧 named-case 族已转 fail-closed(REQ-240,P1-L1 交付);迁移后 case 内判定失败被自身 catch 错标(REQ-238,P1-L6 未做)。
 
 **验证基线**:见 [DEV-GUIDE.md](DEV-GUIDE.md)「验证基线」—— 命令只存那一处,本文件不复制;那里也只写命令、不写结果。
 
@@ -26,7 +26,7 @@
 
 ## 下一步
 
-P1 已开工(6 条在办,主会话直接执行)。当前步:P1-L1(REQ-240)—— 删 `check-test-layout.mjs` 的 `pending` 两行并切换 selftest 夹具通道,改完跑 `npm run check:test-layout:selftest` 与 `node gates/repo/check-test-layout.mjs`。
+P1 推进中(240 已完成)。当前步:P1-L3(REQ-236)—— 在 runner.js 的 runAll 发现段之后加 opt-in `hostRequirements` 检查、acceptance.mjs 传 flag、负向夹具落 runner-report.test.js,订正 segment-host-requirements.mjs 过期注释。
 
 ## 完成标准
 
@@ -50,7 +50,7 @@ P1 已开工(6 条在办,主会话直接执行)。当前步:P1-L1(REQ-240)——
 
 | 步 | 工作项 | 目标 | 可写文件(不重叠) | 退出条件 | 门禁 | 结果 |
 |---|---|---|---|---|---|---|
-| P1-L1 | REQ-240 | 门禁树侧 named-case 族转 fail-closed:删 pending 两行 + selftest 夹具通道切换 | `gates/repo/check-test-layout.mjs` 与其 `.selftest.mjs` | ⑭ 族进 problems 通道;合成夹具逐条过(没接契约且期望 exit 0 的档补契约或并期望);真实树 0 命中 exit 0 | check-test-layout selftest · `npm run check:docs` | 未做 |
+| P1-L1 | REQ-240 | 门禁树侧 named-case 族转 fail-closed:删 pending 两行 + selftest 夹具通道切换 | `gates/repo/check-test-layout.mjs` 与其 `.selftest.mjs` | ⑭ 族进 problems 通道;合成夹具逐条过(没接契约且期望 exit 0 的档补契约或并期望);真实树 0 命中 exit 0 | check-test-layout selftest · `npm run check:docs` | 通过 2026-10-11 |
 | P1-L2 | REQ-183 | ADR-062 补私有断言器白名单表并订正对账节口径 | `docs/adr/ADR-062-*.md` | 白名单覆盖 must( 与 createAsserter 壳与 harness assert,每条带定义处与计数法;台账行订正由主会话收口 | `npm run check:docs` | 未做 |
 | P1-L3 | REQ-236 | runner 接线 assertHostRequirementsAlive(opt-in flag,默认 false) | `test/harness/runner.js` · `test/acceptance.mjs` · `test/harness/runner-report.test.js` · `test/harness/segment-host-requirements.mjs` | 沙盒 runAll 零影响;负向夹具判红且点名 | `node --test test/harness/runner-report.test.js` | 未做 |
 | P1-L4 | REQ-197 | 退出钩子前缀 `[fail]` 改 `[temp-leak]`;头注同步;16 项残留归因 | `test/harness/temp-resource.js` · `docs/evidence/` | 新前缀与 `[fail]`/`[case-fail]` 不撞;归因落档 | `node --test test/harness/test-common-helpers.test.js` | 未做 |

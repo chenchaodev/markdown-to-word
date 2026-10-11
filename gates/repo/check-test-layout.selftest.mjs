@@ -1967,11 +1967,11 @@ const CASES = [
   // `gates/` 子树,那是「这棵树不是门禁索引描述的那棵树」,不是「门禁自测一份都没有」。
   // 缺了它,本族每一条夹具都**零命中**(症状是「全绿」,看不出是作用域没开)。
   //
-  // ⚠ **本族当前是 report-only**(CRITERIA 里 `pending: true`),故命中走 `info` 通道 ——
-  // 断言必须落在 `expectInfo` 上,落在 `expect`(problems)上会因「期望零判红」而恒绿。
+  // ✅ **本族已转 fail-closed(2026-10-11,REQ-240)** ⇒ 命中走 `problems` 通道,断言落在
+  // `expect` 上;`expectInfo: null` 单向钉「info 通道不再有它」。转正先例见 #08 族一那条。
   {
-    // 档 1:没 import 契约模块 ⇒ 命中(第一格)。这一格是本族的**全部意义**:门禁自测今天
-    // 实测零接入(ADR-074 背景一),不判它就等于「判据面扩了但一个数都没报」。
+    // 档 1:没 import 契约模块 ⇒ 命中(第一格)。这一格是本族的**全部意义**:不判它就等于
+    // 「判据面扩了但一个数都没报」—— 转正后它钉的是 problems 通道(参与退出码的那一格)。
     name: "#09 门禁树侧:自测没 import case 契约模块 → 命中(第一格,门禁树引的是 shared/ 真实现)",
     judgeOnly: true,
     extra: {
@@ -1987,14 +1987,13 @@ const CASES = [
       ].join("\n"),
       ["gates/repo/check-demo.mjs"]: "export const demo = 1;\n",
     },
-    expectInfo: new RegExp(
+    expect: new RegExp(
       `gates/repo/check-demo\\.selftest\\.mjs → gates-selftest-named-case:该门禁自测没有 import `
       + `case 契约模块 ${GATES_CASE_MODULE_REL.replace(/\//g, "\\/")}`,
     ),
-    // ⚠ `expect: null` 与 `expectInfo` **互不替代**:前者钉「report-only 命中不进 problems」
-    // (即本族当前**不改退出码**,这是它挂 pending 的直接后果),后者钉「它真的被报出来了」。
-    // 只断前者则本族恒绿(任何实现都过),只断后者则「命中被吞进 problems」无人发现。
-    expect: null,
+    // ⚠ `expectInfo: null` 与 `expect` **互不替代**:前者钉「命中只进 problems、不再泄进
+    // info 通道」(转正即通道切换),后者钉「它真的被报出来了」。转正后本族命中参与退出码。
+    expectInfo: null,
   },
   {
     // 档 2:import 了契约却一次没调 `.case(` ⇒ 命中(第二格)。两个条件缺一不可,与段侧同款:
@@ -2016,11 +2015,11 @@ const CASES = [
       ].join("\n"),
       [GATES_CASE_MODULE_REL]: "export const createCaseSuite = () => ({});\n",
     },
-    expectInfo: new RegExp(
+    expect: new RegExp(
       `gates/repo/check-demo\\.selftest\\.mjs → gates-selftest-named-case:该门禁自测 import 了 `
       + `case 契约模块 .*但正文里没有任何`,
     ),
-    expect: null,
+    expectInfo: null,
   },
   {
     // **反向锚点**:import 了契约 + 至少一处 `.case(` ⇒ 本族零命中。
@@ -2059,10 +2058,10 @@ const CASES = [
       ...C3_TREE_IDENTITY,
       ["gates/repo/check-demo.selftest.mjs"]: "export const covered = 1;\n",
     },
-    // 段侧两族零命中 + 本族命中数**只数自测那一份**:两族分母都没被自测撑大。
+    // 段侧两族零命中 + 本族命中数**只数自测那一份**(转正后进 problems 通道):两族分母都没被自测撑大。
     expectAbsent: /scan-surface-collapsed|test-top-dirs-exact:test\/ 顶层多出目录/,
-    expectInfo: /gates-selftest-named-case/,
-    expect: null,
+    expect: /gates-selftest-named-case/,
+    expectInfo: null,
   },
   {
     // 扫描面塌缩(另立 id 那一档):`.selftest.mjs` 份数掉到下限以下 ⇒ 判红。
@@ -2790,7 +2789,17 @@ const CASES = [
         },
       })}\n`,
       "gates/repo/check-beta.mjs": "export const beta = 1;\n",
-      "gates/repo/check-beta.selftest.mjs": "export const covered = 1;\n",
+      // 合成自测自带 case 契约桩:⑭ 已转 fail-closed(REQ-240),不接契约的合成自测会向
+      // problems 泄一条与本族(L11b)无关的命中。同类处理先例见 #09 那几条夹具。
+      "gates/repo/check-beta.selftest.mjs": [
+        "// @ts-check",
+        `import { createCaseSuite } from "${posixRelativeSpecifier("gates/repo", GATES_CASE_MODULE_REL)}";`,
+        "export const covered = 1;",
+        "const suite = createCaseSuite();",
+        'suite.case("beta 取到", () => {});',
+        "",
+      ].join("\n"),
+      [GATES_CASE_MODULE_REL]: "export const createCaseSuite = () => ({});\n",
       // `gates/repo/check-gone.mjs` **刻意不造**:它就是被删掉的那一道门禁。
     },
     gateRegistry: {
@@ -2816,7 +2825,16 @@ const CASES = [
         },
       })}\n`,
       "gates/repo/check-beta.mjs": "export const beta = 1;\n",
-      "gates/repo/check-beta.selftest.mjs": "export const covered = 1;\n",
+      // 同上:合成自测自带契约桩,免得 ⑭(已转 fail-closed)向 problems 泄无关命中。
+      "gates/repo/check-beta.selftest.mjs": [
+        "// @ts-check",
+        `import { createCaseSuite } from "${posixRelativeSpecifier("gates/repo", GATES_CASE_MODULE_REL)}";`,
+        "export const covered = 1;",
+        "const suite = createCaseSuite();",
+        'suite.case("beta 取到", () => {});',
+        "",
+      ].join("\n"),
+      [GATES_CASE_MODULE_REL]: "export const createCaseSuite = () => ({});\n",
     },
     gateRegistry: {
       beta: { id: "beta", access: ACCESS_CHAIN, npmScripts: ["check:beta"], modulePath: "gates/repo/check-beta.mjs" },

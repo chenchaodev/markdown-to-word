@@ -42,8 +42,8 @@
 //      名字」—— `@returns {asserts cond}` 的委派型窄化壳(体内只调 harness 断言)合规,
 //      裁决见 `docs/adr/ADR-071-两处判据的形态裁决.md`。判定面是**段**,不是 `test/**`:
 //      `test/harness/case.js` 自己就有一个自带 throw 的顶层 assert,按 test/** 全扫会去红
-//      它自己要收敛的那个源。⚠ **本族与 ⑬ 已转 fail-closed**;本文件里仍是 report-only 的只有
-//      ③ `test-top-dirs-exact` 与 ⑭ `gates-selftest-named-case`(转正 = 删 `CRITERIA` 那行的 pending)。
+//      它自己要收敛的那个源。⚠ **本族与 ⑬、⑭ 均已转 fail-closed**(⑭ 于 2026-10-11,REQ-240
+//      转正);本文件里仍是 report-only 的只有 ③ `test-top-dirs-exact`(转正 = 删 `CRITERIA` 那行的 pending)。
 //   ⑬ test-segment-named-case(REQ-220 #08 族二):每段必须 import case 契约模块**且**至少
 //      有一处 `.case(` 调用 ⇒ 否则判红。两个条件缺一不可(见下「两族的判定面与读盘」)。
 //   ⑭ gates-selftest-named-case(REQ-221 #09 族一):**门禁树侧**的同一形态 ——
@@ -64,9 +64,8 @@
 //      ⚠ **它与 ⑭ `gates-selftest-named-case` 判的不是一件事**:⑭ 判「有没有接契约」
 //      (import + 至少一处 `.case(`),接了之后**删掉一整个 case 不改变任何可数的东西**
 //      ——import 还在、`.case(` 仍 ≥1 处。本族补的正是这个缺口。
-//      ⚠ **本族已转 fail-closed**(命中进 problems、参与退出码),⑭ 仍是 report-only。
-//      两者**分属不同通道**:本族转正后「未接入」与「名册漂移」在读数上才真的分得开 ——
-//      转正前两者都只在 info 通道,一条 info 混着两族语义时无法归因。
+//      ⚠ **本族已转 fail-closed**(命中进 problems、参与退出码);⑭ 亦已于 2026-10-11 转正
+//      (REQ-240)⇒ 两者同进 problems 通道,「未接入」与「名册漂移」按 id 分别归因。
 //
 // ---- ⑯ 本族的三条自述边界(下一个会话读到这里时按这三条判断本族能顶什么)----
 //
@@ -976,16 +975,9 @@ export const CRITERIA = Object.freeze([
       + `(${GATES_CASE_MODULE_REL})**且**至少有一处 \`.case(\` 调用 ⇒ 否则判红`
       + "(与段侧同名形态那一族**不是同一个 id**:判据面不同、对象不同、契约模块路径不同 ——"
       + "门禁树引不到 test/harness/,它接的是 ADR-074 决定一落在 shared/ 的真实现)",
-    // 转正不在本步范围内:ADR-071 决定一的「新判据不设豁免 · 先报告后转正」在本族沿用 ——
-    // 存量清零与本族上链分两笔,第一轮带 pending 是合规形态。
-    pending: true,
-    pendingReason:
-      "本族随 #09 的判据面扩到 `gates/**` 同批上链,**先报告后转正**(ADR-071 决定一:"
-      + "新判据不设豁免,但可先挂 report-only)。转正的前置是门禁自测接入 case 契约的那一笔"
-      + "落地(实测当前 20 份自测**零接入**,而其中多份的断言机制还是 14 份复制的"
-      + "`failures[]` 循环 —— 见 ADR-074 背景一)。⚠ 转正前须先处置这几类**装不进表**的形态"
-      + "(入参是回调体 / 零注入面的判定体),它们不是「漏接入」而是「还没搬」:"
-      + "判据本步不为其开豁免表,也不用降级口径把它们算作已接入。",
+    // ✅ **已转 fail-closed(2026-10-11,REQ-240)**:转正前置(门禁自测接入 case 契约)已由
+    // #09(REQ-221)交付 —— 实测 20 份全部接入、真实树零命中;`pending` 两行已删,判定本体未动。
+    // 不设豁免白名单(ADR-071 决定一);「装不进表」的形态由 bespoke case 承载,不算未接入。
   }),
   Object.freeze({
     // ⚠ **与 `scan-surface-collapsed` 分立而不复用**:段侧那一档的处置是「walker 整体失效」,
