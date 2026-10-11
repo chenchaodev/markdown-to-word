@@ -494,7 +494,13 @@ export async function run() {
         return { ok: true, outputPath: "out.docx", warnings: [] };
       };
       const selection = await import(distUrl("convert/events/selection.js"));
-      selection.bindSelectionEvents({ ...convertFlowDeps, openWizard: () => {} });
+      // onStageChanged 必填(ADR-075 §四)。本段只驱动粘贴文本分支 → runConvert,
+      // 走不到 applySelection 的成功路径,故该端口永不被调;装配仍补齐,理由同上。
+      selection.bindSelectionEvents({
+        ...convertFlowDeps,
+        openWizard: () => {},
+        onStageChanged: () => {},
+      });
       const pasteBtn = elementFor("pasteConvertBtn");
       pasteBtn.disabled = false;
       fireListener(pasteBtn, "click", { stopPropagation() {} });

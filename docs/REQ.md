@@ -12,8 +12,8 @@
 
 | 项 | 值 |
 |---|---|
-| 已用最大号 | REQ-238 |
-| 下一个可用号 | REQ-239 |
+| 已用最大号 | REQ-239 |
+| 下一个可用号 | REQ-240 |
 
 「已用最大号」= 下方四节里出现过的最大号，**含待拍板与未开工的行** —— 那些需求已经占号，不因尚未开工而退回池子。
 
@@ -67,6 +67,7 @@
 | REQ-236 | 段宿主需求表的存活性自检无调用点,双向无看守 | 待拍板 | 表已落地(16条根因),但 assertHostRequirementsAlive 无调用点:接线属 REQ-219 写域而该步已作废。现状是知识在、判据不在 —— 段改名或删除后表静默失配且无任何运行期信号报红;反向(新段需真宿主却漏登记)亦无静态信号,双向无看守。不接线是因为最小可行形态要改既有文件(runner.js 或某个既有段),与 #08 断言收敛撞写域。 | #08 断言收敛落地后(届时 harness 有统一断言库与稳定的段级元数据通道,可零成本挂调用);或有人要增删验收段目录时顺手核对 | test/harness/segment-host-requirements.mjs · docs/evidence/20261007-092537-REQ-219宿主分档撤步裁决.md |
 | REQ-237 | lint 目标漏 shared，其 no-undef 块空转 | 待拍板 | 实测 lint 串不含 shared/，而 eslint.config.js:95 的 no-undef 块声明 files 含 shared/** —— 该块对 shared/ 恒不生效（脚本从不传该目录），DEV-GUIDE 门禁接入点表却写「lint 覆盖面含三棵非 tsc program 的树」，与实测不符。非 #09 造成：shared/ 下 10 个文件今天已脱扫；REQ-221 会加重（case.js 196 行含模块级可变状态搬进去）。未顺手改：改 lint 目标串不在本工作项写域。 | 有人要动 shared/ 下的文件、或 DEV-GUIDE 那句表述被当作已有覆盖的证据引用时 | docs/adr/ADR-074-自测用例契约搬shared与表格化护栏边界.md（后果节） |
 | REQ-238 | 自测case内判定失败被自身catch错标为夹具异常 | 待拍板 | 迁移到case契约后,case体内的判定失败被该case自己的catch包上「夹具执行抛异常/夹具抛错」前缀——消息文本完整、只是标签错标,不丢断言。已在check-docs(批次三)与check-tscheck-coverage(批次六)两份实测同形,其余批次同款。要改须连同已落盘的若干份一起,且每份改完都要重跑验证,故不随手改。修法已知(catch只包夹具构造、不包断言,或加sentinel区分),归因与逐份清单见对应提交正文。 | 下次动这几份自测的失败消息形态时顺手修;或有人统一「档内失败消息」口径时。不拖进#10。 | docs/adr/ADR-074-自测用例契约搬shared与表格化护栏边界.md(后果节·搬迁四步)· 提交 70c183f / 9ba4346 正文 |
+| REQ-239 | 舞台浮层自动收起行为零断言覆盖 | 待拍板 | 阶段⑤删 state.stageChangedHandler 时变异实测确认:把 onStageChanged() 换成不通知后,10 个受影响段 337 case 仍全绿、零条变红。该语义自 evidence 阶段起就无任何断言钉过(§五 已登记 test/renderer 对两个 handler 零断言)。本刀沿用原调用时机故行为未变,但没有测试能证明它没变。ADR-071 豁免的 recentRefreshHandler 很可能同形。 | 下次动 renderSelection / applySelection / recent-files 的浮层收起路径,或补 renderer 段断言时一并做 | docs/evidence/20261006-141113-三份只读测绘事实地图与接手须知.md §五;变异实测见 #10 阶段⑤ 提交正文 |
 
 ## 在办
 

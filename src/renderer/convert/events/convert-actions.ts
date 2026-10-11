@@ -26,10 +26,13 @@ import {
   type ConvertFlowDeps,
 } from "../convert-flow.js";
 import { openDialog } from "./selection.js";
+import type { FileListDeps } from "../file-list.js";
 import { t } from "../../../core/i18n/index.js";
 
-/** 本域注入的端口:convert 自身的呈现面(见 `ConvertFlowDeps`,由组合根组装)。 */
-export type ConvertActionsEventsDeps = ConvertFlowDeps;
+/** 本域注入的端口:convert 自身的呈现面(见 `ConvertFlowDeps`,由组合根组装);
+ *  另含 file-list 那份选择端口 —— 本域的 Ctrl+O 走 openDialog,而 openDialog 要经它
+ *  落到 renderSelection 的舞台跃迁通知,故同一个 deps 对象喂得进来。 */
+export type ConvertActionsEventsDeps = ConvertFlowDeps & FileListDeps;
 
 /* ---------- 本域事件绑定(index 组合入口逐域调用) ---------- */
 export function bindConvertActionsEvents(deps: ConvertActionsEventsDeps): void {
@@ -117,7 +120,7 @@ export function bindConvertActionsEvents(deps: ConvertActionsEventsDeps): void {
     } else if (key === "o") {
       if (isConvertCommandBlocked()) return;
       event.preventDefault();
-      void openDialog(true);
+      void openDialog(deps, true);
     }
   });
 

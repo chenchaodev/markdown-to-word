@@ -15,13 +15,16 @@
  *
  * convert 自身的呈现面(ui/dialogs 的五个符号)在 convert 刀里接进同一份 deps:
  * `ConvertFlowDeps` 由 convert-flow 自报,`bindSelectionEvents` /
- * `bindConvertActionsEvents` / `bindDialogEvents` 三域共用它 —— 组合根只需装配
+ * `bindConvertActionsEvents` / `bindDialogEvents` 三域共用它;选择管线那份
+ * `FileListDeps` 由 convert/file-list 自报,`bindDropEvents` 单独用它
+ * (`satisfies` 窄化后传入,故本域只需那份最小面)—— 组合根只需装配
  * **一个**对象(与 `bookWizardDeps` 同一形态)。
  */
 import { bindSelectionEvents, type SelectionEventsDeps } from "./selection.js";
 import { bindDropEvents } from "./drop.js";
 import { bindConvertActionsEvents, type ConvertActionsEventsDeps } from "./convert-actions.js";
 import { bindDialogEvents, type DialogEventsDeps } from "./dialogs-events.js";
+import type { FileListDeps } from "../file-list.js";
 import type { ConvertFlowDeps } from "../convert-flow.js";
 
 /**
@@ -37,7 +40,7 @@ export interface ConvertEventsDeps extends DialogEventsDeps {
 
 export function bindEvents(deps: ConvertEventsDeps): void {
   bindSelectionEvents(deps satisfies ConvertFlowDeps & SelectionEventsDeps);
-  bindDropEvents();
+  bindDropEvents(deps satisfies FileListDeps);
   bindConvertActionsEvents(deps satisfies ConvertActionsEventsDeps);
   bindDialogEvents(deps satisfies DialogEventsDeps);
 }

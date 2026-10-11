@@ -13,7 +13,7 @@ import { dropSkipped, dropSkippedList, dropSkippedToggle, dropZone } from "../..
 import { state } from "../../state/state.js";
 import { baseName, errorMessage } from "../../state/pure.js";
 import { setError, setStatus } from "../../dom/dom-ops.js";
-import { appendSelection, clearDragState } from "../file-list.js";
+import { appendSelection, clearDragState, type FileListDeps } from "../file-list.js";
 import { t } from "../../../core/i18n/index.js";
 
 function showSkippedList(skipped: string[]): void {
@@ -31,7 +31,7 @@ function showSkippedList(skipped: string[]): void {
   );
 }
 
-async function resolveDropped(paths: string[]): Promise<void> {
+async function resolveDropped(deps: FileListDeps, paths: string[]): Promise<void> {
   try {
     const { files, skipped } = await window.api.collectMarkdowns(paths);
     showSkippedList(skipped); // 跳过项列具体文件名(可折叠);无跳过时隐藏
@@ -43,7 +43,7 @@ async function resolveDropped(paths: string[]): Promise<void> {
       );
       return;
     }
-    appendSelection(files, skipped.length); // 拖入始终追加到现有列表(重复文件单独提示)
+    appendSelection(deps, files, skipped.length); // 拖入始终追加到现有列表(重复文件单独提示)
   } catch (err) {
     const message = errorMessage(err);
     setError(t("file.readFailed", { error: message }));
@@ -51,7 +51,8 @@ async function resolveDropped(paths: string[]): Promise<void> {
 }
 
 /* ---------- 本域事件绑定(index 组合入口逐域调用) ---------- */
-export function bindDropEvents(): void {
+/** 本域只经 file-list 的 `FileListDeps` 端口走选择管线,故接同一份 deps(不另造局部闭包)。 */
+export function bindDropEvents(deps: FileListDeps): void {
   // 拖放:dragover 必须 preventDefault,否则 drop 不会触发
   dropZone.addEventListener("dragover", (event) => {
     event.preventDefault();
@@ -95,7 +96,7 @@ export function bindDropEvents(): void {
       setError(t("file.pathUnavailable"));
       return;
     }
-    void resolveDropped(paths);
+    void resolveDropped(deps, paths);
   });
 
   // 未落入拖放区时,阻止浏览器默认「打开文件/跳转」行为

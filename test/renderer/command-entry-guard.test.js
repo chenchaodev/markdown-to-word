@@ -333,7 +333,9 @@ export async function run() {
     const selection = await import(distUrl("convert/events/selection.js"));
     const actions = await import(distUrl("convert/events/convert-actions.js"));
 
-    selection.bindSelectionEvents();
+    // 本段驱动的都是命令锁与在途守卫;file-list 的舞台跃迁通知端口(实现体在 ui/recent-files)
+    // 不在本段判据面内,故接空实现,只把 deps 形状喂对。
+    selection.bindSelectionEvents({ onStageChanged: () => {} });
     actions.bindConvertActionsEvents();
     // 元素表跨段共享,前序段可能留下可见弹窗遮罩:统一复位为隐藏,模态判定从干净态起算
     for (const [id, el] of elements) {

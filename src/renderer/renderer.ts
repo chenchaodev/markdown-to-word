@@ -7,7 +7,7 @@
  * 子模块私有符号)。
  */
 import { state } from "./state/state.js";
-import { applySelection, updateActionButtons } from "./convert/file-list.js";
+import { applySelection, updateActionButtons, type FileListDeps } from "./convert/file-list.js";
 import { bindEvents, type ConvertEventsDeps } from "./convert/events/index.js";
 import { bindSettingsEvents } from "./settings/settings-bindings.js";
 import { bindSettingsDrawerEvents, applyDrawerOpenState } from "./settings/settings-drawer.js";
@@ -49,6 +49,7 @@ import {
 } from "./wizard/book-wizard.js";
 import {
   bindRecentFilesEvents,
+  evaluateAutoCollapse,
   initUiStateRestore,
   refreshRecentFiles,
   type RecentFilesDeps,
@@ -105,6 +106,23 @@ const convertFlowDeps: ConvertFlowDeps = {
 };
 
 /**
+ * convert/file-list 的跨功能协作面在此组装。舞台跃迁通知的实现体在 ui/recent-files
+ * (`evaluateAutoCollapse`:空→有文件时收起历史浮层),此前是 ui 侧往 state 反向注册
+ * 一个槽、file-list 顺带调用;改为端口后 ui 不再持有跨 feature 的写入点。
+ *
+ * 两个零参闭包是同一份 deps 的「对 deps 形状而言」封装:file-list 的三个入口此后
+ * 一律以零参形态被分发(wizard 依赖 / 设置面板语言钩子 / ui 最近转换),
+ * 分发方不必知道 file-list 的 deps 形状。
+ */
+const fileListDeps: FileListDeps = { onStageChanged: evaluateAutoCollapse };
+
+/** 已绑好 file-list deps 的零参重渲染选择区闭包。 */
+const renderSelectionBound = (): void => renderSelection(fileListDeps);
+
+/** 已绑好 file-list deps 的零参替换选择闭包(recent-files 只用它的单文件列表分支)。 */
+const applySelectionBound = (files: string[]): void => applySelection(fileListDeps, files);
+
+/**
  * ui/recent-files 的跨功能协作面在此组装(ADR-075 阶段④:组合根组装 · feature 侧接形参)。
  * 四个功能根是平铺协作的 peer,任何 feature → 另一 feature 的静态 import 都判红
  * (`renderer-features-no-cross-import`,阶段⑥ 转正),故这些协作一律经本处注入。
@@ -113,7 +131,7 @@ const convertFlowDeps: ConvertFlowDeps = {
 const recentFilesDeps: RecentFilesDeps = {
   // 零参闭包:组合根已把 convert 自己的呈现面绑好,故 recent-files 拿到的是
   // `(filePath, format) => Promise<void>` 原形态(零参化只对 deps 形状而言)
-  applySelection,
+  applySelection: applySelectionBound,
   runConvert: (filePath, format) => runConvert(convertFlowDeps, filePath, format),
   syncSuppressCompleteDialog,
   applyDrawerOpenState,
@@ -139,7 +157,7 @@ const bookWizardDeps: BookWizardDeps = {
   // 同样绑成零参(对 deps 形状而言)的闭包:向导不必知道 convert 呈现面的形状
   runMerge: (opts) => runMerge(convertFlowDeps, opts),
   withPrecheck: (filePaths, action) => withPrecheck(convertFlowDeps, filePaths, action),
-  renderSelection,
+  renderSelection: renderSelectionBound,
   closeSettingsDrawer,
   isSettingsDrawerOpen,
   afterModalClosed: notifyModalClosed,
@@ -163,6 +181,7 @@ const closeWizard = () => closeBookWizard(bookWizardDeps);
 /** convert 事件域的端口接线(组合根组装 · convert 侧接形参 · 类型由 convert 自报)。 */
 const convertEventsDeps: ConvertEventsDeps = {
   ...convertFlowDeps,
+  ...fileListDeps,
   openWizard,
   // ui/dialogs:三条关闭路径绑成零参闭包(closePrecheckDialog 保留 ok 实参)
   hideCompleteDialog: () => hideCompleteDialog(dialogsDeps),
@@ -284,7 +303,7 @@ bindRecentFilesEvents(recentFilesDeps);
 // footer 快捷键 hint 由 updateActionButtons 按模式维护
 updateActionButtons();
 // 设置面板:事件绑定先于回填(时序与拆分前一致:绑定在模块加载期,回填在 await 之后)
-bindSettingsEvents({ renderSelection });
+bindSettingsEvents({ renderSelection: renderSelectionBound });
 // 设置抽屉 Tab 导航(6 组切换)初始化
 initSettingsTabs();
 // 设置抽屉开合事件(⚙/chip/遮罩/关闭按钮;Esc 走 dialogs-events 链末位)

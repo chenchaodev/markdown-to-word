@@ -1,6 +1,7 @@
 /**
  * 文件选择与列表:拖放区三态渲染、统一队列卡构建与排序、移除按钮工厂、
- * 选择应用/追加、操作按钮可用性。只经 state.ts 读写状态。
+ * 选择应用/追加、操作按钮可用性。只经 state.ts 读写状态;跨功能面只有「舞台有无文件
+ * 跃迁通知」一个端口(`FileListDeps`,组合根注入),本模块零静态 import 其他 feature。
  *
  * 不变量:data-stage(empty/single/multi)驱动 CSS 切换同一 .pane-files;
  * renderMultiList 覆盖 n≥1 全部情形(n=1 省略 grip/序号且不可拖拽);
@@ -31,15 +32,30 @@ import { setError, setStatus, translate } from "../dom/dom-ops.js";
 import { baseName, partitionDuplicates, selectionStatus, truncateMiddle } from "../state/pure.js";
 import { t } from "../../core/i18n/index.js";
 
-export function renderSelection(): void {
+/**
+ * 本模块的跨功能协作面(类型由本 feature 自报;组合根 renderer.ts 组装)。
+ * 传函数本身,不传模块命名空间(ADR-075 §四)。
+ *
+ * 独立于 `ConvertFlowDeps` 而非并入它:file-list 是被 convert 内部多方 import 的底层,
+ * 端口类型挂在 convert-flow 上等于给底层造一条指回上层的边。
+ *
+ * **不许给本项设默认值/可选参数**:port 缺失必须在 typecheck 处编译不过,
+ * 而静默不生效(fail-open)比编译不过更糟 —— 它让接线错误在运行期无声溜过。
+ */
+export interface FileListDeps {
+  /** 舞台「有无文件」跃迁通知,实现方在 ui 侧(evaluateAutoCollapse)。 */
+  onStageChanged: () => void;
+}
+
+export function renderSelection(deps: FileListDeps): void {
   const n = state.selectedFiles.length;
   // data-stage 驱动 CSS 切换;几何恒定,外部开合变化不影响本区块尺寸
   dropZone.dataset.stage = n === 0 ? "empty" : n === 1 ? "single" : "multi";
   // has-file 标记保留供拖入高亮分支与测试诊断使用
   dropZone.classList.toggle("has-file", n > 0);
-  // 舞台状态变化通知:历史浮出面板据此自动收起;handler 由 recent-files 注册,
-  // 反向注册避免 ESM 环
-  state.stageChangedHandler?.();
+  // 舞台状态变化通知:历史浮出面板据此自动收起(实现由组合根注入的 ui 侧端口);
+  // 落点须在三态与 has-file 落定之后、队列渲染之前 —— 浮层收起要盖在最新舞台态上。
+  deps.onStageChanged();
 
   // 队列行渲染与会话持久化一次完成(同一写入点,不再按空/非空分支各写一次)
   renderQueue();
@@ -173,9 +189,9 @@ export function clearDragState(): void {
  * @param skipped 被跳过(非 md / 无法读取)的项数,>0 时状态区黄色提示。
  * @param duplicates 重复文件数,与非 Markdown 跳过分开提示。
  */
-export function applySelection(files: string[], skipped = 0, duplicates = 0): void {
+export function applySelection(deps: FileListDeps, files: string[], skipped = 0, duplicates = 0): void {
   state.selectedFiles = files;
-  renderSelection();
+  renderSelection(deps);
   const summary =
     files.length === 1
       ? truncateMiddle(files[0]!) // length === 1 分支下标 0 必存在
@@ -190,9 +206,9 @@ export function applySelection(files: string[], skipped = 0, duplicates = 0): vo
  * @param skipped 本次被跳过的非 md 项数。
  * 重复文件不再并入 skipped 计数,单独文案提示。
  */
-export function appendSelection(files: string[], skipped = 0): void {
+export function appendSelection(deps: FileListDeps, files: string[], skipped = 0): void {
   const { added, duplicates } = partitionDuplicates(state.selectedFiles, files);
-  applySelection([...state.selectedFiles, ...added], skipped, duplicates.length);
+  applySelection(deps, [...state.selectedFiles, ...added], skipped, duplicates.length);
 }
 
 /**

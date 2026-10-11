@@ -30,6 +30,7 @@ import {
   moveItem,
   renderMultiList,
   renderSelection,
+  type FileListDeps,
 } from "../file-list.js";
 import { runConvert, isConvertCommandBlocked, type ConvertFlowDeps } from "../convert-flow.js";
 import { t } from "../../../core/i18n/index.js";
@@ -95,7 +96,7 @@ let fileDialogInFlight = false;
  * 在途期间的后续调用直接忽略(单飞,见 fileDialogInFlight);守卫由 finally 释放,
  * 成功 / 用户取消 / 抛错三条路径都不残留,异常不会把入口永久卡死。
  */
-export async function openDialog(append = false): Promise<void> {
+export async function openDialog(deps: FileListDeps, append = false): Promise<void> {
   if (isConvertCommandBlocked()) return;
   if (fileDialogInFlight) return; // 在途 → 忽略(不排队,见上方语义)
   fileDialogInFlight = true;
@@ -108,9 +109,9 @@ export async function openDialog(append = false): Promise<void> {
       return;
     }
     if (append) {
-      appendSelection(files, paths.length - files.length);
+      appendSelection(deps, files, paths.length - files.length);
     } else {
-      applySelection(files, paths.length - files.length);
+      applySelection(deps, files, paths.length - files.length);
     }
   } catch (err) {
     const message = errorMessage(err);
@@ -126,9 +127,11 @@ export async function openDialog(append = false): Promise<void> {
  * 本域注入的端口。`openWizard` 是零参闭包 —— 组合根已把 wizard 的 `BookWizardDeps`
  * 绑好(ADR-075 §四:组合根组装、feature 侧接形参),本域因此不需要知道 wizard 的 deps
  * 形状,也不必 import 那个类型(那会造出一条新的 type-only 跨 feature 边)。
- * convert 自身的呈现面(`ConvertFlowDeps`)随 convert 那一刀并入同一份 deps。
+ * convert 自身的呈现面(`ConvertFlowDeps`)随 convert 那一刀并入同一份 deps;
+ * file-list 那一侧的选择端口(`FileListDeps`)是 convert 内部的下层端口,同样并入
+ * —— 组合根因此只需装配**一个**对象喂给四域。
  */
-export interface SelectionEventsDeps extends ConvertFlowDeps {
+export interface SelectionEventsDeps extends ConvertFlowDeps, FileListDeps {
   /** 打开成书向导模态。 */
   openWizard: () => void;
 }
@@ -136,7 +139,7 @@ export interface SelectionEventsDeps extends ConvertFlowDeps {
 export function bindSelectionEvents(deps: SelectionEventsDeps): void {
   selectBtn.addEventListener("click", (event) => {
     event.stopPropagation(); // 避免冒泡触发拖放区点击,重复打开对话框
-    void openDialog(false);
+    void openDialog(deps, false);
   });
 
   // 「粘贴 Markdown 转换」按钮(仅空态显示,按钮在 .pane-empty 内,文件态该 pane 已隐藏):
@@ -155,7 +158,7 @@ export function bindSelectionEvents(deps: SelectionEventsDeps): void {
         }
         if (res.type === "files") {
           const mdPaths = await window.api.collectMarkdowns(res.paths); // 复用 drop 管线展开/过滤
-          appendSelection(mdPaths.files, mdPaths.skipped.length);
+          appendSelection(deps, mdPaths.files, mdPaths.skipped.length);
           return;
         }
         await runConvert(deps, res.mdPath, state.selectedFormat);
@@ -174,13 +177,13 @@ export function bindSelectionEvents(deps: SelectionEventsDeps): void {
   // 容器 role=region(非 button),嵌套交互元素不再与按钮语义冲突。
   dropZone.addEventListener("click", (event) => {
     if (!isOwnEventTarget(event)) return;
-    void openDialog(state.selectedFiles.length >= 2);
+    void openDialog(deps, state.selectedFiles.length >= 2);
   });
   dropZone.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     if (!isOwnEventTarget(event)) return;
     event.preventDefault();
-    void openDialog(state.selectedFiles.length >= 2);
+    void openDialog(deps, state.selectedFiles.length >= 2);
   });
 
   // 单文件态「预览」按钮:stopPropagation 避免触发拖放区打开对话框;仅单文件可见
@@ -203,14 +206,14 @@ export function bindSelectionEvents(deps: SelectionEventsDeps): void {
   // renderSelection 自动切多文件态
   appendFileBtn.addEventListener("click", (event) => {
     event.stopPropagation();
-    void openDialog(true);
+    void openDialog(deps, true);
   });
 
   // 「清空列表」按钮(兼并旧单文件「移除」语义):清空选择回初始态
   clearListBtn.addEventListener("click", (event) => {
     event.stopPropagation();
     if (state.mode !== null) return;
-    applySelection([]);
+    applySelection(deps, []);
   });
 
   // 多文件列表:点击列表本身不触发换文件(避免误开对话框);
@@ -226,7 +229,7 @@ export function bindSelectionEvents(deps: SelectionEventsDeps): void {
     const index = Number(li.dataset.index);
     // 移除该文件:从数组删除并重建;清空后回到初始态
     state.selectedFiles.splice(index, 1);
-    renderSelection();
+    renderSelection(deps);
     setStatus(
       state.selectedFiles.length > 0
         ? t("file.removedRemaining", { count: state.selectedFiles.length })

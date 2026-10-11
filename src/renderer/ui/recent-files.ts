@@ -6,7 +6,9 @@
  * ↔ convert-flow ESM 环)。依赖方向:本模块 → dom/refs + state/pure + dom/dom-ops +
  * first-run-guide(dom-ops 自 ADR-076 起在基础层 `dom/`,其余在同一 ui 根内);
  * 对 convert(file-list / convert-flow)与 settings(panel / drawer)的跨功能
- * 协作一律走组合根注入的 RecentFilesDeps 形参,不再有静态 import。
+ * 协作一律走组合根注入的 RecentFilesDeps 形参,不再有静态 import;唯一反向敞口
+ * 是 `evaluateAutoCollapse` 的导出 —— 它被组合根取作 file-list 的 `onStageChanged`
+ * 端口实现(此前是本模块往 state 反向注册,现已改为由组合根注入)。
  */
 import {
   histCount,
@@ -64,8 +66,12 @@ function setHistoryOpen(open: boolean): void {
   histToggle.setAttribute("aria-expanded", String(open));
 }
 
-/** 舞台状态变化时的自动收起判定(state.stageChangedHandler 注册体,见文件尾绑定)。 */
-function evaluateAutoCollapse(): void {
+/**
+ * 舞台状态变化时的自动收起判定。
+ * 本函数是 convert/file-list 的 `onStageChanged` 端口实现,由组合根 renderer.ts
+ * 注入(经 `renderSelection` / `applySelection` 的 deps 形参),本模块不再反向注册。
+ */
+export function evaluateAutoCollapse(): void {
   const stageHasFiles = state.selectedFiles.length > 0;
   if (lastStageHasFiles !== null && stageHasFiles && !lastStageHasFiles) {
     setHistoryOpen(false); // 空 → 有文件:收起浮层,让位新内容
@@ -222,9 +228,6 @@ export async function refreshRecentFiles(): Promise<void> {
  * (不转换)。历史条不在拖放区内部,无需拦截冒泡。
  */
 export function bindRecentFilesEvents(deps: RecentFilesDeps): void {
-  // 舞台状态变化 → 自动收起判定(反向注册,file-list.renderSelection 调用)
-  state.stageChangedHandler = evaluateAutoCollapse;
-
   histToggle.addEventListener("click", () => {
     setHistoryOpen(historyBar.dataset.open !== "true");
   });

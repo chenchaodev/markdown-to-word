@@ -42,8 +42,9 @@ export async function loadBookWizardDeps(distUrl, prefix = "") {
     isConvertCommandBlocked: flow.isConvertCommandBlocked,
     runMerge: (opts) => flow.runMerge(flowDeps, opts),
     withPrecheck: (filePaths, action) => flow.withPrecheck(flowDeps, filePaths, action),
-    // convert/file-list.js
-    renderSelection: fileList.renderSelection,
+    // convert/file-list.js —— 舞台跃迁通知的端口实现体在 ui/recent-files,而向导这一侧
+    // 不判历史浮层的收起时机(那是 ui 域的主体),故此处接空实现,只把 deps 形状喂对。
+    renderSelection: () => fileList.renderSelection({ onStageChanged: () => {} }),
     // settings/settings-drawer.js
     closeSettingsDrawer: drawer.closeSettingsDrawer,
     isSettingsDrawerOpen: drawer.isSettingsDrawerOpen,

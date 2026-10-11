@@ -352,13 +352,16 @@ export async function run() {
       suppressCompleteDialog: state.suppressCompleteDialog,
       firstRun: state.firstRun,
     };
+    // file-list 的舞台跃迁通知端口:实现体在 ui/recent-files,本段判的是会话持久化
+    // 写入点(队列渲染那侧),不判历史浮层收起时机 —— 故接空实现,只把 deps 形状喂对。
+    const fileListDeps = { onStageChanged: () => {} };
     const saveFailed = t("preset.saveFailed");
     const countCalls = () => calls.filter((c) => "lastSessionFiles" in c).length;
 
     // ---- 1. renderSelection:一次变更 = 一次 uiStateSet(单一写入点,无重复 mutation) ----
     state.selectedFiles = ["C:\\session-persist\\case-1.md"];
     await suite.case("renderSelection 一次变更只写一次会话文件", async () => {
-    fileList.renderSelection();
+    fileList.renderSelection(fileListDeps);
     await flush(); // 去重键在写成功后回填,须等 then 分支落地
     assert(countCalls() === 1, `renderSelection 应只写一次会话文件,实际 ${countCalls()} 次`);
     assert(
@@ -369,7 +372,7 @@ export async function run() {
 
     await suite.case("内容未变的纯重渲染不重复写", async () => {
     // 内容未变的纯重渲染(语言切换等)不重复写
-    fileList.renderSelection();
+    fileList.renderSelection(fileListDeps);
     await flush();
     assert(countCalls() === 1, `内容未变的重渲染不应重复写,实际 ${countCalls()} 次`);
     });
@@ -377,7 +380,7 @@ export async function run() {
     await suite.case("清空选择经同一写入点落一次空数组", async () => {
     // 清空选择同样经同一写入点落一次
     state.selectedFiles = [];
-    fileList.renderSelection();
+    fileList.renderSelection(fileListDeps);
     await flush();
     assert(countCalls() === 2, `清空选择应写一次,实际 ${countCalls()} 次`);
     assert(
@@ -407,7 +410,7 @@ export async function run() {
     rejectWrites = true;
     statusEl.textContent = "";
     state.selectedFiles = ["C:\\session-persist\\case-3.md"];
-    fileList.renderSelection();
+    fileList.renderSelection(fileListDeps);
     await flush();
     await suite.case("会话文件写失败在状态区可见并保留编辑内容", () => {
     assert(
@@ -424,7 +427,7 @@ export async function run() {
     // ---- 4. 失败后可恢复:同内容下一次保存仍真正重试(失败不记入去重键) ----
     const beforeRetry = countCalls();
     rejectWrites = false;
-    fileList.renderSelection();
+    fileList.renderSelection(fileListDeps);
     await flush();
     await suite.case("失败后同内容再次保存真正重试一次", () => {
     assert(

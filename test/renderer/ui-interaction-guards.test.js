@@ -335,7 +335,14 @@ export async function run() {
     // (1) 队列行 Enter/Space 边界
     state.selectedFiles = ["a.md", "b.md"];
     state.mode = null;
-    selection.bindSelectionEvents({ ...convertFlowDeps, openWizard: () => {} });
+    // onStageChanged 必填(ADR-075 §四:无默认值,漏装要在 typecheck 处编译不过)。
+    // 本段走不到 applySelection 的成功路径,故该端口永不被调 —— 但装配仍要补齐,
+    // 否则将来某个用例走到那条路会在运行期 TypeError,而动态 import 的 any 类型拦不住。
+    selection.bindSelectionEvents({
+      ...convertFlowDeps,
+      openWizard: () => {},
+      onStageChanged: () => {},
+    });
 
     const row = makeElement({ dataset: { index: "0" } });
     // 行目标对事件边界选择器「命中自身」(closest 返回自己),模拟真实 DOM

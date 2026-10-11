@@ -39,7 +39,7 @@ import {
 import { state } from "../../state/state.js";
 import { setError } from "../../dom/dom-ops.js";
 import { batchRetryPaths, batchSuccessPaths, errorMessage } from "../../state/pure.js";
-import { applySelection } from "../file-list.js";
+import { applySelection, type FileListDeps } from "../file-list.js";
 import {
   isConvertCommandBlocked,
   runBatch,
@@ -51,6 +51,8 @@ import { t } from "../../../core/i18n/index.js";
 /**
  * 本域注入的端口全集。ui/dialogs 的呈现面复用 convert-flow 那份
  * (`ConvertFlowDeps`:本域要 showBatchDialog,而它是 convert-flow 的呈现端口之一);
+ * 选择管线复用 file-list 那份(`FileListDeps`:本域有两处改选择 —— 批量弹窗重试
+ * 失败项、菜单转发「打开文件…」);
  * 其余按本域实际调用点自报。传函数本身,不传模块命名空间(ADR-075 §四)。
  *
  * **不许给任一项设默认值/可选参数**:port 缺失必须在 typecheck 处编译不过。
@@ -59,7 +61,7 @@ import { t } from "../../../core/i18n/index.js";
  * 参数装配顺序与 `else if` 的求值顺序共同决定,改成惰性(port 返回 Promise / 微任务)
  * 会静默改掉末位语义而没有任何测试变红。
  */
-export interface DialogEventsDeps extends ConvertFlowDeps {
+export interface DialogEventsDeps extends ConvertFlowDeps, FileListDeps {
   /** ui/dialogs:完成弹窗关闭(组合根已绑好 ui 侧 deps,此处是零参闭包)。 */
   hideCompleteDialog: () => void;
   /** ui/dialogs:批量弹窗关闭(同上)。 */
@@ -144,7 +146,7 @@ export function bindDialogEvents(deps: DialogEventsDeps): void {
     const failed = batchRetryPaths(state.lastBatchResult.items);
     if (failed.length === 0) return;
     deps.hideBatchDialog();
-    applySelection(failed);
+    applySelection(deps, failed);
     void runBatch(deps, failed, state.lastBatchFormat); // 预检由 runBatch 内部收口(只查重试的这一批)
   });
 
@@ -211,7 +213,7 @@ export function bindDialogEvents(deps: DialogEventsDeps): void {
 
   // 应用菜单「文件 → 打开文件…」→ 复用现有选择链路(替换选择,与「选择文件」按钮一致)
   window.api.onMenuOpen(() => {
-    if (!isConvertCommandBlocked()) void openDialog(false);
+    if (!isConvertCommandBlocked()) void openDialog(deps, false);
   });
 
   // 弹窗关闭:确定按钮 / 点击遮罩 / Esc 三种方式
