@@ -6,23 +6,45 @@
  * 控件形态沿用既有令牌类(.mm-grid / .stepper / .segmented / .switch-input / .path-chip)。
  * 另含步骤渲染与外壳共用的零件:DOM 构造 h、开关行 swRow、目录/Logo 选择、
  * radio 构造与取值回填小工具、步骤用设置类型别名。
- * 依赖方向:本模块 → core / state / settings-save / settings-logic(单向);
- * 写路径(persistSettings)自 REF-025 #10 起取自 settings-save 而非 settings-panel,
- * 故本模块不再经设置面板。不反向引用步骤渲染与外壳(两岛均单向 import 本模块)。
+ * 依赖方向:本模块 → core / state / dom(单向)。对 settings 的写路径(persistSettings)
+ * 与纯函数(settings-logic 的钳制/校验/展示名)自 REQ-218 #10 阶段④ 起经组合根注入的
+ * WizardFieldsDeps 形参进入,不再有跨功能静态 import —— 不反向引用步骤渲染与外壳
+ * (两岛均单向 import 本模块)。
  */
 import { t } from "../../core/i18n/index.js";
 import { MARGIN_MAX_MM, type AppSettings } from "../../core/settings/settings-defaults.js";
 import { state } from "../state/state.js";
 import { hideFieldError, setError, showFieldError } from "../dom/dom-ops.js";
 import { errorMessage } from "../state/pure.js";
-import {
-  headerLogoDisplayName,
-  outputDirDisplayText,
-  parseMarginValue,
-  validateNumberRange,
-  type MarginField,
-} from "../settings/settings-logic.js";
-import { persistSettings } from "../settings/settings-save.js";
+
+/**
+ * 跨功能协作面(ADR-075 阶段④:组合根组装 · 本模块接形参 · 类型由本 feature 自报;
+ * 不新建共享 ports 文件 —— 四个功能根是平铺协作的 peer,共用一份等于给 peer mesh
+ * 装枢纽,边数不降反增)。传函数本身(不传模块命名空间)。
+ *
+ * **不许给任一项设默认值/可选参数**:port 缺失必须在 typecheck 处编译不过,
+ * 而静默不生效(fail-open)比编译不过更糟 —— 它让接线错误在运行期无声溜过。
+ */
+export interface WizardFieldsDeps {
+  /** settings/settings-logic:页眉 Logo 展示名(空路径回退「未设置」文案)。 */
+  headerLogoDisplayName: (headerLogoPath: string) => string;
+  /** settings/settings-logic:输出目录展示文案(空串回退默认目录文案)。 */
+  outputDirDisplayText: (outputDir: string) => string;
+  /** settings/settings-logic:边距输入钳制(非法返回 null,由本模块回显当前设置值)。 */
+  parseMarginValue: (value: number) => number | null;
+  /** settings/settings-logic:字号/行距区间校验。 */
+  validateNumberRange: (value: number, min: number, max: number) => boolean;
+  /** settings/settings-save:实时落盘(向导内改设置与设置抽屉同源,关向导不丢设置)。 */
+  persistSettings: (patch: Partial<AppSettings>) => void;
+}
+
+/**
+ * 边距字段键:原先取自 settings/settings-logic 的同名 type,随那条跨功能 import 一并
+ * 改为**从 core 契约派生** —— `PageSetup` 的 `margin*` 键恰是这四个。
+ * 派生而非另抄一份字面量联合:core 契约增减边距字段时此处自动跟随,不会留下第二份
+ * 需要人工同步的清单(抄字面量就是 ADR-064 那条「同名概念只允许存在一份」的同款漂移)。
+ */
+export type MarginField = Extract<keyof AppSettings["pageSetup"], `margin${string}`>;
 
 /* ---------- 极简 DOM 构造助手(步骤渲染与外壳共用,避免散落 createElement) ---------- */
 type Props = Record<string, unknown>;
@@ -122,9 +144,14 @@ export function fieldErrorNode(): HTMLElement {
 }
 
 /** 边距输入:复用 parseMarginValue 钳制 + settings.marginRange 提示,实时写 pageSetup。 */
-export function bindMarginInput(key: MarginField, input: HTMLInputElement, errorEl: HTMLElement): void {
+export function bindMarginInput(
+  deps: WizardFieldsDeps,
+  key: MarginField,
+  input: HTMLInputElement,
+  errorEl: HTMLElement,
+): void {
   input.addEventListener("change", () => {
-    const clamped = parseMarginValue(input.valueAsNumber);
+    const clamped = deps.parseMarginValue(input.valueAsNumber);
     if (clamped === null) {
       input.value = String(state.settings.pageSetup[key]);
       showFieldError(errorEl, t("settings.marginRange", { max: MARGIN_MAX_MM }), input);
@@ -133,12 +160,13 @@ export function bindMarginInput(key: MarginField, input: HTMLInputElement, error
     state.settings.pageSetup[key] = clamped;
     input.value = String(clamped);
     hideFieldError(errorEl, input);
-    persistSettings({ pageSetup: { ...state.settings.pageSetup } });
+    deps.persistSettings({ pageSetup: { ...state.settings.pageSetup } });
   });
 }
 
 /** 字号/行距输入:复用 validateNumberRange + settings.numberRange 提示,实时写 typography。 */
 export function bindTypographyNumber(
+  deps: WizardFieldsDeps,
   key: "bodySizePt" | "lineSpacing",
   input: HTMLInputElement,
   errorEl: HTMLElement,
@@ -147,19 +175,20 @@ export function bindTypographyNumber(
 ): void {
   input.addEventListener("change", () => {
     const value = input.valueAsNumber;
-    if (!validateNumberRange(value, min, max)) {
+    if (!deps.validateNumberRange(value, min, max)) {
       input.value = String(state.settings.typography[key]);
       showFieldError(errorEl, t("settings.numberRange", { min, max }), input);
       return;
     }
     state.settings.typography[key] = value;
     hideFieldError(errorEl, input);
-    persistSettings({ typography: { ...state.settings.typography } });
+    deps.persistSettings({ typography: { ...state.settings.typography } });
   });
 }
 
 /** 字体 combo 输入:空值恢复并提示,实时写 typography。 */
 export function bindFontInput(
+  deps: WizardFieldsDeps,
   key: "fontAscii" | "fontEastAsia",
   input: HTMLInputElement,
   errorEl: HTMLElement,
@@ -174,18 +203,18 @@ export function bindFontInput(
     }
     state.settings.typography[key] = value;
     hideFieldError(errorEl, input);
-    persistSettings({ typography: { ...state.settings.typography } });
+    deps.persistSettings({ typography: { ...state.settings.typography } });
   });
 }
 
 /** 标题档位 seg:实时写 typography(headingScale / headingSpacing)。 */
-export function bindHeadingTier(name: string, value: string): void {
+export function bindHeadingTier(deps: WizardFieldsDeps, name: string, value: string): void {
   if (name === "headingScale") {
     state.settings.typography.headingScale = value as AppSettings["typography"]["headingScale"];
   } else {
     state.settings.typography.headingSpacing = value as AppSettings["typography"]["headingSpacing"];
   }
-  persistSettings({ typography: { ...state.settings.typography } });
+  deps.persistSettings({ typography: { ...state.settings.typography } });
 }
 
 /**
@@ -219,31 +248,35 @@ export function swRow(
 }
 
 /** 输出目录选择:复用抽屉同款逻辑(selectDir → 写 state.settings + 更新 chip + 持久化)。 */
-export async function pickOutputDir(chip: HTMLElement): Promise<void> {
+export async function pickOutputDir(deps: WizardFieldsDeps, chip: HTMLElement): Promise<void> {
   try {
     const dir = await window.api.selectDir();
     if (!dir) return; // 用户取消
     state.settings.outputDir = dir;
-    const text = outputDirDisplayText(dir);
+    const text = deps.outputDirDisplayText(dir);
     chip.textContent = text;
     chip.title = text;
-    persistSettings({ outputDir: dir });
+    deps.persistSettings({ outputDir: dir });
   } catch (err) {
     setError(t("settings.selectDirFailed", { error: errorMessage(err) }));
   }
 }
 
 /** 页眉 Logo 选择:复用抽屉同款逻辑(selectHeaderLogo → 写 headerFooter + 更新状态 + 持久化)。 */
-export async function pickHeaderLogo(statusEl: HTMLElement, clearBtn: HTMLButtonElement): Promise<void> {
+export async function pickHeaderLogo(
+  deps: WizardFieldsDeps,
+  statusEl: HTMLElement,
+  clearBtn: HTMLButtonElement,
+): Promise<void> {
   try {
     const logoPath = await window.api.selectHeaderLogo();
     if (!logoPath) return; // 用户取消
     state.settings.headerFooter.headerLogoPath = logoPath;
-    const name = headerLogoDisplayName(logoPath);
+    const name = deps.headerLogoDisplayName(logoPath);
     statusEl.textContent = name;
     statusEl.title = name;
     clearBtn.classList.remove("hidden");
-    persistSettings({ headerFooter: { ...state.settings.headerFooter } });
+    deps.persistSettings({ headerFooter: { ...state.settings.headerFooter } });
   } catch (err) {
     setError(t("settings.selectDirFailed", { error: errorMessage(err) }));
   }

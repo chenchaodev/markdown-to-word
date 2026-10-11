@@ -6,8 +6,10 @@
  * wizard-fields.ts,外壳/导航/付印提交见 book-wizard.ts。
  * 封面控件引用在本模块赋值(buildStepCover),外壳打开重置与交付步预填经
  * import 读取(ESM 实时绑定,导入只读——赋值仅在本模块,不越界)。
- * 依赖方向:本模块 → wizard-fields、wizard-runtime、core / state / settings-*
- * (单向),不反向引用外壳。
+ * 依赖方向:本模块 → wizard-fields、wizard-runtime、core / state(单向),
+ * 不反向引用外壳。对 settings 的协作(套用预设 / 导入模板 / 落盘 / 预设与展示名)
+ * 自 REQ-218 #10 阶段④ 起经组合根注入的 WizardStepsDeps 形参进入,不再有跨功能
+ * 静态 import。
  */
 import { t } from "../../core/i18n/index.js";
 import {
@@ -16,17 +18,10 @@ import {
   LINE_SPACING_MAX,
   LINE_SPACING_MIN,
   MARGIN_MAX_MM,
+  type CustomPreset,
 } from "../../core/settings/settings-defaults.js";
+import type { TemplatePreset } from "../../core/settings/presets.js";
 import { state } from "../state/state.js";
-import { applyTemplatePreset } from "../settings/settings-bindings-preset.js";
-import { importDocxTemplate } from "../settings/settings-panel.js";
-import { persistSettings } from "../settings/settings-save.js";
-import {
-  allPresets,
-  headerLogoDisplayName,
-  presetDisplayName,
-  type MarginField,
-} from "../settings/settings-logic.js";
 import {
   bindFontInput,
   bindHeadingTier,
@@ -44,8 +39,29 @@ import {
   swRow,
   type AppHeaderMode,
   type AppHeaderLayout,
+  type MarginField,
+  type WizardFieldsDeps,
 } from "./wizard-fields.js";
 import { draft } from "./wizard-runtime.js";
+
+/**
+ * 跨功能协作面(ADR-075 阶段④:组合根组装 · 本模块接形参 · 类型由本 feature 自报;
+ * 不新建共享 ports 文件,理由同 WizardFieldsDeps)。
+ * 继承 WizardFieldsDeps:本模块把同一份 deps 透传给 wizard-fields 的绑定函数,
+ * 组合根因此只需装配**一份**对象,不必按岛切分。
+ * **不许给任一项设默认值/可选参数**:port 缺失必须在 typecheck 处编译不过
+ * (fail-open 比编译不过更糟)。
+ */
+export interface WizardStepsDeps extends WizardFieldsDeps {
+  /** settings/settings-logic:可选预设全量(硬编码 3 项 + 自定义项)。 */
+  allPresets: (customPresets: readonly CustomPreset[]) => TemplatePreset[];
+  /** settings/settings-logic:预设名本地化口径(与设置面板下拉一致)。 */
+  presetDisplayName: (preset: TemplatePreset) => string;
+  /** settings/settings-bindings-preset:套用整份预设(排版/页眉/水印/目录一次写回)。 */
+  applyTemplatePreset: (presetId: string) => void;
+  /** settings/settings-panel:导入 docx 模板(选文件 → 解析 → 回填设置)。 */
+  importDocxTemplate: () => Promise<void>;
+}
 
 /* 各步需读写的封面控件引用(每次 open 由 buildStepCover 重建) */
 export let coverTitleInput: HTMLInputElement;
@@ -55,21 +71,21 @@ export let coverPreview: HTMLElement;
 export let coverFromFm: HTMLElement;
 
 /* ---------- 步骤 1:模板预设 ---------- */
-export function buildStepTemplate(): HTMLElement {
+export function buildStepTemplate(deps: WizardStepsDeps): HTMLElement {
   const select = h("select", { id: "wizardPreset", class: "setting-select" }) as HTMLSelectElement;
-  for (const preset of allPresets(state.settings.customPresets)) {
+  for (const preset of deps.allPresets(state.settings.customPresets)) {
     // 预设名本地化口径与设置面板下拉一致(内置走字典/自定义走 name;缺键回退 name)
-    const opt = h("option", { value: preset.id, text: presetDisplayName(preset) });
+    const opt = h("option", { value: preset.id, text: deps.presetDisplayName(preset) });
     select.appendChild(opt);
   }
-  select.addEventListener("change", () => applyTemplatePreset(select.value));
+  select.addEventListener("change", () => deps.applyTemplatePreset(select.value));
 
   const importBtn = h("button", {
     type: "button",
     class: "btn btn-ghost sm",
     dataset: { i18n: "wizard.template.import" },
   }, [t("wizard.template.import")]);
-  importBtn.addEventListener("click", () => void importDocxTemplate());
+  importBtn.addEventListener("click", () => void deps.importDocxTemplate());
 
   /* 排版微调折叠区:页面边距 + 字体微调(预设选定后用户可微调)
    * 无障碍:每个控件都有 id + label[for];错误节点 role=alert 并由
@@ -83,7 +99,7 @@ export function buildStepTemplate(): HTMLElement {
       id: inputId, "aria-describedby": marginError.id,
       value: String(state.settings.pageSetup[key]),
     }) as HTMLInputElement;
-    bindMarginInput(key, input, marginError);
+    bindMarginInput(deps, key, input, marginError);
     return h("div", { class: "mm-cell" }, [
       h("label", { for: inputId, text: label }),
       h("div", { class: "mm-in" }, [input, h("span", { text: "mm" })]),
@@ -110,7 +126,7 @@ export function buildStepTemplate(): HTMLElement {
   }) as HTMLInputElement;
   fontEaInput.setAttribute("list", "fontEastAsiaSuggestions");
   const fontEaError = fieldErrorNode();
-  bindFontInput("fontEastAsia", fontEaInput, fontEaError, "settings.fontEastAsiaEmpty");
+  bindFontInput(deps, "fontEastAsia", fontEaInput, fontEaError, "settings.fontEastAsiaEmpty");
 
   const fontAsciiInput = h("input", {
     type: "text", class: "tin",
@@ -118,7 +134,7 @@ export function buildStepTemplate(): HTMLElement {
   }) as HTMLInputElement;
   fontAsciiInput.setAttribute("list", "fontAsciiSuggestions");
   const fontAsciiError = fieldErrorNode();
-  bindFontInput("fontAscii", fontAsciiInput, fontAsciiError, "settings.fontAsciiEmpty");
+  bindFontInput(deps, "fontAscii", fontAsciiInput, fontAsciiError, "settings.fontAsciiEmpty");
 
   const bodySizeError = fieldErrorNode();
   const bodySizeInput = h("input", {
@@ -137,7 +153,7 @@ export function buildStepTemplate(): HTMLElement {
   };
   bodySizeDec.addEventListener("click", () => stepBody(-0.5));
   bodySizeInc.addEventListener("click", () => stepBody(0.5));
-  bindTypographyNumber("bodySizePt", bodySizeInput, bodySizeError, BODY_SIZE_MIN, BODY_SIZE_MAX);
+  bindTypographyNumber(deps, "bodySizePt", bodySizeInput, bodySizeError, BODY_SIZE_MIN, BODY_SIZE_MAX);
   const bodySizeStepper = h("span", { class: "stepper" }, [bodySizeDec, bodySizeInput, bodySizeInc]);
 
   const lineSpacingError = fieldErrorNode();
@@ -148,21 +164,21 @@ export function buildStepTemplate(): HTMLElement {
   }) as HTMLInputElement;
   const lineSpacingOut = h("output", { class: "wz-range-out", text: String(state.settings.typography.lineSpacing) });
   lineSpacingInput.addEventListener("input", () => { lineSpacingOut.textContent = lineSpacingInput.value; });
-  bindTypographyNumber("lineSpacing", lineSpacingInput, lineSpacingError, LINE_SPACING_MIN, LINE_SPACING_MAX);
+  bindTypographyNumber(deps, "lineSpacing", lineSpacingInput, lineSpacingError, LINE_SPACING_MIN, LINE_SPACING_MAX);
 
   const headingScaleRadios = radioGroup([
     radio("wizardHeadingScale", "compact", t("settings.tierCompact"), state.settings.typography.headingScale === "compact"),
     radio("wizardHeadingScale", "standard", t("settings.tierStandard"), state.settings.typography.headingScale === "standard"),
     radio("wizardHeadingScale", "spacious", t("settings.tierSpacious"), state.settings.typography.headingScale === "spacious"),
   ]);
-  headingScaleRadios.addEventListener("change", () => bindHeadingTier("headingScale", checkedValue(headingScaleRadios)));
+  headingScaleRadios.addEventListener("change", () => bindHeadingTier(deps, "headingScale", checkedValue(headingScaleRadios)));
 
   const headingSpacingRadios = radioGroup([
     radio("wizardHeadingSpacing", "compact", t("settings.tierCompact"), state.settings.typography.headingSpacing === "compact"),
     radio("wizardHeadingSpacing", "standard", t("settings.tierStandard"), state.settings.typography.headingSpacing === "standard"),
     radio("wizardHeadingSpacing", "spacious", t("settings.tierSpacious"), state.settings.typography.headingSpacing === "spacious"),
   ]);
-  headingSpacingRadios.addEventListener("change", () => bindHeadingTier("headingSpacing", checkedValue(headingSpacingRadios)));
+  headingSpacingRadios.addEventListener("change", () => bindHeadingTier(deps, "headingSpacing", checkedValue(headingSpacingRadios)));
 
   const fold = h("details", { class: "wz-fold", open: true }, [
     h("summary", {}, [
@@ -251,11 +267,11 @@ export function renderCoverPreview(): void {
 
 /* ---------- 步骤 3:页眉页脚 ---------- */
 /** 页眉图片行(状态 chip + 选择/清除):抽出成独立函数,便于 groupRow 整组标注 */
-function buildHeaderLogoRow(): HTMLElement {
+function buildHeaderLogoRow(deps: WizardStepsDeps): HTMLElement {
   const logoStatus = h("span", {
     class: "path-chip",
     id: "wizardHeaderLogoStatus",
-    text: headerLogoDisplayName(state.settings.headerFooter.headerLogoPath) || t("settings.headerLogoNone"),
+    text: deps.headerLogoDisplayName(state.settings.headerFooter.headerLogoPath) || t("settings.headerLogoNone"),
   });
   const logoClear = h("button", {
     type: "button", class: "btn btn-text sm hidden", dataset: { i18n: "settings.cssClear" },
@@ -263,19 +279,19 @@ function buildHeaderLogoRow(): HTMLElement {
   const logoPick = h("button", {
     type: "button", class: "btn btn-ghost sm", dataset: { i18n: "settings.headerLogoPick" },
   }, [t("settings.headerLogoPick")]);
-  logoPick.addEventListener("click", () => void pickHeaderLogo(logoStatus, logoClear));
+  logoPick.addEventListener("click", () => void pickHeaderLogo(deps, logoStatus, logoClear));
   logoClear.addEventListener("click", () => {
     state.settings.headerFooter.headerLogoPath = "";
     logoStatus.textContent = t("settings.headerLogoNone");
     logoStatus.title = "";
     logoClear.classList.add("hidden");
-    persistSettings({ headerFooter: { ...state.settings.headerFooter } });
+    deps.persistSettings({ headerFooter: { ...state.settings.headerFooter } });
   });
   if (state.settings.headerFooter.headerLogoPath) logoClear.classList.remove("hidden");
   return h("div", { class: "outputdir-row" }, [logoStatus, logoPick, logoClear]);
 }
 
-export function buildStepHeader(): HTMLElement {
+export function buildStepHeader(deps: WizardStepsDeps): HTMLElement {
   const modeRadios = radioGroup([
     radio("wizardHeaderMode", "default", t("settings.modeDefault"), true),
     radio("wizardHeaderMode", "custom", t("settings.headerModeCustom"), false),
@@ -293,13 +309,13 @@ export function buildStepHeader(): HTMLElement {
     state.settings.headerFooter.footerEnabled,
     (v) => {
       state.settings.headerFooter.footerEnabled = v;
-      persistSettings({ headerFooter: { ...state.settings.headerFooter } });
+      deps.persistSettings({ headerFooter: { ...state.settings.headerFooter } });
     },
   );
   const cond = h("div", { class: "cond", inert: true }, [
     h("div", { class: "cond-in" }, [
       fieldRow("settings.headerText", headerText),
-      groupRow("settings.headerLogo", buildHeaderLogoRow()),
+      groupRow("settings.headerLogo", buildHeaderLogoRow(deps)),
       groupRow("settings.headerLayout", layoutRadios),
       footerRow,
     ]),
@@ -312,20 +328,20 @@ export function buildStepHeader(): HTMLElement {
   };
   modeRadios.addEventListener("change", () => {
     state.settings.headerFooter.headerMode = checkedValue(modeRadios) as AppHeaderMode;
-    persistSettings({ headerFooter: { ...state.settings.headerFooter } });
+    deps.persistSettings({ headerFooter: { ...state.settings.headerFooter } });
     syncCond();
   });
   headerText.addEventListener("change", () => {
     state.settings.headerFooter.headerText = headerText.value.trim();
-    persistSettings({ headerFooter: { ...state.settings.headerFooter } });
+    deps.persistSettings({ headerFooter: { ...state.settings.headerFooter } });
   });
   layoutRadios.addEventListener("change", () => {
     state.settings.headerFooter.headerLayout = checkedValue(layoutRadios) as AppHeaderLayout;
-    persistSettings({ headerFooter: { ...state.settings.headerFooter } });
+    deps.persistSettings({ headerFooter: { ...state.settings.headerFooter } });
   });
   layoutRadios.addEventListener("change", () => {
     state.settings.headerFooter.headerLayout = checkedValue(layoutRadios) as AppHeaderLayout;
-    persistSettings({ headerFooter: { ...state.settings.headerFooter } });
+    deps.persistSettings({ headerFooter: { ...state.settings.headerFooter } });
   });
 
   // 回填当前设置值
@@ -341,7 +357,7 @@ export function buildStepHeader(): HTMLElement {
 }
 
 /* ---------- 步骤 4:水印 ---------- */
-export function buildStepWatermark(): HTMLElement {
+export function buildStepWatermark(deps: WizardStepsDeps): HTMLElement {
   const text = h("input", { type: "text", class: "tin", id: "wizardWmText" }) as HTMLInputElement;
   const angle = h("input", { type: "number", class: "tin tin-num", min: "0", max: "360", step: "1", id: "wizardWmAngle" }) as HTMLInputElement;
   const opacity = h("input", { type: "number", class: "tin tin-num", min: "0", max: "1", step: "0.05", id: "wizardWmOpacity" }) as HTMLInputElement;
@@ -351,23 +367,23 @@ export function buildStepWatermark(): HTMLElement {
     state.settings.watermark.gray,
     (v) => {
       state.settings.watermark.gray = v;
-      persistSettings({ watermark: { ...state.settings.watermark } });
+      deps.persistSettings({ watermark: { ...state.settings.watermark } });
     },
   );
 
   text.addEventListener("change", () => {
     state.settings.watermark.text = text.value;
-    persistSettings({ watermark: { ...state.settings.watermark } });
+    deps.persistSettings({ watermark: { ...state.settings.watermark } });
   });
   angle.addEventListener("change", () => {
     state.settings.watermark.angle = Math.min(360, Math.max(0, angle.valueAsNumber || 0));
     angle.value = String(state.settings.watermark.angle);
-    persistSettings({ watermark: { ...state.settings.watermark } });
+    deps.persistSettings({ watermark: { ...state.settings.watermark } });
   });
   opacity.addEventListener("change", () => {
     state.settings.watermark.opacity = Math.min(1, Math.max(0, opacity.valueAsNumber || 0));
     opacity.value = String(state.settings.watermark.opacity);
-    persistSettings({ watermark: { ...state.settings.watermark } });
+    deps.persistSettings({ watermark: { ...state.settings.watermark } });
   });
 
   text.value = state.settings.watermark.text;

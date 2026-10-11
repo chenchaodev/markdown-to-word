@@ -17,6 +17,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
 import { fireListener, installDomStub } from "./dom-stub.js";
+import { loadBookWizardDeps } from "./wizard-deps.js";
 import { createAsserter } from "../harness/assert.js";
 import { createCaseSuite } from "../harness/case.js";
 
@@ -78,6 +79,9 @@ export async function run() {
     );
     const { state } = await import(distUrl("renderer/state/state.js"));
     const bookWizard = await import(distUrl("renderer/wizard/book-wizard.js"));
+    // openBookWizard 自 wizard 刀起收 BookWizardDeps(ADR-075 §四),本段共用一份装配。
+    // 本段 distUrl 以 dist/ 起(非 dist/renderer/),故前缀传 "renderer/"。
+    const bookWizardDeps = await loadBookWizardDeps(distUrl, "renderer/");
 
     // 与生产(renderer/state/state.ts 初始 state)共用同一个工厂:此前这里手写的
     // 4 组展开与生产的 2 组展开不同形,生产新增分组时本段会静默漏掉一块。
@@ -123,7 +127,7 @@ export async function run() {
     // 只装一次、每次 open 重建外壳),故流程留在 run() 层,case 内只下判定。
     setLanguage("zh");
     let mark = dom.created.length;
-    bookWizard.openBookWizard();
+    bookWizard.openBookWizard(bookWizardDeps);
     let nodes = openedSince(mark);
     const overlay = findById(nodes, "bookWizard");
 
@@ -154,7 +158,7 @@ export async function run() {
     state.settings.headerFooter.headerText = "青崖大学文学院";
     state.settings.toc = false;
     mark = dom.created.length;
-    bookWizard.openBookWizard();
+    bookWizard.openBookWizard(bookWizardDeps);
     nodes = openedSince(mark);
     const overlay2 = findById(nodes, "bookWizard");
     const wmInput = findById(nodes, "wizardWmText");
@@ -244,7 +248,7 @@ export async function run() {
     bookWizard.closeBookWizard();
     setLanguage("en");
     mark = dom.created.length;
-    bookWizard.openBookWizard();
+    bookWizard.openBookWizard(bookWizardDeps);
     nodes = openedSince(mark);
     const enLabel = firstLabel(nodes);
     setLanguage("zh");

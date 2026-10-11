@@ -32,7 +32,6 @@ import {
   renderSelection,
 } from "../file-list.js";
 import { runConvert, isConvertCommandBlocked } from "../convert-flow.js";
-import { openBookWizard } from "../../wizard/book-wizard.js";
 import { t } from "../../../core/i18n/index.js";
 
 /** 列表边缘自动滚动步长(px/次,dragover 事件粒度)。 */
@@ -123,7 +122,17 @@ export async function openDialog(append = false): Promise<void> {
 }
 
 /* ---------- 本域事件绑定(index 组合入口逐域调用) ---------- */
-export function bindSelectionEvents(): void {
+/**
+ * 本域注入的端口。`openWizard` 是零参闭包 —— 组合根已把 wizard 的 `BookWizardDeps`
+ * 绑好(ADR-075 §四:组合根组装、feature 侧接形参),本域因此不需要知道 wizard 的 deps
+ * 形状,也不必 import 那个类型(那会造出一条新的 type-only 跨 feature 边)。
+ */
+export interface SelectionEventsDeps {
+  /** 打开成书向导模态。 */
+  openWizard: () => void;
+}
+
+export function bindSelectionEvents(deps: SelectionEventsDeps): void {
   selectBtn.addEventListener("click", (event) => {
     event.stopPropagation(); // 避免冒泡触发拖放区点击,重复打开对话框
     void openDialog(false);
@@ -185,7 +194,7 @@ export function bindSelectionEvents(): void {
   bookWizardBtn.addEventListener("click", (event) => {
     event.stopPropagation();
     if (bookWizardBtn.disabled) return;
-    openBookWizard();
+    deps.openWizard();
   });
 
   // 「追加文件」按钮(两态共用):对话框追加合并,与现有列表去重;

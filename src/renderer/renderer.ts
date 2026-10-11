@@ -13,12 +13,34 @@ import { bindSettingsEvents } from "./settings/settings-bindings.js";
 import { bindSettingsDrawerEvents, applyDrawerOpenState } from "./settings/settings-drawer.js";
 import { aboutOpenBtn, dropZone } from "./dom/refs.js";
 import {
+  importDocxTemplate,
   loadSettings,
   initSettingsTabs,
   syncSuppressCompleteDialog,
 } from "./settings/settings-panel.js";
-import { runConvert } from "./convert/convert-flow.js";
-import { openBookWizard } from "./wizard/book-wizard.js";
+import {
+  isBackgroundCommandBlocked,
+  isConvertCommandBlocked,
+  runConvert,
+  runMerge,
+  withPrecheck,
+} from "./convert/convert-flow.js";
+import {
+  allPresets,
+  headerLogoDisplayName,
+  outputDirDisplayText,
+  parseMarginValue,
+  presetDisplayName,
+  validateNumberRange,
+} from "./settings/settings-logic.js";
+import { persistSettings } from "./settings/settings-save.js";
+import { applyTemplatePreset } from "./settings/settings-bindings-preset.js";
+import {
+  closeSettingsDrawer,
+  isSettingsDrawerOpen,
+} from "./settings/settings-drawer.js";
+import { renderSelection } from "./convert/file-list.js";
+import { openBookWizard, type BookWizardDeps } from "./wizard/book-wizard.js";
 import {
   bindRecentFilesEvents,
   initUiStateRestore,
@@ -42,6 +64,41 @@ const recentFilesDeps: RecentFilesDeps = {
   syncSuppressCompleteDialog,
   applyDrawerOpenState,
 };
+
+/**
+ * wizard 的跨功能协作面在此组装(ADR-075 §四:组合根组装 · feature 侧接形参)。
+ *
+ * 它比 recent-files 那份大得多(16 项),因为 wizard 是四个功能根里**唯一同时向
+ * settings 与 convert 两侧协作**的:向导的「选源文件 / 合并 / 预检 / 字段校验 /
+ * 输出目录 / 应用模板预设」全在 settings 与 convert 侧。仍然**不给默认值** ——
+ * 漏一项要在 typecheck 处编译不过。
+ *
+ * ⚠ 这份 deps 在本文件被**绑成零参闭包后**分发给多处(`openWizard`),这样调用方
+ * (initFirstRunGuide / convert 的 selection 域)都不必知道 wizard 的 deps 形状;
+ * 若让它们各自 import `BookWizardDeps` 类型,会各造出一条 type-only 跨 feature 边 ——
+ * 正是 ADR-075 后果节点名的两侧分叉口(src 侧数得到、产物侧被编译期擦除,两侧读数对不上)。
+ */
+const bookWizardDeps: BookWizardDeps = {
+  isBackgroundCommandBlocked,
+  isConvertCommandBlocked,
+  runMerge,
+  withPrecheck,
+  renderSelection,
+  closeSettingsDrawer,
+  isSettingsDrawerOpen,
+  allPresets,
+  headerLogoDisplayName,
+  outputDirDisplayText,
+  parseMarginValue,
+  presetDisplayName,
+  validateNumberRange,
+  persistSettings,
+  applyTemplatePreset,
+  importDocxTemplate,
+};
+
+/** 已绑好 wizard deps 的零参开向导闭包(见上)。 */
+const openWizard = () => openBookWizard(bookWizardDeps);
 
 /**
  * window.api 类型单源在 core(PreloadApi,src/core/preload-api.ts),preload 以它标注
@@ -137,7 +194,7 @@ function focusStageEntry(): void {
 /* ---------- 初始化 ---------- */
 // 事件绑定先于其余初始化(时序与拆分前一致:原绑定在模块加载期执行,
 // 先于 updateActionButtons / 设置回填;bindEvents 内含进度订阅与菜单订阅)
-bindEvents();
+bindEvents({ openWizard });
 // 最近转换区块事件绑定迁入 bind*Events 范式(原为模块顶层监听)
 bindRecentFilesEvents(recentFilesDeps);
 // 初始无选中:按钮按当前状态置灰(HTML 中 convertBtn 已写死 disabled);
@@ -154,7 +211,7 @@ aboutOpenBtn.addEventListener("click", () => {
   window.api.openAbout();
 });
 // 首启引导装配(接线跳过/步骤按钮 + 监听舞台状态;首屏呈现由 initUiStateRestore 触发)
-initFirstRunGuide({ openBookWizard });
+initFirstRunGuide({ openBookWizard: openWizard });
 // 设置回填 + UI 状态恢复并行汇合于启动屏障,汇合后统一重绘一次(见屏障区块)
 void runInitBarrier();
 // 转换成功后刷新最近区块的回调接线(convert-flow 经 state 调用,

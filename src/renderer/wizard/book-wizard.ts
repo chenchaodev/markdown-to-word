@@ -21,8 +21,12 @@
  * `wizardDraft.cover`,付印时随 `runMerge` 传入,不写 settings。
  *
  * 依赖方向单向:本模块 → wizard-runtime/fields/steps/steps-delivery(渲染)/
- * dom/dom-ops(焦点陷阱)/ settings-drawer / convert-flow(runMerge)/ wizard-state(纯 reducer);
- * 不反向引用组合根,closeBookWizard 供 dialogs-events 的 Esc 链调用。
+ * dom/dom-ops(焦点陷阱)/ wizard-state(纯 reducer);对 convert、settings 的协作自
+ * REQ-218 #10 阶段④ 起经组合根注入的 BookWizardDeps 形参进入(不再有跨功能静态
+ * import),不反向引用组合根,closeBookWizard 供 dialogs-events 的 Esc 链调用。
+ * ⚠ 对 ui 的 `afterModalClosed` 仍是静态 import(ADR-075 §四 交汇点):该通知在
+ * closeBookWizard 内部,而 closeBookWizard 的调用方含 convert 的 Esc 链
+ * (dialogs-events.ts:207),改它要连 Esc 链一起改 —— 随 convert 那一刀落地。
  */
 import { t, applyStaticTexts } from "../../core/i18n/index.js";
 import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
@@ -30,19 +34,12 @@ import { state } from "../state/state.js";
 import { trapFocus } from "../dom/dom-ops.js";
 import { afterModalClosed } from "../ui/dialogs.js";
 import {
-  isBackgroundCommandBlocked,
-  isConvertCommandBlocked,
-  runMerge,
-  withPrecheck,
-} from "../convert/convert-flow.js";
-import {
   WIZARD_TOTAL_STEPS,
   canAdvance,
   nextStep,
   prevStep,
   type WizardDraft,
 } from "./wizard-state.js";
-import { closeSettingsDrawer, isSettingsDrawerOpen } from "../settings/settings-drawer.js";
 import { h, setChecked } from "./wizard-fields.js";
 import {
   currentStep,
@@ -62,6 +59,7 @@ import {
   coverFromFm,
   coverTitleInput,
   renderCoverPreview,
+  type WizardStepsDeps,
 } from "./wizard-steps.js";
 import {
   buildStepMerge,
@@ -71,7 +69,37 @@ import {
   renderStep,
   sourcesEmpty,
   sourcesList,
+  type WizardStepsDeliveryDeps,
 } from "./wizard-steps-delivery.js";
+
+/**
+ * 跨功能协作面(ADR-075 阶段④:组合根组装 · 本模块接形参 · 类型由本 feature 自报;
+ * 不新建共享 ports 文件 —— 四个功能根是平铺协作的 peer,共用一份等于给 peer mesh
+ * 装枢纽,边数不降反增)。传函数本身(不传模块命名空间):传模块等于换一种形式把
+ * 跨 feature 面全量暴露出去,拆边就白做了。
+ *
+ * **不许给任一项设默认值/可选参数**:port 缺失必须在 typecheck 处编译不过,
+ * 而静默不生效(fail-open)比编译不过更糟 —— 它让接线错误在运行期无声溜过。
+ *
+ * 形参挂在 `openBookWizard` 上(组合根本来就在调的入口),逐层透传给 steps /
+ * steps-delivery / fields 三层内部链路;`WizardStepsDeps` 与
+ * `WizardStepsDeliveryDeps` 各自 extends `WizardFieldsDeps`,故本类型同时满足两者,
+ * 组合根只需装配**一个**对象。
+ */
+export interface BookWizardDeps extends WizardStepsDeps, WizardStepsDeliveryDeps {
+  /** convert/convert-flow:是否有后台命令在飞(两次转换之间的显式复检用)。 */
+  isBackgroundCommandBlocked: () => boolean;
+  /** convert/convert-flow:转换/预检期间是否封锁命令(向导内命令锁的判定面)。 */
+  isConvertCommandBlocked: () => boolean;
+  /** convert/convert-flow:合并转换(付印的唯一出口,两格式串成一条命令)。 */
+  runMerge: (opts?: { files?: string[]; format?: "docx" | "pdf"; metadata?: DocMetadata }) => Promise<void>;
+  /** convert/convert-flow:预检/用户决策/实际 action 单一 flight 持链(向导只借锁,传空列表)。 */
+  withPrecheck: (filePaths: string[], action: () => void | Promise<void>) => Promise<void>;
+  /** settings/settings-drawer:关闭抽屉(打开向导前与抽屉互斥,先关释放其陷阱)。 */
+  closeSettingsDrawer: () => void;
+  /** settings/settings-drawer:抽屉是否开着。 */
+  isSettingsDrawerOpen: () => boolean;
+}
 
 /** 步骤标签(设计 §3.3 七步名):构建期取当前语言,
  *  不得在模块加载期求值(启动语言未定,且语言切换后旧缓存不会更新)。 */
@@ -92,7 +120,7 @@ let releaseTrap: (() => void) | null = null;
 let triggerBtn: HTMLElement | null = null;
 
 /* ---------- 向导外壳构建 ---------- */
-function buildWizard(): HTMLElement {
+function buildWizard(deps: BookWizardDeps): HTMLElement {
   const labels = stepLabels();
   const steps = h("ol", { class: "wizard-steps", id: "wizardSteps", "aria-label": t("wizard.title") });
   for (let i = 1; i <= WIZARD_TOTAL_STEPS; i++) {
@@ -105,13 +133,13 @@ function buildWizard(): HTMLElement {
   }
 
   const body = h("div", { class: "wizard-body", id: "wizardBody" }, [
-    buildStepTemplate(),
+    buildStepTemplate(deps),
     buildStepCover(),
-    buildStepHeader(),
-    buildStepWatermark(),
-    buildStepMerge(),
-    buildStepToc(),
-    buildStepOutput(),
+    buildStepHeader(deps),
+    buildStepWatermark(deps),
+    buildStepMerge(deps),
+    buildStepToc(deps),
+    buildStepOutput(deps),
   ]);
 
   const skipBtn = h("button", { type: "button", id: "wizardSkip", class: "btn btn-text sm", dataset: { i18n: "wizard.skip" } }, [t("wizard.skip")]);
@@ -122,18 +150,18 @@ function buildWizard(): HTMLElement {
   // 向导内命令入口统一前置校验:转换/预检期间一律不响应(判定口径见 isWizardCommandBlocked),
   // 拒绝时步序不变,用户可继续停留在当前步;关闭向导始终可用,不留死路。
   skipBtn.addEventListener("click", () => {
-    if (isWizardCommandBlocked()) return;
+    if (isWizardCommandBlocked(deps)) return;
     goTo(nextStep(currentStep));
   });
   prevBtn.addEventListener("click", () => {
-    if (isWizardCommandBlocked()) return;
+    if (isWizardCommandBlocked(deps)) return;
     goTo(prevStep(currentStep));
   });
   nextBtn.addEventListener("click", () => {
-    if (isWizardCommandBlocked()) return;
+    if (isWizardCommandBlocked(deps)) return;
     if (canAdvance(currentStep, draft)) goTo(nextStep(currentStep));
   });
-  finishBtn.addEventListener("click", () => void finishWizard());
+  finishBtn.addEventListener("click", () => void finishWizard(deps));
 
   const closeBtn = h("button", { type: "button", id: "wizardCloseBtn", class: "icon-btn", dataset: { i18nAriaLabel: "wizard.close" }, "aria-label": t("wizard.close") }, [
     h("span", { html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>' }),
@@ -178,11 +206,11 @@ function goTo(step: number): void {
  * 若直接取 isConvertCommandBlocked,向导内每个命令都会被自身遮罩否决。
  * 取判定时临时摘掉自身遮罩并在同一任务内恢复(不产生重排/闪烁,焦点陷阱不受影响)。
  */
-function isWizardCommandBlocked(): boolean {
-  if (!wizardEl) return isConvertCommandBlocked();
+function isWizardCommandBlocked(deps: BookWizardDeps): boolean {
+  if (!wizardEl) return deps.isConvertCommandBlocked();
   const visible = !wizardEl.classList.contains("hidden");
   if (visible) wizardEl.classList.add("hidden");
-  const blocked = isConvertCommandBlocked();
+  const blocked = deps.isConvertCommandBlocked();
   if (visible) wizardEl.classList.remove("hidden");
   return blocked;
 }
@@ -203,30 +231,30 @@ function cleanMetadata(cover: WizardDraft["cover"]): DocMetadata | undefined {
  * 使链内命令锁判定只反映外部命令;链本身经 withPrecheck 单一 flight 持链,
  * 不会与背景命令并发起第二条链。
  */
-async function finishWizard(): Promise<void> {
-  if (isWizardCommandBlocked()) return;
+async function finishWizard(deps: BookWizardDeps): Promise<void> {
+  if (isWizardCommandBlocked(deps)) return;
   const files = draft.sources.length ? draft.sources : state.selectedFiles;
   const metadata = cleanMetadata(draft.cover);
   const format = draft.format;
   closeBookWizard();
-  await withPrecheck([], async () => {
+  await deps.withPrecheck([], async () => {
     if (format === "both") {
-      await runMerge({ files, format: "docx", metadata });
+      await deps.runMerge({ files, format: "docx", metadata });
       // 两次转换处于同一微任务续段,无用户事件可插入;显式复检统一守卫,
       // 前序若留下前台模态(完成弹窗)则第二次转换按单一明确结果拦下
-      if (isBackgroundCommandBlocked()) return;
-      await runMerge({ files, format: "pdf", metadata });
+      if (deps.isBackgroundCommandBlocked()) return;
+      await deps.runMerge({ files, format: "pdf", metadata });
     } else {
-      await runMerge({ files, format, metadata });
+      await deps.runMerge({ files, format, metadata });
     }
   });
 }
 
 /* ---------- 打开 / 关闭 ---------- */
-export function openBookWizard(): void {
+export function openBookWizard(deps: BookWizardDeps): void {
   if (wizardEl && !wizardEl.classList.contains("hidden")) return;
   // 与设置抽屉互斥:打开向导前若抽屉开着,先关抽屉(释放其陷阱)
-  if (isSettingsDrawerOpen()) closeSettingsDrawer();
+  if (deps.isSettingsDrawerOpen()) deps.closeSettingsDrawer();
   triggerBtn = document.activeElement as HTMLElement;
   resetDraft();
   setStep(1);
@@ -236,7 +264,7 @@ export function openBookWizard(): void {
   wizardEl?.remove();
   releaseTrap?.();
   releaseTrap = null;
-  const el = buildWizard();
+  const el = buildWizard(deps);
   setWizardEl(el);
   document.body.appendChild(el);
   // 重置瞬时字段(草稿与控件同源,避免上次输入残留)

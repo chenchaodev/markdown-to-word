@@ -14,6 +14,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
 import { globalSlot, setGlobalSlot } from "./dom-stub.js";
+import { loadBookWizardDeps } from "./wizard-deps.js";
 import { createAsserter } from "../harness/assert.js";
 import { createCaseSuite } from "../harness/case.js";
 
@@ -377,6 +378,8 @@ export async function run() {
     const bookWizard = await import(distUrl("wizard/book-wizard.js"));
     const actions = await import(distUrl("convert/events/convert-actions.js"));
     const fileList = await import(distUrl("convert/file-list.js"));
+    // openBookWizard 自 wizard 刀起收 BookWizardDeps(ADR-075 §四),本段共用一份装配
+    const bookWizardDeps = await loadBookWizardDeps(distUrl);
 
     actions.bindConvertActionsEvents();
     const keydownRaw = docListeners.get("keydown");
@@ -443,7 +446,7 @@ export async function run() {
       elements.set("bookWizard", el);
       return el;
     };
-    bookWizard.openBookWizard();
+    bookWizard.openBookWizard(bookWizardDeps);
     let overlay = currentOverlay();
     await suite.case("向导打开时遮罩可见且背景命令被阻断", async () => {
       assert(!overlay.classList.contains("hidden"), "向导打开后遮罩可见");
@@ -523,7 +526,7 @@ export async function run() {
     });
 
     // ---- 6. 转换进行中再付印:不并发起第二条链;结算后可再付印 ----
-    bookWizard.openBookWizard();
+    bookWizard.openBookWizard(bookWizardDeps);
     overlay = currentOverlay();
     const finishBtn2 = findById(overlay, "wizardFinish");
     await suite.case("向导可复开(复开为重建,容器重新取)且构建 finish 控件", () => {
@@ -552,7 +555,7 @@ export async function run() {
     });
 
     // ---- 7. 前序留下前台模态(完成弹窗):第二次格式转换按单一明确结果拦下 ----
-    bookWizard.openBookWizard();
+    bookWizard.openBookWizard(bookWizardDeps);
     overlay = currentOverlay();
     runtime.draft.sources = ["C:\\work\\a.md", "C:\\work\\b.md"];
     runtime.draft.format = "both";
@@ -596,9 +599,13 @@ export async function run() {
       );
     });
 
+    // 自 wizard 刀起该前置经组合根注入,调用形态是 isWizardCommandBlocked(deps);
+// 正则按**实参形态**匹配而不是只认零参 —— 只认 `isWizardCommandBlocked\(\)` 的话
+    // 注入后这个计数恒为 0,断言会因「字符串消失」而红(假信号),不是行为变了。
+    // 切片上界是 finishBtn 监听器,模块级函数定义在它之前,故计数只含调用点。
     await suite.case("skip/上一步/下一步三个入口各自经统一前置校验", () => {
       assert(
-        (entryBlock.match(/isWizardCommandBlocked\(\)/g) ?? []).length >= 3,
+        (entryBlock.match(/isWizardCommandBlocked\(\s*deps\s*\)/g) ?? []).length >= 3,
         "skip/上一步/下一步三个入口应各自经统一前置校验",
       );
     });

@@ -8,21 +8,28 @@
  * 版式四步见 wizard-steps.ts,字段校验见 wizard-fields.ts,外壳/付印提交见
  * book-wizard.ts。
  * 依赖方向:本模块 → wizard-fields、wizard-runtime、wizard-steps(封面预览/引用)、
- * core / state / settings-* / convert(单向),不反向引用外壳。
+ * core / state(单向),不反向引用外壳。对 settings(落盘 + 输出目录展示名)与
+ * convert(主舞台列表同步)的协作自 REQ-218 #10 阶段④ 起经组合根注入的
+ * WizardStepsDeliveryDeps 形参进入,不再有跨功能静态 import。
  */
 import { t } from "../../core/i18n/index.js";
 import { AppSettings } from "../../core/settings/settings-defaults.js";
 import { state } from "../state/state.js";
-import { persistSettings } from "../settings/settings-save.js";
-import { outputDirDisplayText } from "../settings/settings-logic.js";
-import { renderSelection } from "../convert/file-list.js";
 import {
   canAdvance,
   isFirstStep,
   isLastStep,
   type WizardDraft,
 } from "./wizard-state.js";
-import { checkedValue, h, pickOutputDir, radio, swRow, type AppTocMode } from "./wizard-fields.js";
+import {
+  checkedValue,
+  h,
+  pickOutputDir,
+  radio,
+  swRow,
+  type AppTocMode,
+  type WizardFieldsDeps,
+} from "./wizard-fields.js";
 import { currentStep, draft, wizardEl } from "./wizard-runtime.js";
 import {
   coverAuthorInput,
@@ -32,15 +39,27 @@ import {
   renderCoverPreview,
 } from "./wizard-steps.js";
 
+/**
+ * 跨功能协作面(ADR-075 阶段④:组合根组装 · 本模块接形参 · 类型由本 feature 自报;
+ * 不新建共享 ports 文件,理由同 WizardFieldsDeps)。
+ * 继承 WizardFieldsDeps:输出目录展示文案与落盘经 pickOutputDir 透传,组合根因此
+ * 只需装配一份对象(与 WizardStepsDeps 同源同形)。
+ * **不许给任一项设默认值/可选参数**:port 缺失必须在 typecheck 处编译不过。
+ */
+export interface WizardStepsDeliveryDeps extends WizardFieldsDeps {
+  /** convert/file-list:同步主舞台文件列表(合并源增减后向导关闭即见)。 */
+  renderSelection: () => void;
+}
+
 /* 各步需读写的合并源/格式控件引用(每次 open 由 buildStepMerge/buildStepOutput 重建) */
 export let sourcesList: HTMLUListElement;
 export let sourcesEmpty: HTMLElement;
 export let formatRadios: HTMLElement;
 
 /* ---------- 步骤 5:合并源 ---------- */
-export function buildStepMerge(): HTMLElement {
+export function buildStepMerge(deps: WizardStepsDeliveryDeps): HTMLElement {
   const addBtn = h("button", { type: "button", class: "btn btn-ghost", dataset: { i18n: "wizard.merge.add" } }, [t("wizard.merge.add")]);
-  addBtn.addEventListener("click", () => void addSources());
+  addBtn.addEventListener("click", () => void addSources(deps));
   sourcesList = h("ul", { class: "mlist", id: "wizardSources" }) as HTMLUListElement;
   sourcesEmpty = h("p", { class: "wz-hint", dataset: { i18n: "wizard.merge.empty" }, text: t("wizard.merge.empty") });
 
@@ -53,12 +72,12 @@ export function buildStepMerge(): HTMLElement {
 }
 
 /** 添加合并源文件(多选对话框) */
-async function addSources(): Promise<void> {
+async function addSources(deps: WizardStepsDeliveryDeps): Promise<void> {
   try {
     const paths = await window.api.openMarkdowns();
     if (paths.length === 0) return;
     draft.sources.push(...paths);
-    syncSources();
+    syncSources(deps);
     // 选完首文件后预填封面(设计 §4.2 / §4.5)
     if (draft.sources.length >= 1 && !draft.cover.title && !draft.cover.author && !draft.cover.date) {
       await prefillCoverFromFirstSource();
@@ -69,7 +88,7 @@ async function addSources(): Promise<void> {
 }
 
 /** 渲染合并源列表(上移/下移/移除) */
-function syncSources(): void {
+function syncSources(deps: WizardStepsDeliveryDeps): void {
   sourcesList.replaceChildren();
   draft.sources.forEach((file, i) => {
     const name = file.split(/[\\/]/).pop() ?? file;
@@ -78,11 +97,11 @@ function syncSources(): void {
     const remove = h("button", { type: "button", class: "btn btn-text sm", dataset: { i18n: "common.remove" }, text: t("common.remove") });
     if (i === 0) (up as HTMLButtonElement).disabled = true;
     if (i === draft.sources.length - 1) (down as HTMLButtonElement).disabled = true;
-    up.addEventListener("click", () => moveSource(i, -1));
-    down.addEventListener("click", () => moveSource(i, 1));
+    up.addEventListener("click", () => moveSource(deps, i, -1));
+    down.addEventListener("click", () => moveSource(deps, i, 1));
     remove.addEventListener("click", () => {
       draft.sources.splice(i, 1);
-      syncSources();
+      syncSources(deps);
     });
     sourcesList.appendChild(
       h("li", { class: "multi-item" }, [
@@ -95,17 +114,17 @@ function syncSources(): void {
   sourcesEmpty.classList.toggle("hidden", draft.sources.length >= 2);
   // 同步主舞台文件列表(向导关闭后可见)
   state.selectedFiles = [...draft.sources];
-  renderSelection();
+  deps.renderSelection();
   // 合并源增减后即时刷新导航按钮态(否则「下一步」disabled 停留陈旧值,见 canAdvance 第 5 步门槛)
   renderStep();
 }
 
-function moveSource(i: number, offset: number): void {
+function moveSource(deps: WizardStepsDeliveryDeps, i: number, offset: number): void {
   const target = i + offset;
   if (target < 0 || target >= draft.sources.length) return;
   const [m] = draft.sources.splice(i, 1);
   draft.sources.splice(target, 0, m!);
-  syncSources();
+  syncSources(deps);
 }
 
 /** 读首文件 frontmatter 预填封面(设计 §4.2) */
@@ -125,7 +144,7 @@ async function prefillCoverFromFirstSource(): Promise<void> {
 }
 
 /* ---------- 步骤 6:目录 ---------- */
-export function buildStepToc(): HTMLElement {
+export function buildStepToc(deps: WizardStepsDeliveryDeps): HTMLElement {
   const tocSwitch = h("input", { type: "checkbox", class: "switch-input", id: "wizardToc" }) as HTMLInputElement;
   const modeSelect = h("select", { class: "setting-select", id: "wizardTocMode" }, [
     h("option", { value: "static", dataset: { i18n: "wizard.toc.modeStatic" }, text: t("wizard.toc.modeStatic") }),
@@ -151,11 +170,11 @@ export function buildStepToc(): HTMLElement {
   tocSwitch.addEventListener("change", () => {
     state.settings.toc = tocSwitch.checked;
     syncTocModeVisibility();
-    persistSettings({ toc: tocSwitch.checked });
+    deps.persistSettings({ toc: tocSwitch.checked });
   });
   modeSelect.addEventListener("change", () => {
     state.settings.tocMode = modeSelect.value as AppTocMode;
-    persistSettings({ tocMode: modeSelect.value as AppTocMode });
+    deps.persistSettings({ tocMode: modeSelect.value as AppTocMode });
   });
 
   tocSwitch.checked = state.settings.toc;
@@ -168,19 +187,19 @@ export function buildStepToc(): HTMLElement {
   const numRows = h("div", { class: "wz-num-block" }, [
     swRow("settings.headingNumbering", "settings.headingNumberingDesc", state.settings.typography.headingNumbering, (v) => {
       state.settings.typography.headingNumbering = v;
-      persistSettings({ typography: { ...state.settings.typography } });
+      deps.persistSettings({ typography: { ...state.settings.typography } });
     }),
     swRow("settings.captionNumbering", "settings.captionNumberingDesc", state.settings.typography.captionNumbering, (v) => {
       state.settings.typography.captionNumbering = v;
-      persistSettings({ typography: { ...state.settings.typography } });
+      deps.persistSettings({ typography: { ...state.settings.typography } });
     }),
     swRow("settings.equationNumbering", "settings.equationNumberingDesc", state.settings.equationNumbering, (v) => {
       state.settings.equationNumbering = v;
-      persistSettings({ equationNumbering: v });
+      deps.persistSettings({ equationNumbering: v });
     }),
     swRow("settings.breakBeforeH1", "settings.breakBeforeH1Desc", state.settings.breakBeforeH1, (v) => {
       state.settings.breakBeforeH1 = v;
-      persistSettings({ breakBeforeH1: v });
+      deps.persistSettings({ breakBeforeH1: v });
     }),
   ]);
 
@@ -199,7 +218,7 @@ export function buildStepToc(): HTMLElement {
 }
 
 /* ---------- 步骤 7:付印 ---------- */
-export function buildStepOutput(): HTMLElement {
+export function buildStepOutput(deps: WizardStepsDeliveryDeps): HTMLElement {
   formatRadios = h("span", { class: "segmented seg-sm", role: "radiogroup" }, [
     radio("wizardFormat", "docx", t("wizard.output.docx"), true),
     radio("wizardFormat", "pdf", t("wizard.output.pdf"), false),
@@ -215,7 +234,7 @@ export function buildStepOutput(): HTMLElement {
   const outDirChip = h("span", {
     class: "path-chip",
     id: "wizardOutputDir",
-    text: outputDirDisplayText(state.settings.outputDir),
+    text: deps.outputDirDisplayText(state.settings.outputDir),
   });
   const outDirPick = h("button", {
     type: "button", class: "btn btn-ghost sm", dataset: { i18n: "settings.outputDirPick" },
@@ -223,12 +242,12 @@ export function buildStepOutput(): HTMLElement {
   const outDirReset = h("button", {
     type: "button", class: "btn btn-text sm", dataset: { i18n: "settings.outputDirReset" },
   }, [t("settings.outputDirReset")]);
-  outDirPick.addEventListener("click", () => void pickOutputDir(outDirChip));
+  outDirPick.addEventListener("click", () => void pickOutputDir(deps, outDirChip));
   outDirReset.addEventListener("click", () => {
     state.settings.outputDir = "";
     outDirChip.textContent = t("settings.outputDirDefault");
     outDirChip.title = "";
-    persistSettings({ outputDir: "" });
+    deps.persistSettings({ outputDir: "" });
   });
 
   const afterRadios = h("span", { class: "segmented seg-sm", role: "radiogroup" }, [
@@ -238,7 +257,7 @@ export function buildStepOutput(): HTMLElement {
   ]);
   afterRadios.addEventListener("change", () => {
     state.settings.afterConvert = checkedValue(afterRadios) as AppSettings["afterConvert"];
-    persistSettings({ afterConvert: state.settings.afterConvert });
+    deps.persistSettings({ afterConvert: state.settings.afterConvert });
   });
 
   return h("section", { class: "wz-pane", dataset: { step: "7" } }, [

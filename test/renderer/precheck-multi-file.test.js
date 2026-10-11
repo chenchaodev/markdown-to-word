@@ -1141,8 +1141,16 @@ export async function run() {
     // 「付印 docx+pdf」当一条命令,预检本身由 runMerge 内部提供。
     const srcRoot = path.join(ROOT, "src", "renderer");
     // 全树扫源码是取数(与两条断言无关),留在 case 外
+    //
+    // ⚠ **调用**与**传递**分两桶记(ADR-075 §四 的端口形态落地后两者会同时存在):
+    // 向导借锁是**调用**(withPrecheck([])),那是唯一被允许的例外;而组合根为了把
+    // wizard 需要的端口注进去,要在 deps 对象里**传递**withPrecheck 的引用
+    // (`withPrecheck,` 简写属性)—— 那是接线,不是绕过收口。早先一版判据用
+    // 「任何提及即调用点」,组合根一接线就判红,而它并没有违反本纪律。
     /** @type {string[]} */
     const wrapCallers = [];
+    /** @type {string[]} */
+    const wrapPassers = [];
     const walk = (/** @type {string} */ dir) => {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, entry.name);
@@ -1151,7 +1159,9 @@ export async function run() {
           // 去注释后判定:注释里提到 withPrecheck(说明「为何不再包」)不是调用
           const code = fs.readFileSync(full, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
           if (code.includes("withPrecheck")) {
-            wrapCallers.push(path.relative(srcRoot, full).replace(/\\/g, "/"));
+            const rel = path.relative(srcRoot, full).replace(/\\/g, "/");
+            // 调用形态 = 标识符后跟实参表;简写属性(`withPrecheck,`)/类型标注不算
+            (/\bwithPrecheck\s*\(/.test(code) ? wrapCallers : wrapPassers).push(rel);
           }
         }
       }
@@ -1166,6 +1176,15 @@ export async function run() {
         assert(
           wrapCallers.length === 1 && wrapCallers[0] === "wizard/book-wizard.ts",
           `预检收口后调用点不应再出现 withPrecheck(唯一例外:向导借锁),实际 ${JSON.stringify(wrapCallers)}`,
+        );
+      });
+      await s.case("传递 withPrecheck 引用的只许组合根(接线,非绕过收口)", () => {
+        // 组合根把 withPrecheck 作为 wizard 端口注入(ADR-075 §四),它**传递引用**不调用。
+        // 钉住这一点是为了:① 组合根之外再有人接线也判红;② 组合根哪天改成自己调用
+        // withPrecheck(绕过收口),它会从 passers 移进 callers,由上一条 case 判红。
+        assert(
+          wrapPassers.length === 1 && wrapPassers[0] === "renderer.ts",
+          `传递 withPrecheck 引用的只许组合根一个,实际 ${JSON.stringify(wrapPassers)}`,
         );
       });
       // 每个命令函数一行 case:这一行就是「该入口自带 precheckedCommand 收口」
