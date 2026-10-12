@@ -143,6 +143,31 @@ export const GATE_INDEX = Object.freeze(
       modulePath: "gates/repo/check-temp-cleanup.mjs",
       judgment: { module: "gates/repo/check-temp-cleanup.mjs", export: "analyze", shaped: "{ problems, optionProblems, staleAllow }" },
     },
+    "eol-anchor": {
+      id: "eol-anchor",
+      // ⚠⚠ **本门禁在链上,而它的结论与检出态无关 —— 这条已实测,不要再用推理改回去。**
+      //
+      // 【曾经写错的那条理由】登记本项时写过「不上链,因为根因是检出态行尾,挂上去等于让
+      // 结论依赖 CI 的检出配置」。**那条推理是错的**:判据扫的是**源码里的形态**
+      // (有没有 `split('\n')` + 内容级消费),不读源码自身的行尾。
+      // 主会话实测对照:把被检源文件整份换成 CRLF 后,LF 运行与 CRLF 运行
+      // **两次输出 diff 无差异**、退出码同为 0。
+      // 【教训】判据与检出态无关这件事,该跑一次对照再下结论,不能拿推理代替 —— 推理错了
+      // 会写进门禁索引的注释里,后来者读到的就是一条看似有据的假理由。
+      //
+      // 【为什么仍值得上链】这族缺陷的失效形态是**静默**的:检出为 CRLF 而判据用字面量 LF
+      // 锚点时,判据一条都匹配不上 → 抽出空表/空集 → 要么恒绿,要么以「与本次改动无关」的
+      // 行数红(2026-10-05 那天 CI 连红四次即此)。只在本地手动跑 ⇒ CI 上那类红仍然发生,
+      // 且发生时没人知道是哪一道本该拦住它的门禁缺席。防复发要真成立就得在链上。
+      //
+      // 【上链后仍保留的口径】`.gitattributes`(`* text=auto` + 各端 autocrlf ⇒ 检出可能是
+      // CRLF)这条**事实**仍然成立,它仍是被判据针对的那个环境条件;但它不再是上不上链的
+      // 依据 —— 判据读形态不读行尾,所以本地与 CI 跑的是同一门判据。
+      npmScripts: ["check:eol-anchor", "check:eol-anchor:selftest"],
+      access: ACCESS_CHAIN,
+      modulePath: "gates/repo/check-eol-anchor.mjs",
+      judgment: { module: "gates/repo/check-eol-anchor.mjs", export: "judgeText", shaped: "EolHit[](纯函数:源码文本 → 行尾敏感锚点命中)" },
+    },
     samples: {
       id: "samples",
       // ⚠ `npmScripts[0]` 是接入点(L12 只核它);`:selftest` 那条是载体,登记它是为了

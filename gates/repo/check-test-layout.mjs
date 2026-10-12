@@ -628,6 +628,27 @@ export const GATE_SELFTEST_CASE_SOURCES = Object.freeze([
     strategies: Object.freeze([Object.freeze({ kind: "table-field", table: "CASES", field: "name" })]),
   }),
   Object.freeze({
+    file: "gates/repo/check-eol-anchor.selftest.mjs",
+    // ⚠ **三张表 + 内联**四类并存:三个形状/变异表的档名都在表的 `name` 字段上,
+    // 基线与合成根那几档是内联字面量。
+    //
+    // ⚠⚠ **三张表一律用 `name` 而刻意不用 `id`**:check-test-layout.selftest.mjs 的
+    // 名册族夹具用**策略签名**从本表认领「在册 demo 路径」,其中一档的签名是
+    // 「同时有 `field: 'name'` 与 `field: 'id'`」(取 `check-samples` 那一行做「两套字段名
+    // 并存」的样本)。本行若带 `field: 'id'`,又会命中同一签名,而本行排在前面 ——
+    // 夹具会改拿本行去铺合成树,于是那份合成源码里没有本行的三张表,抽出 0 条,
+    // 报「册有源无」。**代价不是夹具假红,是既有 165 档里一档真的开始验错东西。**
+    // 故本行只出 `name`,与那档签名正交;行序也就不构成隐式依赖。
+    // 变异档**逐条真改源文件再还原**(判定本体与 `check-changelog.mjs` 两个目标),
+    // 故档名必须能被机械抽出对账:档名一漂,「这一档还在不在」就无人判红。
+    strategies: Object.freeze([
+      Object.freeze({ kind: "table-field", table: "KNOWN_SHAPES", field: "name" }),
+      Object.freeze({ kind: "table-field", table: "SAFE_SHAPES", field: "name" }),
+      Object.freeze({ kind: "table-field", table: "MUTATIONS", field: "name" }),
+      Object.freeze({ kind: "inline-case" }),
+    ]),
+  }),
+  Object.freeze({
     file: "gates/repo/check-samples.selftest.mjs",
     // ⚠ 唯一一份**两套字段名**的:基线档取 `CASES.name`,变异实验取 `MUTATIONS.id`
     // (mutation.id 是它的档名,与基线不同源 —— 见那份自测的注释)。
