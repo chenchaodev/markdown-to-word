@@ -1,12 +1,12 @@
 // @ts-check
 /**
  * CLI 拉起 pdf 宿主的**真实路径**验收(位于 test/cli/,镜像 src/cli/index.ts 的
- * convertPdfViaHost 及其调用的 host-launch 判定)。
+ * convertPdfViaHost 及其调用的 `convert/pdf-host-launch.ts` 判定)。
  *
  * 为什么单独一段:`options.test.js` 里那处 `--format pdf` 只是 `expandFormats("pdf")`
  * 的纯函数断言 —— **真跑 pdf 的路径此前没有任何段走过**(链报告里 `cli/index.ts` 的
  * `convertPdfViaHost` 长期未覆盖)。于是两处「漏一行就静默失败」的位置全在覆盖率外:
- * ① `host-launch.ts` 的上下文判定(已装 / dev 两条拉起形态选哪条);
+ * ① 宿主拉起判定的上下文分支(已装 / dev 两条拉起形态选哪条);
  * ② `hostEnv()` 剔除 `ELECTRON_RUN_AS_NODE`。
  *
  * ② 只有**注入污染态再断言成功**才抓得住 —— 只测「干净 env 能跑」会放过它:
@@ -42,12 +42,17 @@ import { createCaseSuite } from "../harness/case.js";
  *
  * 主体依据(**头注明写**):头注第一行写「位于 test/cli/,镜像 src/cli/index.ts 的
  * convertPdfViaHost 及其调用的 host-launch 判定」,并逐条点名两处「漏一行就静默失败」的
- * 位置 —— ① `host-launch.ts` 的上下文判定(已装/dev 两条拉起形态选哪条);② `hostEnv()`
+ * 位置 —— ① 宿主拉起判定的上下文分支(已装/dev 两条拉起形态选哪条);② `hostEnv()`
  * 剔除 `ELECTRON_RUN_AS_NODE`。两处正是本段全部断言的落点。
+ *
+ * ⚠ 第二条 covers 指向 `convert/pdf-host-launch.ts` 而非 `cli/host-launch.ts`:该模块
+ * 已随「MCP 也暴露 pdf」搬进 convert 层(ADR-060:cli 与 mcp 二者零依赖 ⇒ 共同依赖
+ * 落在两层之下)。搬动它时**必须同批改这一条**,否则 covers 指向不存在的路径会被
+ * 判据 L6 判红 —— 那正是 L6「元素必须真实存在」这条存在的理由。
  */
 export const covers = [
   "src/cli/index.ts",
-  "src/cli/host-launch.ts",
+  "src/convert/pdf-host-launch.ts",
 ];
 
 // 真值断言取公共单源(收敛重复面,口径见 assert.js 文件头)
@@ -106,7 +111,7 @@ export async function run() {
     //    已装形态由 launcher 设该变量让 CLI 以纯 node 跑应用 exe;若子进程继承到它,
     //    宿主会跟着以纯 node 启动并以 SyntaxError 崩掉、pdf 静默不产出(退出码 3)。
     //    **`=0` 同样致命** —— Electron 只判存在性不判取值,所以两种取值都要覆盖,
-    //    且修法必须是 delete 而不是置 0(见 host-launch.ts 的 hostEnv 注释)。
+    //    且修法必须是 delete 而不是置 0(见 convert/pdf-host-launch.ts 的 hostEnv 注释)。
     //    两种取值判红后彼此仍独立(修法只针对其中一种时另一条仍要报),故分列两个 case。
     await suite.case("ELECTRON_RUN_AS_NODE=1 污染态仍成功", async () => {
       assertPdfProduced(dir, "污染1", "1", "ELECTRON_RUN_AS_NODE=1");

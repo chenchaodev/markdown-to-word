@@ -19,7 +19,8 @@ import { preparePdfHostProfile } from "./services/pdf-host-profile.js";
 const SMOKE = process.argv.includes("--smoke");
 
 /**
- * `--pdf-host` 形态:CLI 以**已安装的应用自身**为 pdf 宿主(见 cli/host-launch.ts 的
+ * `--pdf-host` 形态:CLI 以**已安装的应用自身**为 pdf 宿主(拉起判定与传话住在
+ * `src/convert/pdf-host-launch.ts`,CLI 与 MCP 共用一份)
  * 判定:已安装形态不能用脚本路径形态拉起宿主 —— dist/main/cli-pdf-host.js 落在 app.asar
  * 内,Electron 不能把 asar 内的文件当应用路径启动)。
  *

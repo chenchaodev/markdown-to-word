@@ -2,7 +2,8 @@
  * CLI 入口(进程外交付面,ADR-060):`node dist/cli/index.js <输入路径...> [选项]`。
  *
  * 本文件只做**编排**,不含判定逻辑:参数解析与设置构造在 options.ts(纯函数),
- * 产物落盘与渲染在装配层(src/convert/),pdf 打印在 Electron 宿主(main/cli-pdf-host.ts)。
+ * 产物落盘与渲染在装配层(src/convert/),pdf 打印在 Electron 宿主(main/cli-pdf-host.ts),
+ * 拉起宿主的那套判定与传话在装配层(src/convert/pdf-host-launch.ts,与 MCP 共用一份)。
  * 「能力注入」的结构与 GUI 的 single.ts 完全同构 —— 这是步序 1 把装配层抽出来的收益:
  * CLI 不是「另一条转换实现」,只是第三个消费点。
  *
@@ -20,9 +21,6 @@
  * 0 成功 / 1 用法错 / 2 输入读不到 / 3 转换失败 / 4 输出写不了。
  * 多输入时取**最严重**的一个(4 > 3 > 2),使脚本能靠退出码判「有没有失败」。
  */
-import { spawnSync } from "node:child_process";
-import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { collectMarkdownPaths } from "../convert/paths.js";
 // 「输出写不了」的错误码取值域单源(装配层抛出点自带 code,判定侧只读码不读文案)
@@ -32,9 +30,7 @@ import { createConvertContext } from "../convert/context.js";
 import { emitConvertedArtifact } from "../convert/run.js";
 import {
   exitCodes,
-  readJobResult,
   type CliPdfJob,
-  type CliPdfJobResult,
   type ExitCode,
 } from "../convert/cli-pdf-job.js";
 import type { AppSettings, ConvertFormat } from "../core/settings/settings-defaults.js";
@@ -48,7 +44,9 @@ import {
   type CliOptions,
   type CliResultItem,
 } from "./options.js";
-import { hostInvocation, isElectronProvidedNode } from "./host-launch.js";
+// pdf 宿主的拉起判定与传话机制与 MCP 共用一份(住在 convert 层:ADR-060 定了 cli 与 mcp
+// 二者零依赖,共同依赖只能落在两层之下,理由见该模块文件头)
+import { isElectronProvidedNode, runPdfHostJob } from "../convert/pdf-host-launch.js";
 
 /**
  * 「输出写不了」的判据(退出码 4 的唯一来源):读**错误码**,不匹配文案。
@@ -82,22 +80,6 @@ function isOutputUnwritable(item: CliResultItem): boolean {
   return item.errorCode !== undefined && OUTPUT_UNWRITABLE_CODES.has(item.errorCode);
 }
 
-/** 一次性目录(pdf 任务描述用;mkdtemp 保证每次运行都拿到全新目录) */
-function makeTempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "m2w-cli-"));
-}
-
-/** 删除失败只告警不抛:清理是尽力而为,不该把一次成功的转换判成失败 */
-function cleanupTempDir(dir: string): void {
-  try {
-    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-  } catch (error) {
-    process.stderr.write(
-      `[warn] 临时目录清理失败(${dir}):${error instanceof Error ? error.message : String(error)}\n`,
-    );
-  }
-}
-
 /**
  * 纯 node 侧跑一次 docx 转换(不经 Electron)。
  *
@@ -126,89 +108,78 @@ async function convertDocx(
 }
 
 /**
- * pdf 经子进程重入 Electron 执行。
+ * 经子进程重入宿主跑一次 pdf 转换,并把四态结果归一成 `CliResultItem`。
  *
- * 任务描述经**文件**而非 argv 传递、结果经**结果文件**返回:设置对象序列化后含嵌套块
- * 与中文,命令行转义在 Windows 上是长期的痛点且长度受限;结果不走 stdout 的理由见
- * convert/cli-pdf-job.ts 的 writeJobResult 注释(Windows 管道 + app.exit 会丢数据)。
- * 两个文件同在一次性目录,由本函数统一回收。
- */
-/**
- * 经子进程重入宿主跑一次 pdf 转换。**导出供验收段直调**(同 `convertPdfJob` 的先例):
- * 本文件虽是入口(有守卫、可被 import),但 pdf 拉起路径此前只有 `--format pdf`
- * 会走到,而没有任何段真跑过 pdf —— 于是 `host-launch` 的判定与 `ELECTRON_RUN_AS_NODE`
- * 剔除这两处「漏一行就静默失败」的位置全在覆盖率外。直调本函数是覆盖它们的唯一办法
- * (派生真 node 子进程跑 pdf 则覆盖不到子进程里的判定)。
+ * **拉起判定与传话(写任务文件 / spawn / 读结果 / 回收临时目录)在 `convert/pdf-host-launch.ts`**,
+ * 本函数只做两件事:① 按 CLI 的流约定写诊断(stderr);② 把机制层的四态结果映射成
+ * `CliResultItem`(成功项带 outputPath,失败项带人读 error 与机器可判 errorCode)。
+ * 机制层不写任何流、不认识退出码 —— 那两个约定各面不同,压进机制层就是把所有复用者
+ * 塞进一份与自己无关的说明。
+ *
+ * **导出供验收段直调**(同 `convertPdfJob` 的先例):本文件虽是入口(有守卫、可被
+ * import),但 pdf 拉起路径此前只有 `--format pdf` 会走到,而没有任何段真跑过 pdf ——
+ * 于是拉起判定与 `ELECTRON_RUN_AS_NODE` 剔除这两处「漏一行就静默失败」的位置全在
+ * 覆盖率外。直调本函数是覆盖它们的唯一办法(派生真 node 子进程跑 pdf 则覆盖不到子进程
+ * 里的判定)。
  */
 export function convertPdfViaHost(job: CliPdfJob): CliResultItem {
-  const tempDir = makeTempDir();
-  try {
-    const jobPath = path.join(tempDir, "job.json");
-    const resultPath = path.join(tempDir, "result.json");
-    fs.writeFileSync(jobPath, JSON.stringify(job), "utf8");
-    const host = hostInvocation(jobPath, resultPath);
-    const run = spawnSync(host.exe, host.args, {
-      // ⚠ env 必须显式给:不传就是全继承,已安装形态下宿主会跟着以纯 node 启动并崩掉
-      // (ELECTRON_RUN_AS_NODE 泄漏,详见 host-launch.ts 的 hostEnv 注释)
-      env: host.env,
-      encoding: "utf8",
-      windowsHide: true,
-    });
-    if (run.error) {
-      // 宿主可执行文件起不来 = 环境前置条件未满足,不是转换失败。
-      // 已安装形态下这意味着「应用 exe 不可执行」,源码检出形态下是「electron 没装」——
-      // 两者的下一步动作不同,故文案按上下文给,不要笼统说「请先 npm install」。
-      process.stderr.write(
-        isElectronProvidedNode()
-          ? `[cli] pdf 需要宿主应用可执行文件,未能启动:${run.error.message}\n` +
-            "[cli] 请确认本程序已完整安装;或改用 --format docx(pdf 无宿主不可用)\n"
-          : `[cli] pdf 需要 Electron 宿主,开发态下未能启动:${run.error.message}\n` +
-            "[cli] 请先执行 npm install;或改用 --format docx(pdf 无宿主不可用)\n",
-      );
-      return { input: job.input, format: "pdf", ok: false, warnings: [], elapsedMs: 0, error: run.error.message };
-    }
-    let result: CliPdfJobResult;
-    try {
-      result = readJobResult(resultPath);
-    } catch (error) {
-      process.stderr.write(
-        `[cli] pdf 宿主未产出结果(退出码 ${run.status ?? "null"},${run.stderr ?? ""}):` +
-          `${error instanceof Error ? error.message : String(error)}\n`,
-      );
-      return {
-        input: job.input,
-        format: "pdf",
-        ok: false,
-        warnings: [],
-        elapsedMs: 0,
-        error: "pdf 宿主未产出结构化结果",
-      };
-    }
-    if (result.ok && typeof result.outputPath === "string") {
-      return {
-        input: job.input,
-        format: "pdf",
-        ok: true,
-        outputPath: result.outputPath,
-        warnings: result.warnings,
-        elapsedMs: result.elapsedMs,
-      };
-    }
-    const message = result.error ?? "pdf 转换失败";
-    process.stderr.write(`[cli] pdf 转换失败:${message}\n`);
+  // 不给 timeoutMs:CLI 的「等多久」是人的决定,硬掐在这里等于替人做主
+  // (机制层的四种结果里也刻意留了 timeout 态给真有闸门的调用方,见 PdfHostRun)。
+  const run = runPdfHostJob(job);
+  if (run.cleanupWarning !== undefined) process.stderr.write(`[warn] ${run.cleanupWarning}\n`);
+  if (run.reason === "spawn-failed") {
+    // 宿主可执行文件起不来 = 环境前置条件未满足,不是转换失败。
+    // 已安装形态下这意味着「应用 exe 不可执行」,源码检出形态下是「electron 没装」——
+    // 两者的下一步动作不同,故文案按上下文给,不要笼统说「请先 npm install」。
+    process.stderr.write(
+      isElectronProvidedNode()
+        ? `[cli] pdf 需要宿主应用可执行文件,未能启动:${run.message}\n` +
+          "[cli] 请确认本程序已完整安装;或改用 --format docx(pdf 无宿主不可用)\n"
+        : `[cli] pdf 需要 Electron 宿主,开发态下未能启动:${run.message}\n` +
+          "[cli] 请先执行 npm install;或改用 --format docx(pdf 无宿主不可用)\n",
+    );
+    return { input: job.input, format: "pdf", ok: false, warnings: [], elapsedMs: 0, error: run.message };
+  }
+  if (run.reason === "timeout") {
+    process.stderr.write(`[cli] pdf 宿主超时未完成(${run.timeoutMs}ms),已强杀\n`);
+    return { input: job.input, format: "pdf", ok: false, warnings: [], elapsedMs: 0, error: `pdf 宿主超时(${run.timeoutMs}ms)` };
+  }
+  if (run.reason === "no-result") {
+    process.stderr.write(
+      `[cli] pdf 宿主未产出结果(退出码 ${run.exitStatus ?? "null"},${run.stderr}):${run.message}\n`,
+    );
     return {
       input: job.input,
       format: "pdf",
       ok: false,
+      warnings: [],
+      elapsedMs: 0,
+      error: "pdf 宿主未产出结构化结果",
+    };
+  }
+  const result = run.result;
+  if (result.ok && typeof result.outputPath === "string") {
+    return {
+      input: job.input,
+      format: "pdf",
+      ok: true,
+      outputPath: result.outputPath,
       warnings: result.warnings,
       elapsedMs: result.elapsedMs,
-      error: message,
-      // 码由宿主跨进程透传而来:缺它则 pdf 的落盘失败会落兜底档(3)而非 4
-      ...(result.errorCode !== undefined ? { errorCode: result.errorCode } : {}),
     };
-  } finally {
-    cleanupTempDir(tempDir);
   }
+  const message = result.error ?? "pdf 转换失败";
+  process.stderr.write(`[cli] pdf 转换失败:${message}\n`);
+  return {
+    input: job.input,
+    format: "pdf",
+    ok: false,
+    warnings: result.warnings,
+    elapsedMs: result.elapsedMs,
+    error: message,
+    // 码由宿主跨进程透传而来:缺它则 pdf 的落盘失败会落兜底档(3)而非 4
+    ...(result.errorCode !== undefined ? { errorCode: result.errorCode } : {}),
+  };
 }
 
 /** 单个 (输入 × 格式) 的一次尝试:成功与失败都归一成 CliResultItem,失败不中断整批 */

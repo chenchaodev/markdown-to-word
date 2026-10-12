@@ -1,10 +1,14 @@
 /**
- * CLI 的 pdf 宿主:被 `src/cli/index.ts` 以子进程方式拉起,提供 printToPDF 能力。
+ * CLI 与 MCP 的 pdf 宿主:被 `src/cli/index.ts` / `src/mcp/tools.ts` 经
+ * `src/convert/pdf-host-launch.ts` 以子进程方式拉起,提供 printToPDF 能力。
  *
  * 为什么要有这个壳:pdf 的打印能力是 **Electron 宿主能力**(ADR-060 后果 2 ——
- * `printToPDF` 是唯一打印宿主,装配层不自带、缺它即报错不降级)。而 CLI 本身是
- * **纯 node 进程**(零 electron import,见门禁 `faces-no-host`),两者不能同进程。
- * 故 CLI 对 pdf 走「壳自动重入 Electron」:本模块就是被重入的那一侧。
+ * `printToPDF` 是唯一打印宿主,装配层不自带、缺它即报错不降级)。而 CLI 与 MCP 本身
+ * 都是**纯 node 进程**(零 electron import,见门禁 `faces-no-host`),两者不能同进程。
+ * 故这两个面对 pdf 走「壳自动重入 Electron」:本模块就是被重入的那一侧。
+ * ⚠ 「谁来拉起本模块」的全部判定(已装 / 源码检出两种形态、env 剔除
+ * `ELECTRON_RUN_AS_NODE`、任务与结果的临时文件传递)住在**装配层的 `pdf-host-launch.ts`**,
+ * 不在本文件、也不在任何一个交付面里 —— 机制放错层的代价是两份会漂的副本。
  *
  * 与 `electron-side.ts` 的关系:本模块**不重复实现**打印,只做三件事 ——
  * ① 读任务描述(契约见 convert/cli-pdf-job.ts,CLI 与本模块共用);

@@ -16,8 +16,14 @@
  * - 传输:一行一帧 / 半包拼接 / 空行噪声 / 非法 JSON / 非法请求 / 未知方法 /
  *   handler 抛错 / notification 不回帧(这七条各自都会静默把协议搞坏)。
  * - tools:真 docx 产出(魔数)、**降级声明**(含 mermaid 必声明、不含则不声明)、
- *   pinOutputPath 逐字落盘且禁避让、业务失败走 isError 而非 JSON-RPC error。
+ *   pinOutputPath 逐字落盘且禁避让、业务失败走 isError 而非 JSON-RPC error、
+ *   **format 参数**(省略 = docx 的向后兼容 / 非法值被拒并列出可用值 / 枚举进 schema)。
  * - index:协议版本、tools/list 只暴露一个 tool、未知 tool 报错。
+ *
+ * **pdf 路径刻意不在本段跑**:pdf 经打印宿主子进程执行,而本段跑在 Electron 宿主里 ——
+ * 在其中再拉起 Electron 会嵌套(同 test/cli/pdf-launch.test.js 头注记的那个坑:
+ * 实测整段超时 180s 被硬终止)。pdf 的真实路径由 `test/mcp/pdf-via-host.test.js`
+ * 派生**纯 node 子进程**验(该段也覆盖「MCP 两帧握手」)。
  */
 
 // 本段无验收样例(输入是本段自造的最小 markdown,不属夹具区;契约见 gates/fixtures/gen-fixtures.mjs 文件头)
@@ -215,6 +221,18 @@ export async function run() {
       assert(list.result.tools[0].name === TOOL_NAME, `tool 名应为 ${TOOL_NAME}`);
       assert(list.result.tools[0].inputSchema.required.includes("input"), "inputSchema 应把 input 列为必填");
     });
+    // format 必须是**可选**字段且枚举写全:schema 是 agent 选参数的依据,
+    // 少一个取值它就只能靠撞一次报错来发现(撞之前它并不知道 pdf 存在)。
+    await suite.case("inputSchema 暴露可选的 format(docx/pdf)且不列为必填", () => {
+      const schema = list.result.tools[0].inputSchema;
+      const format = schema.properties.format;
+      assert(format !== undefined, "inputSchema 应声明 format 字段");
+      assert(
+        Array.isArray(format.enum) && format.enum.includes("docx") && format.enum.includes("pdf"),
+        `format 的枚举应含 docx 与 pdf,实际 ${JSON.stringify(format.enum)}`,
+      );
+      assert(!schema.required.includes("format"), "format 必须可选(缺省即 docx,向后兼容靠这条)");
+    });
     await suite.case("未知 tool 回 JSON-RPC error", () => {
       assert(unknown.error !== undefined, "未知 tool 应回 JSON-RPC error");
     });
@@ -283,7 +301,41 @@ export async function run() {
       assert(dirStructured.degraded.includes("mermaid"), "目录输入的降级应取并集");
     });
 
-    // 3e. 业务失败一律 isError(不是 JSON-RPC error):模型要看得见才能改参数重试
+    // 3e. `format` 参数(**向后兼容是本组的主题**)
+    // 「省略 = docx」是硬承诺:该参数是后加的,而已配置的客户端一条都不会传 ——
+    // 若省略落成报错或别的默认值,等于给存量调用方一次静默的破坏。
+    await suite.case("format 省略:行为与改动前逐字一致(docx 魔数 + degraded 照常)", async () => {
+      const omitted = await callConvertMarkdown({ input: plain });
+      assert(omitted.isError !== true, `省略 format 不应报错:${JSON.stringify(omitted.content)}`);
+      const s = /** @type {any} */ (omitted.structuredContent);
+      assert(s.artifacts.length === 1, `省略 format 应产出一个产物,实际 ${s.artifacts.length}`);
+      assert(isDocxMagic(s.artifacts[0].outputPath), "省略 format 的产物应是 docx(OOXML/ZIP)");
+      assert(s.artifacts[0].format === "docx", `省略 format 应回报 format=docx,实际 ${s.artifacts[0].format}`);
+    });
+    await suite.case("format 显式给 docx:与省略同形", async () => {
+      const explicit = await callConvertMarkdown({ input: plain, format: "docx" });
+      assert(explicit.isError !== true, `format=docx 不应报错:${JSON.stringify(explicit.content)}`);
+      const s = /** @type {any} */ (explicit.structuredContent);
+      assert(isDocxMagic(s.artifacts[0].outputPath), "format=docx 的产物应是 docx");
+      assert(s.artifacts[0].format === "docx", "format=docx 应回报 format=docx");
+    });
+    // 非法取值两类各判一次:一类是「拼错的已知取值」(大小写),一类是「压根没有的取值」。
+    // 两者都必须走 isError(可被模型看见并自我纠正),且**报错要列出可用取值** ——
+    // 只说「格式错了」的话,agent 只能猜。
+    for (const [value, label] of [
+      ["PDF", "已知取值但大小写不符"],
+      ["epub", "未知取值"],
+      [42, "format 非字符串"],
+    ]) {
+      await suite.case(`非法 format 被拒且列出可用取值:${label}`, async () => {
+        const bad = await callConvertMarkdown({ input: plain, format: value });
+        assert(bad.isError === true, `${label}应走 isError 结果`);
+        const text = /** @type {any} */ (bad.content[0]).text;
+        assert(text.includes("docx") && text.includes("pdf"), `报错须列出可用取值,实际:${text}`);
+      });
+    }
+
+    // 3f. 业务失败一律 isError(不是 JSON-RPC error):模型要看得见才能改参数重试
     // 七类入参各自独立(一种判红不该掩盖其余六种),故逐类一个 case
     for (const [args, label] of [
       [{ input: "C:/绝对不存在的路径.md" }, "路径不存在"],
@@ -301,13 +353,16 @@ export async function run() {
       });
     }
 
-    // 3f. 未知预设的报错要带可选清单(否则 agent 无法自我纠正)
+    // 3g. 未知预设的报错要带可选清单(否则 agent 无法自我纠正)
     await suite.case("未知预设的报错列出可用预设 id", async () => {
       const badTemplate = await callConvertMarkdown({ input: plain, template: "no-such-preset" });
       assert(/** @type {any} */ (badTemplate.content[0]).text.includes("paper"), "未知预设的报错应列出可用预设 id");
     });
 
-    console.log("[ok] mcp:tool 真实转换通过(真 docx 魔数 / 降级声明含与不含两种形态 / pinOutputPath 逐字落盘且禁避让 / 目录输入降级取并集 / 7 类业务失败一律 isError)");
+    console.log(
+      "[ok] mcp:tool 真实转换通过(真 docx 魔数 / 降级声明含与不含两种形态 / pinOutputPath 逐字落盘且禁避让 / "
+      + "目录输入降级取并集 / format 省略即 docx 的向后兼容 + 显式 docx + 三类非法值被拒并列出可用取值 / 7 类业务失败一律 isError)",
+    );
   } finally {
     removeTree(dir);
   }

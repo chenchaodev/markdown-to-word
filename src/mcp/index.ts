@@ -4,13 +4,14 @@
  * 本文件只做接线,不含判定逻辑:
  * - 方法面在 jsonrpc.ts(传输机制)、tool 目录与转换在 tools.ts(领域语义)。
  *
- * 为什么跑**纯 node** 而不上 Electron:MCP 只暴露 docx,而 docx 走纯 node 已实测可行
- * (CLI 整个 docx 面就是纯 node)。上 Electron 要付两笔账 —— ① 协议通道就是 stdio,
- * 而 Electron 子进程的 stdout 接到管道时会在帧前多吐一个 `\r\n`(Chromium 噪声);
- * ② `electron` 是 devDependency 不在 PATH,客户端配置里写 `electron <path>` 只在开发
- * 检出里成立。将来 MCP 要 pdf 时也不必改这一点:pdf 是**能力**不是进程形态,复用
- * CLI 已建成的机制(纯 node 侧写任务文件 → spawn `dist/main/cli-pdf-host.js` → 读结果
- * 文件)即可。详见 `docs/evidence/20261004-000218-多层交付面总规划原文.md`「修复项复测 · 2026-10-03 · 步序 3 开工前」。
+ * 为什么跑**纯 node** 而不上 Electron:docx 走纯 node 已实测可行(CLI 整个 docx 面
+ * 就是纯 node),而 pdf 是**能力**不是进程形态 —— 它由 `convert/pdf-host-launch.ts`
+ * (与 CLI 共用的一份机制)在**子进程**里拿到,本进程仍不必是 Electron。上 Electron
+ * 要付两笔账 —— ① 协议通道就是 stdio,而 Electron 子进程的 stdout 接到管道时会在帧前
+ * 多吐一个 `\r\n`(Chromium 噪声);② `electron` 是 devDependency 不在 PATH,客户端
+ * 配置里写 `electron <path>` 只在开发检出里成立。详见
+ * `docs/evidence/20261004-000218-多层交付面总规划原文.md`「修复项复测 · 2026-10-03 ·
+ * 步序 3 开工前」。
  */
 import { serveStdio, type RpcHandlers, type RpcRequest } from "./jsonrpc.js";
 import { callConvertMarkdown, TOOL_NAME, TOOL_SPEC } from "./tools.js";

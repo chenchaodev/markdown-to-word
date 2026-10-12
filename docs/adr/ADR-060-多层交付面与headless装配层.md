@@ -15,6 +15,8 @@
 **分层**：`core`（纯转换）← `convert`（装配，能力注入）← {`main`(electron)、`cli`、`mcp`、库}。
 `cli` 与 `mcp` 是**同一层的两个 adapter，二者零依赖**，不为它们各立一层。
 
+> **「零依赖」在 2026-10-12 被一次搬动验过一次**：MCP 也要用 pdf 之后，两面共用的「拉起打印宿主」机制（原先在 `src/cli/host-launch.ts`）搬进 `src/convert/pdf-host-launch.ts`。搬动**不违反**这条 —— `cli` 与 `mcp` 仍互不 import，都只向下依赖 `convert`；ADR-060「备选方案」那条被撤回的「否决 · 让 MCP 暴露 pdf」记着这次裁决。**判据是依赖方向，不是「谁住在哪一层目录」**：机制放错层的代价是两份会漂的副本（`hostEnv` 那条「必须 delete 不能置 0」的 env 不变量尤其经不起复制），不是分层图变了。
+
 **注入点恰好四个**，这是 `emitConvertedArtifact`（原 `src/main/converter/output-skeleton.ts:93`）离 headless 的全部距离：
 
 | 现状 | 位置 | 改造后 |
@@ -47,8 +49,27 @@
 **否决 · 为 CLI 与 MCP 各立一层。**
 二者零依赖，只是同一层的两个 adapter。
 
-**否决 · 让 MCP 暴露 pdf。**
-pdf 必然要 Electron 宿主（见「后果」第 2 条）。MCP 第一版**只暴露 docx**，pdf 留给 CLI。
+**~~否决 · 让 MCP 暴露 pdf。~~ → 已采纳（2026-10-12，见下）。**
+pdf 必然要 Electron 宿主（见「后果」第 2 条）。~~MCP 第一版**只暴露 docx**，pdf 留给 CLI。~~
+
+> **这条否决已撤回，MCP 现提供 pdf**（用户 2026-10-12 裁决）。当初否决的理由是
+> 「pdf 要 Electron 宿主，而 MCP 跑纯 node」—— 该理由的前提是**把 pdf 当成进程形态**。
+> 前提不成立：pdf 是**能力**不是进程形态，装配层要的是注入进来的 `printPdf`
+> （本 ADR「注入点恰好四个」那一条），拿到它的方式是**在纯 node 侧起一个子进程**去调用宿主，
+> 协议通道（stdio）不必经 Electron。这条机制 CLI 早已建成
+> （`src/convert/pdf-host-launch.ts`：写任务文件 → spawn `dist/main/cli-pdf-host.js` → 读结果文件），
+> MCP 复用同一份即可，两个交付面仍然**零依赖**（都只向下依赖 `convert`）。
+>
+> 落地时的连带项：`src/cli/host-launch.ts` 随之搬进 `src/convert/pdf-host-launch.ts` ——
+> 它本来就 `import { PDF_HOST_FLAG } from "../convert/cli-pdf-job.js"`，是半个装配层模块
+> 落在交付面下（只有 CLI 用 pdf 时代的就近放置）。**搬动不违反上面那条「二者零依赖」**：
+> 两者仍互不 import，都引 `convert`。
+>
+> 另一处连带：`mermaid` 那一行的「MCP = 不注入→降级」**仍然成立**（MCP 两个格式都不注入
+> mermaidResolver）。变的是**降级事实的可见性**：core 的 pdf 分支不做 remark 解析、也不产
+> `mermaidDegraded`（`src/core/convert.ts` 的 `DocxArtifact.mermaidDegraded` ②），故 pdf 产物的
+> `degraded` 恒为空。该缺口属 core 的结构裁决，不在本条范围内 —— 工具描述已据实告知 agent
+> 「pdf 的 degraded 恒为空，mermaid 一律按代码块处理」。
 
 **否决 · 第 0 档入口（文件关联 / 右键菜单 / 拖拽）现在做。**
 它们全部依赖 CLI，CLI 落地后自然存在。唯一真缺口是「GUI 启动不接收命令行参数」（`docs/evidence/20260808-102900:11`），单独立号，不在本规划内。
@@ -105,19 +126,23 @@ pdf 必然要 Electron 宿主（见「后果」第 2 条）。MCP 第一版**只
 
 新增一个入口 = 在这张表加一列，不是重新设计一层。**空缺处即当前真缺口。**
 
-> **本表与 [ADR-066](ADR-066-转换契约类型化.md) 决定 3 的关系**：ADR-066 决定 3（交付面声明能力集、格式由声明派生）**已评估撤步、不做**，见 [`20261007-083000-ADR-066决定3能力声明撤步裁决`](../evidence/20261007-083000-ADR-066决定3能力声明撤步裁决.md)。**本表是「MCP 不提供 pdf」「CLI 的 mermaid 可选」的唯一记载处**（ADR-066 的现状描述只到「能力差异靠函数体字面量」，不列哪些面有哪些能力）—— 读者若被 ADR-066 那条已撤步的表述误导，以本表为准。**顺带一句：这张矩阵本身就已经是那份「清单」** —— ADR-066 设想的结构化声明在本仓并不额外增加信息，只增加载体。
+> **本表与 [ADR-066](ADR-066-转换契约类型化.md) 决定 3 的关系**：ADR-066 决定 3（交付面声明能力集、格式由声明派生）**已评估撤步、不做**，见 [`20261007-083000-ADR-066决定3能力声明撤步裁决`](../evidence/20261007-083000-ADR-066决定3能力声明撤步裁决.md)。**本表是「MCP 提供哪些格式」「CLI 的 mermaid 可选」的唯一记载处**（ADR-066 的现状描述只到「能力差异靠函数体字面量」，不列哪些面有哪些能力）—— 读者若被 ADR-066 那条已撤步的表述误导，以本表为准。**顺带一句：这张矩阵本身就已经是那份「清单」** —— ADR-066 设想的结构化声明在本仓并不额外增加信息，只增加载体。
+> **本表也是「否决 · 让 MCP 暴露 pdf」那条的现状面**：那条已于 2026-10-12 撤回（见「备选方案」节的划改与说明），本表的 `pdf 打印` 行即其结果。改这张表**不改**那条的划改正文 —— 两处同批动，见该处的引用。
 
 | 能力 | core | convert | 谁提供 | GUI | CLI | MCP | 库 |
 |---|---|---|---|---|---|---|---|
 | 读文件 | 不做 | 编排 | — | ✅ | ✅ | ✅ | 传路径 |
 | 设置 | 入参 | 透传 | — | `loadSettings()` | flag / 默认值 | tool 参数 | 传对象 |
 | fs 能力 | 注入 | 编排 | 注入 | `context.ts` | 同 GUI | 同 GUI | 同 GUI |
-| pdf 打印 | 不做 | 注入 `printPdf` | 宿主 | Electron | 重入 Electron | 不提供 | 需宿主 |
+| pdf 打印 | 不做 | 注入 `printPdf` | 宿主 | Electron | 重入 Electron | **重入 Electron**（与 CLI 同一份机制，`convert/pdf-host-launch.ts`） | 需宿主 |
 | mermaid | 注入 | 注入 | 宿主 | 有 | 可选 | **不注入→降级** | 可选 |
 | 生命周期 | 调用方 | 一次转换 | — | 应用 | 进程 | **每次 call 新 ctx + 强制 deadline** | 调用方 |
 | 结果通道 | 返回值 | 返回值 | — | IPC | stdout / 退出码 | 结构化 | 返回值 |
 
 **MCP 必须设 deadline**：`mermaid-service.ts:56` 是一条串行 promise 链，MCP 没有「用户关窗口」这个天然出口。**CLI 不设 deadline** —— 由人控制，等多久是人的决定。
+**MCP 的 deadline 按格式分档**（docx 120s / pdf 360s）：pdf 每次多付一次 Electron 冷启动与 `printToPDF`，实测同文档下 pdf ≈ docx 的 3 倍耗时；用同一个值会在某一体积上下造出「同一份输入 docx 过、pdf 挂」的格式相关悬崖。两档的实测比值与取舍见 `src/mcp/tools.ts` 的 `PDF_DEADLINE_MS` 注释。
+
+**MCP 的 mermaid 降级事实只在 docx 路径上可见**：`mermaid` 那行的「MCP 不注入→降级」对**两个格式都成立**，但 core 只在 docx 分支产 `mermaidDegraded`（pdf 分支不做 remark 解析，见 `src/core/convert.ts` 的 `DocxArtifact.mermaidDegraded` ②），故 pdf 产物的 `degraded` 恒为空。这是上表的**真缺口**，不是「本表没记」：补齐要在 core 的 pdf 分支新增一次 AST 构建，属结构裁决。
 
 **图片缓存跨请求污染不存在**：`context.ts:31` 的 cache key 是 `(baseDir, trustedRoots)`，不同 baseDir 不互污；跑满 17 个目录只是 LRU 挤掉最早的 —— 是性能特征，不是正确性问题。若在意长驻内存，**给 MCP 侧单独调小上限，不改共享常量**。
 
@@ -216,8 +241,9 @@ pdf 必然要 Electron 宿主（见「后果」第 2 条）。MCP 第一版**只
 现象一：只实现 `--output` 时，`-o out.docx` 被当成**输入路径** —— 静默少转一个文件且不报错，是脚本面最难查的一类坑。修法：加短选项表；非 `--` 开头且不在表内的 token 一律判用法错，不再当输入路径。
 现象二：`--format both` 配 `-o` 时，同一路径被 docx 与 pdf 各提交一次，后到那次撞上前次已占用的路径，报错是「产物格式校验失败(.docx 魔数不符)」这种看不懂的形态。修法：解析期判用法错并提示分开跑两次 —— 替调用方猜后缀等于替他改主意。
 
-**⑦ 退出码 4 的判据依赖三处文案匹配（脆弱，已写明出处）。**
-装配层把落盘失败与转换失败都抛成普通 Error、没有错误码，故 CLI 侧只能按文案匹配三处（artifact-writer 的「产物路径已存在」「不支持硬链接」，paths.ts 的「无法创建输出目录」）。已在代码注释里点名三处出处并写明「改文案必须同改这里」，避免它退化成隐式约定。若将来给装配层加错误码，应改为读码；在此之前，「三处文案 + 一处判定」优于「无判定」（脚本至少能区分「重名」与「磁盘满」）。
+**~~⑦ 退出码 4 的判据依赖三处文案匹配（脆弱，已写明出处）。~~ → 已被 REQ-216 取代。**
+装配层已给「输出写不了」的失败点带上**稳定错误码**：码单源在 `src/convert/artifact-writer.ts` 的 `OUTPUT_UNWRITABLE_CODES`（ASCII 标识符，落在 `Error.code` 上），抛出点用 `outputUnwritableError(<码>, <可操作文案>)`；`src/cli/index.ts` 据此判退出码 4，不再匹配中文文案。刻意不用自定义错误类：装配层跨进程边界（cli ↔ pdf 宿主）只传 `message` 字符串，自定义类序列化后会退化成 message，而 `code` 是纯 ASCII 标识符，任何将来的结构化通道都能原样带走。
+登记表 ↔ 抛出点的双向完整性现由 `gates/repo/check-output-unwritable-registry.mjs` 机器看守（登记表改一处而不改抛出点判红；新增落盘失败点忘登记码也判红 —— 后者的症状本身是静默的，退出码从 4 悄悄变成 3）。已知不覆盖的例外逐条登记在该门禁的 `NOT_OUTPUT_FAILURES` 表里并写明失效条件。
 
 ### 2026-10-03 · 步序 3 开工前
 

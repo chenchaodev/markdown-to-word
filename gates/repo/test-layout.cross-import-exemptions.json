@@ -9,11 +9,6 @@
   "exemptionCriterion": "豁免的判准:这次跨层 import 在本段里**只提供数据、常量、规格表或格式化函数**,本段的断言对象仍是本层的主体 —— 换个夹具值段仍成立。**不**豁免的情形:这次跨层 import 让本段真的执行别层的实现并对它的行为下断言(那部分行为就是被测对象的一部分,豁免等于把跨层行为藏进表里)。",
   "entries": [
     {
-      "segment": "test/cli/host-launch.test.js",
-      "specifier": "dist/convert/cli-pdf-job.js",
-      "reason": "刻意取跨面单源的 PDF_HOST_FLAG 而不在本段写字面量 —— 断言的是 cli 侧读 flag 的行为,不是 job 契约本身(那是 cli-pdf-job 段的事)。取单源是刻意的:两边各写一份字面量就会漂移。"
-    },
-    {
       "segment": "test/cli/options.test.js",
       "specifier": "dist/convert/cli-pdf-job.js",
       "reason": "exitCodes / readJob 取自 job 契约单源,只作本段断言的期望值(退出码表、读 job 结果的形状);被测主体是 cli 参数解析本身。"
