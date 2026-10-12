@@ -18,6 +18,11 @@
 // `skipReason` 收敛为只保留**项目模式**那一支(三条跨仓/条件性载体豁免 + 两条与模式无关的豁免)。
 // `collectProjectScope` 的项目侧收集逻辑、`EXCLUDE_DIRS` 的 `project` 一支**原样保留**。
 //
+// **本仓侧与上游的差异清单(搬移后新增/改写,人工重核用)**:上游那份**不含**下面两条,
+// 本仓有 ⇒ 上游演进时**不能整份覆盖回来**:
+//  · 表格解析层归一:全部解析函数(含 `rangeTable`)改为从 `shared/markdown-table.mjs` 取,本文件零私有副本;
+//  · `locateRangeTable` 收成**薄适配器**(只做 `shared/` 那份的原文 → 数字);上游那份是自带的整套遍历。
+//    **取值侧不并入 `shared/`**:形态对不对是判据,`shared/` 那份刻意返回原文不解析。
 // ⚠️ **判据从此两份,规则演进要改两处** —— 这是**本仓自己欠的义务**,不是上游的:全局配置目录那份
 // 仍兼做它自己那侧(配置仓 + 跨仓全量)的判定。ADR-016 备选方案 3 已否决「留配置仓共用」,故无
 // 机器对读;唯一的对冲是本文件头的基线记录 + 上面的删除清单,供人工重核。
@@ -146,7 +151,7 @@ import { fileURLToPath } from 'node:url';
 //   同名常量,写工具因 `tools-stay-in-tools` 引不到 `gates/` 才被迫在 `shared/` 落一份 ——
 //   那份曾造成「改数值要改两处」,现已消除,理由链见下方 C1 / C2 上方的 T2 tombstone 注释。
 // → 表格**解析层**同样在那一份里单点持有:切格 / 分隔行 / 表块 / 登记表定位 / 围栏遮罩 / 节名映射 /
-//   表头与单元格归一 九个解析函数本文件**零私有副本**,一律从 `shared/markdown-table.mjs` 取。
+//   表头与单元格归一,以及号段表定位,本文件**零私有副本**,一律从 `shared/markdown-table.mjs` 取。
 //   归一前本文件另有一整套同名私有实现(其中 `tableBlocks` / `locateRegistry` 的返回形状与
 //   `shared/` 那份不同,见下面两处消费点的注释),现已消除 —— 判据本体一行未动,判据行为见
 //   `isSeparatorRow` 那条「并集」说明。
@@ -154,6 +159,7 @@ import {
   TITLE_LIMIT, WHY_LIMIT, WHY_LIMIT_DONE,
   splitTableRow, isSeparatorRow, tableBlocks, locateRegistry,
   maskFencedLines, sectionByLine, normalizeHeaderCell, normalizeLedgerCell, ledgerTextCols,
+  rangeTable,
 } from '../../shared/markdown-table.mjs';
 
 /**
@@ -1040,32 +1046,35 @@ export function checkTableShape(lines) {
 }
 
 /**
- * 号段表定位:表头首格 `项`、次格 `值` 的那块;两行按**首格包含**「已用最大号」/「下一个可用号」取
- * (容忍括注写法),值格取**前导**号。定位不到 → `null`。
+ * 号段表定位:**薄适配器** —— 遍历与取值全走 `shared/` 的 `rangeTable`,这里只做最后一步
+ * 「原文 → 数字」。定位不到 → `null`。
  *
- * ⚠️ 这里**不**用 `shared/` 的 `rangeTable`:那份刻意**返回原始文本不解析数字**(形态对不对
- * 属判据),而本门禁的 R4 / R5 要拿数字与实算值比,解析在这一层发生。两者不是同一件事。
+ * 为什么解析留在本层而**不在** `shared/` 那一侧:`shared/` 那份刻意**返回原始文本不解析数字**
+ * (形态对不对是**判据**,解析层一旦在那里 `Number(...)`,形态错与非形态错就再也分不开),
+ * 而 R4 / R5 要拿数字与实算值比 ⇒ 转换必须在这一侧发生。**遍历归一、判据留本侧**,两边契约
+ * 因此都不破:解析层仍是零判据,门禁仍是唯一形态裁判。
+ *
+ * ⚠️ `raw ?? ''` **不许去掉**:取值格缺格/为空格时 `shared/` 交回的是 `''` 而不是 `null`
+ * (行在、格空),而缺行时交回 `null` —— 两者的 `exec` 入参必须是同一个可匹配类型。
+ * 更要紧的是**落值必须是 `null` 而非 `0`**:`0` 是 `REQ-000` 零值占位的合法取值,
+ * 与「取不到」是两回事,写成 `if (!raw) return 0` 会把解析失败伪装成一次正常的零值声明。
+ *
+ * ⚠️ 行号**不随取值解析失败一起丢**:`found.maxLine` 照写。行号是「表在不在、那行在哪」的证据,
+ * 取值对不对是另一回事,两者混在一个 `if` 里会让「值格写坏了」退化成「表取不到」。
  */
 function locateRangeTable(text) {
-  const lines = maskFencedLines(text);
-  for (const block of tableBlocks(lines)) {
-    const header = splitTableRow(block.header.text);
-    if (header.length < 2) continue;
-    if (normalizeHeaderCell(header[0] ?? '') !== '项') continue;
-    if (normalizeHeaderCell(header[1] ?? '') !== '值') continue;
-    const out = { max: null, next: null, maxLine: null, nextLine: null };
-    for (const row of block.rows) {
-      if (isSeparatorRow(row.cells) || row.cells.length < 2) continue;
-      const key = row.cells[0].includes('已用最大号') ? 'max'
-        : row.cells[0].includes('下一个可用号') ? 'next' : null;
-      if (!key) continue;
-      const m = LEDGER_NUM_RE.exec(row.cells[1] ?? '');
-      out[key] = m ? Number(m[1]) : null;
-      out[`${key}Line`] = row.lineNo;
-    }
-    return out;
-  }
-  return null;
+  const found = rangeTable(text);
+  if (!found) return null;
+  const num = (raw) => {
+    const m = LEDGER_NUM_RE.exec(raw ?? '');
+    return m ? Number(m[1]) : null;
+  };
+  return {
+    max: num(found.max),
+    next: num(found.next),
+    maxLine: found.maxLine,
+    nextLine: found.nextLine,
+  };
 }
 
 /**
@@ -1323,7 +1332,7 @@ export function checkLedger(text) {
     if (!range || range.max === null) missingCells.push('已用最大号');
     if (!range || range.next === null) missingCells.push('下一个可用号');
     notes.push(
-      `${PROJECT_PROBE} 号段表取不到${missingCells.length ? missingCells.join('与') : '两格'} ⇒ 与号段的一致性判据(已用最大号 / 下一个可用号)零覆盖`,
+      `${PROJECT_PROBE} 号段表取不到${missingCells.join('与')} ⇒ 与号段的一致性判据(已用最大号 / 下一个可用号)零覆盖`,
     );
   }
   if (stats.placeholder) {

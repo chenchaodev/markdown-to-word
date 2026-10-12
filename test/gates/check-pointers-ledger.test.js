@@ -527,6 +527,111 @@ export async function run() {
       assert.equal(next.errors.length, 1, JSON.stringify(next.errors));
       assert.match(String(next.errors[0]), /「下一个可用号」不等于/);
     });
+
+    // ---- 号段表**取值失败**的四条负向夹具 ----
+    //
+    // ⚠️ **这四条钉的是「解析失败」这个第三态**,而它此前**一条夹具都没有** —— 全部靠
+    // `checkLedger` 末尾那段 fail-closed 出声兜着。出声是**副作用**,不是行为约定:那段
+    // `else` 分支一旦被改写(比如「只出声」改成「跳过」),四条一起静默。
+    //
+    // **为什么这一族要紧**:`rangeTable`(遍历与取值,`shared/` 单点持有)交回的是**原文**,
+    // 原文 → 数字这一步在门禁侧的适配器里(`LEDGER_NUM_RE`)。那一层要同时守住三条:
+    //  ① 空值格(行在、格空)落 **null**,不落 `0` —— `0` 是 `REQ-000` 零值占位的**合法取值**,
+    //    写成 `if (!raw) return 0` 会把「取不到」伪装成「声明了零」,而 `0 !== null` 判据照跑;
+    //  ② 值格形态不对(非数字 / 四位数)同样落 `null` —— **解析失败 ≠ 内容写错**,不许判红;
+    //  ③ **行号照写** —— 行号是「表在不在、那行在哪」的证据,取值对不对是另一回事。
+    // 下面 ①②③ 各钉一条,④ 钉「表头不认 ⇒ 整表 null」这一档(与「格内解析失败」是两条不同的路)。
+    //
+    // ⚠️ **每条都配「撤回后复绿」**:只构造畸形端分不清「适配器判的」与「夹具顺带写坏了别的」。
+
+    const RANGE_ROW_RE = /^\| 已用最大号 \|.*$/m;
+    /**
+     * 号段表取值格换成给定原文(其余一切不动)。
+     * @param {string} cell 取值格原文(空串即「格在但空」)
+     * @returns {string}
+     */
+    const withMaxCell = (cell) =>
+      fixture({ max: 3, next: 4, rows: goodRows(3) }).replace(
+        RANGE_ROW_RE,
+        `| 已用最大号 | ${cell} |`,
+      );
+
+    await suite.case("号段表值格空串 ⇒ max 归 null · R4/R5 出声零覆盖而不判红(解析失败 ≠ 内容写错)", () => {
+      const r = checkLedger(withMaxCell(""));
+      assert.deepEqual(r.errors, [], JSON.stringify(r.errors));
+      // 归 null ⇒ R4/R5 **不参与**(`done` 少 2 项),并由 notes 说出「零覆盖」——
+      // **不判红**是刻意的:「值格写坏了」逼人去改一个门禁本来就没法替它判断的内容,属假红。
+      assert.equal(r.stats.invariants, 5, "R4/R5 未判定 ⇒ invariants 少 2(分母是 7 项)");
+      assert.ok(
+        r.notes.some((n) => /零覆盖/.test(n) && /已用最大号/.test(n)),
+        `必须点名取不到哪一格:${JSON.stringify(r.notes)}`,
+      );
+      // ⚠️ 这一条**同时**钉住「空 ≠ 0」:若适配器把空值落成 0,R4 会拿 `0` 与实算 3 比 ⇒ 报「号段缺行」。
+      assert.equal(r.stats.max, 3, "登记表的实算最大号不受号段格影响");
+    });
+
+    await suite.case("空串撤回:值格填回合法号 ⇒ 复绿(证明上条是取值解析判的,不是夹具写坏)", () => {
+      const r = checkLedger(fixture({ max: 3, next: 4, rows: goodRows(3) }));
+      assert.deepEqual(r.errors, [], `撤回后应复绿:${JSON.stringify(r.errors)}`);
+      assert.equal(r.stats.invariants, 7, "撤回后 R4/R5 真正判定过(不是靠退出判定变绿)");
+    });
+
+    await suite.case("号段表值格非数字(TBD)⇒ 同为空串那一档:出声零覆盖、不判红", () => {
+      const r = checkLedger(withMaxCell("TBD"));
+      assert.deepEqual(r.errors, [], JSON.stringify(r.errors));
+      assert.equal(r.stats.invariants, 5);
+      assert.ok(
+        r.notes.some((n) => /零覆盖/.test(n) && /已用最大号/.test(n)),
+        JSON.stringify(r.notes),
+      );
+    });
+
+    await suite.case("非数字撤回:值格填回 REQ-003 ⇒ 复绿", () => {
+      const r = checkLedger(fixture({ max: 3, next: 4, rows: goodRows(3) }));
+      assert.deepEqual(r.errors, [], `撤回后应复绿:${JSON.stringify(r.errors)}`);
+      assert.equal(r.stats.invariants, 7);
+    });
+
+    await suite.case("号段表值格四位数(REQ-0030)⇒ 同为空串那一档(`\\b` 拒绝位不许被撤掉)", () => {
+      // 四位数不在台账号形态内。**收紧到它算 R3 判红**,故这一格只能落 null 走出声,
+      // 不能落 30 参与 R4 比对(那会报一条「号段缺行」,逼人改一个本该改号形态的地方)。
+      const r = checkLedger(withMaxCell("REQ-0030"));
+      assert.deepEqual(r.errors, [], JSON.stringify(r.errors));
+      assert.equal(r.stats.invariants, 5);
+      assert.ok(
+        r.notes.some((n) => /零覆盖/.test(n) && /已用最大号/.test(n)),
+        JSON.stringify(r.notes),
+      );
+    });
+
+    await suite.case("四位数撤回:值格填回 REQ-003 ⇒ 复绿", () => {
+      const r = checkLedger(fixture({ max: 3, next: 4, rows: goodRows(3) }));
+      assert.deepEqual(r.errors, [], `撤回后应复绿:${JSON.stringify(r.errors)}`);
+      assert.equal(r.stats.invariants, 7);
+    });
+
+    await suite.case("号段表表头缺「项」⇒ 整表取不到 ⇒ 出声点名**两格**(与格内解析失败是两条路)", () => {
+      // 头格不认 ⇒ **整块不算号段表**,`rangeTable` 交回 `null`,连「下一个可用号」也一并取不到 ——
+      // 这正是它与上面三条的差别(那三条表在、只坏一格)。故断言必须区分这两种措辞:
+      // 坏一格只点名那一格,整表取不到必须**两格都点名**。
+      const text = fixture({ max: 3, next: 4, rows: goodRows(3) }).replace(
+        /^\| 项 \| 值 \|$/m,
+        "| 名称 | 值 |",
+      );
+      const r = checkLedger(text);
+      assert.deepEqual(r.errors, [], JSON.stringify(r.errors));
+      assert.equal(r.stats.invariants, 5);
+      assert.ok(
+        r.notes.some((n) => /号段表取不到已用最大号与下一个可用号/.test(n)),
+        `整表取不到必须两格都点名(与「只坏一格」区分):${JSON.stringify(r.notes)}`,
+      );
+    });
+
+    await suite.case("表头撤回:「项/值」填回 ⇒ 复绿", () => {
+      const r = checkLedger(fixture({ max: 3, next: 4, rows: goodRows(3) }));
+      assert.deepEqual(r.errors, [], `撤回后应复绿:${JSON.stringify(r.errors)}`);
+      assert.equal(r.stats.invariants, 7);
+    });
   });
 
   // ============ 台账形态上限档(checkLedgerShape · C1/C2 的列数守卫落点)============
