@@ -5,25 +5,34 @@
 
 # EOL 策略(审计 TEST-1):gen-fixtures 生成器落盘 LF,Windows autocrlf 下 checkout
 # 会把文本产物转成 CRLF,导致 check:fixtures 逐字节比对全部误报。
-# 将 test/fixtures/ 下文件固定 EOL,checkout 后保持与生成器输出一致:
+# 将 samples/ 下文件固定 EOL,checkout 后保持与生成器输出一致:
 #   文本类(.md/.css/.json)→ eol=lf;图片类→ binary(不入 EOL 归一)。
-test/fixtures/**/*.md text eol=lf
-test/fixtures/**/*.css text eol=lf
-test/fixtures/**/*.json text eol=lf
+# 前缀沿革(历史叙述,非现状):本块原写 test/fixtures/,ADR-062 P3 已把夹具数据区迁到
+# 仓库顶层 samples/(见 shared/paths.js:36);前缀未随之改指,整块一度挂在已不存在的
+# 路径上 ⇒ 规则静默失效(不是「当初就写错」,是迁移留下的悬空引用)。现改指 samples/。
+# ⚠ 占位:.css / .json 两条当前在 samples/ 下无匹配路径。按下方图片族同源的闭集惯例
+#   (IMAGE_EXTENSIONS 登记即生效)保留为占位:gen-fixtures 一旦新增该类夹具即自动生效,
+#   无需再改本文件;删掉反而要在新增时多记一笔「这里曾经有过一条」。
+samples/**/*.md text eol=lf
+samples/**/*.css text eol=lf
+samples/**/*.json text eol=lf
 
 # 图片夹具(IMAGE_DIGEST_BASELINE / imageCopies)是「读字节 → Buffer.equals」裸比对,
 # 链路上没有任何 EOL 归一,所以图片必须整类钉 binary:漏掉一种,它就被上面的
 # `* text=auto` 当文本做 CRLF 归一,src 与 dest 的归一行为一旦不一致即逐字节误红,
 # 而那一格没有负向覆盖,红与不红都没有回归护栏。
+# ⚠ .svg 这一条是「哑弹解除」的典型:svg 无 NUL 字节,`* text=auto` 下 git 判它为文本,
+#   故裸 Buffer.equals 在 autocrlf 检出下必红。钉 binary 是这一格唯一的解。
 # 扩展名清单的源是 gates/fixtures/gen-fixtures.mjs 的 IMAGE_EXTENSIONS(闭集,新增格式
 # 只需在该处登记一行):那边加了扩展名而这里没跟上,就会静默退回文本归一。
-test/fixtures/**/*.png binary
-test/fixtures/**/*.jpg binary
-test/fixtures/**/*.jpeg binary
-test/fixtures/**/*.gif binary
-test/fixtures/**/*.bmp binary
-test/fixtures/**/*.webp binary
-test/fixtures/**/*.svg binary
+# 同上:.jpg/.jpeg/.gif/.bmp/.webp 在当前 samples/ 下无匹配文件,按闭集惯例一并保留。
+samples/**/*.png binary
+samples/**/*.jpg binary
+samples/**/*.jpeg binary
+samples/**/*.gif binary
+samples/**/*.bmp binary
+samples/**/*.webp binary
+samples/**/*.svg binary
 
 # EOL 策略(同 TEST-1 的道理):归档索引是「脚本生成 + 逐字节比对」的产物,生成器
 # 落盘 LF;autocrlf 下 checkout 转 CRLF 会让 check:archive-index 在 CI 上恒红。
@@ -34,11 +43,12 @@ docs/evidence/INDEX.md text eol=lf
 # 用 L.join("\n") 落 LF,而 judgeDrift() 的 `cur !== expected`(该文件 :99)两侧
 # 都不过 normalizeEol —— 与 gen-archive-index 不同,这里链路上没有任何 EOL 归一,
 # 所以 Windows runner 的 autocrlf 检出(CRLF)与渲染结果(LF)恒不相等,
-# check:gate-ids-table 恒红。EOL 不该由各端 autocrlf 决定,故钉 LF。
+# check:gate-ids-table 恒红。本条是**定点**例外:只对本文件钉 LF,不改写 :1-3 的
+# 全局裁决(入库统一 LF、检出交由各端 autocrlf/core.eol 决定)。
 docs/evidence/20261004-225514-gate-ids-对账表.md text eol=lf
 
 # EOL 策略(同 TEST-1 的道理):门禁按文本解析 workflow yml,而 release-notes 变异
 # 测试的两条判据对行尾敏感(CRLF 下匹配不上 ⇒ 变异「未生效」,CI 上恒红)。
-# Windows runner 的 autocrlf=true 会把检出转成 CRLF,而门禁读的是文本语义,
-# EOL 不该由各端 autocrlf 决定。
+# Windows runner 的 autocrlf=true 会把检出转成 CRLF,而门禁读的是文本语义。
+# 同上,本条也是**定点**例外:只对本组文件钉 LF,不改写 :1-3 的全局裁决。
 .github/workflows/*.yml text eol=lf

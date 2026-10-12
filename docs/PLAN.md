@@ -26,7 +26,7 @@
 
 ## 下一步
 
-P3 已开工(201 / 202 / 203 / 204 在办)。三条只读侦察各带回漂移:203 前提被实测推翻(实为整块 21 行含 7 条 binary 保护丢失)、202 台账「收敛到 1 处」实为 12 处、204 实为 26 处且台账引文有误 —— 三条裁决均按用户「全部按推荐执行」定为推荐案。三条 fixer 泳道后台并行派发中,主会话收尾时逐条翻已完成并分提交。
+P3 三条泳道全部完成并通过全链 verify:ci(201 / 202 / 203 / 204 逐条翻已完成)。两条子代理顶回均成立并已采纳:204 的档四经实测是活夹具(换成 shared/ 会让 7a/7b 由红转空数组)、202 的 offchain 理由(挂链会让本地与 CI 跑判据不同的门禁)经实测推翻后改判 chain。下一步:等用户确认 P4(213 / 211 / 210 / 212 / 193)开工,届时先按「开工前重验」硬门逐条核对再翻在办。
 
 ## 完成标准
 
@@ -60,9 +60,9 @@ P3 已开工(201 / 202 / 203 / 204 在办)。三条只读侦察各带回漂移:2
 | P2-L2 | REQ-206 | 捕获逻辑 7 份具名函数 + C 族 2 处收口,显式接受段数 144→145 | `test/harness/console-capture.js` 新建 · `test/harness/console-capture.test.js` 新建 · A/B 族 6 个 gates 段 · `test/main/mermaid-service.test.js` · `test/main/converter.test.js` | 7 函数改调参数化助手(`warn`/`error` 两布尔);C 族显式全关;新段 L8 covers / fixtures=null / 具名 case 齐 | 新段 + 受改 8 段 · `node gates/repo/check-test-layout.mjs` · `npm run typecheck` | 通过 2026-10-12(受改 8 段 371/371 + 新段 7/7;键名改写 66 处) |
 | P2-L3 | REQ-207 · REQ-208 | `mirroredSourceOf` 下沉 shared 成单源;`tools/where.mjs` + script;测试体系节 13 行压 ≤5 行 | `shared/` 新文件 · `gates/repo/check-test-layout.mjs` 与其 selftest(仅随迁)· `tools/where.mjs` 新建 · `package.json` 加一行 · `docs/DEV-GUIDE.md` | 下沉无行为变化(门禁与 selftest 全绿);反查负向 5 形实跑;节压到 ≤5 行且 `:236` 回指改指 `test/` | `node tools/where.mjs` 负向 · `npm run check:docs` · `npm run lint` | 通过 2026-10-12(负向 5 形全对;节 11→5 行;门禁 165/165) |
 | P2-L4 | REQ-209 | 暂缓:删除链 17 项与两项保护损失重估中(用户裁决 C) | 不动(待拆项:图片字节基线抽独立小门禁 + 生成链路去留单独裁) | 见台账行重验记录 | 无 | 暂缓 2026-10-11 |
-| P3-L1 | REQ-201 · REQ-203 | .gitattributes 同批收口:`:37` 改定点措辞 + `:6-26` 前缀改指 `samples/` 让规则复活(裁决走第三条,非删非改说明) | `.gitattributes` 单文件 | 同文件内两种 EOL 口径不再并存;`git check-attr` 复验 samples/ 图片回 binary、md 回 lf;`.svg` 无 NUL 哑弹解除;是否需 `renormalize` 实测后决定 | `git check-attr` 逐条实测 · `npm run check:docs` | 未做 |
-| P3-L2 | REQ-202 | 字面量 LF 锚点防复发门禁(新门禁 + 负向夹具 + 上链),以 **12 处实测潜在雷**(台账记「收敛到 1 处」不成立)为正例基线 | `gates/repo/` 新门禁 + `.selftest.mjs` + case-roster · `gate-index.mjs` · `package.json` · `check-test-layout.mjs` 的 selftest 用例源登记 | 12 处已知点作正例判红且误伤为零;归一原语收口**不在本项**(5 份重复实现,shared 零出边致层向死结) | 新门禁 selftest(照 check-samples 变异档样板) · `npm run check:test-layout:selftest` | 未做 |
-| P3-L3 | REQ-204 | 陈旧路径按四档清理:零风险文案 / 改指 `shared/` / 整段重写 temp-resource 论证 / import-boundary 三对夹具↔正则同改 | `test/**` · `gates/**` | **26 处**(台账记 24 且分项之和即错)按档清零;三处 `copy-closure-audit` 有意墓碑与 `install-smoke.test.js:51`(实为非陈旧)明确排除 | `npm run check:boundary` · `npm run check:test-layout` · import-boundary 段 | 未做 |
+| P3-L1 | REQ-201 · REQ-203 | .gitattributes 同批收口:`:37` 改定点措辞 + `:6-26` 前缀改指 `samples/` 让规则复活(裁决走第三条,非删非改说明) | `.gitattributes` 单文件 | 同文件内两种 EOL 口径不再并存;`git check-attr` 复验 samples/ 图片回 binary、md 回 lf;`.svg` 无 NUL 哑弹解除;是否需 `renormalize` 实测后决定 | `git check-attr` 逐条实测 · `npm run check:docs` | 通过 2026-10-12(相反口径实为两处非一处;7 图 binary 回 set、svg 哑弹解除;index 零 i/crlf 故无需 renormalize) |
+| P3-L2 | REQ-202 | 字面量 LF 锚点防复发门禁(新门禁 + 负向夹具 + 上链),以 **12 处实测潜在雷**(台账记「收敛到 1 处」不成立)为正例基线 | `gates/repo/` 新门禁 + `.selftest.mjs` + case-roster · `gate-index.mjs` · `package.json` · `check-test-layout.mjs` 的 selftest 用例源登记 | 12 处已知点作正例判红且误伤为零;归一原语收口**不在本项**(5 份重复实现,shared 零出边致层向死结) | 新门禁 selftest(照 check-samples 变异档样板) · `npm run check:test-layout:selftest` | 通过 2026-10-12(侦察 12 处高估,真雷 1 处;上 verify:ci 第 20/21 位;26 档自检 + 13 内建探针;offchain 理由经实测推翻后改判 chain) |
+| P3-L3 | REQ-204 | 陈旧路径按四档清理:零风险文案 / 改指 `shared/` / 整段重写 temp-resource 论证 / import-boundary 三对夹具↔正则同改 | `test/**` · `gates/**` | **26 处**(台账记 24 且分项之和即错)按档清零;三处 `copy-closure-audit` 有意墓碑与 `install-smoke.test.js:51`(实为非陈旧)明确排除 | `npm run check:boundary` · `npm run check:test-layout` · import-boundary 段 | 通过 2026-10-12(改 15 留 11:3 墓碑 + 8 活夹具;档四经实测推翻后不改;补第 27 处 `test.common` 无斜杠漏网) |
 | P4-L1 | REQ-213 | R7 撤销后 C7 覆盖面实测 | 只读;结论落 `docs/evidence/` 与台账行 | C7 是否需补偿性收窄有明确结论 | 无(实测即结论) | 未做 |
 | P4-L2 | REQ-211 | 两份号段表解析合并(门禁改调 shared 并自转数字) | `gates/repo/check-pointers.mjs` · `shared/markdown-table.mjs` · selftest | 判据行为等价,负向夹具不红不绿漂移 | `test/gates/check-pointers-ledger.test.js` | 未做 |
 | P4-L3 | REQ-210 | 台账脚本进模板库(段二):拷贝清单扩到 shared 与 tools | 全局配置仓的 `templates/README.md` 与模板目录 · 下游指针 | 模板含代码树且拷贝清单可执行 | 配置仓 `npm run check:docs` | 未做 |
