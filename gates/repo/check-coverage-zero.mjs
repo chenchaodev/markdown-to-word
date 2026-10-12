@@ -239,6 +239,55 @@ export function auditStatic(root = ROOT) {
       problems.push(`test:coverage 参数向量缺必需项 ${required}(基线 requireFlags 登记的收紧面;缺它等于门禁空过)`);
     }
   }
+  // ①-b `--include` 的**每个**取值都必须命中基线 requireIncludeValues 白名单(白名单列表式)
+  //
+  // 为什么只核 `--include` 这一个选项,其余一律不核(三条**当下成立**的理由,勿顺手扩):
+  //   - `--exclude`:排除侧的逐条对应关系已由 ⑦ 的严格双射**独家担任**(任一侧多一条即判红),
+  //     基线 note 正是据此**刻意不枚举具体排除项**(枚举即多一处无人对读的清单)。在此再登记
+  //     一份排除白名单 = 把同一件事登记第二遍,且两处互不推导。
+  //   - `--reporter`:flagValue 的循环**首次命中即 return**(只返首个),而基线里
+  //     `--reporter=text` 与 `--reporter=json-summary` 出现两次 ⇒ 第二个永远核不到。对它做
+  //     取值对读必然是「只看第一个」的坏判据(要么漏判第二个,要么把第二个永远当缺失)。
+  //   - `--all` / `--check-coverage`:裸开关,没有取值可比;四个阈值由 ② 逐项比对。
+  // 余下唯一「有取值、且取值改宽会静默劣化分母」的选项就是 `--include` ⇒ 取值判据落在这里。
+  //
+  // 为什么白名单是**列表**而不是单值:c8 允许合法出现多个 `--include`(将来新增
+  // `dist/**/*.cjs` 之类),多个取值各自命中集合之一即可。单值形态会让那次合法新增当场假红,
+  // 于是下一个人会去删判据而不是补白名单。
+  //
+  // 为什么收益是「让报错早一轮」而不是防漏报(别把它当兜底宣传):取值一旦改宽,`.d.ts` 立刻
+  // 进分母,动态面当场以大量具名判红抓出来(ADR-073 约束二)。本判据的价值是早一轮,且诊断
+  // 直接指名实测取值与期望集合,不必先跑一整轮 c8 再从上百条里反推。
+  //
+  // ⚠ **不要拿 `referenceSandbox.flags` 当期望值来源**:它含已撤销的整层 renderer 排除与
+  // `--include=dist/**`,基线 note 已声明那是带日期的历史记录、不得与 package.json 对读。
+  //
+  // 字段缺失也判红(而不是静默跳过):白名单为空时本判据恒绿,那正是「删掉判据」这条路径上
+  // 无人发现的形态。这条检查住在**消费方**而不是 loadBaseline:那才是结构诊断的唯一来源,
+  // 而本文件的形状注册表与字段校验住在 coverage-baseline-io.mjs(不在本判据的改动面内)。
+  const expectedIncludeValues = baseline.requireIncludeValues;
+  if (!Array.isArray(expectedIncludeValues) || expectedIncludeValues.length === 0) {
+    problems.push(
+      "基线缺 requireIncludeValues(--include 取值的白名单未登记 = 该选项的取值无人看守;" +
+        "请在基线登记当前合法的 --include 取值,否则本判据恒绿)",
+    );
+  } else {
+    // 收集**全部** --include 取值,不用 flagValue:它只返首个(见上方 ② 条理由),拿它会把
+    // 第二个取值漏成「查不到」—— 而多个 --include 正是这条判据要覆盖的形态。
+    // 裸 `--include`(不带 `=`)不计入:那种形态是 ADR-048 的空格分隔坑,收集会在那个 token
+    // 处中断,其后所有 flag 丢失,由 ① 的「缺必需项」指名,不必在这里重复报。
+    const includeValues = flags
+      .filter((flag) => flag.startsWith("--include="))
+      .map((flag) => flag.slice("--include=".length));
+    for (const value of includeValues) {
+      if (expectedIncludeValues.includes(value)) continue;
+      problems.push(
+        `test:coverage 的 --include 取值 ${value},不在基线 requireIncludeValues 白名单(${expectedIncludeValues.join(" / ")})内` +
+          "(扫描面被改宽 ⇒ 声明文件重新进分母,动态面会以大量 0% 判红暴露;两条修法:改回白名单里的取值," +
+          "或确要变更扫描面时**同时**改 package.json 与本字段 —— 双处登记,不许只改一处)",
+      );
+    }
+  }
   // ② 四个阈值必须与基线逐项相同(单一来源,不许两处漂移)
   for (const metric of METRICS) {
     const expected = baseline.thresholds?.[metric];

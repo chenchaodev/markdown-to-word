@@ -23,6 +23,9 @@
  *    (`SUMMARY_RELATIVE` 的目录部分)逐字相同 —— 只登记 flag 存在时,「存在但取值错」
  *    会让静态面全绿而动态面只报一句「未找到 coverage-summary.json」。这一组有正反双向
  *    夹具(在临时根里造 package.json,故静态面读参数向量的那一步必须可注入 root)。
+ * 6. 扫描面取值:c8 的**每个** `--include` 取值必须命中基线 `requireIncludeValues` 白名单 ——
+ *    requireFlags 只核选项名在不在,其取值从不被任何代码读取(白名单是列表式:将来合法新增
+ *    某个取值时多个 --include 各自命中其一即可)。与第 5 组同形态,在临时根里造 package.json。
  *
  * 「清单外的新 0% 文件」这一面(动态数据)由 `node gates/repo/check-coverage-zero.mjs
  * --zero` 承担,必须紧跟 test:coverage 执行(覆盖率数据是那一次运行的产物),故不放本段。
@@ -77,6 +80,10 @@ function classify(problem) {
   if (problem.includes("未登记进豁免清单")) return "unlistedEmpty";
   if (problem.includes("未出现在 test:coverage 的 --exclude")) return "excludesInFlag";
   if (problem.includes("豁免条目")) return "exemptionEntries";
+  // `--include` 取值这一族必须排在兜底的「含基线二字」那条**之前**:该族文案要点名「基线
+  // requireIncludeValues 白名单」,判成结构诊断会让「静态面的结构问题只来自 loadBaseline」那条
+  // 恒等断言把一条真实的取值漂移误判成第二套结构校验(与上面 `--reports-dir` 同款理由)。
+  if (problem.includes("requireIncludeValues")) return "includeValues";
   if (problem.includes("基线")) return "baselineShape";
   return "其它";
 }
@@ -110,6 +117,12 @@ export async function run() {
     // 此刻是一致的,这条判据在真实面上必须绿(下面的负向夹具只证它会红,不证它此刻不红)。
     await suite.case("c8 产物落点与 gate 读取端一致(--reports-dir 取值 == SUMMARY_RELATIVE 的目录部分)", () => {
       const own = allProblems.filter((p) => classify(p) === "reportsDir");
+      if (own.length > 0) throw new Error(own.join(";"));
+    });
+    // 正向锚点走真实工作树:真参数向量里的每个 --include 取值此刻都命中基线 requireIncludeValues
+    // 白名单。这条在真实面上必须绿(下面的负向夹具只证它会红,不证它此刻不红)。
+    await suite.case("c8 扫描面取值在基线白名单内(每个 --include 都命中 requireIncludeValues)", () => {
+      const own = allProblems.filter((p) => classify(p) === "includeValues");
       if (own.length > 0) throw new Error(own.join(";"));
     });
   });
@@ -293,6 +306,11 @@ export async function run() {
       measured: { statements: 93, branches: 88, functions: 93, lines: 93 },
       thresholds: { statements: 90, branches: 85, functions: 90, lines: 90 },
       requireFlags: ["--all", "--check-coverage", "--reports-dir", "--temp-directory"],
+      // 本组不测 --include,但该字段是**基线结构的一部分**:留空会让 ①-b 的「白名单缺失」
+      // 那条判据在这组反向锚点里凭空多出一条问题,两格「静态面零问题」就会因与本组无关的
+      // 判据而红 —— 那正是本组注释说的「夹具因基线不成形判红而不是因被注入的漂移判红」。
+      // 值取本组参数向量里并不存在的那个,只为让判据有事可做而不出声(它只对实测取值发言)。
+      requireIncludeValues: ["dist/**/*.js"],
       requireExcludesInFlag: false,
       exemptions: [],
     };
@@ -403,6 +421,161 @@ export async function run() {
           }
         },
       );
+    });
+  });
+
+  // `--include` 取值判据(静态面 ①-b)。这一族夹具住在本段而非 selftest 的理由:selftest 的
+  // 14 档全部只跑动态面(auditZeroFiles),其 FIXTURE_BASELINE 的 requireFlags 只有
+  // ['--all','--check-coverage']、根本没有 --include,且 createFixture 不造 package.json ——
+  // 静态面读参数向量那一步在那边无处落脚。形态照上面「产物落点」那组。
+  await suite.describe("--include 取值(扫描面收紧面有人看守)", async () => {
+    // 合成基线的 requireFlags 含 `--include=dist/**/*.js`(让 ① 的存在性那格绿,本组只测取值),
+    // requireIncludeValues 是本组的期望集合。两处必须**分别**可注入:下面「白名单为空」那格
+    // 要的就是 requireFlags 在、而白名单没了(那是最容易被漏判红的形态)。
+    const INCLUDE_BASELINE = {
+      baselineSchema: 1,
+      note: ["合成基线:仅供本段 --include 取值判据的夹具使用,不对应真实仓库的任何阈值或豁免。"],
+      headroomPp: 4,
+      floor: { statements: 85, branches: 80, functions: 85, lines: 85 },
+      measured: { statements: 93, branches: 88, functions: 93, lines: 93 },
+      thresholds: { statements: 90, branches: 85, functions: 90, lines: 90 },
+      requireFlags: ["--all", "--check-coverage", "--reports-dir", "--temp-directory", "--include=dist/**/*.js"],
+      requireIncludeValues: ["dist/**/*.js"],
+      requireExcludesInFlag: false,
+      exemptions: [],
+    };
+    /**
+     * 在一次性夹具根上造一份可被 auditStatic 读的仓(合成 package.json + 合成基线 + 空 dist/),
+     * 跑一次静态面并把 problems 交给 `assert`。与上面那组的差别只有基线与参数向量两个入参,
+     * 造法逐字相同 —— 复制一份会造出两处「夹具怎么造」的写法,改一处忘另一处必然漂移。
+     * @param {{ c8Flags: string, mutateBaseline?: (baseline: Record<string, any>) => void }} spec 入参
+     * @param {(problems: string[]) => void} assert 在夹具根上的判定(抛错即该 case 失败)
+     * @returns {Promise<void>}
+     */
+    async function onIncludeFixture(spec, assert) {
+      await withTempResource({ prefix: "m2w-covgate-include-", label: "coverage-gate --include 取值判据夹具" }, (resource) => {
+        const baseline = structuredClone(INCLUDE_BASELINE);
+        spec.mutateBaseline?.(baseline);
+        const baselinePath = path.join(resource.path, ...BASELINE_RELATIVE.split("/"));
+        mkdirSync(path.dirname(baselinePath), { recursive: true });
+        writeFileSync(baselinePath, `${JSON.stringify(baseline, null, 2)}\n`, "utf8");
+        // 静态面要 dist/ 在场才肯核对豁免形态;本组不测那一面,给个空目录让它别出声
+        mkdirSync(path.join(resource.path, "dist"), { recursive: true });
+        writeFileSync(
+          path.join(resource.path, "package.json"),
+          `${JSON.stringify({ name: "covgate-include-fixture", version: "0.0.0", type: "module", scripts: { "test:coverage": `c8 ${spec.c8Flags} node harness.mjs` } }, null, 2)}\n`,
+          "utf8",
+        );
+        assert(auditStatic(resource.path).problems);
+        return resource;
+      });
+    }
+    /** 夹具里与 --include 无关、必须齐的 flag(阈值要与合成基线逐项相同,--reports-dir 要一致) */
+    const OTHER_FLAGS = `--all --check-coverage --reports-dir=${EXPECTED_REPORTS_DIR} --temp-directory=.c8-tmp --statements=90 --branches=85 --functions=90 --lines=90`;
+
+    // 反向锚点:取值在白名单内 → 静态面零问题。**刻意带引号**,与真实 package.json 的写法同形
+    // (`--include="dist/**/*.js"`);期望取值逐字取自合成基线,不在这里另写一份字面量
+    // (写死等于把「取值要命中白名单」这件事在测试里又登记一次)。
+    await suite.case("反向锚点:--include 带引号且取值命中 requireIncludeValues → 静态面零问题", async () => {
+      await onIncludeFixture({ c8Flags: `${OTHER_FLAGS} --include="dist/**/*.js"` }, (problems) => {
+        if (problems.length > 0) {
+          throw new Error(`取值命中白名单却判红(本判据在合规形态上恒红 = 白名单比对写错了):${problems.join(";")}`);
+        }
+      });
+    });
+
+    // 反向锚点:**无引号**形态同样零命中(与上面那格构成对偶)。判据不依赖引号 ——
+    // tokenizeCommand 在无引号时也按空白正确切分(取值 `dist/**/*.js` 内无空格),故去掉引号
+    // 不得假红。若有人把判据改成在原始命令行文本上做子串匹配,带引号那格会绿而这格会红。
+    await suite.case("反向锚点:--include 无引号形态 → 静态面零问题(判据不依赖引号)", async () => {
+      await onIncludeFixture({ c8Flags: `${OTHER_FLAGS} --include=dist/**/*.js` }, (problems) => {
+        if (problems.length > 0) {
+          throw new Error(`无引号形态被判红(判据若在原始文本上做匹配就会这样假红):${problems.join(";")}`);
+        }
+      });
+    });
+
+    // 负向 + 撤回:改宽成 dist/**(即 ADR-073 明写「勿改回」的那个取值)。这条要指名实测取值与
+    // 期望集合两侧 —— 只说「取值不对」会把人引向「改哪一边」的错误排查方向。
+    await suite.case("负向:--include 改宽为 dist/** → 判红并指名实测值与期望集合;撤回后复绿", async () => {
+      await onIncludeFixture({ c8Flags: `${OTHER_FLAGS} --include=dist/**` }, (problems) => {
+        const named = problems.filter((p) => p.includes("--include 取值 dist/**") && p.includes("dist/**/*.js"));
+        if (named.length === 0) {
+          throw new Error(
+            `夹具未造出取值漂移的诊断(期望一条同时指名 --include 取值 dist/** 与期望集合 dist/**/*.js 的条目),` +
+              `实际:${problems.join(";") || "(零问题 —— 本判据在取值越界时恒绿,是恒绿断言)"}`,
+          );
+        }
+      });
+      // 撤回 ⇒ 复绿(同形状夹具,只把那一个 flag 换回合规取值)。少了这半句就分不清
+      // 「本判据在判」与「夹具顺带写坏了别的」。
+      await onIncludeFixture({ c8Flags: `${OTHER_FLAGS} --include=dist/**/*.js` }, (problems) => {
+        if (problems.length > 0) throw new Error(`撤回 --include 后应复绿,实际:${problems.join(";")}`);
+      });
+    });
+
+    // 负向 + 撤回:改成 dist/**/*.cjs。它**不是**「改宽」而是「换成另一个收窄形态」——
+    // 形态上合法(c8 认这个 glob)但不在本仓白名单里,白名单列表式正是为「将来合法新增某个取值」
+    // 而设的:新增必须先改基线,不改基线就判红。
+    await suite.case("负向:--include 换成白名单外的 dist/**/*.cjs → 判红;撤回后复绿", async () => {
+      await onIncludeFixture({ c8Flags: `${OTHER_FLAGS} --include=dist/**/*.cjs` }, (problems) => {
+        const named = problems.filter((p) => p.includes("--include 取值 dist/**/*.cjs") && p.includes("dist/**/*.js"));
+        if (named.length === 0) {
+          throw new Error(
+            `夹具未造出取值漂移的诊断(期望一条指名 dist/**/*.cjs 且点名期望集合的条目),` +
+              `实际:${problems.join(";") || "(零问题 —— 白名单只挡「改宽」不挡「换形态」)"}`,
+          );
+        }
+      });
+      await onIncludeFixture({ c8Flags: `${OTHER_FLAGS} --include=dist/**/*.js` }, (problems) => {
+        if (problems.length > 0) throw new Error(`撤回 --include 后应复绿,实际:${problems.join(";")}`);
+      });
+    });
+
+    // 负向:白名单为空/缺失。**这条最容易漏**:字段没了判据就恒绿,而 requireFlags 里的
+    // `--include=dist/**/*.js` 仍然让 ① 绿着 —— 看上去「一切正常」,实际取值已无人看守。
+    await suite.case("负向:基线缺 requireIncludeValues → 判红(白名单空时判据不得恒绿)", async () => {
+      await onIncludeFixture(
+        { c8Flags: `${OTHER_FLAGS} --include=dist/**/*.js`, mutateBaseline: (b) => { delete b.requireIncludeValues; } },
+        (problems) => {
+          if (!problems.some((p) => p.includes("基线缺 requireIncludeValues"))) {
+            throw new Error(`白名单缺失未判红(本判据会静默恒绿):${problems.join(";") || "(零问题)"}`);
+          }
+        },
+      );
+    });
+
+    // 反向锚点:白名单是**列表**而非单值 —— 合法新增第二个取值(将来引入 .cjs 产物时会发生)
+    // 必须零命中。这一格钉住「列表式」这个形态选择:改成单值比对的那天它会红。
+    await suite.case("反向锚点:白名单含两个取值 + 参数向量给两个 --include → 静态面零问题(列表式)", async () => {
+      await onIncludeFixture(
+        {
+          c8Flags: `${OTHER_FLAGS} --include=dist/**/*.js --include=dist/**/*.cjs`,
+          mutateBaseline: (b) => {
+            b.requireIncludeValues = ["dist/**/*.js", "dist/**/*.cjs"];
+          },
+        },
+        (problems) => {
+          if (problems.length > 0) {
+            throw new Error(`两个取值都在白名单内却判红(白名单被写成单值比对了):${problems.join(";")}`);
+          }
+        },
+      );
+    });
+
+    // 负向:多个 --include 里**第二个**越界。这一格钉住「收集全部而不是只取首个」——
+    // flagValue 的循环首次命中即 return(只返首个),照抄它会让这一格恒绿,而多个 --include
+    // 正是「参数向量被扩了一个收窄面」的真实形态。
+    await suite.case("负向:两个 --include、第二个不在白名单 → 判红指名第二个(不得只看首个)", async () => {
+      await onIncludeFixture({ c8Flags: `${OTHER_FLAGS} --include=dist/**/*.js --include=dist/**/*.cjs` }, (problems) => {
+        const named = problems.filter((p) => p.includes("--include 取值 dist/**/*.cjs"));
+        if (named.length === 0) {
+          throw new Error(
+            `第二个 --include 越界未判红(判据只取了首个取值 —— 正是 flagValue 的已知坑):` +
+              `${problems.join(";") || "(零问题 —— 多个 --include 时本判据漏判)"}`,
+          );
+        }
+      });
     });
   });
 
