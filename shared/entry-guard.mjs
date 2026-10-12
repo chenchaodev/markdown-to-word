@@ -31,7 +31,7 @@
  * feedback 段会),本守卫装的兜底监听会被摘掉,此后回到 Electron 默认的 warn+挂住 ——
  * 真实失败仍由壳层的 try/catch 覆盖,兜底监听只是纵深防御。
  *
- * 依赖方向:本模块属 test/common(测试与门禁的公共底座,受 typecheck 门禁),gates/ 与 tools/ 侧
+ * 依赖方向:本模块属 shared/(测试与门禁的公共底座,受 typecheck 门禁),gates/ 与 tools/ 侧
  * 入口反向引用它 —— 与既有 `gates/geometry/geometry/worker.mjs → shared/geometry/*` 同向。
  *
  * 用法(壳层永不 reject:任何失败都以非零退出码收场,不会退化成 unhandled rejection 黑洞):

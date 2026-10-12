@@ -81,7 +81,7 @@ function createSandbox() {
 
 /**
  * 临时段文件沙盒(仓库 output/ 下,gitignore 覆盖;不落 test/,免被 typecheck/lint 扫入)。
- * 目录名**每次运行唯一**(mkdtemp 口径,与 test/common/userdata.js 的 createTempUserData
+ * 目录名**每次运行唯一**(mkdtemp 口径,与 shared/userdata.js 的 createTempUserData
  * 同款):固定路径下两套验收同时跑时,一方 cleanupSandbox() 删掉沙盒、另一方嵌套 runAll
  * 去 import 夹具就炸 ERR_MODULE_NOT_FOUND(表现为「自测段偶发红」)。唯一化的代价只是
  * 崩溃残留目录多留在 output/tmp/(已 gitignore),换来两套验收零互删。

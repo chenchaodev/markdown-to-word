@@ -27,7 +27,7 @@
  * (SHOT_OUTPUT_PATH,避免把 C:\Users\<用户名>\… 印进公开仓库的图片)、
  * 更新检查桩造「有可用更新」态(见 visual-about-preload.cjs 的 availableUpdate)。
  *
- * 失败路径:走 test/common/entry-guard.mjs 的统一守卫 —— 抛错时打印阶段标签 + 原始堆栈
+ * 失败路径:走 shared/entry-guard.mjs 的统一守卫 —— 抛错时打印阶段标签 + 原始堆栈
  * 并以非零码退出。旧实现是 `app.quit() + process.exitCode = 1`,实测**退出码是 0**
  * (quit 走自身退出路径,只设 exitCode 不生效),即截图工具失败会被读成成功。
  * 本文件的静态导入面只有 node 内建 + electron + 守卫 + 规格单源,无独立载荷(故无 load 阶段)。

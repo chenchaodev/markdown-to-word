@@ -12,7 +12,7 @@
  *   runner-report 自测段)会被外层筛选词滤空,且隔离模型下(M2W_ONLY 单段调试)恒红。
  * - 执行模型(默认):父进程为每段派生**独立 Electron 子进程**(test/harness/segment-host.mjs),
  *   段内崩溃/悬挂/超时只终结该段(超时由父进程真杀进程树,非 race 后放弃),其余段照常跑完;
- *   每段独立 userData 目录(见 test/common/userdata.js),退出即清理,故段间零状态串扰。
+ *   每段独立 userData 目录(见 shared/userdata.js),退出即清理,故段间零状态串扰。
  * - 并发(零状态串扰的另一面收益):设 M2W_TEST_CONCURRENCY=n 让编排器用 n 个槽位并发跑段
  *   (默认 1 = 与旧串行路径逐字等价,见 resolveConcurrency)。并发 > 1 时段输出改走管道、
  *   逐行加「[段名] 」前缀(见 createPrefixedForwarder 的两条硬约束),失败段的原始输出并进

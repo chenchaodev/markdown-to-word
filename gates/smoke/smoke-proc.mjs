@@ -7,7 +7,7 @@
 //   - 硬超时记账 + 进程树硬杀(Windows 上 Electron 拉起的渲染/GPU 进程必须连带终止,
 //     否则渲染进程变孤儿、句柄不释放,临时 userData 目录删不掉);
 //   - 一次性 userData 的建/清(建在 output/ 内,便于定位残留;清走
-//     test/common/userdata.js 的 removeTempUserData,EBUSY 重试语义单源)。
+//     shared/userdata.js 的 removeTempUserData,EBUSY 重试语义单源)。
 //
 // 隔离手段两层(缺一层就可能污染真实用户数据):
 //   - `--user-data-dir=<一次性目录>`:Chromium/Electron 的 profile 位置;
@@ -110,7 +110,7 @@ export function userDataEnv(userDataDir) {
 }
 
 /**
- * 删除一次性 userData(EBUSY 重试语义单源在 test/common/userdata.js)。
+ * 删除一次性 userData(EBUSY 重试语义单源在 shared/userdata.js)。
  * @param {string} userDataDir 目录路径
  * @returns {void}
  */

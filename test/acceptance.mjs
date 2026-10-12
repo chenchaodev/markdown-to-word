@@ -13,7 +13,7 @@
  *
  * 执行模型(adr-015 正式口径):**每段一个独立 Electron 子进程**(宿主 test/harness/
  * segment-host.mjs,编排见 test/harness/runner.js),段内崩溃/悬挂/超时只终结该段,
- * 父进程跑完全部段后汇总;每段独立 userData 目录,退出即清理(见 test/common/userdata.js)。
+ * 父进程跑完全部段后汇总;每段独立 userData 目录,退出即清理(见 shared/userdata.js)。
  * 设 M2W_ACCEPTANCE_INPROC=1 可切回旧的同进程顺序 + 看门狗模型(仅供二分定位)。
  * 段目录集合取自 shared/test-common-surface.js 的 SEGMENT_DIRS(单一来源)。
  *
@@ -27,7 +27,7 @@
  *
  * 用法: npm run test(需已 build;等价 npx electron test/acceptance.mjs)
  *
- * 失败路径:走 test/common/entry-guard.mjs 的统一守卫 —— 编排阶段抛错时打印阶段标签 +
+ * 失败路径:走 shared/entry-guard.mjs 的统一守卫 —— 编排阶段抛错时打印阶段标签 +
  * 原始堆栈并以非零码退出。旧实现是 `app.whenReady().then(async () => {...})` 且回调不带
  * catch:回调内抛错只产生 UnhandledPromiseRejectionWarning(Electron 主进程把未处理拒绝
  * 降级为 warn),进程继续活着 → 挂到 CI job 级超时,报出来的是「超时」而不是「验收失败」。

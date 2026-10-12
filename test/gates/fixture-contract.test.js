@@ -11,7 +11,7 @@
  *
  * 四层断言:
  * 1. 段目录集合单源:生成器与 test/acceptance.mjs 读的是**同一个数组对象**(单一来源在
- *    test/common/test-common-surface.js),恒等不再靠「两处各写一份 + 抽文本比对」;
+ *    shared/test-common-surface.js),恒等不再靠「两处各写一份 + 抽文本比对」;
  *    守的是「acceptance 确实拿这份数组喂 runner,且没有第二份硬编码目录清单」;三者
  *    与文件系统一致;
  * 2. 发现一致:生成器列出的段名集合 == runner 的 discoverSegments 同目录结果
@@ -157,7 +157,7 @@ export async function run() {
     await suite.case("1. 段目录单源:生成器与验收入口读同一个数组对象", () => {
       assert(
         FIXTURE_SEGMENT_DIRS === SEGMENT_DIRS,
-        `生成器与验收入口的段目录必须是同一个数组对象(单一来源 test/common/test-common-surface.js):`
+        `生成器与验收入口的段目录必须是同一个数组对象(单一来源 shared/test-common-surface.js):`
           + `gen-fixtures=${JSON.stringify(FIXTURE_SEGMENT_DIRS)} single-source=${JSON.stringify(SEGMENT_DIRS)}`,
       );
     });
@@ -167,7 +167,7 @@ export async function run() {
       const hardcoded = [...acceptanceSrc.matchAll(HARDCODED_DIR_RE)].map((m) => m[1]);
       assert(
         hardcoded.length === 0,
-        `acceptance.mjs 不得硬编码段目录(那是第二份清单):${hardcoded.join(", ")}——段目录集合的单一来源是 test/common/test-common-surface.js 的 SEGMENT_DIRS`,
+        `acceptance.mjs 不得硬编码段目录(那是第二份清单):${hardcoded.join(", ")}——段目录集合的单一来源是 shared/test-common-surface.js 的 SEGMENT_DIRS`,
       );
       const derivedName = DERIVED_DIRS_RE.exec(acceptanceSrc)?.[1] ?? "";
       assert(derivedName !== "", "acceptance.mjs 须由 SEGMENT_DIRS.map(…) 派生出交给 runAll 的段目录数组");

@@ -5,14 +5,14 @@
  * 收敛的重复面(盘点结论,含刻意不收的部分):
  * 1) 建:24 处 `mkdtemp(Sync)(path.join(os.tmpdir(), "m2w-xxx-"))`(本轮盘点:segments 18 +
  *    main 6),前缀各不相同但**语义相同**——都是「一次性沙盒目录」;另有
- *    test/common/userdata.js 的 createTempUserData(runner/宿主用)与 gates/smoke/smoke-proc.mjs
+ *    shared/userdata.js 的 createTempUserData(runner/宿主用)与 gates/smoke/smoke-proc.mjs
  *    的 createUserData(已复用 userdata.js 的清理语义);
  * 2) 删:四种写法并存,差别只在重试参数与失败处理(**本波已收口,枚举留作改动前的现状记录**):
  *    - `{ recursive: true, force: true }`(无重试)——supply-chain / signature-status /
  *      dist-manifest-gate / release-artifact-gate,test/main 六个段;
  *    - `{ ..., maxRetries: 5, retryDelay: 200 }` 包在 finally——import-boundary /
  *      pinned-actions / clean-artifacts-gate / install-smoke;
- *    - `{ ..., maxRetries: 5, retryDelay: 100 }` 且**静默吞错**——test/common/userdata.js;
+ *    - `{ ..., maxRetries: 5, retryDelay: 100 }` 且**静默吞错**——shared/userdata.js;
  *    - `await fs.rm(...).catch(() => undefined)`——test/main 若干段。
  *    前两种在 Windows 上「进程刚退出、句柄未释放 → EBUSY/EPERM」时会直接抛,把段判成失败;
  *    后两种把删不掉的目录静默留在系统临时区,谁也看不出。
@@ -24,13 +24,15 @@
  * 绝不静默残留。
  *
  * 刻意不收的部分:
- * - `test/common/userdata.js` 的 `createTempUserData` / `removeTempUserData`:**不并入**。
+ * - `shared/userdata.js` 的 `createTempUserData` / `removeTempUserData`:**不并入**。
  *   它是「Electron userData 重定向」契约(USER_DATA_ENV 注入 + ready 前重定向),生命周期归
  *   runner 的父子进程协议管,且清理语义刻意宽松(隔离靠"每段目录唯一",不靠删成功)。
- *   更硬的约束:install-smoke 段把 **userdata.js** 逐字节复制进沙盒后跑 gates/smoke/smoke-proc.mjs,
- *   该脚本按相对路径 import `../test/common/userdata.js` —— 若 userdata.js 新增对同目录
- *   其它模块的 import,沙盒里那份副本会解析失败,install-smoke 段当场红。故 userdata.js 必须
- *   保持零内部依赖(它的 EBUSY 重试参数与本文件一致属刻意重复,见上条 2 的枚举)。
+ *   ⚠ 这里曾写过一条更硬的约束(零内部依赖),它的判红形态是「install-smoke 段把 userdata.js
+ *   逐字节复制进沙盒,副本解析不到新依赖就 ERR_MODULE_NOT_FOUND」——**该复制机制已整删**
+ *   (见 test/gates/install-smoke.test.js 的沙盒构造注释:真脚本原位跑),故那条约束如今
+ *   没有运行时判据可断,只是仍成立的事实,不是这里能守住的东西。收窄写「不并入」是因为上面
+ *   三条契约差异本身,与 userdata.js 有几条 import 无关。
+ *   (它的 EBUSY 重试参数与本文件一致属刻意重复,见上条 2 的枚举。)
  * - `removeTree` 仍只吃**目录**(单文件走 removeFile):两者虽共用内核,但 `recursive: true` 是
  *   目录语义的一部分,去掉它会让「这是目录清理」这一层信息在调用点消失。
  * - 不做「清理失败后再 spawn 纯 node 子进程删除」的兜底:那招只为绕开 Electron 把 `.asar`
@@ -47,7 +49,7 @@ export const TEMP_PREFIX = "m2w-tmp-";
 
 /**
  * 删除重试参数(Windows EBUSY/EPERM 语义:进程刚退出、句柄未释放时 rmSync 会失败,
- * 需按退避重试)。与 test/common/userdata.js 的口径保持一致。
+ * 需按退避重试)。与 shared/userdata.js 的口径保持一致。
  */
 export const REMOVE_MAX_RETRIES = 5;
 
