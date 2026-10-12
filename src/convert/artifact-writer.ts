@@ -98,9 +98,14 @@ function errnoCode(err: unknown): string | undefined {
  * 文案**来判定「输出写不了」—— 改一次文案就静默失效(判据消失,退出码从 4 变 3,
  * 且没有任何东西报红)。码是判定的**契约**,文案只是给人看的。
  *
- * ⚠ **新增一个「写不了」的失败点时,必须同批在 cli/index.ts 的 OUTPUT_UNWRITABLE_CODES
- * 登记**,否则它落到兜底档(见 cli/index.ts 的注释):保守判失败,但拿不到 4 这个
- * 「换个输出目录就能解决」的可操作语义。
+ * ⚠ **新增一个「写不了」的失败点时,必须同批在**本文件(artifact-writer.ts)**的
+ * OUTPUT_UNWRITABLE_CODES 登记**,否则它落到兜底档(见 cli/index.ts 的注释):保守判失败,
+ * 但拿不到 4 这个「换个输出目录就能解决」的可操作语义。cli/index.ts 的 ReadonlySet 由
+ * `Object.values(本表)` 派生,故登记即生效、无需同步第二处字面量。
+ *
+ * 这条耦合现由 `gates/repo/check-output-unwritable-registry.mjs` 双向对读守着
+ * (登记表↔抛出点两个方向 + catch-throw 三档归类):改这一处而不改那处会判红,
+ * 而漏登记的症状是**静默**的(退出码从 4 变 3,没有任何东西报红)。
  */
 export const OUTPUT_UNWRITABLE_CODES = Object.freeze({
   /** pinOutputPath(CLI --output)点名了已存在的路径:不覆盖既有文件 */
@@ -109,6 +114,16 @@ export const OUTPUT_UNWRITABLE_CODES = Object.freeze({
   linkUnsupported: "OUTPUT_LINK_UNSUPPORTED",
   /** pinPath 的父目录建不出来(被文件占住 / 无权限) */
   dirUnavailable: "OUTPUT_DIR_UNAVAILABLE",
+  /** 同目录临时文件建不出来(输出目录接不住产物:EACCES / ENOSPC / EROFS / EMFILE 等) */
+  tempUnwritable: "OUTPUT_TEMP_UNWRITABLE",
+  /**
+   * 临时文件随机段连续撞名,重试次数用尽。
+   *
+   * 与 commitExclusive 末尾那条 `同名产物过多`(MAX_NAME_ATTEMPTS 用尽)**刻意不同码**:
+   * 那条是外部进程批量造同名文件的异常环境,归转换失败;这条是本模块自己起不出唯一临时名,
+   * 换个输出目录即可 ⇒ 属「输出写不了」。
+   */
+  tempNameExhausted: "OUTPUT_TEMP_NAME_EXHAUSTED",
 } as const);
 
 /** 「输出写不了」错误码的联合类型 */
@@ -155,7 +170,6 @@ function assertMagic(ext: string, data: Uint8Array, preferredPath: string): void
  * sync 保证提交点上数据已落盘,而非仅在页缓存。
  */
 async function writeTempArtifact(dir: string, ext: string, data: Uint8Array): Promise<string> {
-  let lastError: unknown;
   for (let attempt = 0; attempt < TEMP_NAME_ATTEMPTS; attempt++) {
     const tempPath = path.join(dir, `${ARTIFACT_TEMP_PREFIX}${process.pid}-${randomUUID().slice(0, 8)}${ext}`);
     let handle: FileHandle | undefined;
@@ -168,11 +182,27 @@ async function writeTempArtifact(dir: string, ext: string, data: Uint8Array): Pr
     } catch (err) {
       await handle?.close().catch(() => undefined);
       await fs.rm(tempPath, { force: true }).catch(() => undefined);
-      if (errnoCode(err) !== "EEXIST") throw err;
-      lastError = err;
+      if (errnoCode(err) !== "EEXIST") {
+        // 非 EEXIST 的临时文件失败**一律**归「输出写不了」,不按 errno 白名单再分流。
+        // 白名单分流(只包 EACCES/ENOSPC 几个码、其余原样上抛)会留下与本模块同款的洞:
+        // 一个没进白名单的 errno 落回兜底档,退出码从 4 静默变 3,而没有任何东西报红 ——
+        // 那正是本次要消灭的失效形态。原始 errno 与 message 原样带进文案,
+        // 真实故障(EIO 等)的信息不因归类而丢失,调用方仍能按码细分。
+        throw outputUnwritableError(
+          OUTPUT_UNWRITABLE_CODES.tempUnwritable,
+          `无法在输出目录创建临时文件(${tempPath}`
+            + `${errnoCode(err) === undefined ? "" : `,错误码 ${errnoCode(err)}`}):`
+            + `${err instanceof Error ? err.message : String(err)};`
+            + "请确认输出目录可写、磁盘有剩余空间后重试。",
+        );
+      }
     }
   }
-  throw lastError;
+  throw outputUnwritableError(
+    OUTPUT_UNWRITABLE_CODES.tempNameExhausted,
+    `临时文件名重试 ${TEMP_NAME_ATTEMPTS} 次仍撞名(${ARTIFACT_TEMP_PREFIX} 前缀 + 随机段),`
+      + `未能在输出目录取得唯一临时名:${dir}`,
+  );
 }
 
 /**

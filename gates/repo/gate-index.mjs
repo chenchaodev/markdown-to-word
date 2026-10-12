@@ -168,6 +168,23 @@ export const GATE_INDEX = Object.freeze(
       modulePath: "gates/repo/check-eol-anchor.mjs",
       judgment: { module: "gates/repo/check-eol-anchor.mjs", export: "judgeText", shaped: "EolHit[](纯函数:源码文本 → 行尾敏感锚点命中)" },
     },
+    "output-unwritable-registry": {
+      id: "output-unwritable-registry",
+      // ⚠⚠ **上链的理由与 eol-anchor 同款,但失效形态更隐蔽**:漏登记一个落盘失败码,
+      // 症状是 CLI 退出码从 4 静默变成 3 —— 没有异常、没有红、没有日志差异,
+      // 只有脚本化调用方把「输出写不了」读成「转换失败」(处置动作不同:
+      // 换输出目录/腾空间 vs 改 markdown 重跑)。而 REQ-225 立项时实测那不是将来的风险,
+      // `src/convert/artifact-writer.ts` 里有**两处当下就存在**的未登记落盘失败点。
+      // 只在本地手动跑 ⇒ CI 上那类漏登记仍然发生,且发生时没人知道是哪道门禁本该拦住它。
+      npmScripts: ["check:output-unwritable-registry", "check:output-unwritable-registry:selftest"],
+      access: ACCESS_CHAIN,
+      modulePath: "gates/repo/check-output-unwritable-registry.mjs",
+      judgment: {
+        module: "gates/repo/check-output-unwritable-registry.mjs",
+        export: "judge",
+        shaped: "RegistryProblem[](纯函数:产物模块集合 → 登记表双向对读 + catch-throw 三档归类)",
+      },
+    },
     samples: {
       id: "samples",
       // ⚠ `npmScripts[0]` 是接入点(L12 只核它);`:selftest` 那条是载体,登记它是为了
