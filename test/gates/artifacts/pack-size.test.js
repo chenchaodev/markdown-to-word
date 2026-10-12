@@ -27,6 +27,7 @@ import os from "node:os";
 import path from "node:path";
 import { createAsserter } from "../../harness/assert.js";
 import { createCaseSuite } from "../../harness/case.js";
+import { captureConsole } from "../../harness/console-capture.js";
 import { ROOT } from "../../harness/paths.js";
 import { removeFile, removeTree } from "../../harness/temp-resource.js";
 import {
@@ -270,26 +271,16 @@ function baselineDoc(measured, overrides = {}, thresholds = {}) {
 
 /**
  * 跑被测 CLI 并捕获输出。
+ *
+ * A 族(console.log / warn / error 三件套全收):被测 CLI 的失败诊断同时走三条通道,
+ * 少收一条就有一类原因断言不到。捕获实现已收口到 test/harness/console-capture.js ——
+ * 本函数只保留「给调用点一个贴合本段词汇的名字」这一层;返回键与助手的统一形状一致
+ * (退出码在 `result` 上,收口前它叫 `code`),故调用点已随之从 `.code` 改读 `.result`。
  * @param {() => number | Promise<number>} task 任务
- * @returns {Promise<{ code: unknown, output: string }>} 退出码与合并输出
+ * @returns {Promise<{ result: unknown; output: string }>} 退出码与合并输出
  */
 async function captureCli(task) {
-  /** @type {string[]} */
-  const lines = [];
-  const originalLog = console.log;
-  const originalWarn = console.warn;
-  const originalError = console.error;
-  console.log = (...args) => lines.push(args.join(" "));
-  console.warn = (...args) => lines.push(args.join(" "));
-  console.error = (...args) => lines.push(args.join(" "));
-  try {
-    const code = await task();
-    return { code, output: lines.join("\n") };
-  } finally {
-    console.log = originalLog;
-    console.warn = originalWarn;
-    console.error = originalError;
-  }
+  return captureConsole(task);
 }
 
 /**
@@ -939,12 +930,12 @@ export async function run() {
       // 取数(六次 CLI 调用 + 落盘报告)全留在 case 外:每个 case 的判定对象都由这里的
       // CLI 产出决定,而 CLI 本身要改写 console(故它必须在 captureCli 的作用域里跑,
       // 不能塞进 case —— 那会让 case 的失败与 console 改写交叠)。
-      const result = await captureCli(() =>
+      const captured = await captureCli(() =>
         packSizeMain(["--release", emptyRelease, "--baseline", baselineFile, "--out", outFile]),
       );
       const written = JSON.parse(fs.readFileSync(outFile, "utf8"));
       await suite.case("9a 无产物:退出码 2 且落盘状态为 unmeasured/measured=false", () => {
-        assert(result.code === PACK_EXIT.unmeasured, `无产物应退出 ${PACK_EXIT.unmeasured},实际 ${result.code}`);
+        assert(captured.result === PACK_EXIT.unmeasured, `无产物应退出 ${PACK_EXIT.unmeasured},实际 ${captured.result}`);
         assert(String(PACK_EXIT.unmeasured) !== "0", "未测量的退出码必须非 0(不得被读成体积正常)");
         assert(written.status === STATUS.unmeasured, `落盘状态应为 unmeasured,实际 ${written.status}`);
         assert(written.measured === false, "未测量时 measured 必须为 false");
@@ -956,7 +947,7 @@ export async function run() {
           `未测量原因应可操作,实际 ${String(written.unmeasuredReason)}`,
         );
         assertNoVolatileFields(written, "体积报告(未测量)");
-        assert(result.output.includes("未测量 ≠ 体积正常"), "摘要须明说未测量不等于体积正常");
+        assert(captured.output.includes("未测量 ≠ 体积正常"), "摘要须明说未测量不等于体积正常");
       });
 
       // 9b 基线缺失 / 不合规 → 判红(门禁无法判定时不得报绿)
@@ -977,14 +968,14 @@ export async function run() {
         packSizeMain(["--release", box.releaseDir, "--baseline", badSchema, "--out", outFile]),
       );
       await suite.case("9b 基线缺失:退出 1 并给出可读诊断", () => {
-        assert(missingBaseline.code === PACK_EXIT.fail, `基线缺失应退出 1,实际 ${missingBaseline.code}`);
+        assert(missingBaseline.result === PACK_EXIT.fail, `基线缺失应退出 1,实际 ${missingBaseline.result}`);
         assert(
           missingBaseline.output.includes("体积基线文件不存在"),
           `基线缺失应给出可读诊断:${missingBaseline.output}`,
         );
       });
       await suite.case("9b 基线不合规:退出 1 并逐项点名", () => {
-        assert(badResult.code === PACK_EXIT.fail, `基线不合规应退出 1,实际 ${badResult.code}`);
+        assert(badResult.result === PACK_EXIT.fail, `基线不合规应退出 1,实际 ${badResult.result}`);
         assert(
           badResult.output.includes("baselineSchema 必须是") && badResult.output.includes("必须是非负整数字节"),
           `基线不合规应逐项点名,实际 ${badResult.output}`,
@@ -993,7 +984,7 @@ export async function run() {
 
       // 9c 基线不做自动重生成:脚本不提供写入基线的入口。四个选项的 CLI 调用先跑完
       // 收集成表,判定才进 case —— 否则第一个选项失败会让后三个根本没跑,看不出有几个被拒。
-      /** @type {{ forbidden: string, rejected: { code: unknown, output: string } }[]} */
+      /** @type {{ forbidden: string, rejected: { result: unknown, output: string } }[]} */
       const rejections = [];
       for (const forbidden of ["--write", "--update", "--update-baseline", "--set-baseline"]) {
         const rejected = await captureCli(() =>
@@ -1012,8 +1003,8 @@ export async function run() {
       await suite.case("9c 基线不做自动重生成:四个写入类选项逐个被拒", () => {
         for (const { forbidden, rejected } of rejections) {
           assert(
-            rejected.code === PACK_EXIT.fail && rejected.output.includes("无法识别的选项"),
-            `${forbidden} 必须被拒(基线只能人工改),实际 code=${rejected.code} 输出:${rejected.output}`,
+            rejected.result === PACK_EXIT.fail && rejected.output.includes("无法识别的选项"),
+            `${forbidden} 必须被拒(基线只能人工改),实际 code=${rejected.result} 输出:${rejected.output}`,
           );
         }
       });
@@ -1076,7 +1067,7 @@ export async function run() {
         packSizeMain(["--release", box.releaseDir, "--baseline", baselineFile, "--out", outB]),
       );
       await suite.case("10a 体积报告可复现:同输入两次字节相同、无绝对路径无时间戳", () => {
-        assert(runA.code === PACK_EXIT.pass && runB.code === PACK_EXIT.pass, "基线等值时两次都应通过");
+        assert(runA.result === PACK_EXIT.pass && runB.result === PACK_EXIT.pass, "基线等值时两次都应通过");
         assert(
           fs.readFileSync(outA, "utf8") === fs.readFileSync(outB, "utf8"),
           "同输入两次报告应字节相同(体积报告必须可复现)",
@@ -1089,7 +1080,7 @@ export async function run() {
       );
       const measurementJson = JSON.parse(printed.output);
       await suite.case("10a --print-measurements 零退出并打印实测 app.asar 字节", () => {
-        assert(printed.code === PACK_EXIT.pass, `--print-measurements 应零退出,实际 ${printed.code}`);
+        assert(printed.result === PACK_EXIT.pass, `--print-measurements 应零退出,实际 ${printed.result}`);
         assert(
           measurementJson.items.appAsar.bytes === box.asar.fileBytes,
           "--print-measurements 应打印实测 app.asar 字节",

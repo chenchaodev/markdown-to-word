@@ -30,6 +30,7 @@ import os from "node:os";
 import path from "node:path";
 import { createAsserter } from "../harness/assert.js";
 import { createCaseSuite } from "../harness/case.js";
+import { captureConsole } from "../harness/console-capture.js";
 import { ROOT } from "../harness/paths.js";
 import { removeTree } from "../harness/temp-resource.js";
 import {
@@ -93,24 +94,16 @@ function asRemote(usage) {
   return usage;
 }
 /**
- * 跑被测脚本的 CLI main():吞掉 console 输出,返回 { code, output }。
+ * 跑被测脚本的 CLI main():吞掉其 console 输出,返回 { result, output }。
+ *
+ * B 族(**不捕** console.warn):被测脚本会把「能力缺口告警」打到 warn,那是要放行的
+ * 降级信号而不是失败原因,收进来会让失败诊断掺进噪声。捕获实现已收口到
+ * test/harness/console-capture.js —— 本函数只保留「名字 + 绑定 warn:false」这一层。
  * @param {string[]} args CLI 参数
- * @returns {Promise<{ code: unknown; output: string }>} 退出码与合并后的输出
+ * @returns {Promise<{ result: unknown; output: string }>} 退出码与合并后的输出
  */
 async function runCli(args) {
-  /** @type {string[]} */
-  const lines = [];
-  const originalLog = console.log;
-  const originalError = console.error;
-  console.log = (...a) => lines.push(a.join(" "));
-  console.error = (...a) => lines.push(a.join(" "));
-  try {
-    const code = await pinnedMain(args);
-    return { code, output: lines.join("\n") };
-  } finally {
-    console.log = originalLog;
-    console.error = originalError;
-  }
+  return captureConsole(() => pinnedMain(args), { warn: false });
 }
 
 /**
@@ -147,15 +140,15 @@ function createSandbox(workflows, baseline) {
 
 /**
  * 失败路径的固定断言面:退出码 1 + 命中诊断 + 不回吐调用栈。
- * @param {{ code: unknown; output: string }} result 子进程结果
+ * @param {{ result: unknown; output: string }} captured 捕获结果
  * @param {RegExp} pattern 期望命中的诊断
  * @param {string} label 用例标签
  * @returns {void}
  */
-function assertFailure(result, pattern, label) {
-  assert(result.code === 1, `${label} 应以退出码 1 结束,实际 ${result.code};输出:${result.output}`);
-  assert(pattern.test(result.output), `${label} 诊断未命中 ${pattern};输出:${result.output}`);
-  assert(!/\n\s+at\s/.test(result.output), `${label} 诊断应已归一化,不得回吐调用栈:${result.output}`);
+function assertFailure(captured, pattern, label) {
+  assert(captured.result === 1, `${label} 应以退出码 1 结束,实际 ${captured.result};输出:${captured.output}`);
+  assert(pattern.test(captured.output), `${label} 诊断未命中 ${pattern};输出:${captured.output}`);
+  assert(!/\n\s+at\s/.test(captured.output), `${label} 诊断应已归一化,不得回吐调用栈:${captured.output}`);
 }
 
 /** 合法基线文档(负向用例在其上打漂移) */
@@ -504,8 +497,8 @@ export async function run() {
           } else {
             args.push(...item.args);
           }
-          const result = await runCli(args);
-          assertFailure(result, item.pattern, item.label);
+          const captured = await runCli(args);
+          assertFailure(captured, item.pattern, item.label);
         });
       }
       console.log(`[ok] pinned-actions:${cases.length} 类漂移夹具全部非零退出且命中各自诊断`);
@@ -533,7 +526,7 @@ export async function run() {
         );
         track(sb.dir);
         const ok = await runCli(["--workflows", sb.workflowsDir, "--baseline", sb.baselineRel]);
-        assert(ok.code === 0, `合法沙盒应零退出,实际 ${ok.code}:${ok.output}`);
+        assert(ok.result === 0, `合法沙盒应零退出,实际 ${ok.result}:${ok.output}`);
         assert(!ok.output.includes("[pinned-actions:fail]"), `合法沙盒不得有 fail 行:${ok.output}`);
         assert(ok.output.includes("action 引用固定自检通过"), `合法沙盒应给出通过结论:${ok.output}`);
       });
@@ -569,14 +562,14 @@ export async function run() {
         );
         track(noBaseline.dir);
         const relaxed = await runCli(["--workflows", noBaseline.workflowsDir, "--no-baseline"]);
-        assert(relaxed.code === 0, `--no-baseline 下基线漂移不应判红,实际 ${relaxed.code}:${relaxed.output}`);
+        assert(relaxed.result === 0, `--no-baseline 下基线漂移不应判红,实际 ${relaxed.result}:${relaxed.output}`);
         assert(relaxed.output.includes("基线比对已关闭"), `--no-baseline 应显式提示基线已关闭:${relaxed.output}`);
       });
 
       // 4d. --help 零退出且不判红
       await suite.case("4. --help 零退出且列出 --baseline", async () => {
         const help = await runCli(["--help"]);
-        assert(help.code === 0, `--help 应零退出,实际 ${help.code}:${help.output}`);
+        assert(help.result === 0, `--help 应零退出,实际 ${help.result}:${help.output}`);
         assert(help.output.includes("--baseline"), `--help 应列出 --baseline:${help.output}`);
       });
       console.log("[ok] pinned-actions:正向锚点(合法沙盒零退出 / 去注释即判红 / --no-baseline 只收窄到引用卫生 / --help)");
@@ -586,12 +579,12 @@ export async function run() {
     {
       await suite.case("5. 真实仓库 CLI 复跑通过并报出引用数", async () => {
         const real = await runCli([]);
-        assert(real.code === 0, `真实仓库应通过自建门禁,实际 ${real.code}:${real.output}`);
+        assert(real.result === 0, `真实仓库应通过自建门禁,实际 ${real.result}:${real.output}`);
         assert(real.output.includes("14 处 uses"), `真实仓库应报出 14 处引用:${real.output}`);
       });
       await suite.case("5. 真实仓库 --no-baseline 应通过", async () => {
         const relaxedReal = await runCli(["--no-baseline"]);
-        assert(relaxedReal.code === 0, `真实仓库 --no-baseline 应通过,实际 ${relaxedReal.code}:${relaxedReal.output}`);
+        assert(relaxedReal.result === 0, `真实仓库 --no-baseline 应通过,实际 ${relaxedReal.result}:${relaxedReal.output}`);
       });
       console.log("[ok] pinned-actions:真实仓库 CLI 复跑通过(14 处引用 / 基线一致)");
     }

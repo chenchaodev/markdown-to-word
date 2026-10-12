@@ -35,6 +35,7 @@ import os from "node:os";
 import path from "node:path";
 import { createAsserter } from "../harness/assert.js";
 import { createCaseSuite } from "../harness/case.js";
+import { captureConsole } from "../harness/console-capture.js";
 import { ROOT } from "../harness/paths.js";
 import { removeTree } from "../harness/temp-resource.js";
 import {
@@ -91,24 +92,16 @@ const DECLARED_TRANSITIVE_DEPS = {
 const { assert } = createAsserter("import-boundary");
 
 /**
- * 跑被测脚本的 CLI main():吞掉 console 输出,返回 { code, output }。
+ * 跑被测脚本的 CLI main():吞掉其 console 输出,返回 { result, output }。
+ *
+ * B 族(**不捕** console.warn):被测脚本会把「能力缺口告警」打到 warn,那是要放行的
+ * 降级信号而不是失败原因,收进来会让失败诊断掺进噪声。捕获实现已收口到
+ * test/harness/console-capture.js —— 本函数只保留「名字 + 绑定 warn:false」这一层。
  * @param {string[]} args CLI 参数
- * @returns {Promise<{ code: unknown; output: string }>} 退出码与合并后的输出
+ * @returns {Promise<{ result: unknown; output: string }>} 退出码与合并后的输出
  */
 async function runCli(args) {
-  /** @type {string[]} */
-  const lines = [];
-  const originalLog = console.log;
-  const originalError = console.error;
-  console.log = (...a) => lines.push(a.join(" "));
-  console.error = (...a) => lines.push(a.join(" "));
-  try {
-    const code = await boundaryMain(args);
-    return { code, output: lines.join("\n") };
-  } finally {
-    console.log = originalLog;
-    console.error = originalError;
-  }
+  return captureConsole(() => boundaryMain(args), { warn: false });
 }
 
 /**
@@ -142,15 +135,15 @@ function createSandbox(pkg, files) {
 
 /**
  * 失败路径的固定断言面:退出码 1 + 命中诊断 + 不回吐调用栈。
- * @param {{ code: unknown; output: string }} result 子进程结果
+ * @param {{ result: unknown; output: string }} captured 捕获结果
  * @param {RegExp} pattern 期望命中的诊断
  * @param {string} label 用例标签
  * @returns {void}
  */
-function assertFailure(result, pattern, label) {
-  assert(result.code === 1, `${label} 应以退出码 1 结束,实际 ${result.code};输出:${result.output}`);
-  assert(pattern.test(result.output), `${label} 诊断未命中 ${pattern};输出:${result.output}`);
-  assert(!/\n\s+at\s/.test(result.output), `${label} 诊断应已归一化,不得回吐调用栈:${result.output}`);
+function assertFailure(captured, pattern, label) {
+  assert(captured.result === 1, `${label} 应以退出码 1 结束,实际 ${captured.result};输出:${captured.output}`);
+  assert(pattern.test(captured.output), `${label} 诊断未命中 ${pattern};输出:${captured.output}`);
+  assert(!/\n\s+at\s/.test(captured.output), `${label} 诊断应已归一化,不得回吐调用栈:${captured.output}`);
 }
 
 // ---- 独立复核用:与被测实现无共享代码的极简 import 抽取器 ----
@@ -622,8 +615,8 @@ export async function run() {
         await s.case(`漂移:${item.label}`, async () => {
           const sb = createSandbox(item.pkg, item.files);
           track(sb.dir);
-          const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath, ...(item.args ?? [])]);
-          assertFailure(result, item.pattern, item.label);
+          const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath, ...(item.args ?? [])]);
+          assertFailure(captured, item.pattern, item.label);
         });
       }
       console.log(`[ok] import-boundary:${cases.length} 类漂移夹具全部非零退出且命中各自诊断`);
@@ -650,11 +643,11 @@ export async function run() {
           },
         );
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
-        assert(result.code === 0, `合法沙盒应零退出,实际 ${result.code}:${result.output}`);
-        assert(!result.output.includes("[boundary:fail]"), `合法沙盒不得有 fail 行:${result.output}`);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assert(captured.result === 0, `合法沙盒应零退出,实际 ${captured.result}:${captured.output}`);
+        assert(!captured.output.includes("[boundary:fail]"), `合法沙盒不得有 fail 行:${captured.output}`);
         // 白名单文件用 node: 内建不报
-        assert(result.output.includes("import 边界自检通过"), `合法沙盒应给出通过结论:${result.output}`);
+        assert(captured.output.includes("import 边界自检通过"), `合法沙盒应给出通过结论:${captured.output}`);
       });
       // 5b. renderer 反向 type-only 引 main → 必须判红。
       // (REF-025 #03:放行机制已整体删除,原先这条是唯一的放行条目、判绿。
@@ -666,8 +659,8 @@ export async function run() {
           { "renderer/renderer.ts": 'import type { PreloadApi } from "../main/preload.cjs";\nexport type { PreloadApi };\n' },
         );
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
-        assertFailure(result, /renderer\/renderer\.ts:type-only import「\.\.\/main\/preload\.cjs」违反层向规则 renderer-no-main/, "renderer 反向 type-only 引 main");
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assertFailure(captured, /renderer\/renderer\.ts:type-only import「\.\.\/main\/preload\.cjs」违反层向规则 renderer-no-main/, "renderer 反向 type-only 引 main");
       });
       // 5b-2. 同一方向改成运行时 import → 同样判红(证明规则不因 type-only 而放松)
       await s.case("5b-2 同一方向改成运行时 import → 同样判红", async () => {
@@ -676,8 +669,8 @@ export async function run() {
           { "renderer/renderer.ts": 'import { api } from "../main/preload.cjs";\nexport { api };\n' },
         );
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
-        assertFailure(result, /renderer\/renderer\.ts:import「\.\.\/main\/preload\.cjs」违反层向规则 renderer-no-main/, "renderer 反向运行时引 main");
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assertFailure(captured, /renderer\/renderer\.ts:import「\.\.\/main\/preload\.cjs」违反层向规则 renderer-no-main/, "renderer 反向运行时引 main");
       });
       // 5c. 未知 devDependency 的 @types 缺失时,type-only 判定不被 devDependencies 段掩盖
       await s.case("5c 未知 devDependency 的 @types 缺失时,type-only 判定不被 devDependencies 段掩盖", async () => {
@@ -686,8 +679,8 @@ export async function run() {
           { "core/docx/ctx.ts": 'import type { X } from "docx";\nexport type { X };\n' },
         );
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
-        assert(result.code === 0, `已声明包的 type-only import 应放行,实际 ${result.code}:${result.output}`);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assert(captured.result === 0, `已声明包的 type-only import 应放行,实际 ${captured.result}:${captured.output}`);
       });
       // 5d. main → renderer 跨层引用必须判红(层向规则 main-no-renderer,补上此前只靠约定的方向)
       await s.case("5d main → renderer 跨层引用必须判红", async () => {
@@ -696,9 +689,9 @@ export async function run() {
           { "main/ipc/logic.ts": 'import { el } from "../../renderer/dom/refs.js";\nexport { el };\n' },
         );
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assertFailure(
-          result,
+          captured,
           /main\/ipc\/logic\.ts:import「\.\.\/\.\.\/renderer\/dom\/refs\.js」违反层向规则 main-no-renderer/,
           "main 反向依赖 renderer",
         );
@@ -710,9 +703,9 @@ export async function run() {
           { "main/smoke.ts": 'import { x } from "../../test/common/assert.js";\nexport { x };\n' },
         );
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assertFailure(
-          result,
+          captured,
           /main\/smoke\.ts:import「\.\.\/\.\.\/test\/common\/assert\.js」违反层向规则 smoke-no-outside-src/,
           "smoke 逃出 src/(引入 test/)",
         );
@@ -727,8 +720,8 @@ export async function run() {
           },
         );
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
-        assert(result.code === 0, `合法的 smoke 依赖图应零退出,实际 ${result.code}:${result.output}`);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assert(captured.result === 0, `合法的 smoke 依赖图应零退出,实际 ${captured.result}:${captured.output}`);
       });
       // 5g. renderer 基础层反向依赖功能目录必须判红
       // (REF-025 #13:实测 convert/settings/ui/wizard 两两互依、无法约束方向,但基础层
@@ -739,9 +732,9 @@ export async function run() {
           { "renderer/state/pure.ts": 'import { el } from "../ui/dom-ops.js";\nexport { el };\n' },
         );
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assertFailure(
-          result,
+          captured,
           /renderer\/state\/pure\.ts:import「\.\.\/ui\/dom-ops\.js」违反层向规则 renderer-foundation-no-feature-dep/,
           "renderer 基础层反向依赖功能目录",
         );
@@ -757,8 +750,8 @@ export async function run() {
           },
         );
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
-        assert(result.code === 0, `基础层引 core 应放行,实际 ${result.code}:${result.output}`);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assert(captured.result === 0, `基础层引 core 应放行,实际 ${captured.result}:${captured.output}`);
       });
       // 5i. core/pdf 直接 import node:fs 必须判红(REF-025 #07 的新规则 core-pdf-no-fs)。
       // 此前 core/pdf/katex-css.ts 直接引 readFileSync,使「core 的 pdf 渲染路径不做
@@ -769,9 +762,9 @@ export async function run() {
           { "core/pdf/katex-css.ts": 'import { readFileSync } from "node:fs";\nexport { readFileSync };\n' },
         );
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assertFailure(
-          result,
+          captured,
           /core\/pdf\/katex-css\.ts:import「node:fs」违反层向规则 core-pdf-no-fs/,
           "core/pdf 直接 import node:fs",
         );
@@ -785,9 +778,9 @@ export async function run() {
           { "core/pdf/katex-css.ts": 'import { readFile } from "node:fs/promises";\nexport { readFile };\n' },
         );
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assertFailure(
-          result,
+          captured,
           /core\/pdf\/katex-css\.ts:import「node:fs\/promises」违反层向规则 core-pdf-no-fs/,
           "core/pdf 直接 import node:fs/promises",
         );
@@ -804,10 +797,10 @@ export async function run() {
           },
         );
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assert(
-          result.code === 0,
-          `core/pdf 的 node:url / node:path 是纯字符串运算,应放行,实际 ${result.code}:${result.output}`,
+          captured.result === 0,
+          `core/pdf 的 node:url / node:path 是纯字符串运算,应放行,实际 ${captured.result}:${captured.output}`,
         );
       });
       // 5l. convert 装配层反向依赖 main → 必须判红(ADR-060 的 convert-no-gui)。
@@ -819,9 +812,9 @@ export async function run() {
           { "convert/single.ts": 'import { loadSettings } from "../main/persist/settings.js";\nexport { loadSettings };\n' },
         );
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assertFailure(
-          result,
+          captured,
           /convert\/single\.ts:import「\.\.\/main\/persist\/settings\.js」违反层向规则 convert-no-gui/,
           "convert 装配层反向依赖 main",
         );
@@ -834,9 +827,9 @@ export async function run() {
           { "convert/single.ts": 'import { el } from "../renderer/dom/refs.js";\nexport { el };\n' },
         );
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assertFailure(
-          result,
+          captured,
           /convert\/single\.ts:import「\.\.\/renderer\/dom\/refs\.js」违反层向规则 convert-no-gui/,
           "convert 装配层反向依赖 renderer",
         );
@@ -849,9 +842,9 @@ export async function run() {
           { "cli/index.ts": 'import { el } from "../renderer/dom/refs.js";\nexport { el };\n' },
         );
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assertFailure(
-          result,
+          captured,
           /cli\/index\.ts:import「\.\.\/renderer\/dom\/refs\.js」违反层向规则 faces-no-renderer/,
           "cli 引用 renderer",
         );
@@ -864,9 +857,9 @@ export async function run() {
           { "mcp/index.ts": 'import { el } from "../renderer/dom/refs.js";\nexport { el };\n' },
         );
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assertFailure(
-          result,
+          captured,
           /mcp\/index\.ts:import「\.\.\/renderer\/dom\/refs\.js」违反层向规则 faces-no-renderer/,
           "mcp 引用 renderer",
         );
@@ -878,9 +871,9 @@ export async function run() {
           { "cli/index.ts": 'import { app } from "electron";\nexport { app };\n' },
         );
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assertFailure(
-          result,
+          captured,
           /cli\/index\.ts:import「electron」违反层向规则 faces-no-host/,
           "cli import electron",
         );
@@ -892,9 +885,9 @@ export async function run() {
           { "mcp/index.ts": 'import { app } from "electron";\nexport { app };\n' },
         );
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assertFailure(
-          result,
+          captured,
           /mcp\/index\.ts:import「electron」违反层向规则 faces-no-host/,
           "mcp import electron",
         );
@@ -907,9 +900,9 @@ export async function run() {
           { "cli/index.ts": 'import { x } from "../../test/common/paths.js";\nexport { x };\n' },
         );
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assertFailure(
-          result,
+          captured,
           /cli\/index\.ts:import「\.\.\/\.\.\/test\/common\/paths\.js」违反层向规则 faces-no-outside-src/,
           "cli 逃出 src/",
         );
@@ -921,9 +914,9 @@ export async function run() {
           { "mcp/index.ts": 'import { x } from "../../test/common/paths.js";\nexport { x };\n' },
         );
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assertFailure(
-          result,
+          captured,
           /mcp\/index\.ts:import「\.\.\/\.\.\/test\/common\/paths\.js」违反层向规则 faces-no-outside-src/,
           "mcp 逃出 src/",
         );
@@ -942,10 +935,10 @@ export async function run() {
           },
         );
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assert(
-          result.code === 0,
-          `convert↓core、cli→convert 的合法依赖图不得误伤,实际 ${result.code}:${result.output}`,
+          captured.result === 0,
+          `convert↓core、cli→convert 的合法依赖图不得误伤,实际 ${captured.result}:${captured.output}`,
         );
       });
       console.log("[ok] import-boundary:正向锚点(合法沙盒零退出 / renderer→main 绝对禁止(含 type-only) / 已声明包的类型引用放行 / main→renderer 跨层引用判红 / smoke 引入 test 判红 / convert 反向依赖 GUI 两层判红 / cli 与 mcp 两个交付面引用 renderer、import electron、逃出 src 均判红 / 合法 smoke、convert→core、cli→convert 依赖图不误伤)");
@@ -1304,8 +1297,8 @@ export async function run() {
           track(good.dir);
           const greenResult = await runCli(["--src", good.srcDir, "--package", good.pkgPath]);
           assert(
-            greenResult.code === 0,
-            `${item.label} 撤回后必须复绿,实际 ${greenResult.code}:${greenResult.output}`,
+            greenResult.result === 0,
+            `${item.label} 撤回后必须复绿,实际 ${greenResult.result}:${greenResult.output}`,
           );
           // 结论行本身会提到两条新规则的 id(那是覆盖度的声明,不是判红),
           // 故此处只能按 [boundary:fail] 行判 —— 否则这条断言恒红。
@@ -1332,8 +1325,8 @@ export async function run() {
           },
         );
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
-        assert(result.code === 0, `四种跨平台正当写法不得误伤,实际 ${result.code}:${result.output}`);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assert(captured.result === 0, `四种跨平台正当写法不得误伤,实际 ${captured.result}:${captured.output}`);
       });
 
       await s.case("9b-3 原语级双向断言(三棵新层树各自有牙齿 / 作用域对照)", () => {
@@ -1402,8 +1395,8 @@ export async function run() {
         await s.case(`9c 产物侧判红(--flavor dist):${item.label}`, async () => {
           const sb = createSandbox({ dependencies: {}, devDependencies: { electron: "43.0.0", jszip: "3.10.1" } }, item.files);
           track(sb.dir);
-          const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath, "--flavor", "dist"]);
-          assertFailure(result, item.pattern, `${item.label}(--flavor dist)`);
+          const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath, "--flavor", "dist"]);
+          assertFailure(captured, item.pattern, `${item.label}(--flavor dist)`);
         });
       }
 
@@ -1423,9 +1416,9 @@ export async function run() {
           },
         );
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath, "--flavor", "dist"]);
-        assert(result.code === 0, `合法产物树在 --flavor dist 下必须零退出,实际 ${result.code}:${result.output}`);
-        assert(result.output.includes("import 边界自检通过(dist 产物)"), `合法产物树应给出产物面通过结论:${result.output}`);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath, "--flavor", "dist"]);
+        assert(captured.result === 0, `合法产物树在 --flavor dist 下必须零退出,实际 ${captured.result}:${captured.output}`);
+        assert(captured.output.includes("import 边界自检通过(dist 产物)"), `合法产物树应给出产物面通过结论:${captured.output}`);
       });
 
       await s.case("9d 门禁本体的双向自检零问题", () => {
@@ -1536,7 +1529,7 @@ export async function run() {
         });
         track(good.dir);
         const green = await runCli(["--src", good.srcDir, "--package", good.pkgPath]);
-        assert(green.code === 0, `convert-no-host 撤回后必须复绿,实际 ${green.code}:${green.output}`);
+        assert(green.result === 0, `convert-no-host 撤回后必须复绿,实际 ${green.result}:${green.output}`);
         assert(!green.output.includes("[boundary:fail]"), `撤回后不得有 fail 行:${green.output}`);
       });
       // 10b-2. type-only 同样判红:证明规则不因类型擦除而放松(与 renderer-no-main 同一纪律)
@@ -1571,7 +1564,7 @@ export async function run() {
         });
         track(good.dir);
         const green = await runCli(["--src", good.srcDir, "--package", good.pkgPath]);
-        assert(green.code === 0, `convert-no-outside-src 撤回后必须复绿,实际 ${green.code}:${green.output}`);
+        assert(green.result === 0, `convert-no-outside-src 撤回后必须复绿,实际 ${green.result}:${green.output}`);
       });
 
       // 10c-2. 形态选择的机械证据:layer:.. 按**解析结果**判,prefix:../../ 按**字面前缀**判。
@@ -1593,8 +1586,8 @@ export async function run() {
         track(deep.dir);
         const inConvert = await runCli(["--src", deep.srcDir, "--package", deep.pkgPath]);
         assert(
-          inConvert.code === 0,
-          `convert/sub/ 里解析后落在 src/core 的 ../../core/ 是合法的,不得误报,实际 ${inConvert.code}:${inConvert.output}`,
+          inConvert.result === 0,
+          `convert/sub/ 里解析后落在 src/core 的 ../../core/ 是合法的,不得误报,实际 ${inConvert.result}:${inConvert.output}`,
         );
         assert(
           !inConvert.output.includes("[boundary:fail]"),
@@ -1607,9 +1600,9 @@ export async function run() {
         track(asFace.dir);
         const inFace = await runCli(["--src", asFace.srcDir, "--package", asFace.pkgPath]);
         assert(
-          inFace.code === 0,
+          inFace.result === 0,
           `cli/sub/ 里解析后落在 src/core 的 ../../core/ 是合法的,layer: 形态不得误报`
-            + `(prefix:../../ 形态下它会被误报,那正是这次改写修掉的误报),实际 ${inFace.code}:${inFace.output}`,
+            + `(prefix:../../ 形态下它会被误报,那正是这次改写修掉的误报),实际 ${inFace.result}:${inFace.output}`,
         );
         assert(
           !inFace.output.includes("[boundary:fail]"),
@@ -1649,8 +1642,8 @@ export async function run() {
           "convert/sub/deep.ts": 'import { convert } from "../../core/convert.js";\nexport { convert };\n',
         });
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
-        assert(result.code === 0, `convert 的合法依赖图不得误伤,实际 ${result.code}:${result.output}`);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assert(captured.result === 0, `convert 的合法依赖图不得误伤,实际 ${captured.result}:${captured.output}`);
       });
 
       // 10e. 原语级双向断言:不经 CLI,使「撤回后复绿」也钉在被测原语上。
@@ -1805,8 +1798,8 @@ export async function run() {
           // 「命中进了 problems」与「进程因此退出非零」是两件事,后者才是 CI 看得见的那个。
           const cli = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
           assert(
-            cli.code === 1 && cli.output.includes("renderer-features-no-cross-import"),
-            `fail-closed 后 CLI 应退出 1 并打印该规则 id,实际 code=${cli.code}:${cli.output.slice(0, 200)}`,
+            cli.result === 1 && cli.output.includes("renderer-features-no-cross-import"),
+            `fail-closed 后 CLI 应退出 1 并打印该规则 id,实际 code=${cli.result}:${cli.output.slice(0, 200)}`,
           );
         }
       });
@@ -2081,9 +2074,9 @@ export async function run() {
           "renderer/ui/dom-ops.ts": "export const domOps = 1;\n",
         });
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
         assertFailure(
-          result,
+          captured,
           /renderer\/state\/store\/slice\.ts.*违反层向规则 renderer-foundation-no-feature-dep/s,
           "深两层的 state/store/ → ui/ 边必须判红",
         );
@@ -2107,14 +2100,14 @@ export async function run() {
           "core/markdown/parse.ts": "export const parse = () => null;\n",
         });
         track(sb.dir);
-        const result = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
-        assert(result.code === 0, `本组涉及的合法沙盒应零退出,实际 ${result.code}:${result.output}`);
+        const captured = await runCli(["--src", sb.srcDir, "--package", sb.pkgPath]);
+        assert(captured.result === 0, `本组涉及的合法沙盒应零退出,实际 ${captured.result}:${captured.output}`);
         assert(
-          result.output.includes("当前这 4 条判据带 pending 标记"),
-          `结论行的 pending 条数应仍为 4(阶段③ 挂规则时 5,阶段⑥ 转正删标记后回到 4),实际:${result.output}`,
+          captured.output.includes("当前这 4 条判据带 pending 标记"),
+          `结论行的 pending 条数应仍为 4(阶段③ 挂规则时 5,阶段⑥ 转正删标记后回到 4),实际:${captured.output}`,
         );
         assert(
-          !result.output.includes("RENDERER_TOP_DIRS"),
+          !captured.output.includes("RENDERER_TOP_DIRS"),
           "结论行不得提到 RENDERER_TOP_DIRS(它是独立判红项,不挂 pending,不进结论行 —— 加进去就改了结论行)",
         );
       });

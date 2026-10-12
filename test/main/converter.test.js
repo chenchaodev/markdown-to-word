@@ -29,6 +29,7 @@ import { DEFAULT_SETTINGS } from "../../dist/core/settings/settings-defaults.js"
 import { backupSettings, backupSettingsFile, freshSettingsModule, settingsJsonPath } from "../harness/settings.js";
 import { createAsserter } from "../harness/assert.js";
 import { createCaseSuite } from "../harness/case.js";
+import { captureConsole } from "../harness/console-capture.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { asPdfArtifact, convertWithFs } from "../harness/convert-helpers.js";
 import {
@@ -658,18 +659,19 @@ export async function run() {
           value: async () => "mock open error",
         });
       }
-      const openLogs = /** @type {string[]} */ ([]);
-      const origLog = console.log;
-      console.log = (...args) => {
-        openLogs.push(args.join(" "));
-      };
+      // C 族(**只捕** console.log):warn/error 不是本段的判定对象,照常走真 console ——
+      // 收进来只会把无关告警混进断言文本。捕获实现见 test/harness/console-capture.js
+      /** @type {string[]} */
+      let openLogs = [];
       try {
-        await updateSettings({ afterConvert: "open" });
-        const openFail = await convertImpl(sampleMd, "docx");
-        assert(!!openFail.outputPath, "open 失败不应影响转换成功");
-        await fs.stat(openFail.outputPath);
+        const openCapture = await captureConsole(async () => {
+          await updateSettings({ afterConvert: "open" });
+          const openFail = await convertImpl(sampleMd, "docx");
+          assert(!!openFail.outputPath, "open 失败不应影响转换成功");
+          await fs.stat(openFail.outputPath);
+        }, { warn: false, error: false });
+        openLogs = openCapture.output === "" ? [] : openCapture.output.split("\n");
       } finally {
-        console.log = origLog;
         if (openPathViaDefine) {
           Object.defineProperty(shell, "openPath", { configurable: true, writable: true, value: origOpenPath });
         } else {

@@ -17,6 +17,7 @@ import os from "node:os";
 import { disposeMermaidService, renderMermaid } from "../../dist/main/services/mermaid-service.js";
 import { createAsserter } from "../harness/assert.js";
 import { createCaseSuite } from "../harness/case.js";
+import { captureConsole } from "../harness/console-capture.js";
 
 const GOOD_CODE = "graph TD; A-->B";
 
@@ -138,17 +139,14 @@ export async function run() {
   });
 
   // ---- 2. 降级路径:语法错误 → 页面内 parse 预检失败 → null;catch 日志留痕(170 行) ----
-  const origLog = console.log;
-  const logs = /** @type {string[]} */ ([]);
-  console.log = (...args) => {
-    logs.push(args.join(" "));
-  };
-  let bad;
-  try {
-    bad = await renderMermaid("graph TD;\nA[unclosed");
-  } finally {
-    console.log = origLog;
-  }
+  // C 族(**只捕** console.log):warn/error 不是本段的判定对象,照常走真 console ——
+  // 收进来只会把降级告警混进断言文本。捕获实现见 test/harness/console-capture.js
+  const degraded = await captureConsole(() => renderMermaid("graph TD;\nA[unclosed"), {
+    warn: false,
+    error: false,
+  });
+  const bad = degraded.result;
+  const logs = degraded.output === "" ? [] : degraded.output.split("\n");
   await suite.case("语法错误应返回 null(降级)", () => {
     assert(bad === null, "语法错误应返回 null(降级)");
   });

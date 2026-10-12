@@ -25,6 +25,7 @@ import { evaluateFreshness, main as buildFreshMain } from "../../gates/smoke/che
 import { copyRenderer } from "../../tools/copy-renderer.mjs";
 import { createAsserter } from "../harness/assert.js";
 import { createCaseSuite } from "../harness/case.js";
+import { captureConsole } from "../harness/console-capture.js";
 import { ROOT } from "../harness/paths.js";
 import { removeFile, removeTree } from "../harness/temp-resource.js";
 
@@ -55,24 +56,17 @@ async function withTempDir(fn) {
 }
 
 /**
- * 跑脚本 main():吞掉其 console 输出,返回 { code, output } 供失败原因断言。
- * @param {() => unknown} fn 被调用的脚本 main
- * @returns {Promise<{ code: unknown; output: string }>} 退出码与合并后的输出
+ * 跑脚本 main():吞掉其 console 输出,返回 { result, output } 供失败原因断言。
+ *
+ * B 族(**不捕** console.warn):被测脚本会把「能力缺口告警」打到 warn,那是要放行的
+ * 降级信号而不是失败原因,收进来会让失败诊断掺进噪声。捕获实现已收口到
+ * test/harness/console-capture.js —— 本函数只保留「名字 + 绑定 warn:false」这一层。
+ * @template T
+ * @param {() => Promise<T> | T} fn 被调用的脚本 main
+ * @returns {Promise<{ result: T; output: string }>} 退出码与合并后的输出
  */
 async function runChecker(fn) {
-  /** @type {string[]} */
-  const lines = [];
-  const originalLog = console.log;
-  const originalError = console.error;
-  console.log = (...args) => lines.push(args.join(" "));
-  console.error = (...args) => lines.push(args.join(" "));
-  try {
-    const code = await fn();
-    return { code, output: lines.join("\n") };
-  } finally {
-    console.log = originalLog;
-    console.error = originalError;
-  }
+  return captureConsole(fn, { warn: false });
 }
 
 /**
@@ -148,7 +142,7 @@ export async function run() {
       makeDist(distDir);
 
       const generated = await runChecker(() => distManifestMain(["--dist", distDir, "--output", manifestPath]));
-      assert(generated.code === 0, `生成模式应通过,实际 ${generated.code}:${generated.output}`);
+      assert(generated.result === 0, `生成模式应通过,实际 ${generated.result}:${generated.output}`);
 
       const manifest = /** @type {Manifest} */ (parseManifest(fs.readFileSync(manifestPath, "utf8")));
       assert(manifest.schema === MANIFEST_SCHEMA, `schema 应为 ${MANIFEST_SCHEMA},实际 ${manifest.schema}`);
@@ -174,13 +168,13 @@ export async function run() {
       // 重复生成幂等:同一份 dist 逐字节产出同一清单(可 diff、可复现)
       const firstText = fs.readFileSync(manifestPath, "utf8");
       const regenerated = await runChecker(() => distManifestMain(["--dist", distDir, "--output", manifestPath]));
-      assert(regenerated.code === 0, "重复生成应通过");
+      assert(regenerated.result === 0, "重复生成应通过");
       assert(fs.readFileSync(manifestPath, "utf8") === firstText, "重复生成应逐字节一致");
 
       const checked = await runChecker(() =>
         distManifestMain(["--dist", distDir, "--output", manifestPath, "--check"]),
       );
-      assert(checked.code === 0, `校验模式应通过,实际 ${checked.code}:${checked.output}`);
+      assert(checked.result === 0, `校验模式应通过,实际 ${checked.result}:${checked.output}`);
       console.log("[ok] dist-manifest-gate:生成/幂等/校验三态通过,清单与独立实现一致(5 个文件)");
     }),
   );
@@ -242,14 +236,14 @@ export async function run() {
           const caseManifest = path.join(caseTmp, "dist-manifest.json");
           makeDist(caseDist);
           const seed = await runChecker(() => distManifestMain(["--dist", caseDist, "--output", caseManifest]));
-          assert(seed.code === 0, "负向用例的基线生成应先通过");
+          assert(seed.result === 0, "负向用例的基线生成应先通过");
           testCase.arrange(caseDist, caseManifest);
-          const result = await runChecker(() =>
+          const captured = await runChecker(() =>
             distManifestMain(["--dist", caseDist, "--output", caseManifest, "--check"]),
           );
           assert(
-            result.code === 1 && testCase.expect.test(result.output),
-            `${testCase.name} 应以非零码且原因匹配 ${testCase.expect} 失败,实际 exit ${result.code}\n${result.output}`,
+            captured.result === 1 && testCase.expect.test(captured.output),
+            `${testCase.name} 应以非零码且原因匹配 ${testCase.expect} 失败,实际 exit ${captured.result}\n${captured.output}`,
           );
         })().finally(() => {
           const outcome = removeTree(caseTmp);
@@ -267,7 +261,7 @@ export async function run() {
         const missingManifest = await runChecker(() =>
           distManifestMain(["--dist", caseDist, "--output", path.join(caseTmp, "nope.json"), "--check"]),
         );
-        assert(missingManifest.code === 1 && /缺少清单/.test(missingManifest.output), `缺清单应失败,实际 ${missingManifest.code}`);
+        assert(missingManifest.result === 1 && /缺少清单/.test(missingManifest.output), `缺清单应失败,实际 ${missingManifest.result}`);
       }),
     );
     await suite.case("2. dist 目录不存在应可操作报错", () =>
@@ -275,7 +269,7 @@ export async function run() {
         const missingDist = await runChecker(() =>
           distManifestMain(["--dist", path.join(caseTmp, "no-such-dist"), "--output", path.join(caseTmp, "x.json")]),
         );
-        assert(missingDist.code === 1 && /dist 目录不存在/.test(missingDist.output), `缺 dist 应失败,实际 ${missingDist.code}`);
+        assert(missingDist.result === 1 && /dist 目录不存在/.test(missingDist.output), `缺 dist 应失败,实际 ${missingDist.result}`);
       }),
     );
     await suite.case("2. 参数写错应失败而非按默认值跑", () =>
@@ -283,7 +277,7 @@ export async function run() {
         const caseDist = path.join(caseTmp, "dist");
         makeDist(caseDist);
         const badOption = await runChecker(() => distManifestMain(["--distt", caseDist]));
-        assert(badOption.code === 1 && /无法识别的选项/.test(badOption.output), `参数写错应失败,实际 ${badOption.code}`);
+        assert(badOption.result === 1 && /无法识别的选项/.test(badOption.output), `参数写错应失败,实际 ${badOption.result}`);
       }),
     );
     console.log("[ok] dist-manifest-gate:缺清单/缺 dist/参数写错均非零退出且文案可操作");
@@ -295,7 +289,7 @@ export async function run() {
         const realManifestPath = path.join(caseTmp, "dist-manifest.json");
         assert(fs.existsSync(realDist), "真实 dist 应存在(验收链先于测试执行 build)");
         const realManifest = await runChecker(() => distManifestMain(["--dist", realDist, "--output", realManifestPath]));
-        assert(realManifest.code === 0, `真实 dist 应能生成清单,实际 ${realManifest.code}:${realManifest.output}`);
+        assert(realManifest.result === 0, `真实 dist 应能生成清单,实际 ${realManifest.result}:${realManifest.output}`);
         const realParsed = /** @type {Manifest} */ (parseManifest(fs.readFileSync(realManifestPath, "utf8")));
         assert(realParsed.fileCount > 100, `真实 dist 文件数应远大于夹具,实际 ${realParsed.fileCount}`);
         assert(
@@ -366,7 +360,7 @@ export async function run() {
       );
 
       const missingSrc = await runChecker(() => buildFreshMain(["--src", path.join(tmp, "no-src")]));
-      assert(missingSrc.code === 1 && /源码目录不存在/.test(missingSrc.output), "源码目录不存在应非零退出");
+      assert(missingSrc.result === 1 && /源码目录不存在/.test(missingSrc.output), "源码目录不存在应非零退出");
       console.log("[ok] dist-manifest-gate:build-fresh 新鲜/过期/dist 缺失/源码缺失四态判定正确");
     }),
   );

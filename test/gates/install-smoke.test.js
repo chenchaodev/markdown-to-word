@@ -67,6 +67,7 @@ import {
 import { SMOKE_MARKERS } from "../../gates/smoke/smoke-proc.mjs";
 import { createAsserter } from "../harness/assert.js";
 import { createCaseSuite } from "../harness/case.js";
+import { captureConsole } from "../harness/console-capture.js";
 import { ROOT } from "../harness/paths.js";
 import { removeFile } from "../harness/temp-resource.js";
 
@@ -489,27 +490,16 @@ function scratchIsClean(scratchDir) {
 
 /**
  * 在捕获控制台输出的前提下跑 fn(execute 路径的诊断文案断言需要拿到输出)。
+ *
+ * A 族(console.log / warn / error 三件套全收):本段要断言的诊断文案同时走三条通道,
+ * 少收一条就有一类文案不可见。捕获实现已收口到 test/harness/console-capture.js ——
+ * 本函数只保留「给 27 个调用点一个贴合本段词汇的名字」这一层。
  * @template T
  * @param {() => Promise<T>} fn 被测函数
  * @returns {Promise<{ result: T; output: string }>} fn 返回值与合并输出
  */
 async function withCapturedOutput(fn) {
-  /** @type {string[]} */
-  const lines = [];
-  const originalLog = console.log;
-  const originalWarn = console.warn;
-  const originalError = console.error;
-  console.log = (...args) => lines.push(args.join(" "));
-  console.warn = (...args) => lines.push(args.join(" "));
-  console.error = (...args) => lines.push(args.join(" "));
-  try {
-    const result = await fn();
-    return { result, output: lines.join("\n") };
-  } finally {
-    console.log = originalLog;
-    console.warn = originalWarn;
-    console.error = originalError;
-  }
+  return captureConsole(fn);
 }
 
 /**
