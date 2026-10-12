@@ -250,6 +250,10 @@ import path from "node:path";
 import { isMainModule, parseArgs } from "../../shared/cli.mjs";
 import { lexSource } from "../../shared/copy-closure.js";
 import { ROOT } from "../../shared/paths.js";
+// 镜像路径单源(段根 / 段扩展名 / 源↔产物扩展名 / 两棵树前缀 / mirroredSourceOf)下沉至 shared/ ——
+// `tools/`(where.mjs)与 `gates/` 都要引它,而两者零跨树出边、不得互引,故只能住 shared。
+// 本地经此 import 取得绑定供判据使用;公共 API 经下方与各常量定义处的 `export` 原样再导出。
+import { DIST_TREE, SEGMENT_EXT, SOURCE_ARTIFACT_EXTS, SRC_TREE, TEST_REL, mirroredSourceOf } from "../../shared/mirror-path.mjs";
 import { isTypeOnlyClause, TREE_DIRS } from "./check-import-boundary.mjs";
 // 链展开(递归展开 / 顶层视图)与链根都是**全仓单源**:本门禁不自带一份链解析,
 // 也不自带一份链根表(见 chain-expand.mjs 文件头「为什么必须收敛到一处」)。
@@ -269,10 +273,17 @@ import { CHAIN_ROOTS, expandChainScriptNames } from "./chain-expand.mjs";
 // R1–R5c 与三种驱动器在本步一条不动。双跑一致性由 `gate-index.selftest.mjs` 断言。
 import { ACCESS_CHAIN, ACCESS_OFFCHAIN, GATE_INDEX, GATE_INDEX_MODULE_REL as GATE_INDEX_SELF_REL } from "./gate-index.mjs";
 
-/** 被判定的子树(单一来源:扫描面只此一处登记) */
-export const TEST_REL = "test";
-/** 段的扩展名(发现机制与 `test/harness/runner.js` 的 readdir 过滤逐字一致) */
-export const SEGMENT_EXT = ".test.js";
+// 公共 API 再导出:`shared/mirror-path.mjs` 收口了镜像常量与 mirroredSourceOf,但本门禁历史上
+// 一直 export 这些名字(外部唯一 import 方是同名 selftest),故在此原样再导出 —— 调用方 `import`
+// 的路径与集合都不变。本地判据引用则经上面的 import 绑定解析。
+export {
+  DIST_TREE,
+  SEGMENT_EXT,
+  SOURCE_ARTIFACT_EXTS,
+  SRC_TREE,
+  TEST_REL,
+  mirroredSourceOf,
+};
 /**
  * 允许存在但**不是镜像源**的两个顶层目录。
  *
@@ -452,29 +463,10 @@ export const ARTIFACT_SOURCE_EXTS = Object.freeze({
   ".cjs": Object.freeze([".cts"]),
 });
 
-/**
- * `src/**` 源文件扩展名 → 它编译出的 `dist/**` 产物扩展名(C1 档二算「同名产物」用)。
- *
- * 与 {@link ARTIFACT_SOURCE_EXTS} 是**互逆关系**(那份「产物 → 哪些源可能产出它」,
- * 这份「源 → 它产出哪个产物」)。两份方向不同、用途不同,故各写一份;⚠ 若 tsc 的
- * emit 规则变了(新增后缀配对),**两份必须同批改** —— 档一靠前者抓「源不存在」,
- * 档二靠后者算「同名产物」,任一份单独漂移的后果是同一族的两档给出互相矛盾的结论
- * (一份说「产物无源」、另一份说「段没落在同名产物上」)。
- *
- * `.ts` / `.tsx` → `.js`、`.mts` → `.mjs`、`.cts` → `.cjs`、`.js` → `.js`。
- * @type {Readonly<Record<string, string>>}
- */
-export const SOURCE_ARTIFACT_EXTS = Object.freeze({
-  ".ts": ".js",
-  ".tsx": ".js",
-  ".mts": ".mjs",
-  ".cts": ".cjs",
-  ".js": ".js",
-});
-
-/** 编译产物树与源树的仓相对前缀(各写一份的代价:两处字面量各改一半 ⇒ 判据静默恒红/恒绿) */
-export const DIST_TREE = "dist/";
-export const SRC_TREE = "src/";
+// `SOURCE_ARTIFACT_EXTS` / `DIST_TREE` / `SRC_TREE`(随 TEST_REL / SEGMENT_EXT / mirroredSourceOf)
+// 一并下沉到 `shared/mirror-path.mjs`,在此经 import + 上方 re-export 使用;镜像常量只此一处定义。
+// 反向映射 `ARTIFACT_SOURCE_EXTS`(产物 → 源)**留**在本文件:那是档一的判据知识,方向相反、
+// 用途不同,不与镜像单源合并(改 emit 规则时两份仍须同批改,见 mirror-path 内同名注释)。
 
 /**
  * **门禁树**的仓相对前缀(C3 的判据面)。
@@ -1756,31 +1748,8 @@ export function caseContractState(text, file, moduleRel = CASE_MODULE_REL) {
   return { imported, caseCalls };
 }
 
-/**
- * 一个段的路径镜像了哪个真实存在的 `src/**` 源文件(C1 档二的判据对象)。
- *
- * 形态是 `test/<X>/<rest>.test.js` ⇔ `src/<X>/<rest>.<srcExt>` —— **相对路径逐段对应**,
- * 不是 basename 匹配。后者会把 `test/core/preprocess.test.js` 认成镜像
- * `src/convert/preprocess.ts`(实测仓内确有 `test/convert/preprocess.test.js` 与
- * `src/convert/preprocess.ts`,但它们不在同一层目录下),那是**跨层的巧合同名**。
- *
- * 段深度**不限**:S5-0 的递归化之后段名是完整相对路径(如
- * `gates/supply/supply/gen-sbom.test.js`),逐段对应天然覆盖嵌套形态。
- * @param {string} segment 段路径(仓相对 POSIX,以 `.test.js` 结尾)
- * @param {(relative: string) => boolean} [fileExists] **仓相对**路径的存在性判据
- *   (缺省走真实磁盘 —— 合成根上的自检必须注入 `ctx.fileExists`,见 `makeTestLayoutCtx`)
- * @returns {{ source: string, artifact: string } | null} 镜像到的源文件与它的同名产物;未镜像时 null
- */
-export function mirroredSourceOf(segment, fileExists = (relative) => existsSync(path.join(ROOT, ...relative.split("/")))) {
-  if (!segment.startsWith(`${TEST_REL}/`) || !segment.endsWith(SEGMENT_EXT)) return null;
-  const stem = segment.slice(`${TEST_REL}/`.length, -SEGMENT_EXT.length);
-  for (const [sourceExt, artifactExt] of Object.entries(SOURCE_ARTIFACT_EXTS)) {
-    const source = `${SRC_TREE}${stem}${sourceExt}`;
-    if (!fileExists(source)) continue;
-    return { source, artifact: `${DIST_TREE}${stem}${artifactExt}` };
-  }
-  return null;
-}
+// `mirroredSourceOf`(与它依赖的镜像常量一起)已下沉到 `shared/mirror-path.mjs` 单源,在此经
+// import 使用、经上方 re-export 保 API;纯字符串变换本体与完整注释见该处,门禁不再持有第二份。
 
 /**
  * 判定本体(可注入纯函数):五族判据 + 扫描面下界。

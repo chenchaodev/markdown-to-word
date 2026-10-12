@@ -40,6 +40,7 @@
     "test": "npm run build && electron test/acceptance.mjs",
     "req:pool": "node tools/req-edit.mjs pool",
     "req:next": "node tools/req-edit.mjs next",
+    "where": "node tools/where.mjs",
     "gen:fixtures": "node gates/fixtures/gen-fixtures.mjs",
     "check:fixtures": "node gates/fixtures/gen-fixtures.mjs --check",
     "check:fixtures:selftest": "node gates/fixtures/gen-fixtures.selftest.mjs",
