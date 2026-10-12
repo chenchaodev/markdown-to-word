@@ -52,6 +52,7 @@ import {
   removeTree,
   withTempResource,
 } from "../harness/temp-resource.js";
+import { makeLockfile, runCli, withTempDir } from "../harness/supply-helpers.js";
 
 /**
  * 本段测哪一层(ADR-062 L4 声明通道):**harness** ——「本层主体根就是 `test/harness/`
@@ -74,6 +75,7 @@ import {
 export const covers = [
   "test/harness/assert.js",
   "test/harness/temp-resource.js",
+  "test/harness/supply-helpers.js",
   "test/harness/case.js",
   "shared/case.js",
 ];
@@ -695,6 +697,86 @@ export async function run() {
       assert(REMOVE_MAX_RETRIES >= 3, `重试次数应 ≥3(当前 ${REMOVE_MAX_RETRIES}),否则句柄未释放即误判失败`);
       assert(REMOVE_RETRY_DELAY >= 50, `退避基数应 ≥50ms(当前 ${REMOVE_RETRY_DELAY}),否则重试形同虚设`);
       console.log("[ok] test-common-helpers:清理重试参数(重试次数与退避基数)");
+    });
+  });
+
+  /* ---------- supply 共享助手(临时目录 / 沙盒 lockfile / CLI 子进程) ---------- */
+  await suite.describe("supply 共享助手", async () => {
+    // 前缀挂在本段 SELFTEST_PREFIX 之下:沙盒目录既仍可按 supply 家族识别,又落在段末
+    // 「系统临时区前缀集合回到基线」的覆盖半径内 —— 助手漏删会被逐名点出来
+    const prefix = `${SELFTEST_PREFIX}supply-`;
+
+    await suite.case("withTempDir:返回值透传、前缀生效、主体抛错仍清理", async () => {
+      /** @type {string} */
+      let dir = "";
+      const returned = await withTempDir((sandbox) => {
+        dir = sandbox;
+        created.push(sandbox);
+        fs.writeFileSync(path.join(sandbox, "fixture.txt"), "x", "utf8");
+        return "fixture-result";
+      }, prefix);
+      assertEq(returned, "fixture-result", "fn 的返回值应原样透传");
+      assertIncludes(path.basename(dir), prefix, "沙盒目录名应带调用方给的前缀");
+      assertEq(fs.existsSync(dir), false, "fn 正常返回后沙盒目录应已删除");
+
+      /** @type {string} */
+      let held = "";
+      const outcome = await captureAssertionFailure(() =>
+        withTempDir((sandbox) => {
+          held = sandbox;
+          created.push(sandbox);
+          throw new Error("主体失败:预期断言点");
+        }, prefix),
+      );
+      assertFailureCarries(outcome, ["主体失败:预期断言点"], "主体失败须原样透传");
+      assertEq(fs.existsSync(held), false, "fn 抛错时沙盒也必须被清理");
+      console.log("[ok] test-common-helpers:withTempDir(返回值透传/前缀生效/成功清理/失败仍清理)");
+    });
+
+    await suite.case("makeLockfile:no-license 夹具开关(缺省带、显式关),其余条目不变", async () => {
+      await withTempDir((dir) => {
+        /**
+         * 读回沙盒 lockfile(与门禁侧读的是同一份文件)。
+         * @param {string} lockPath lockfile 绝对路径
+         * @returns {any} 解析结果
+         */
+        const readLock = (lockPath) => JSON.parse(fs.readFileSync(lockPath, "utf8"));
+        const onPath = makeLockfile(dir);
+        assertEq(path.dirname(onPath), dir, "lockfile 应落在沙盒目录内");
+        const on = readLock(onPath);
+        // 正向:缺省带「缺许可证的包」——断言 NOASSERTION / 未知许可证 / 待复核计数的段依赖它
+        assertEq(on.packages["node_modules/no-license"]?.version, "0.1.0", "缺省应造出 no-license 缺声明条目");
+        assertEq(on.packages[""].dependencies["no-license"], "^0.1.0", "no-license 应挂进根依赖(门禁据根依赖判生产树)");
+        // 负向:显式关掉开关时该条目必须消失,且夹具其余成分逐键不变(否则各段计数断言无谓漂移)
+        const offPath = makeLockfile(dir, { noLicense: false });
+        const off = readLock(offPath);
+        assertEq(off.packages["node_modules/no-license"], undefined, "noLicense:false 时不得造出缺声明条目");
+        assertEq(off.packages[""].dependencies["no-license"], undefined, "noLicense:false 时根依赖不得挂 no-license");
+        assertSameItems(
+          Object.keys(off.packages).sort(),
+          Object.keys(on.packages).filter((key) => key !== "node_modules/no-license").sort(),
+          "开关只动 no-license 一条,夹具其余条目须逐键保留",
+        );
+        assertEq(off.lockfileVersion, 3, "lockfileVersion 3 是门禁解析口径");
+        console.log("[ok] test-common-helpers:makeLockfile(缺省带/显式关/其余条目不变)");
+      }, prefix);
+    });
+
+    await suite.case("runCli:真 node 子进程语义、退出码透传、stdout/stderr 合并", () => {
+      // 段跑在 Electron 里(process.execPath 是 electron.exe):不带 ELECTRON_RUN_AS_NODE=1 时
+      // `electron -e` 根本不执行脚本(实测空输出 + exit 1),故这条正向断言同时钉住助手
+      // 「真按 node 跑子进程」的契约 —— 各段进程级 CLI 断言全建立在它上面。
+      const ran = runCli(["-e", "process.stdout.write('RAN')"]);
+      assertEq(ran.status, 0, `子进程应 exit 0,实际 ${ran.status}:${ran.output}`);
+      assertEq(ran.output, "RAN", "stdout 应原样进 output");
+      const merged = runCli(["-e", "process.stdout.write('OUT');process.stderr.write('ERR')"]);
+      assertEq(merged.status, 0, "双流写出的子进程应 exit 0");
+      assertEq(merged.output, "OUTERR", "output 须是 stdout 与 stderr 的拼接(诊断文案跨两流)");
+      // 负向:非零退出码原样透传,stderr 内容进 output(否则失败诊断根本看不见)
+      const failed = runCli(["-e", "process.stderr.write('boom');process.exit(3)"]);
+      assertEq(failed.status, 3, `非零退出码须原样透传,实际 ${failed.status}:${failed.output}`);
+      assertIncludes(failed.output, "boom", "stderr 内容须进 output");
+      console.log("[ok] test-common-helpers:runCli(真 node 语义/退出码透传/双流合并)");
     });
   });
 

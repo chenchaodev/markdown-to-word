@@ -67,10 +67,6 @@
 
 | 号 | 标题 | 状态 | 为什么停在这 | 什么条件下重看 | 分析在哪 |
 |---|---|---|---|---|---|
-| REQ-205 | supply 段拆分后 5 份助手副本未收口 | 在办 | R1 落地时行数 1677→2178（+501），全部来自助手函数跨段复制（L4 禁段 import 段）。assert 属仓里压倒性惯例（77 段本地定义 vs 仅 2 段走 harness/assert.js）⇒ 合规；withTempDir / makeLockfile / runCli 由 1 份变 5 份，长期正解是归进 test/harness/。执行方当时判为可接受但须留账，故不在 R1 内做。 | 有人要动 supply 那 5 段，或有人决定往 test/harness 收口这族助手时 | docs/evidence/20261005-200345-测试树与门禁元框架改造工作载体原文.md（REQ-184 R1 行）· test/gates/supply/supply/ 5 段 |
-| REQ-206 | withCapturedOutput 族行内复制未收口 | 在办 | R4 撤销时实测：另 4 个 gates 段行内复制了同一段输出捕获逻辑，但都是行内代码、没提成函数。收口需新建助手 + 同批补 1:1 selftest 段 ⇒ 段数 140→141，与 R4「段数不变」直接冲突，故判为须单独立项并显式接受段数变化。 | 有人决定把该族收口成 test/harness 助手时（须同时接受段数 +1 并补 selftest 段） | docs/evidence/20261005-200345-测试树与门禁元框架改造工作载体原文.md（REQ-184 R4 行）· test/gates/install-smoke.test.js:487 |
-| REQ-207 | npm run where 段路径反查未实现 | 在办 | 完成标准 C5「只凭被测路径定位唯一段 + npm run where 可反查」实测未达成：package.json 无任何 where script（C1/C2/C3/C4 已达成，142 段全落镜像路径）。反查工具本身是独立增量，押后未做。 | 有人需要从段名反查被测主体时；或 L1（REQ-196）落地后覆盖面前置条件已变时 | docs/evidence/20261005-200345-测试树与门禁元框架改造工作载体原文.md（整体完成标准 C5 行）· docs/REQ.md REQ-196 |
-| REQ-208 | DEV-GUIDE 测试体系节 29 行待压到 5 行 | 在办 | 完成标准 C6「DEV-GUIDE『测试体系』节 ≤5 行，规则本体全部在门禁里」实测未达成：docs/DEV-GUIDE.md:202 起该节 29 行。规则本体大部分已搬进 check-test-layout.mjs（CRITERIA 15 条），残余多为叙述与指针，压缩须逐条判定不能丢指针。 | 下次改 docs/DEV-GUIDE.md 测试体系节时顺手压；或 check-test-layout 判据族再增时 | docs/evidence/20261005-200345-测试树与门禁元框架改造工作载体原文.md（整体完成标准 C6 行）· docs/DEV-GUIDE.md:202 |
 
 ## 已完成
 
@@ -248,6 +244,10 @@
 | REQ-199 | image-request-budget 超时敏感段会抖动 | 已完成 | 已闭合:段内 server 加 arrived promise(计数同点 resolve),超时 case 改「等到达再等中止」;连跑 3 次全绿、typecheck 干净。教训:test 树 .js 按 ESM 直跑,@ts-check 不转译,TS 类型实参会被 node --check 抓。 | 该段再现随机红时(先判是否负载相关:隔离连跑 4 次) | test/convert/image-request-budget.test.js |
 | REQ-238 | 自测case内判定失败被自身catch错标为夹具异常 | 已完成 | 已闭合:两份错标自测的 catch 射程收窄——check-docs 只包夹具构造、check-tscheck-coverage 删全包 catch 令判定直穿;变异自证(改错期望后消息无夹具标签)。另三份本就好形态,台账「其余批次同款」系旧观察,范围实为 2 份。 | 新自测再出现 catch 包住断言时 | docs/adr/ADR-074-自测用例契约搬shared与表格化护栏边界.md(后果节·搬迁四步)· 提交 70c183f / 9ba4346 正文 |
 | REQ-183 | ADR-197 的拆分对账对策失效 | 已完成 | 已闭合:ADR-062 补私有断言器白名单表(must( 212 处、42 个 assert 壳、smoke-report 的 must 同名不同签名);漂移订正:行号 :197/:198→:220/:221,check-pointers-refs 已无文件,按现树重建。 | 下次拆分大文件段做断言对账时;或测试树再搬迁后 | docs/adr/ADR-062-测试树位置即身份与门禁元框架瘦身.md |
+| REQ-205 | supply 段拆分后 5 份助手副本未收口 | 已完成 | 已闭合:三助手收口进 harness/supply-helpers.js,六段净删 293 行重复,前缀参数化必填;gen-sbom 以 noLicense:true 适配,NOASSERTION 断言仍通过。验收 6 段 59/59 + selftest 21/21。 | 无 | docs/evidence/20261005-200345-测试树与门禁元框架改造工作载体原文.md（REQ-184 R1 行）· test/gates/supply/supply/ 5 段 |
+| REQ-206 | withCapturedOutput 族行内复制未收口 | 已完成 | 已闭合:9 处捕获(具名 7 + 行内 2)收口进 console-capture.js,两布尔参数化三族,薄壳保调用面,抛错原样上送。验收受改 8 段 371/371 + 新段 7/7,门禁仅读数 144→145(显式接受)。 | 无 | docs/evidence/20261005-200345-测试树与门禁元框架改造工作载体原文.md（REQ-184 R4 行）· test/gates/install-smoke.test.js:487 |
+| REQ-207 | npm run where 段路径反查未实现 | 已完成 | 已闭合:mirroredSourceOf 下沉 shared/mirror-path.mjs(gates 再导出保 API,165 夹具绿);where.mjs 负向 5 形实跑全对。镜像源为路径约定派生,存在性另标,不扫 import 猜。 | 无 | docs/evidence/20261005-200345-测试树与门禁元框架改造工作载体原文.md（整体完成标准 C5 行）· docs/REQ.md REQ-196 |
+| REQ-208 | DEV-GUIDE 测试体系节 29 行待压到 5 行 | 已完成 | 已闭合:测试体系节实测 13 行压至 5 行,保留三处无机器看守的叙述;:236 悬空回指改指 test/。CRITERIA 实为 20 条非 15。 | 无 | docs/evidence/20261005-200345-测试树与门禁元框架改造工作载体原文.md（整体完成标准 C6 行）· docs/DEV-GUIDE.md:202 |
 ## 已作废
 
 = 需求被**终审否决**，行**永久保留**、**号永不复用**。否决理由与复活条件在本行；长篇依据在「分析在哪」。

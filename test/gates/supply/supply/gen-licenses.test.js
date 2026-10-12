@@ -17,13 +17,11 @@
  * 「因错误原因失败」蒙混过关。
  */
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { createAsserter } from "../../../harness/assert.js";
 import { createCaseSuite } from "../../../harness/case.js";
 import { ROOT } from "../../../harness/paths.js";
-import { removeTree } from "../../../harness/temp-resource.js";
-import { spawnSync } from "node:child_process";
+import { makeLockfile, runCli, withTempDir } from "../../../harness/supply-helpers.js";
 import { generateLicenses } from "../../../../gates/supply/supply/gen-licenses.mjs";
 import {
   DECISION_STATUS,
@@ -65,55 +63,6 @@ function assert(cond, msg) {
  */
 function group(groups, key) {
   return groups[key] ?? [];
-}
-
-/**
- * 临时目录 + 兜底清理(测试对象是夹具,finally 保证不留残留)。
- * 清理走 removeTree(带 EBUSY/EPERM 退避重试与删后复查);删不掉仍即抛 ——
- * 「删不掉就抛」是本段原有的失败语义,助手只负责吸收 Windows 上的瞬时占用。
- * @param {(dir: string) => unknown} fn 在临时目录上执行的夹具逻辑
- * @returns {Promise<unknown>} fn 的返回值(透传)
- */
-async function withTempDir(fn) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "m2w-licenses-"));
-  try {
-    return await fn(dir);
-  } finally {
-    const outcome = removeTree(dir);
-    if (!outcome.ok) throw new Error(`临时目录清理失败:${dir}:${outcome.error?.message ?? "删除后目录仍存在"}`);
-  }
-}
-
-/**
- * 造一份沙盒 lockfile。刻意做成「有生产依赖、有仅 dev 依赖、有嵌套依赖、有缺许可证
- * 的包」,这样 production/dev 判定、copyleft 分类、未知许可证三条都能在同一份夹具上验证。
- * @param {string} dir 沙盒目录
- * @param {{ noLicense?: boolean }} [options] 夹具开关
- * @returns {string} lockfile 绝对路径
- */
-function makeLockfile(dir, options = {}) {
-  /** @type {Record<string, any>} */
-  const packages = {
-    "": {
-      name: "sandbox-app",
-      version: "1.0.0",
-      license: "MIT",
-      dependencies: { "prod-lib": "^1.0.0", "mixed-lib": "^1.0.0" },
-      devDependencies: { "dev-tool": "^2.0.0" },
-    },
-    "node_modules/prod-lib": { version: "1.0.2", resolved: "https://registry.npmmirror.com/prod-lib/-/prod-lib-1.0.2.tgz", integrity: "sha512-aaa", license: "MIT" },
-    "node_modules/mixed-lib": { version: "1.0.0", license: "MIT", dependencies: { "inner-lib": "^1.0.0" } },
-    "node_modules/mixed-lib/node_modules/inner-lib": { version: "1.0.1", license: "LGPL-3.0-or-later" },
-    "node_modules/dev-tool": { version: "2.0.0", dev: true, license: "GPL-3.0-or-later" },
-    "node_modules/inner-lib": { version: "1.0.0", license: "Apache-2.0" },
-  };
-  if (options.noLicense !== false) {
-    packages["node_modules/no-license"] = { version: "0.1.0" };
-    packages[""].dependencies = { ...packages[""].dependencies, "no-license": "^0.1.0" };
-  }
-  const lockPath = path.join(dir, "package-lock.json");
-  fs.writeFileSync(lockPath, `${JSON.stringify({ name: "sandbox-app", version: "1.0.0", lockfileVersion: 3, requires: true, packages }, null, 2)}\n`, "utf8");
-  return lockPath;
 }
 
 /**
@@ -218,21 +167,6 @@ function licenseEntryOf(report, name) {
   const entry = report.packages.find((item) => item.name === name);
   if (entry === undefined) throw new Error(`报告里没有 ${name} 的条目`);
   return entry;
-}
-
-/**
- * 跑 CLI 子进程(Electron 宿主下用 ELECTRON_RUN_AS_NODE 走真实 Node 行为)。
- * @param {string[]} args 脚本参数
- * @returns {{ status: number | null; output: string }}
- */
-function runCli(args) {
-  const result = spawnSync(process.execPath, args, {
-    cwd: ROOT,
-    encoding: "utf8",
-    windowsHide: true,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
-  });
-  return { status: result.status, output: `${result.stdout}${result.stderr}` };
 }
 
 /* ---------- 许可证文件夹具(取各许可证真实文首特征,只保留可判别的那几行) ---------- */
@@ -967,7 +901,7 @@ export async function run() {
       assert(detectLicenseFromText("").license === null, "空文件不得识别为某个许可证");
       assert(detectPackageLicense(path.join(dir, "absent-dir")).status === "no-package-dir", "目录不存在时状态应为 no-package-dir");
     });
-  });
+  }, "m2w-licenses-");
 
   return { cases: suite.results };
 }

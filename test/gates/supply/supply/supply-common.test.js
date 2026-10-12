@@ -22,7 +22,6 @@
  * 沙盒纪律:不读用户真实文件系统状态、不触网、不跑真实装卸。
  */
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 // 仓根取单源,不按本文件位置自算 —— 门禁 gates/repo/check-import-boundary.mjs 的
@@ -31,7 +30,7 @@ import { fileURLToPath } from "node:url";
 import { ROOT } from "../../../harness/paths.js";
 import { createAsserter } from "../../../harness/assert.js";
 import { createCaseSuite } from "../../../harness/case.js";
-import { removeTree } from "../../../harness/temp-resource.js";
+import { withTempDir } from "../../../harness/supply-helpers.js";
 import { hashBuffer as fsxHashBuffer, toPosix as fsxToPosix, writeFileAtomic as fsxWriteFileAtomic } from "../../../../shared/fsx.mjs";
 import { isMainModule as cliIsMainModule } from "../../../../shared/cli.mjs";
 import { runCommand as probeRunCommand } from "../../../../gates/repo/print-env-fingerprint.mjs";
@@ -102,22 +101,6 @@ const { assert: harnessAssert } = createAsserter("supply-common");
  */
 function assert(cond, msg) {
   harnessAssert(cond, msg);
-}
-
-/**
- * 临时目录 + 兜底清理(测试对象是夹具,finally 保证不留残留)。
- * 清理走 removeTree(带 EBUSY/EPERM 退避重试与删后复查);删不掉仍即抛。
- * @param {(dir: string) => unknown} fn 在临时目录上执行的夹具逻辑
- * @returns {Promise<unknown>} fn 的返回值(透传)
- */
-async function withTempDir(fn) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "m2w-supply-common-"));
-  try {
-    return await fn(dir);
-  } finally {
-    const outcome = removeTree(dir);
-    if (!outcome.ok) throw new Error(`临时目录清理失败:${dir}:${outcome.error?.message ?? "删除后目录仍存在"}`);
-  }
 }
 
 /**
@@ -474,7 +457,7 @@ export async function run() {
         );
         assert(JSON.stringify(found) === JSON.stringify(expected), `候选名单顺序应固定,实际 ${found.join(",")}`);
         assert(JSON.stringify(listLicenseFiles(path.join(pkgDir, "不存在"))) === "[]", "目录不存在时返回空数组而不是抛错");
-      });
+      }, "m2w-supply-common-");
     });
 
     await suite.case("四种结局可区分,识别成功必须附证据文件名", async () => {
@@ -510,7 +493,7 @@ export async function run() {
         assert(ok.evidence === "COPYING", `证据文件名应指向真正命中的那个,实际 ${String(ok.evidence)}`);
         assert(ok.match === "text", `正文特征命中的 match 值应为 text,实际 ${String(ok.match)}`);
         assert(ok.unreadable === 0, "两个文件都读得出,unreadable 应为 0");
-      });
+      }, "m2w-supply-common-");
     });
 
     await suite.case("SPDX 标签优先于正文标记,不可信标签不采信", () => {
@@ -577,7 +560,7 @@ export async function run() {
         // 标题落在窗口之内 → 认出
         fs.writeFileSync(path.join(pkgDir, "LICENSE"), `Permission is hereby granted, free of charge\n${filler}`);
         assert(detectPackageLicense(pkgDir).license === "MIT", "窗口内的标题应被采信");
-      });
+      }, "m2w-supply-common-");
     });
   });
 
@@ -790,7 +773,7 @@ export async function run() {
         assertThrows(() => loadLicenseDecisions(path.join(dir, "不存在.json")), /文件不存在/);
         // 常量与真实文件名必须对得上(它就是清单文件名单源)
         assert(LICENSE_DECISIONS_FILE === "license-decisions.json", "清单文件名常量与实际文件名必须一致");
-      });
+      }, "m2w-supply-common-");
     });
   });
 
@@ -884,7 +867,7 @@ export async function run() {
         assert(fallback.source.includes("默认"), `默认值来源须如实标注,实际 ${fallback.source}`);
         // 刻意不读用户级 .npmrc:门禁结果必须只由仓库内配置决定,否则本机差异会让 CI 与本地结论分叉
         assert(resolveRegistry(path.join(dir, "没有npmrc的目录"), {}).registry === "https://registry.npmjs.org", "目录里没有 .npmrc 时不得去读用户级配置");
-      });
+      }, "m2w-supply-common-");
     });
   });
 
@@ -904,7 +887,7 @@ export async function run() {
         const { path: okPath } = makeSandboxLock(dir);
         const lock = /** @type {any} */ (readLockfile(okPath));
         assert(lock.lockfileVersion === 3 && Object.keys(lock.packages).length === Object.keys(SANDBOX_PACKAGES).length, "合法 lockfile 应原样解析");
-      });
+      }, "m2w-supply-common-");
     });
 
     await suite.case("组件模型:dev 判定取 lockfile 内建标记,缺声明记 null+none,按 lockPath 排序", async () => {
@@ -952,7 +935,7 @@ export async function run() {
         // 从 lockComponents 产出的组件名反查,验的是同一件事:取最内层那一段
         assert(find("node_modules/prod-lib/node_modules/shared-lib").name === "shared-lib", "嵌套依赖应取最内层的包名");
         assert(components.filter((item) => item.name === "shared-lib").length === 2, "同名不同条目各自独立,包名都取最内层");
-      });
+      }, "m2w-supply-common-");
     });
 
     await suite.case("依赖解析按 node_modules 就近上溯,解析不到记 null 而不是猜", async () => {
@@ -989,7 +972,7 @@ export async function run() {
         assert(resolveDepPath(shadowLock, "", "mid-lib") === "node_modules/mid-lib", "反向对照的对照:顶层同名条目确实存在");
         const shadowFromLeaf = resolveDepPath(shadowLock, leafLibPath, "mid-lib");
         assert(shadowFromLeaf === midLibPath, `顶层同名存在时就近优先仍须命中 ${midLibPath},实际 ${String(shadowFromLeaf)}`);
-      });
+      }, "m2w-supply-common-");
     });
 
     await suite.case("依赖边:optional 覆盖同名 dependencies,未解析的依赖逐条记名", async () => {
@@ -1016,7 +999,7 @@ export async function run() {
         assert(!unresolved.has("node_modules/prod-lib"), "全部解析出来的组件不应进未解析名单");
         // 每个组件都要有一条边记录(即便边为空),否则「无依赖」与「没算过」分不开
         for (const component of components) assert(edges.has(component.lockPath), `组件 ${component.lockPath} 缺边记录`);
-      });
+      }, "m2w-supply-common-");
     });
   });
 
@@ -1037,7 +1020,7 @@ export async function run() {
         assert(JSON.stringify(readJson(target)) === JSON.stringify(value), "写完应能原样读回");
         // 键序由构造顺序决定:同输入同输出,漂移比对才有意义
         assert(serializeJson({ x: 1, y: 2 }).indexOf('"x"') < serializeJson({ x: 1, y: 2 }).indexOf('"y"'), "键序应随构造顺序稳定");
-      });
+      }, "m2w-supply-common-");
     });
 
     await suite.case("读 JSON 失败转可读报错(缺文件 / 非法 JSON)", async () => {
@@ -1045,7 +1028,7 @@ export async function run() {
         assertThrows(() => readJson(path.join(dir, "没有这个.json")), /文件不存在/);
         fs.writeFileSync(path.join(dir, "坏.json"), "{oops", "utf8");
         assertThrows(() => readJson(path.join(dir, "坏.json")), /不是合法 JSON/);
-      });
+      }, "m2w-supply-common-");
     });
 
     await suite.case("CLI 解析:开关不带取值、未知项显式失败并带上 usage,值项两种写法等价", () => {
@@ -1117,7 +1100,7 @@ export async function run() {
         writeFileAtomic(target, "内容\n");
         assert(fs.readFileSync(target, "utf8") === "内容\n", "转出的 writeFileAtomic 应逐字节写入");
         assert(hashBuffer(Buffer.from("abc")) === hashBuffer(Buffer.from("abc")), "转出的 hashBuffer 对同内容应给同一指纹");
-      });
+      }, "m2w-supply-common-");
     });
   });
 

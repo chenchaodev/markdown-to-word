@@ -16,6 +16,7 @@ import path from "node:path";
 import { createAsserter } from "../../../harness/assert.js";
 import { createCaseSuite } from "../../../harness/case.js";
 import { removeTree } from "../../../harness/temp-resource.js";
+import { makeLockfile, withTempDir } from "../../../harness/supply-helpers.js";
 import { diffSbom, generateSbom, toCycloneDxLicenses } from "../../../../gates/supply/supply/gen-sbom.mjs";
 import { resolveDepPath } from "../../../../gates/supply/supply/supply-common.mjs";
 
@@ -34,52 +35,6 @@ function assert(cond, msg) {
   harnessAssert(cond, msg);
 }
 
-/**
- * 临时目录 + 兜底清理(测试对象是夹具,finally 保证不留残留)。
- * 清理走 removeTree(带 EBUSY/EPERM 退避重试与删后复查);删不掉仍即抛 ——
- * 「删不掉就抛」是本段原有的失败语义,助手只负责吸收 Windows 上的瞬时占用。
- * @param {(dir: string) => unknown} fn 在临时目录上执行的夹具逻辑
- * @returns {Promise<unknown>} fn 的返回值(透传)
- */
-async function withTempDir(fn) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "m2w-sbom-"));
-  try {
-    return await fn(dir);
-  } finally {
-    const outcome = removeTree(dir);
-    if (!outcome.ok) throw new Error(`临时目录清理失败:${dir}:${outcome.error?.message ?? "删除后目录仍存在"}`);
-  }
-}
-
-/**
- * 造一份沙盒 lockfile。刻意做成「有生产依赖、有仅 dev 依赖、有嵌套依赖、有缺许可证
- * 的包」,这样确定性 / 依赖边 / NOASSERTION 三条都能在同一份夹具上验证。
- * @param {string} dir 沙盒目录
- * @returns {string} lockfile 绝对路径
- */
-function makeLockfile(dir) {
-  /** @type {Record<string, any>} */
-  const packages = {
-    "": {
-      name: "sandbox-app",
-      version: "1.0.0",
-      license: "MIT",
-      dependencies: { "prod-lib": "^1.0.0", "mixed-lib": "^1.0.0" },
-      devDependencies: { "dev-tool": "^2.0.0" },
-    },
-    "node_modules/prod-lib": { version: "1.0.2", resolved: "https://registry.npmmirror.com/prod-lib/-/prod-lib-1.0.2.tgz", integrity: "sha512-aaa", license: "MIT" },
-    "node_modules/mixed-lib": { version: "1.0.0", license: "MIT", dependencies: { "inner-lib": "^1.0.0" } },
-    "node_modules/mixed-lib/node_modules/inner-lib": { version: "1.0.1", license: "LGPL-3.0-or-later" },
-    "node_modules/dev-tool": { version: "2.0.0", dev: true, license: "GPL-3.0-or-later" },
-    "node_modules/inner-lib": { version: "1.0.0", license: "Apache-2.0" },
-    "node_modules/no-license": { version: "0.1.0" },
-  };
-  packages[""].dependencies = { ...packages[""].dependencies, "no-license": "^0.1.0" };
-  const lockPath = path.join(dir, "package-lock.json");
-  fs.writeFileSync(lockPath, `${JSON.stringify({ name: "sandbox-app", version: "1.0.0", lockfileVersion: 3, requires: true, packages }, null, 2)}\n`, "utf8");
-  return lockPath;
-}
-
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
 
@@ -94,7 +49,9 @@ export async function run() {
     const sandbox = (label) => {
       const dir = path.join(tmp, label);
       fs.mkdirSync(dir, { recursive: true });
-      return { dir, lockPath: makeLockfile(dir) };
+      // 夹具必须带「缺许可证的包」:本段 NOASSERTION 断言(缺声明组件在 SBOM 里显式
+      // 记 NOASSERTION、不得静默省略 licenses)依赖该条目存在,故显式传开关而不是靠默认值
+      return { dir, lockPath: makeLockfile(dir, { noLicense: true }) };
     };
 
     await suite.case("SBOM 离线确定性:同输入两次逐字节一致且键序稳定", async () => {
@@ -119,7 +76,8 @@ export async function run() {
       // 换 lockfile 内容 → serialNumber 必变(否则漂移检测形同虚设)
       const otherDir = fs.mkdtempSync(path.join(os.tmpdir(), "m2w-supply-alt-"));
       try {
-        const otherLock = makeLockfile(otherDir);
+        // 另一份同形状夹具(no-license 开关同上:改版本号前的基线必须各成分一致)
+        const otherLock = makeLockfile(otherDir, { noLicense: true });
         const altered = JSON.parse(fs.readFileSync(otherLock, "utf8"));
         altered.packages["node_modules/prod-lib"].version = "1.0.9";
         fs.writeFileSync(otherLock, JSON.stringify(altered, null, 2), "utf8");
@@ -187,7 +145,7 @@ export async function run() {
       const prodLib = dup.document.components.find((item) => item.name === "prod-lib");
       assert(prodLib?.scope === "required", "生产组件的 CycloneDX scope 应为 required");
     });
-  });
+  }, "m2w-sbom-");
 
   return { cases: suite.results };
 }

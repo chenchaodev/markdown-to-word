@@ -11,14 +11,11 @@
  * 换来的确定性),断言返回的退出码 **与具体诊断文案**(只看退出码会让「因错误原因失败」
  * 的检查蒙混过关)。
  */
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { createAsserter } from "../../../harness/assert.js";
 import { createCaseSuite } from "../../../harness/case.js";
-import { ROOT } from "../../../harness/paths.js";
-import { removeTree } from "../../../harness/temp-resource.js";
+import { makeLockfile, runCli, withTempDir } from "../../../harness/supply-helpers.js";
 import {
   STATUS_OK as SCA_OK,
   STATUS_UNAVAILABLE,
@@ -37,55 +34,6 @@ import {
 const suite = createCaseSuite();
 
 const { assert } = createAsserter("sca-audit");
-
-/**
- * 临时目录 + 兜底清理(测试对象是夹具,finally 保证不留残留)。
- * 清理走 removeTree(带 EBUSY/EPERM 退避重试与删后复查);删不掉仍即抛 ——
- * 「删不掉就抛」是本段原有的失败语义,助手只负责吸收 Windows 上的瞬时占用。
- * @param {(dir: string) => unknown} fn 在临时目录上执行的夹具逻辑
- * @returns {Promise<unknown>} fn 的返回值(透传)
- */
-async function withTempDir(fn) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "m2w-sca-"));
-  try {
-    return await fn(dir);
-  } finally {
-    const outcome = removeTree(dir);
-    if (!outcome.ok) throw new Error(`临时目录清理失败:${dir}:${outcome.error?.message ?? "删除后目录仍存在"}`);
-  }
-}
-
-/**
- * 造一份沙盒 lockfile。刻意做成「有生产依赖、有仅 dev 依赖、有嵌套依赖、有缺许可证
- * 的包」,这样 production/dev 判定、copyleft 分类、未知许可证三条都能在同一份夹具上验证。
- * @param {string} dir 沙盒目录
- * @param {{ noLicense?: boolean }} [options] 夹具开关
- * @returns {string} lockfile 绝对路径
- */
-function makeLockfile(dir, options = {}) {
-  /** @type {Record<string, any>} */
-  const packages = {
-    "": {
-      name: "sandbox-app",
-      version: "1.0.0",
-      license: "MIT",
-      dependencies: { "prod-lib": "^1.0.0", "mixed-lib": "^1.0.0" },
-      devDependencies: { "dev-tool": "^2.0.0" },
-    },
-    "node_modules/prod-lib": { version: "1.0.2", resolved: "https://registry.npmmirror.com/prod-lib/-/prod-lib-1.0.2.tgz", integrity: "sha512-aaa", license: "MIT" },
-    "node_modules/mixed-lib": { version: "1.0.0", license: "MIT", dependencies: { "inner-lib": "^1.0.0" } },
-    "node_modules/mixed-lib/node_modules/inner-lib": { version: "1.0.1", license: "LGPL-3.0-or-later" },
-    "node_modules/dev-tool": { version: "2.0.0", dev: true, license: "GPL-3.0-or-later" },
-    "node_modules/inner-lib": { version: "1.0.0", license: "Apache-2.0" },
-  };
-  if (options.noLicense !== false) {
-    packages["node_modules/no-license"] = { version: "0.1.0" };
-    packages[""].dependencies = { ...packages[""].dependencies, "no-license": "^0.1.0" };
-  }
-  const lockPath = path.join(dir, "package-lock.json");
-  fs.writeFileSync(lockPath, `${JSON.stringify({ name: "sandbox-app", version: "1.0.0", lockfileVersion: 3, requires: true, packages }, null, 2)}\n`, "utf8");
-  return lockPath;
-}
 
 /**
  * 假的 npm transport:按 args 里的 --omit=dev 区分两棵树,并回放预置的 audit JSON。
@@ -185,21 +133,6 @@ const GHSA_VULN = {
   severity: [{ type: "CVSS_V3", score: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H" }],
   affected: [{ package: { name: "prod-lib", ecosystem: "npm" }, ranges: [{ type: "SEMVER", events: [{ introduced: "0" }, { fixed: "1.0.3" }] }] }],
 };
-
-/**
- * 跑 CLI 子进程(Electron 宿主下用 ELECTRON_RUN_AS_NODE 走真实 Node 行为)。
- * @param {string[]} args 脚本参数
- * @returns {{ status: number | null; output: string }}
- */
-function runCli(args) {
-  const result = spawnSync(process.execPath, args, {
-    cwd: ROOT,
-    encoding: "utf8",
-    windowsHide: true,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
-  });
-  return { status: result.status, output: `${result.stdout}${result.stderr}` };
-}
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
@@ -368,7 +301,7 @@ export async function run() {
       assert(noSource.status === STATUS_UNAVAILABLE, "零扫描源时须为 unavailable");
       assert(noSource.blocking.length > 0, "零扫描源时须阻断");
     });
-  });
+  }, "m2w-sca-");
 
   return { cases: suite.results };
 }

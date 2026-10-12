@@ -26,7 +26,7 @@
 
 ## 下一步
 
-P2 已开工(205 / 206 / 207 / 208 在办;209 暂缓待拆项)。三条泳道后台并行派发中( exp:205 收口 · exp:206 捕获族 · exp:207+208 工具与文档),主会话收尾时逐条翻已完成并分提交。
+P2 三条泳道全部完成并通过全链 verify:ci(205 / 206 / 207 / 208 逐条翻已完成,209 暂缓待拆项)。下一步:等用户裁决 P3(EOL/gitattributes 族 201~204)的开工确认,届时先按「开工前重验」硬门逐条核对再翻在办。
 
 ## 完成标准
 
@@ -56,9 +56,9 @@ P2 已开工(205 / 206 / 207 / 208 在办;209 暂缓待拆项)。三条泳道后
 | P1-L4 | REQ-197 | 退出钩子前缀 `[fail]` 改 `[temp-leak]`;头注同步;残留归因 | `test/harness/temp-resource.js` | 新前缀与 `[fail]`/`[case-fail]` 不撞;归因有结论 | `M2W_ONLY=test-common-helpers npm test` · `npm run typecheck` | 通过 2026-10-11(归因并入终态行:9 个全空目录壳,原记 16 已漂移) |
 | P1-L5 | REQ-199 | 超时敏感段改 arrived 确定性等待 | `test/convert/image-request-budget.test.js` | 请求到达从竞态变等待;其余墙钟依赖为零 | `M2W_ONLY=image-request-budget npm test` 连跑 3 次 · `npm run typecheck` | 通过 2026-10-11 |
 | P1-L6 | REQ-238 | catch 收窄到只包夹具构造(两份自测) | `gates/repo/check-docs.selftest.mjs` · `gates/repo/check-tscheck-coverage.selftest.mjs` | 断言失败不再被贴夹具标签;消息文本逐字保留 | `npm run check:docs:selftest` · `npm run check:tscheck-coverage:selftest` · `npm run typecheck` | 通过 2026-10-11(变异自证过;范围实为 2 份,非旧记「同款」) |
-| P2-L1 | REQ-205 | 三个助手副本收口进 `test/harness/`(实测 6 段,非台账 5) | `test/harness/supply-helpers.js` 新建 · `test/harness/test-common-helpers.test.js` 加 selftest case · `test/gates/supply/supply/` 下 6 个 `.test.js` | 6 段无残留私有助手定义;33 处调用点改引;gen-sbom 签名分叉同批改;净 −210~−240 段行;5 个段名禁改(gate-index 字面量) | `M2W_ONLY=test-common-helpers` 与 supply 段 · `npm run typecheck` | 未做 |
-| P2-L2 | REQ-206 | 捕获逻辑 7 份具名函数 + C 族 2 处收口,显式接受段数 144→145 | `test/harness/console-capture.js` 新建 · `test/harness/console-capture.test.js` 新建 · A/B 族 6 个 gates 段 · `test/main/mermaid-service.test.js` · `test/main/converter.test.js` | 7 函数改调参数化助手(`warn`/`error` 两布尔);C 族显式全关;新段 L8 covers / fixtures=null / 具名 case 齐 | 新段 + 受改 8 段 · `node gates/repo/check-test-layout.mjs` · `npm run typecheck` | 未做 |
-| P2-L3 | REQ-207 · REQ-208 | `mirroredSourceOf` 下沉 shared 成单源;`tools/where.mjs` + script;测试体系节 13 行压 ≤5 行 | `shared/` 新文件 · `gates/repo/check-test-layout.mjs` 与其 selftest(仅随迁)· `tools/where.mjs` 新建 · `package.json` 加一行 · `docs/DEV-GUIDE.md` | 下沉无行为变化(门禁与 selftest 全绿);反查负向 5 形实跑;节压到 ≤5 行且 `:236` 回指改指 `test/` | `node tools/where.mjs` 负向 · `npm run check:docs` · `npm run lint` | 未做 |
+| P2-L1 | REQ-205 | 三个助手副本收口进 `test/harness/`(实测 6 段,非台账 5) | `test/harness/supply-helpers.js` 新建 · `test/harness/test-common-helpers.test.js` 加 selftest case · `test/gates/supply/supply/` 下 6 个 `.test.js` | 6 段无残留私有助手定义;33 处调用点改引;gen-sbom 签名分叉同批改;净 −210~−240 段行;5 个段名禁改(gate-index 字面量) | `M2W_ONLY=test-common-helpers` 与 supply 段 · `npm run typecheck` | 通过 2026-10-12(净删 293 行,6 段 59/59 + selftest 21/21) |
+| P2-L2 | REQ-206 | 捕获逻辑 7 份具名函数 + C 族 2 处收口,显式接受段数 144→145 | `test/harness/console-capture.js` 新建 · `test/harness/console-capture.test.js` 新建 · A/B 族 6 个 gates 段 · `test/main/mermaid-service.test.js` · `test/main/converter.test.js` | 7 函数改调参数化助手(`warn`/`error` 两布尔);C 族显式全关;新段 L8 covers / fixtures=null / 具名 case 齐 | 新段 + 受改 8 段 · `node gates/repo/check-test-layout.mjs` · `npm run typecheck` | 通过 2026-10-12(受改 8 段 371/371 + 新段 7/7;键名改写 66 处) |
+| P2-L3 | REQ-207 · REQ-208 | `mirroredSourceOf` 下沉 shared 成单源;`tools/where.mjs` + script;测试体系节 13 行压 ≤5 行 | `shared/` 新文件 · `gates/repo/check-test-layout.mjs` 与其 selftest(仅随迁)· `tools/where.mjs` 新建 · `package.json` 加一行 · `docs/DEV-GUIDE.md` | 下沉无行为变化(门禁与 selftest 全绿);反查负向 5 形实跑;节压到 ≤5 行且 `:236` 回指改指 `test/` | `node tools/where.mjs` 负向 · `npm run check:docs` · `npm run lint` | 通过 2026-10-12(负向 5 形全对;节 11→5 行;门禁 165/165) |
 | P2-L4 | REQ-209 | 暂缓:删除链 17 项与两项保护损失重估中(用户裁决 C) | 不动(待拆项:图片字节基线抽独立小门禁 + 生成链路去留单独裁) | 见台账行重验记录 | 无 | 暂缓 2026-10-11 |
 | P3-L1 | REQ-201 · REQ-203 | .gitattributes 注释与首部裁决冲突按裁决落地;3 条空转 eol=lf 处置 | `.gitattributes` · 必要时 `docs/adr/` | 同一文件内两种 EOL 口径不再并存 | `npm run check:docs` · CI EOL 相关步 | 未做 |
 | P3-L2 | REQ-202 | 字面量 LF 锚点防复发门禁,以已知点自证 | `gates/repo/` 新增 + selftest · 归一原语收口点 | 已知点作正例判红且误伤为零 | 新门禁 selftest | 未做 |

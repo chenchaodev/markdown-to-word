@@ -14,13 +14,10 @@
  * 以及缺项的原因码 —— 只看「收集完成」会让「复制时被字符串往返改写」蒙混过关。
  */
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { createAsserter } from "../../../harness/assert.js";
 import { createCaseSuite } from "../../../harness/case.js";
-import { ROOT } from "../../../harness/paths.js";
-import { removeTree } from "../../../harness/temp-resource.js";
-import { spawnSync } from "node:child_process";
+import { runCli, withTempDir } from "../../../harness/supply-helpers.js";
 import {
   PACKAGE_FULLTEXT_STATUS,
   collectLicenseFulltext,
@@ -39,23 +36,6 @@ import {
 const suite = createCaseSuite();
 
 const { assert } = createAsserter("collect-license-fulltext");
-
-/**
- * 临时目录 + 兜底清理(测试对象是夹具,finally 保证不留残留)。
- * 清理走 removeTree(带 EBUSY/EPERM 退避重试与删后复查);删不掉仍即抛 ——
- * 「删不掉就抛」是本段原有的失败语义,助手只负责吸收 Windows 上的瞬时占用。
- * @param {(dir: string) => unknown} fn 在临时目录上执行的夹具逻辑
- * @returns {Promise<unknown>} fn 的返回值(透传)
- */
-async function withTempDir(fn) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "m2w-fulltext-"));
-  try {
-    return await fn(dir);
-  } finally {
-    const outcome = removeTree(dir);
-    if (!outcome.ok) throw new Error(`临时目录清理失败:${dir}:${outcome.error?.message ?? "删除后目录仍存在"}`);
-  }
-}
 
 /**
  * 造一份沙盒 lockfile:逐个条目决定是否带 license 字段。
@@ -97,21 +77,6 @@ function makePackageDir(dir, name, files = {}) {
  */
 function makeDecisions(entries) {
   return createDecisionIndex(entries, { source: "(sandbox/license-decisions.json)", sha256: "sandbox-digest" });
-}
-
-/**
- * 跑 CLI 子进程(Electron 宿主下用 ELECTRON_RUN_AS_NODE 走真实 Node 行为)。
- * @param {string[]} args 脚本参数
- * @returns {{ status: number | null; output: string }}
- */
-function runCli(args) {
-  const result = spawnSync(process.execPath, args, {
-    cwd: ROOT,
-    encoding: "utf8",
-    windowsHide: true,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
-  });
-  return { status: result.status, output: `${result.stdout}${result.stderr}` };
 }
 
 /* ---------- 许可证文件夹具(取各许可证真实文首特征,只保留可判别的那几行) ---------- */
@@ -278,7 +243,7 @@ export async function run() {
       assert(LICENSE_FILE_EXTENSIONS.join() === ",.txt,.md,.rst,.markdown", `扩展名单源内容应固定,实际 ${LICENSE_FILE_EXTENSIONS.join()}`);
       assert(listLicenseFiles(path.join(dir, "node_modules", "dual-md")).join() === "LICENSE.markdown", "候选名识别应含 .markdown");
     });
-  });
+  }, "m2w-fulltext-");
 
   return { cases: suite.results };
 }
