@@ -272,6 +272,32 @@ export const GATE_INDEX = Object.freeze(
         shaped: "string[](纯函数:实测记录 + 基线表 → 漂移/未登记/残留三类问题清单,逐条点名文件)",
       },
     },
+    "segment-contracts": {
+      id: "segment-contracts",
+      // ⚠⚠ **上链的理由与上面那道同款,但它守护的不是字节而是**一批没有任何别的判据在看**的规则**:
+      // 「每个测试段必须显式声明自己的验收样例契约(导出 fixtures,或 fixtures = null)」
+      // 这条规则原先只存在于 `gen-fixtures.mjs` 的契约校验函数体里,而那是**产物生成器**的
+      // 一部分 —— 生成器一旦被裁撤或删除,这条规则跟着消失,全仓那批 `fixtures = null`
+      // 字面量就从「一条规则」退化成裸字面量(既没有规则说「不导出就是缺陷」,也没有规则说
+      // 「= null 是合法终态」)。
+      //
+      // ⚠ **为什么它是独立一道门禁而不是继续搭 `check:fixtures` 的车**:存续不能系于生成器
+      // 的去留。只在本地手动跑 ⇒ CI 上那类契约缺失仍然发生,而它的症状是**静默**的:
+      // 漏声明的段走「无 fixtures → 跳过」分支,产物缺失而无人知晓。
+      //
+      // ⚠ **与 `fixtures` 那项并存,不是替换**:`fixtures` 是**产物面**(样例有没有新鲜落盘),
+      // 本项是**契约面**(段有没有声明)。两者对同一批段各给一个可分别归因的结论 ——
+      // `collectSegmentContracts` 被生成器 import,故「契约判红 ⇒ 该段不产出产物」这条
+      // 前后置关系只有一份实现,不会漂移成「契约判红却照样落了盘」。
+      npmScripts: ["check:segment-contracts", "check:segment-contracts:selftest"],
+      access: ACCESS_CHAIN,
+      modulePath: "gates/fixtures/check-segment-contracts.mjs",
+      judgment: {
+        module: "gates/fixtures/check-segment-contracts.mjs",
+        export: "validateSegmentContract",
+        shaped: "string[](纯函数:段名 + 段模块命名空间 → 缺声明/非法声明逐条问题清单)",
+      },
+    },
     "build-fresh": {
       id: "build-fresh",
       npmScripts: ["test:smoke", "start"],

@@ -1,36 +1,33 @@
 #!/usr/bin/env node
 // @ts-check
 /**
- * 验收 md 样例生成器(纯 Node,无 Electron 依赖):
- * 扫描 test/core、test/main、test/renderer、test/gates 下的 *.test.js(目录集合的单一来源是
- * shared/test-common-surface.js 的 SEGMENT_DIRS,与 test/acceptance.mjs 交给 runner
- * 的段目录是**同一数组对象**,恒等断言见 test/gates/fixture-contract.test.js),
- * **逐个动态 import 后读显式契约**——不预筛源码、不解析注释:
- * - `fixtures`:key=场景名,value=md 字符串;不产出样例的段显式写 `fixtures = null`;
- * - `meta.description`:README 索引文案(显式字段,取代「取文件头 JSDoc 首行」)。
- * 落盘 samples/docs/<段基名>[-<场景>].md,复制 md 中引用的本地图片
+ * 验收 md 样例**产物面**(纯 Node,无 Electron 依赖):把测试段显式声明的样例落盘成
+ * `samples/docs/<段基名>[-<场景>].md`,复制 md 中引用的本地图片
  * (引用路径不改写,GUI 按 md 所在目录解析),最后生成 README.md 索引。
  * 幂等:同一输入重复生成结果逐字节一致。
  *
- * 图片夹具另有**字节基线**判据(与「复制」正交,两条都要过):
- * - 「复制」只覆盖**被生成样例引用到**的图片(源 ↔ docs/ 副本),回答的是
- *   「生成产物是否新鲜」;
+ * ---- 它只管产物面,判定面已搬成独立门禁 ----
+ * **契约面**(段有没有显式声明、声明合不合法、import 失败归因、豁免白名单)搬到了
+ * `gates/fixtures/check-segment-contracts.mjs`(`collectSegmentContracts`),本文件是**消费方**:
+ * 段 import 与 electron mock 注册在那里(那是契约与产物共同的**前置**,两处各写一遍等于
+ * 重复付出 import 全部段的成本,而判定漂移的后果是「契约判红却照样落了盘」)。
+ * **字节面**(图片夹具 sha256 基线 + 「`fixtures = null` 是合法终态」的判定层)搬到了
+ * `gates/fixtures/check-image-digests.mjs`,本文件同样只 import 判定体。
+ * ⇒ 搬移的理由都是同一条:**那两张判据的存续不能系于本生成器的去留**。
+ * ⇒ 搬移的后果是三条判据现在**分别可归因**:契约不齐跑本脚本红,图片字节漂移红在两道
+ * 门禁各自的面上而不是混在一句「--check 失败」里。
+ *
+ * 「复制」与「基线」两面互补、都必须过(与字节基线的关系照旧):
+ * - 「复制」只覆盖**被生成样例引用到**的图片(源 ↔ docs/ 副本),回答的是「生成产物是否新鲜」;
  * - 「基线」覆盖 samples 下**全部**图片夹具(磁盘派生),回答的是「夹具本身有没有漂移」。
- *   两者的失效面互补:未被任何样例引用的夹具(manual/images/、input/ 下的图)从前者眼里
- *   根本不存在,而**源与副本同时被改**(如批量截断、重新导出)时后者恒绿 —— 曾发生的真实
- *   误判正是后者:全部图片夹具各少一字节时 `--check` 判绿,而 image-size / basic-render
- *   两段判红,排查一度指向代码回归。
+ *   前者看不见未被任何样例引用的夹具(manual/images/、input/ 下的图),而**源与副本同时被改**
+ *   (如批量截断、重新导出)时基线那一面才是红的 —— 曾发生的真实误判正是基线那一面缺位:
+ *   全部图片夹具各少一字节时 `--check` 判绿,而 image-size / basic-render 两段判红,
+ *   排查一度指向代码回归。⚠ `samples/docs/input/*.png` 那两张**副本**不在基线内
+ *   (`docs/` 被基线整棵排除)⇒ 它们的字节守仍在这里的 imageCopies 比对上,不可裁。
  *
- * ⚠ **基线那一面已独立成门禁**(判定体与 `--print-image-baseline` 都在
- * `gates/fixtures/check-image-digests.mjs`):本文件不再持有基线表与字节审计。
- * 原因是它的存续不能系于本生成器的去留 —— 那批图没有第二个判据在看它们(见该模块文件头)。
- * 「契约缺失一律判红」这条不变,故 `--check` 仍会跑一遍基线审计(生成器侧仍 import 判定体),
- * 两道门禁由此对同一批字节给出两个可分别归因的结论。
- *
- * 契约缺失一律判红(不静默跳过):段 import 失败、未显式导出 fixtures、fixtures 无可用
- * 场景/值非字符串/键名非法、缺 meta.description、产物文件名撞车,或白名单里的豁免
- * 已失效 → 打印全部问题并 exit 1。确因纯 Node 环境无法 import 的段才可登记进
- * SEGMENT_EXEMPTIONS(须写理由,理由为空或段已不存在同样判红)。
+ * 判定面留在本文件的只有两件:产物文件名撞车(跨目录同名段 + 同键互相覆盖 ⇒ 静默丢样例)
+ * 与落盘前的绝对路径守卫。两者都判「落盘会发生什么」,故留在产物面而不是契约面。
  *
  * 用法:
  *   node gates/fixtures/gen-fixtures.mjs                      # 生成(需先 npm run build)
@@ -40,44 +37,25 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ROOT, FIXTURES_DIR } from "../../shared/paths.js";
-import { SEGMENT_DIRS } from "../../shared/test-common-surface.js";
 // 基线那一面(字节表 / 盘点 / 审计 / 空声明合法终态判定层)的所在地已独立成门禁;
 // 本文件是**消费方**:判定体在此 import,不在此实现(理由见文件头与该模块文件头)。
 import {
   IMAGE_DIGEST_BASELINE,
   auditImageDigests,
-  classifyFixturesDeclaration,
   listImageFixtures,
 } from "./check-image-digests.mjs";
+// 契约面(段发现 / 逐段 import / 显式契约判定 / 豁免白名单)同样已独立成门禁;
+// 本文件是**消费方**:拿它回吐的「契约齐备的段」去规划产物(理由见文件头)。
+import { FIXTURE_KEY_RE, collectSegmentContracts } from "./check-segment-contracts.mjs";
 
 const GENERATED_DOCS_DIR = path.join(FIXTURES_DIR, "docs");
 const CHECK = process.argv.includes("--check");
-
-/**
- * 候选测试段目录(= test/acceptance.mjs 交给 runAll 的同一份数组,单一来源在
- * test/harness/test-common-surface.js 的 SEGMENT_DIRS)。
- * 恒等由「同一对象」保证,不再需要两处各写一份 + 文本比对;真正的守门断言在
- * test/gates/fixture-contract.test.js(它守的是「acceptance 确实拿这份数组喂 runner」)。
- */
-export const FIXTURE_SEGMENT_DIRS = SEGMENT_DIRS;
-
-/**
- * import 豁免白名单:仅登记「纯 Node 下确实无法 import」的段。当前为空——全部段在
- * 纯 Node + electron-mock 下均可 import(mock 覆盖由 test/core/electron-mock-coverage.test.js
- * 静态守护)。确需豁免时按 { segment, reason } 登记并写明理由:理由为空、段名已不存在
- * (改名/删除后残留)、或该段已能正常 import(豁免失效)均判红,防白名单沦为永久盲区。
- * @type {{segment: string, reason: string}[]}
- */
-export const SEGMENT_EXEMPTIONS = [];
 
 /* ---------- md 图片引用解析(「复制」那一面:产物新鲜度) ---------- */
 
 /** md 中图片引用:![...](path) 与 src="path" */
 const IMG_MD_RE = /!\[[^\]]*\]\(([^)]+)\)/g;
 const IMG_SRC_RE = /src="([^"]+)"/g;
-
-/** fixtures 键名:直接作产物文件名后缀,故只允许文件名字符(不做静默替换) */
-const FIXTURE_KEY_RE = /^[A-Za-z0-9_-]+$/;
 
 const README_HEADER = [
   "# 验收样例",
@@ -89,118 +67,9 @@ const README_HEADER = [
   "| --- | --- | --- |",
 ];
 
-/** 值类型的可读标签(错误信息用)
- * @param {unknown} v 待描述的值
- * @returns {string}
- */
-function describeValue(v) {
-  if (v === null) return "null";
-  if (Array.isArray(v)) return "数组";
-  return typeof v;
-}
-
-/**
- * 递归列出目录下的段文件(相对该目录的 posix 路径;同层按文件名码位序,同层文件先于其子目录)。
- * 递归而非单层:段路径镜像被测主体路径(ADR-062「位置即身份」),故段会放进二级目录
- * (如 test/gates/repo/)—— 单层扫描会漏掉它们,而漏掉的段恰好走「无 fixtures → 跳过」分支,
- * 产物不完整也没人知道。与 runner.js 的 listSegmentFiles 同口径(两处各自实现是因为它们
- * 分别面向异步/同步 API,口径由 fixture-contract.test.js 的对读断言强制同形)。
- * @param {string} dir 目录绝对路径
- * @param {string} relPrefix 递归内部用的相对前缀
- * @returns {string[]} 相对 dir 的 posix 路径(发现顺序)
- */
-function listSegmentFilesRecursive(dir, relPrefix = "") {
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-  entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  const files = [];
-  const subdirs = [];
-  for (const entry of entries) {
-    const rel = relPrefix === "" ? entry.name : `${relPrefix}/${entry.name}`;
-    if (entry.isDirectory()) subdirs.push({ name: entry.name, rel });
-    else if (entry.name.endsWith(".test.js")) files.push(rel);
-  }
-  for (const sub of subdirs) files.push(...listSegmentFilesRecursive(path.join(dir, sub.name), sub.rel));
-  return files;
-}
-
-/**
- * 列出候选测试段(目录内递归,同层文件名排序,保证幂序)。
- * 只读目录项、不读源码:「有没有 fixture」由 import 后的显式契约决定,不做文本预筛。
- * @returns {{name: string, file: string, relDir: string, baseName: string}[]}
- */
-export function listCandidateSegments() {
-  const segments = [];
-  // 去重键 = 段文件的解析后绝对路径:段目录表出现祖先/后代对(如同时含 gates 与 gates/repo)
-  // 时同一文件会被两条路径各列一次,不按该键去重就会 import 它两次(重复跑契约校验、
-  // README 里多一行)。口径与 runner.js discoverSegmentsDetailed 的去重键同源。
-  const seen = new Set();
-  for (const relDir of FIXTURE_SEGMENT_DIRS) {
-    const dir = path.join(ROOT, "test", relDir);
-    for (const relFile of listSegmentFilesRecursive(dir)) {
-      const file = path.join(dir, relFile);
-      if (seen.has(file)) continue;
-      seen.add(file);
-      segments.push({
-        // 段名与 relDir 都带子目录(二级段 = gates/repo/y.test.js):段名必须与 runner 的
-        // discoverSegments 逐字一致(判据见 test/gates/fixture-contract.test.js 第 2 组),
-        // relDir 则直接进 README 的 `test/<relDir>/<baseName>.test.js` 一列。
-        name: `${relDir}/${relFile}`,
-        file,
-        relDir,
-        baseName: path.basename(relFile, ".test.js"),
-      });
-    }
-  }
-  return segments;
-}
-
-/**
- * 校验单段的 fixture 显式契约,返回问题清单(空数组 = 契约完整)。
- * 纯函数(只读传入的模块命名空间),便于守护段用合成模块逐条覆盖失败模式。
- * @param {string} name 段名(错误定位用)
- * @param {Record<string, unknown>} mod 段模块命名空间
- * @returns {string[]}
- */
-export function validateSegmentContract(name, mod) {
-  /** @type {string[]} */
-  const problems = [];
-  // 三档判定(缺声明 / 空声明 / 已声明)在 gates/fixtures/check-image-digests.mjs:
-  // 「= null 是合法终态」是那 100 多处空声明的唯一合法性来源,判定体不随本生成器的去留消失。
-  const declaration = classifyFixturesDeclaration(mod);
-  if (declaration === "absent") {
-    return [
-      `${name}:未显式声明 fixture 契约——导出 fixtures(场景 → md 字符串映射)或 fixtures = null(本段无验收样例)`,
-    ];
-  }
-  if (declaration === "null-terminal") return problems; // 显式声明「本段无样例」:合法终态
-  // 收窄不是类型谎言:`declared` 档的定义就是「导出了 fixtures 且非 null」,只是 TS 看不穿
-  // 跨函数的分类返回值(下面的 typeof/Array.isArray 两档判红因此仍照常生效)。
-  const fixtures = /** @type {Record<string, unknown>} */ (mod.fixtures);
-  if (typeof fixtures !== "object" || Array.isArray(fixtures)) {
-    return [`${name}:fixtures 必须是场景映射对象或 null,实际 ${describeValue(fixtures)}`];
-  }
-  const entries = Object.entries(fixtures);
-  if (entries.length === 0) {
-    return [`${name}:fixtures 为空对象——本段若无样例请显式写 fixtures = null(空对象会让人以为漏填场景)`];
-  }
-  const badKeys = entries.map(([key]) => key).filter((key) => !FIXTURE_KEY_RE.test(key));
-  if (badKeys.length > 0) {
-    problems.push(`${name}:fixtures 键名只允许 [A-Za-z0-9_-](直接作产物文件名后缀),非法键:${badKeys.join(", ")}`);
-  }
-  const badValues = entries.filter(([, v]) => typeof v !== "string").map(([key]) => key);
-  if (badValues.length > 0) {
-    problems.push(`${name}:fixtures 场景值必须是 md 字符串,以下键不是:${badValues.join(", ")}`);
-  }
-  const description = /** @type {{ description?: unknown } | undefined} */ (mod.meta)?.description;
-  if (typeof description !== "string" || description.trim() === "") {
-    problems.push(`${name}:缺 meta.description(README 索引文案取自该显式字段,不再解析文件头注释)`);
-  }
-  return problems;
-}
-
 /**
  * 段 + fixtures → 产物清单(键名排序保证幂等;键 main 落 <段基名>.md,其余加后缀)。
- * 非法键在此剔除(validateSegmentContract 已就该情况判红,这里只是不再产出坏文件名)。
+ * 非法键在此剔除(契约面已就该情况判红,这里只是不再产出坏文件名)。
  * @param {{baseName: string}} seg
  * @param {Record<string, string>} fixtures
  * @returns {{name: string, content: string, key: string}[]}
@@ -258,48 +127,6 @@ export function buildReadme(entries) {
   return `${lines.join("\n")}\n`;
 }
 
-/** 注册 electron mock 解析器(必须早于任何段模块 import);Node 过旧 → 硬失败而非跳过 */
-async function registerElectronMock() {
-  const { register } = await import("node:module");
-  if (typeof register !== "function") {
-    throw new Error("当前 Node 不支持 module.register,无法在纯 Node 下加载段模块(需 Node >= 20.6)");
-  }
-  register("../../test/harness/electron-mock-loader.mjs", import.meta.url);
-}
-
-/** 段模块 import 失败的归一化诊断(段名 + 归因;区分 dist 缺失与 mock 缺命名导出)
- * @param {string} name 段名
- * @param {unknown} err import 抛出的原值
- * @returns {string}
- */
-function describeImportFailure(name, err) {
-  // 抛出的原值不保证是 Error,带 message 属性的对象按其 message 归因,其余按 toString
-  const rawMessage = /** @type {{ message?: unknown }} */ (err)?.message ?? err;
-  // String(...) 的 split 结果恒至少一段,?? "" 只是满足定长元组索引的取值域
-  const msg = String(rawMessage).split("\n")[0] ?? "";
-  // Node 的缺导出报错形如:The requested module 'X' does not provide an export named 'Y'
-  // 该文案对**任意**模块都会抛,故必须先看 X 是谁 —— 否则任何模块缺导出都会被误报成
-  // 「electron-mock 缺命名导出」,把人指向完全错误的文件。实测踩过的坑:gate-probes 段导入
-  // gates/probe/gate-probes/judge.mjs 失败(它当时确实缺一个导出),却被报成「electron-mock 缺
-  // finalizeGate」,排查方向被整体带偏到无关文件。
-  const missingExport = msg.match(
-    /requested module ['"]([^'"]+)['"][^\n]*does not provide an export named ['"]([^'"]+)['"]/i,
-  );
-  if (missingExport) {
-    const moduleName = missingExport[1] ?? "?";
-    const exportName = missingExport[2] ?? "?";
-    // 仅当出错的模块确为 electron(经 electron-mock loader 解析)时,才归因到 electron-mock
-    if (/electron/i.test(moduleName)) {
-      return `${name}:段模块 import 失败——electron-mock 缺命名导出「${exportName}」(补进 test/harness/electron-mock.mjs;自动断言见 test/core/electron-mock-coverage.test.js)`;
-    }
-    return `${name}:段模块 import 失败——模块 ${moduleName} 未导出「${exportName}」(该模块自身的导出问题,**不是** electron-mock;若它确应提供此导出请补齐,否则检查它的调用方)`;
-  }
-  if (/dist[\\/]/.test(msg)) {
-    return `${name}:段模块 import 失败(段模块依赖 dist/ 编译产物,请先 npm run build):${msg}`;
-  }
-  return `${name}:段模块 import 失败:${msg}`;
-}
-
 /** 收集 md 中的本地图片引用(排除外链/锚点/data URI,剥离 title 与尖括号)
  * @param {string} md md 文本
  * @returns {string[]} 引用路径(去重)
@@ -337,59 +164,34 @@ function firstDiffLine(a, b) {
 // fixtures 的 eol=lf,此处归一化是双保险——即使属性未生效/旧 checkout 也不误报。
 const normalizeEol = (/** @type {string} */ s) => s.replace(/\r\n/g, "\n");
 
-async function collectContracts() {
-  const segments = listCandidateSegments();
-  const exemptReasons = new Map(SEGMENT_EXEMPTIONS.map((e) => [e.segment, e.reason]));
-  const known = new Set(segments.map((s) => s.name));
-  /** @type {string[]} */
-  const problems = [];
+/**
+ * 收齐产物面要落的全部条目。
+ *
+ * **契约那一面不在这里判**:`collectSegmentContracts` 已经在**同一批段**上跑完显式契约判定,
+ * 并只把「契约齐备」的段回吐在 `loaded` 里。本函数只做剩下的产物面动作:剔除声明「本段无样例」
+ * 的段、规划产物、判产物重名、定序。
+ * ⚠ 那层耦合是**前后置**的(契约判红 ⇒ 该段不产出任何产物),两处各判一次必然漂移,
+ * 而漂移的后果是「契约判红却照样落了盘」—— 那种失败静默。
+ * @returns {Promise<{
+ *   segments: {name: string, file: string, relDir: string, baseName: string}[],
+ *   entries: {relDir: string, baseName: string, description: string, outputs: {name: string, content: string, key: string}[]}[],
+ *   problems: string[],
+ *   exemptSkipped: number,
+ * }>}
+ */
+async function collectOutputs() {
+  const { segments, loaded, problems, exemptSkipped } = await collectSegmentContracts();
 
-  // 白名单自检:理由缺失 / 段名已不存在(改名或删除后残留)先判红,免得豁免悄悄失效
-  for (const e of SEGMENT_EXEMPTIONS) {
-    if (typeof e.reason !== "string" || e.reason.trim() === "") {
-      problems.push(`豁免登记「${e.segment}」未注明理由:SEGMENT_EXEMPTIONS 每条都须写清为何该段在纯 Node 下不可 import`);
-    }
-    if (!known.has(e.segment)) {
-      problems.push(`豁免登记「${e.segment}」已不是现存测试段(段改名/删除后残留,请删除该条目)`);
-    }
-  }
-
+  /** @type {{relDir: string, baseName: string, description: string, outputs: {name: string, content: string, key: string}[]}[]} */
   const entries = [];
-  let exemptSkipped = 0;
-  for (const seg of segments) {
-    /** @type {Record<string, unknown>} */
-    let mod;
-    try {
-      mod = await import(pathToFileURL(seg.file).href);
-    } catch (err) {
-      const reason = exemptReasons.get(seg.name);
-      if (reason === undefined) {
-        problems.push(describeImportFailure(seg.name, err));
-        continue;
-      }
-      exemptSkipped += 1;
-      console.warn(`[gen-fixtures] 按白名单豁免跳过 ${seg.name}:${reason}`);
-      continue;
-    }
-    // 豁免失效:该段已能正常 import → 白名单条目是多余盲区,判红促清理
-    if (exemptReasons.has(seg.name)) {
-      problems.push(
-        `豁免登记「${seg.name}」已失效:该段现在能正常 import,请删除 SEGMENT_EXEMPTIONS 中的对应条目(原理由:${exemptReasons.get(seg.name)})`,
-      );
-    }
-    const segProblems = validateSegmentContract(seg.name, mod);
-    if (segProblems.length > 0) {
-      problems.push(...segProblems);
-      continue;
-    }
+  for (const { seg, mod } of loaded) {
     if (mod.fixtures === null) continue;
-    const outputs = planFixtureOutputs(seg, /** @type {Record<string, string>} */ (mod.fixtures));
     entries.push({
       relDir: seg.relDir,
       baseName: seg.baseName,
-      // validateSegmentContract 已判定 description 为非空字符串
+      // 契约面已判定 description 为非空字符串
       description: /** @type {{ description: string }} */ (mod.meta).description,
-      outputs,
+      outputs: planFixtureOutputs(seg, /** @type {Record<string, string>} */ (mod.fixtures)),
     });
   }
 
@@ -400,11 +202,12 @@ async function collectContracts() {
 }
 
 export async function main() {
-  await registerElectronMock();
-  const { segments, entries, problems, exemptSkipped } = await collectContracts();
+  const { segments, entries, problems, exemptSkipped } = await collectOutputs();
 
   if (problems.length > 0) {
-    console.error(`[gen-fixtures] 显式契约校验失败(${problems.length} 项;不静默跳过,请逐条修):`);
+    // 措辞覆盖两族:契约面的判红(由 check-segment-contracts.mjs 判出,逐条点名段)与产物面的
+    // 判红(产物重名,逐条点名文件名)。两者都「不静默跳过」——跳过的后果是产物缺失而无人知晓。
+    console.error(`[gen-fixtures] 契约/产物判定失败(${problems.length} 项;不静默跳过,请逐条修):`);
     for (const p of problems) console.error(`  - ${p}`);
     process.exit(1);
   }
@@ -521,8 +324,10 @@ export async function main() {
   console.log(`[gen-fixtures] 完成:${path.relative(ROOT, GENERATED_DOCS_DIR)}/`);
 }
 
-// 仅 CLI 直跑时执行;被测试段 import 复用纯函数时不得触发任何副作用
-// (尤其不能 register electron mock loader——那会污染宿主进程的 electron 解析)
+// 仅 CLI 直跑时执行;被测试段 import 复用纯函数时不得触发任何副作用。
+// ⚠ electron mock loader 的注册现在住在契约面(`collectSegmentContracts` 内部),而它
+// **只在 CLI 直跑这一条路上才可能到达** —— 段 import 本文件拿纯函数时不会注册任何解析器。
+// 那条约束因此由「import 本文件」的调用方在段侧间接承担;本文件自己不再注册。
 const isCli =
   process.argv[1] !== undefined && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
 

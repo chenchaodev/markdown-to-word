@@ -1,7 +1,17 @@
 // @ts-check
 /**
- * 验收样例生成器契约守护段(位于 test/core/ = 跨域守护段;被测为
- * gates/fixtures/gen-fixtures.mjs 的显式契约与扫描范围,纯 Node,不依赖 dist):
+ * 验收样例契约守护段(位于 test/core/ = 跨域守护段;**import 分两源**、被测面随那次搬运拆开,
+ * 两源都是纯 Node,不依赖 dist):
+ *
+ * - **契约面**(段发现范围 + 显式契约判定 + 豁免白名单)→ `gates/fixtures/check-segment-contracts.mjs`;
+ * - **产物面**(命名规则 / 撞车 / README 索引)→ `gates/fixtures/gen-fixtures.mjs`;
+ * - **字节面**(图片夹具 sha256 基线 + 「空声明是合法终态」判定层)→ `gates/fixtures/check-image-digests.mjs`。
+ *
+ * ⚠ **为什么 import 要分两源而不是照旧只指生成器**:契约判定面已被搬成独立门禁(它的存续
+ * 不能系于生成器的去留 —— 生成器被裁撤时,「哪些段没样例」必须仍是一条**被执行的**规则,
+ * 而不是退化成一批裸字面量)。本段跟着搬,于是它守的判定面与被守的门禁始终同源;产物面留在
+ * 生成器里、那三项 import 不变 ⇒ 两侧各自可归因(改契约规则与改命名规则都红这一段,
+ * 但依据的判定面不同)。
  *
  * 生成器从测试段导出 fixtures 落盘验收样例。旧实现用正则预筛源码里有
  * `export const fixtures` 才 import,副作用型/改名的导出会被静默漏掉,漏掉的段
@@ -9,24 +19,26 @@
  * 目录范围内每个段都被 import,并显式声明契约——有样例写 `fixtures` + `meta.description`,
  * 无样例写 `fixtures = null`,都不写即判红。
  *
- * 四层断言:
- * 1. 段目录集合单源:生成器与 test/acceptance.mjs 读的是**同一个数组对象**(单一来源在
+ * 六组断言:
+ * 1. 段目录集合单源:契约面与 test/acceptance.mjs 读的是**同一个数组对象**(单一来源在
  *    shared/test-common-surface.js),恒等不再靠「两处各写一份 + 抽文本比对」;
  *    守的是「acceptance 确实拿这份数组喂 runner,且没有第二份硬编码目录清单」;三者
  *    与文件系统一致;
- * 2. 发现一致:生成器列出的段名集合 == runner 的 discoverSegments 同目录结果
+ * 2. 发现一致:契约面列出的段名集合 == runner 的 discoverSegments 同目录结果
  *    (临时摘掉 M2W_ONLY,免得单段筛选把断言本身筛没);
  * 3. 豁免白名单自检:每条须写理由,且不得指向已不存在的段;
  * 4. 契约判定函数的逐条失败模式 + 正向锚点(合成模块对象,不写临时文件进 test/:
  *    临时段文件会被生成器与 lint/typecheck 扫到,残留即是事故)。
- * 5. 图片夹具字节基线:覆盖面到**全部**图片夹具(磁盘派生)+ 漂移/未登记/残留三类判红
+ * 5. **产物面**(命名规则 / 撞车 / README 索引):这一组守的是**仍住在生成器里**的能力,
+ *    import 仍是生成器 —— 契约面搬走时它一行未动。
+ * 6. 图片夹具字节基线:覆盖面到**全部**图片夹具(磁盘派生)+ 漂移/未登记/残留三类判红
  *    逐条点名文件 + 全部一致的正向锚点。守的是「夹具漂移必须在 --check 里可见」——
  *    旧实现只逐字节比对被样例引用到的图片,未被引用的夹具与「源副本同时被改」都在
  *    判据之外,曾因此把夹具漂移误判成代码回归(判定体已独立成门禁
  *    gates/fixtures/check-image-digests.mjs,见其文件头)。
  *    同族的「空声明是合法终态」判定层(`classifyFixturesDeclaration`)在这里也有一条正向断言:
- *    它是那 100 多处 `fixtures = null` 的唯一合法性来源,不能只靠生成器在用就以为它被守着。
- * 6. 段发现的递归性与去重(临时合成树,mkdtemp 在系统临时区,不落 test/ 树):
+ *    它是那批空声明的唯一合法性来源,不能只靠有人在用就以为它被守着。
+ * 7. 段发现的递归性与去重(临时合成树,mkdtemp 在系统临时区,不落 test/ 树):
  *    二级/三级段被发现且段名是相对 rootDir 的完整相对路径、rootDir 缺省回落到段目录
  *    basename、祖先/后代段目录对不重复登记(且按段名归并报出,不是静默去重)、
  *    两个不同文件算出同一个段名须报「段名撞名」、only 筛选对含多斜杠的完整段名仍生效。
@@ -41,14 +53,19 @@ import { createCaseSuite } from "../harness/case.js";
 import { ROOT, FIXTURES_DIR } from "../harness/paths.js";
 import { discoverSegments, discoverSegmentsDetailed } from "../harness/runner.js";
 import { removeTree } from "../harness/temp-resource.js";
+// 契约面(第 1/2/3/4 组守的面):段发现与逐段契约判定已独立成门禁,守护段随之改指它 ——
+// 守的判定面与被守的门禁同源,这是「判据跟着搬运」而不是「判据留在旧处」。
 import {
   FIXTURE_SEGMENT_DIRS,
   SEGMENT_EXEMPTIONS,
+  listCandidateSegments,
+  validateSegmentContract,
+} from "../../gates/fixtures/check-segment-contracts.mjs";
+// 产物面(第 5 组守的面):仍在生成器里,import 不变。
+import {
   buildReadme,
   findOutputNameCollisions,
-  listCandidateSegments,
   planFixtureOutputs,
-  validateSegmentContract,
 } from "../../gates/fixtures/gen-fixtures.mjs";
 // 图片字节基线那一面已独立成门禁(判定体与登记 CLI 都在这里),本段 import 它的判定层:
 // 守护对象随之解耦 —— 生成器被裁撤时,这一族断言不受影响。
@@ -152,7 +169,7 @@ function sole(items, label) {
   return items[0];
 }
 
-// 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
+// 显式声明本段无验收样例(契约见 gates/fixtures/check-segment-contracts.mjs 文件头)
 export const fixtures = null;
 
 export async function run() {
@@ -312,9 +329,9 @@ export async function run() {
       ok({ fixtures: { main: "x" }, meta: { description: "d" } }, "完整契约");
       ok({ fixtures: { main: "x" }, meta: { description: "d" }, run() {} }, "完整契约带 run");
     });
-    // 「= null 是合法终态」的判定层单列一条:上一档经由生成器的契约校验间接覆盖它,
-    // 而生成器是被裁撤议程上的那一侧 ⇒ 判定层一旦退化(例如把「缺声明」也判成合法终态),
-    // 那 100 多处空声明仍会静默合法、而缺声明的段会**静默跳过**(产物缺失无人知晓)。
+    // 「= null 是合法终态」的判定层单列一条:上一档经由**契约面的校验函数**间接覆盖它,
+    // 而那个函数刚被搬成独立门禁的判定体 ⇒ 判定层一旦退化(例如把「缺声明」也判成合法终态),
+    // 那批空声明仍会静默合法、而缺声明的段会**静默跳过**(产物缺失无人知晓)。
     await suite.case("4. 空声明合法终态判定层:缺声明/空声明/已声明三档各归各档", () => {
       assert(
         classifyFixturesDeclaration({ run() {} }) === "absent",

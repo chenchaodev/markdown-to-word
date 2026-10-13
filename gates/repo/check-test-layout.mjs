@@ -610,6 +610,20 @@ export const GATE_SELFTEST_CASE_SOURCES = Object.freeze([
     ]),
   }),
   Object.freeze({
+    file: "gates/fixtures/check-segment-contracts.selftest.mjs",
+    // 与上面 check-image-digests 那一行同款结构:两张表 + 内联三类并存。
+    // ⚠ **两张表一律用 `name` 不用 `id`**:理由照那两行的注释(check-test-layout.selftest.mjs
+    // 的名册族夹具用**策略签名**从本表认领「在册 demo 路径」,其中一档的签名是
+    // 「同时有 `field: 'name'` 与 `field: 'id'`」;本行若带 `field: 'id'` 会命中同一签名而排位靠后,
+    // 夹具改拿本行铺合成树时那份合成源码里没有本行的两张表 ⇒ 抽出 0 条 ⇒ 报「册有源无」)。
+    // 变异档**逐条真改门禁本体的契约判定再逐字还原**,故档名必须能被机械抽出对账。
+    strategies: Object.freeze([
+      Object.freeze({ kind: "table-field", table: "CASES", field: "name" }),
+      Object.freeze({ kind: "table-field", table: "MUTATIONS", field: "name" }),
+      Object.freeze({ kind: "inline-case" }),
+    ]),
+  }),
+  Object.freeze({
     file: "gates/repo/check-changelog.selftest.mjs",
     // ⚠ 表驱动档**分三张表**:JUDGE_CASES 走合成根 harness(它自己汇成 case)、
     // JUDGE_GREEN_CASES 是「零问题」判绿档、CLI_CASES 是进程级(退出码 + 输出)。
