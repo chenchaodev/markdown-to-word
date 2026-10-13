@@ -251,6 +251,27 @@ export const GATE_INDEX = Object.freeze(
       modulePath: "gates/fixtures/gen-fixtures.mjs",
       judgment: { module: "gates/fixtures/gen-fixtures.mjs", export: "main", shaped: "退出码(0 = 通过)" },
     },
+    "image-digests": {
+      id: "image-digests",
+      // ⚠⚠ **上链的理由与 eol-anchor / output-unwritable-registry 同款,但它守护的是一批
+      // **没有任何别的判据在看**的字节**:基线里那几张没被任何样例引用的图
+      // (`input/g4-preview.png` 与 `manual/images/` 下两张),生成器的 imageCopies 只比对
+      // 被样例引用到的图片,而「源与副本**同时**被改」(批量截断 / 重新导出)时它恒绿。
+      // 这族失效的症状是**静默**的:夹具各少一字节时没有任何门禁报红,只有依赖它们的段
+      // (image-size / basic-render)莫名其妙红起来,排查一度指向代码回归。
+      //
+      // ⚠ **为什么它是独立一道门禁而不是继续搭 `check:fixtures` 的车**:它的存续不能系于
+      // 生成器的去留 —— 那批图没有第二个判据在看它们。只在本地手动跑 ⇒ CI 上那类夹具漂移
+      // 仍然发生,且发生时没人知道是哪道门禁本该拦住它。
+      npmScripts: ["check:image-digests", "check:image-digests:selftest"],
+      access: ACCESS_CHAIN,
+      modulePath: "gates/fixtures/check-image-digests.mjs",
+      judgment: {
+        module: "gates/fixtures/check-image-digests.mjs",
+        export: "auditImageDigests",
+        shaped: "string[](纯函数:实测记录 + 基线表 → 漂移/未登记/残留三类问题清单,逐条点名文件)",
+      },
+    },
     "build-fresh": {
       id: "build-fresh",
       npmScripts: ["test:smoke", "start"],

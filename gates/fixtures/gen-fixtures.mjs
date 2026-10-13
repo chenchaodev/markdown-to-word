@@ -15,14 +15,17 @@
  * 图片夹具另有**字节基线**判据(与「复制」正交,两条都要过):
  * - 「复制」只覆盖**被生成样例引用到**的图片(源 ↔ docs/ 副本),回答的是
  *   「生成产物是否新鲜」;
- * - 「基线」覆盖 samples 下**全部**图片夹具(磁盘派生,见 listImageFixtures),
- *   回答的是「夹具本身有没有漂移」。两者的失效面互补:未被任何样例引用的夹具
- *   (manual/images/、input/ 下的图)从前者眼里根本不存在,而**源与副本同时被改**
- *   (如批量截断、重新导出)时后者恒绿 —— 曾发生的真实误判正是后者:
- *   全部图片夹具各少一字节时 `--check` 判绿,而 image-size / basic-render 两段判红,
- *   排查一度指向代码回归。覆盖面张数由 `--check` 输出给出,不在注释里写死
- *   (命令:`node gates/fixtures/gen-fixtures.mjs --check`)。
- *   重新登记基线:`node gates/fixtures/gen-fixtures.mjs --print-image-baseline`。
+ * - 「基线」覆盖 samples 下**全部**图片夹具(磁盘派生),回答的是「夹具本身有没有漂移」。
+ *   两者的失效面互补:未被任何样例引用的夹具(manual/images/、input/ 下的图)从前者眼里
+ *   根本不存在,而**源与副本同时被改**(如批量截断、重新导出)时后者恒绿 —— 曾发生的真实
+ *   误判正是后者:全部图片夹具各少一字节时 `--check` 判绿,而 image-size / basic-render
+ *   两段判红,排查一度指向代码回归。
+ *
+ * ⚠ **基线那一面已独立成门禁**(判定体与 `--print-image-baseline` 都在
+ * `gates/fixtures/check-image-digests.mjs`):本文件不再持有基线表与字节审计。
+ * 原因是它的存续不能系于本生成器的去留 —— 那批图没有第二个判据在看它们(见该模块文件头)。
+ * 「契约缺失一律判红」这条不变,故 `--check` 仍会跑一遍基线审计(生成器侧仍 import 判定体),
+ * 两道门禁由此对同一批字节给出两个可分别归因的结论。
  *
  * 契约缺失一律判红(不静默跳过):段 import 失败、未显式导出 fixtures、fixtures 无可用
  * 场景/值非字符串/键名非法、缺 meta.description、产物文件名撞车,或白名单里的豁免
@@ -32,18 +35,23 @@
  * 用法:
  *   node gates/fixtures/gen-fixtures.mjs                      # 生成(需先 npm run build)
  *   node gates/fixtures/gen-fixtures.mjs --check              # 内存重生成比对,有差异 exit 1
- *   node gates/fixtures/gen-fixtures.mjs --print-image-baseline  # 打印当前图片夹具字节基线(登记用)
  */
 import fs from "node:fs";
-import { createHash } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ROOT, FIXTURES_DIR } from "../../shared/paths.js";
 import { SEGMENT_DIRS } from "../../shared/test-common-surface.js";
+// 基线那一面(字节表 / 盘点 / 审计 / 空声明合法终态判定层)的所在地已独立成门禁;
+// 本文件是**消费方**:判定体在此 import,不在此实现(理由见文件头与该模块文件头)。
+import {
+  IMAGE_DIGEST_BASELINE,
+  auditImageDigests,
+  classifyFixturesDeclaration,
+  listImageFixtures,
+} from "./check-image-digests.mjs";
 
 const GENERATED_DOCS_DIR = path.join(FIXTURES_DIR, "docs");
 const CHECK = process.argv.includes("--check");
-const PRINT_IMAGE_BASELINE = process.argv.includes("--print-image-baseline");
 
 /**
  * 候选测试段目录(= test/acceptance.mjs 交给 runAll 的同一份数组,单一来源在
@@ -62,123 +70,7 @@ export const FIXTURE_SEGMENT_DIRS = SEGMENT_DIRS;
  */
 export const SEGMENT_EXEMPTIONS = [];
 
-/* ---------- 图片夹具字节基线(覆盖面磁盘派生) ---------- */
-
-/**
- * 图片扩展名(闭集;判据即「文件是什么」,不看具体文件名 —— 与顶层清单同口径)。
- * 新增一种图片格式只需在此登记一行,现有夹具自动纳入比对。
- */
-const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg"]);
-
-/**
- * 图片夹具字节基线:`相对 samples 的 POSIX 路径` → `sha256`。
- *
- * 为什么需要它(与上方 imageCopies 正交,不是重复):
- * imageCopies 只比对**被生成样例引用到**的图片,回答「生成产物新鲜吗」;
- * 本表比对**全部**图片夹具的字节,回答「夹具本身漂移了吗」。二者失效面互补:
- *   - 未被任何样例引用的夹具(manual/images/、input/ 下的图)在前者眼里不存在;
- *   - 源与副本**同时**被改(批量截断 / 重新导出)时后者恒绿。
- * 真实误判即后者:图片夹具各少一字节,`--check` 判绿而 image-size / basic-render 判红,
- * 排查一度指向代码回归。故覆盖面必须到「全部图片夹具」,且比对判据是字节不是尺寸。
- *
- * 表是**派生结果**而非手写意图:新增/删除/改动夹具后跑
- * `--print-image-baseline` 重新打印并整段替换本表(键按路径排序,便于 diff)。
- * 新增夹具而未登记 → `--check` 判红(而不是静默放行,那正是本条要治的病)。
- * @type {Record<string, string>}
- */
-export const IMAGE_DIGEST_BASELINE = {
-  "input/g1-tiny.png": "c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77",
-  "input/g4-preview.png": "497790947d4666760ce38f3c00e852c71fdb66cae849bae8e9ede352719e1581",
-  "input/img-800x400.png": "50892cbdeb429f404ab9712c53025b0f1955c38ea60d1e1b9b769ea46e150aef",
-  "manual/images/chart.png": "05e41780382ce8e3dea2b3095a3c44164580a151d8a2bedb9367812af6566824",
-  "manual/images/logo.png": "56bf36d0e8da47eee5a7c63405a2c5e7ecc1dface59a94824cf521d223a0b4ce",
-};
-
-/**
- * 列出 samples 下**全部**图片夹具(递归,排除 docs/ 生成目录),键为 POSIX 相对路径。
- *
- * 覆盖面判据是「磁盘上有什么」而非手写清单:新增图片夹具自动进入比对范围,
- * 漏改一处不会退化成「扫不到」(那与本条要治的病同型)。IO 全部经入参注入根目录,
- * 故守护段可在临时目录上求值。
- * @param {string} [root] 夹具根目录(默认真实夹具根)
- * @returns {{ rel: string, abs: string, bytes: number, sha256: string }[]} 按 rel 排序
- */
-export function listImageFixtures(root = FIXTURES_DIR) {
-  /** @type {{ rel: string, abs: string, bytes: number, sha256: string }[]} */
-  const found = [];
-  /** @param {string} dir @param {string} prefix */
-  const walk = (dir, prefix) => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const abs = path.join(dir, entry.name);
-      const rel = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
-      // docs/ 是本生成器的产物目录,不是夹具源(它自己的图片由 imageCopies 比对)
-      if (rel === path.basename(GENERATED_DOCS_DIR)) continue;
-      if (entry.isDirectory()) {
-        walk(abs, rel);
-        continue;
-      }
-      if (!IMAGE_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) continue;
-      const bytes = fs.readFileSync(abs);
-      found.push({
-        rel,
-        abs,
-        bytes: bytes.length,
-        sha256: createHash("sha256").update(bytes).digest("hex"),
-      });
-    }
-  };
-  walk(root, "");
-  return found.sort((a, b) => a.rel.localeCompare(b.rel));
-}
-
-/**
- * 图片夹具字节漂移判定(纯函数:只吃已算好的实测记录与基线表,便于守护段合成用例逐条覆盖)。
- * 三类问题各自点名文件:
- *   - 漂移:实测 sha256 ≠ 基线(附两侧摘要前缀,便于人眼定位是哪张图);
- *   - 未登记:磁盘上有、基线里没有(新增夹具漏登记 → 静默放行正是本条要治的病);
- *   - 残留:基线里有、磁盘上没有(夹具删除/改名后基线没清 → 恒绿,同样判红)。
- * @param {{ rel: string, sha256: string }[]} found 实测记录
- * @param {Record<string, string>} baseline 基线表
- * @returns {string[]} 问题清单(空数组 = 全部一致)
- */
-export function auditImageDigests(found, baseline) {
-  /** @type {string[]} */
-  const problems = [];
-  const seen = new Set();
-  for (const f of found) {
-    seen.add(f.rel);
-    const want = baseline[f.rel];
-    if (want === undefined) {
-      problems.push(
-        `${f.rel}: 图片夹具未登记字节基线(新增夹具漏登记)——请跑 \`node gates/fixtures/gen-fixtures.mjs --print-image-baseline\` 并整段替换 IMAGE_DIGEST_BASELINE`,
-      );
-      continue;
-    }
-    if (f.sha256 !== want) {
-      problems.push(
-        `${f.rel}: 图片夹具字节漂移(基线 ${want.slice(0, 12)}…,实测 ${f.sha256.slice(0, 12)}…)——` +
-          `若为有意改动,请重新打印基线;若非有意,先查清是谁动了夹具(夹具漂移会让依赖它的段判红,极易误判为代码回归)`,
-      );
-    }
-  }
-  for (const rel of Object.keys(baseline).sort()) {
-    if (!seen.has(rel)) {
-      problems.push(
-        `${rel}: 基线登记的图片夹具在磁盘上已不存在(删除/改名后残留)——请重新打印基线`,
-      );
-    }
-  }
-  return problems;
-}
-
-/** 打印可直接粘贴的基线表(键按路径排序,便于 diff)。 */
-function printImageBaseline() {
-  const found = listImageFixtures();
-  console.log("export const IMAGE_DIGEST_BASELINE = {");
-  for (const f of found) console.log(`  "${f.rel}": "${f.sha256}",`);
-  console.log("};");
-}
-
+/* ---------- md 图片引用解析(「复制」那一面:产物新鲜度) ---------- */
 
 /** md 中图片引用:![...](path) 与 src="path" */
 const IMG_MD_RE = /!\[[^\]]*\]\(([^)]+)\)/g;
@@ -272,13 +164,18 @@ export function listCandidateSegments() {
 export function validateSegmentContract(name, mod) {
   /** @type {string[]} */
   const problems = [];
-  if (!("fixtures" in mod)) {
+  // 三档判定(缺声明 / 空声明 / 已声明)在 gates/fixtures/check-image-digests.mjs:
+  // 「= null 是合法终态」是那 100 多处空声明的唯一合法性来源,判定体不随本生成器的去留消失。
+  const declaration = classifyFixturesDeclaration(mod);
+  if (declaration === "absent") {
     return [
       `${name}:未显式声明 fixture 契约——导出 fixtures(场景 → md 字符串映射)或 fixtures = null(本段无验收样例)`,
     ];
   }
-  const { fixtures } = mod;
-  if (fixtures === null) return problems; // 显式声明「本段无样例」:合法终态
+  if (declaration === "null-terminal") return problems; // 显式声明「本段无样例」:合法终态
+  // 收窄不是类型谎言:`declared` 档的定义就是「导出了 fixtures 且非 null」,只是 TS 看不穿
+  // 跨函数的分类返回值(下面的 typeof/Array.isArray 两档判红因此仍照常生效)。
+  const fixtures = /** @type {Record<string, unknown>} */ (mod.fixtures);
   if (typeof fixtures !== "object" || Array.isArray(fixtures)) {
     return [`${name}:fixtures 必须是场景映射对象或 null,实际 ${describeValue(fixtures)}`];
   }
@@ -630,14 +527,21 @@ const isCli =
   process.argv[1] !== undefined && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
 
 if (isCli) {
-  // 基线打印不 import 任何测试段(不需要 electron mock,也不该被契约问题拦住):
-  // 它的用途正是「夹具出问题后仍要能取到当前字节重新登记」。
-  if (PRINT_IMAGE_BASELINE) {
-    printImageBaseline();
-  } else {
-    main().catch((err) => {
-      console.error(`[gen-fixtures] 失败:${err?.stack ?? err}`);
-      process.exit(1);
-    });
+  // 旧旗标 `--print-image-baseline` 已随字节基线搬到 check-image-digests.mjs。这里**显式拒绝**
+  // 而不是静默忽略:静默忽略会让「照旧文档跑登记」的人**重新生成一批样例**却以为登记了基线,
+  // 而生成是幂等的、不报任何错 ⇒ 那是一次无人察觉的空操作。
+  const unknown = process.argv.slice(2).filter((arg) => arg !== "--check");
+  if (unknown.length > 0) {
+    console.error(
+      `[gen-fixtures] 无法识别的参数:${unknown.join(" ")}(本脚本只接受 --check;`
+        + "图片字节基线的登记命令是 node gates/fixtures/check-image-digests.mjs --print-image-baseline)",
+    );
+    process.exit(1);
   }
+  // ⚠ 基线审计本身仍在本脚本的 `--check` 里跑一遍(判定体自 check-image-digests.mjs import):
+  // 两道门禁对同一批字节给出两个可分别归因的结论,而不是二选一。
+  main().catch((err) => {
+    console.error(`[gen-fixtures] 失败:${err?.stack ?? err}`);
+    process.exit(1);
+  });
 }

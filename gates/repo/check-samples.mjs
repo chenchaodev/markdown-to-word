@@ -5,8 +5,10 @@
 //   ① `gates/fixtures/gen-fixtures.mjs` —— 把各验收段导出的 `fixtures` **生成**成
 //      `samples/docs/<段基名>[-<场景>].md`,并把段引用到的图片复制进 `samples/docs/input/`;
 //      `--check` 按字节比对(它判的是「生成产物是否新鲜」)。
-//   ② 同一门禁的图片**字节基线**(`listImageFixtures` 覆盖 samples/ 下**全部**图片
+//   ② 图片**字节基线**由 `check:image-digests` 判(`listImageFixtures` 覆盖 samples/ 下**全部**图片
 //      —— 含 `manual/images/`、`input/` 下那些没被任何样例引用的图),判「夹具本身有没有漂移」。
+//      ⚠ 与本门禁**正交且互补**:本门禁只答「产物新鲜吗」(被生成样例引用到的图片),那道门禁答
+//      「夹具本身漂移吗」(未被引用的夹具与「源副本同时被改」只在那道门禁视野里)。
 //   ③ GUI 的「打开样例」与 `tools/visual-check.mjs` —— 直接读 `samples/docs/*.md`。
 //
 // ⇒ 本门禁**只判文件层形态**(扩展名 / 子树可读性),**一个字节的 md 正文都不解析**。

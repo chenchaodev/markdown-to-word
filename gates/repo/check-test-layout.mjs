@@ -586,6 +586,23 @@ export const GATE_SELFTEST_CASE_SOURCES_FILE = "gates/repo/check-test-layout.mjs
  */
 export const GATE_SELFTEST_CASE_SOURCES = Object.freeze([
   Object.freeze({
+    file: "gates/fixtures/check-image-digests.selftest.mjs",
+    // ⚠ **两张表 + 内联**三类并存,与 check-eol-anchor 那两行同款结构:两个用例表的档名都在表的
+    // `name` 字段上,判定层/防空门禁那几档是内联字面量。
+    //
+    // ⚠ **两张表一律用 `name` 而不用 `id`**:理由照 check-eol-anchor 那一行的注释
+    // (check-test-layout.selftest.mjs 的名册族夹具用**策略签名**从本表认领「在册 demo 路径」,
+    // 其中一档的签名是「同时有 `field: 'name'` 与 `field: 'id'`」)。本行若带 `field: 'id'`
+    // 会命中同一签名而排在前面 ⇒ 夹具改拿本行铺合成树,那份合成源码里没有本行的两张表,
+    // 抽出 0 条,报「册有源无」。**代价不是夹具假红,是既有档里一档真的开始验错东西。**
+    // 变异档**逐条真改门禁本体的基线表再还原**,故档名必须能被机械抽出对账。
+    strategies: Object.freeze([
+      Object.freeze({ kind: "table-field", table: "CASES", field: "name" }),
+      Object.freeze({ kind: "table-field", table: "MUTATIONS", field: "name" }),
+      Object.freeze({ kind: "inline-case" }),
+    ]),
+  }),
+  Object.freeze({
     file: "gates/fixtures/gen-fixtures.selftest.mjs",
     strategies: Object.freeze([
       Object.freeze({ kind: "table-field", table: "CASES", field: "name" }),

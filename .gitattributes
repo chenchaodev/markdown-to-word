@@ -23,7 +23,7 @@ samples/**/*.json text eol=lf
 # 而那一格没有负向覆盖,红与不红都没有回归护栏。
 # ⚠ .svg 这一条是「哑弹解除」的典型:svg 无 NUL 字节,`* text=auto` 下 git 判它为文本,
 #   故裸 Buffer.equals 在 autocrlf 检出下必红。钉 binary 是这一格唯一的解。
-# 扩展名清单的源是 gates/fixtures/gen-fixtures.mjs 的 IMAGE_EXTENSIONS(闭集,新增格式
+# 扩展名清单的源是 gates/fixtures/check-image-digests.mjs 的 IMAGE_EXTENSIONS(闭集,新增格式
 # 只需在该处登记一行):那边加了扩展名而这里没跟上,就会静默退回文本归一。
 # 同上:.jpg/.jpeg/.gif/.bmp/.webp 在当前 samples/ 下无匹配文件,按闭集惯例一并保留。
 samples/**/*.png binary

@@ -5,8 +5,9 @@
 // fixtures.mjs 唯一测的东西,而探针是 P6 的删除对象 —— 探针一删,这一格就无人接手。
 //
 // ⚠ 为什么必须有这份 selftest(而不是「只留 test/gates/fixture-contract.test.js」):
-//   那条段守的是**判定函数层**(validateSegmentContract / auditImageDigests /
-//   planFixtureOutputs / findOutputNameCollisions),全部喂**合成模块对象或合成记录**,
+//   那条段守的是**判定函数层**(validateSegmentContract / planFixtureOutputs /
+//   findOutputNameCollisions;图片字节那一族已随判定体一并搬去
+//   gates/fixtures/check-image-digests.selftest.mjs),全部喂**合成模块对象或合成记录**,
 //   **从不注入真实漂移**:它证明「契约规则没写坏」,不证明「产物真的漂了会被抓住并点名」。
 //   两者的差别正是本文件要补的那一格 —— 本文件在**合成夹具树上真跑门禁本体**并注入漂移。
 //
@@ -22,21 +23,26 @@
 //      shared/test-common-surface.js 的 SEGMENT_DIRS(真实数组,本文件 import 同一份),
 //      故合成树**必须**把这十个目录都建出来,否则 readdirSync 抛错、门禁因错误原因失败
 //      (而「因错误原因失败」不是「判红」,负向结论不成立);
-//   ② 图片夹具字节基线:IMAGE_DIGEST_BASELINE 是**模块常量**,里面五个键是真实仓库图片的
-//      路径。合成树里当然没有这些图 ⇒ 未漂移时该族恒判红(基线残留)。
-//      ⇒ 合成树必须**按基线逐个造出那五张图**,否则「正向锚点」永远是红的,锚点失去意义。
-//      造法:从真实仓库**读**那五张图的字节写进合成树(夹具只读真实仓库,不改它)。
+//   ② 图片夹具字节基线:基线表是**模块常量**(现落在 gates/fixtures/check-image-digests.mjs),
+//      它的键是真实仓库图片的相对路径。合成树里当然没有这些图 ⇒ 未漂移时该族恒判红(基线残留)。
+//      ⇒ 合成树必须**按基线逐个造出那几张图**,否则「正向锚点」永远是红的,锚点失去意义。
+//      造法:从真实仓库**读**那些图的字节写进合成树(夹具只读真实仓库,不改它)。
 //
 // ⚠ 已沉淀的教训:临时产物必须在 finally 清理 —— 中途断言失败抛异常时同样要删,否则系统
 // 临时区会堆满夹具树。本脚本全部写操作都落在 mkdtemp 出来的目录里、**不碰真实工作树**。
 //
 // ---- 形态:case 契约接入,但**不接 harness**(ADR-074 决定一)----
 //
-// 用 `shared/case.js` 的 `createCaseSuite` 建一次 suite:夹具表 7 条逐条
-// `await suite.case(档名, () => …)`,表外两块(恒绿防护 / 归因摘录)各成一个 case,共 9 条
-// (= 搬迁前的 `CASES.length + 2`,一个不多一个不少)。门禁树接的是落在 shared/ 的真实现:
+// 用 `shared/case.js` 的 `createCaseSuite` 建一次 suite:夹具表 5 条逐条
+// `await suite.case(档名, () => …)`,表外两块(恒绿防护 / 归因摘录)各成一个 case,共 7 条
+// (= `CASES.length + 2`,一个不多一个不少)。门禁树接的是落在 shared/ 的真实现:
 // `gates-stay-in-gates` 的允许面只有 `gates` / `shared` / `test/fixtures`,`test/` 整棵树不在
 // 其中,故引不到 `test/harness/case.js`。
+//
+// ⚠ **图片字节那两档已迁到 `check-image-digests.selftest.mjs`**(判定体与基线表一并搬成独立
+// 门禁):留在本文件只会验「生成器顺带比过了字节」,而不是「那道门禁判红」。这里**仍要**按基线
+// 造出那几张图 —— 生成器的 `--check` 仍跑一遍基线审计(判定体在此 import),合成树缺图则
+// 「未漂移」也恒判红,正向锚点会失去意义。
 //
 // **不用合成根 harness**:本文件的判定是 spawn 仓内门禁本体 + cwd 指合成夹具树,断言落在
 // 「退出码 + 点名集合 + 诊断文案」上;而 harness 的表只收「树型路径 → 正文 + 问题清单正则」
@@ -55,7 +61,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { assert, createCaseSuite } from '../../shared/case.js';
 import { FIXTURES_DIR, ROOT } from '../../shared/paths.js';
-import { IMAGE_DIGEST_BASELINE } from './gen-fixtures.mjs';
+import { IMAGE_DIGEST_BASELINE } from './check-image-digests.mjs';
 import { SEGMENT_DIRS } from '../../shared/test-common-surface.js';
 
 const gatePath = join(ROOT, 'gates', 'fixtures', 'gen-fixtures.mjs');
@@ -242,33 +248,6 @@ const CASES = [
     expectProducts: ['README.md'],
     expectOutput: /内容不一致/,
   },
-  {
-    // 图片夹具漂移这一族与 md 漂移正交(门禁文件头有长注:曾发生的真实误判正是这一族)。
-    // 这里只断言「字节漂移被抓住且点名该图」,覆盖面由 test/gates/fixture-contract.test.js 守。
-    name: '注入:改一张图片夹具的字节 → exit 非 0 且诊断点名该图片路径',
-    mutate: (dir) => {
-      const target = join(dir, 'samples', ...'manual/images/logo.png'.split('/'));
-      const bytes = readFileSync(target);
-      writeFileSync(target, Buffer.concat([bytes, Buffer.from([0])]), 'utf8');
-    },
-    expectCode: 1,
-    // 图片族在门禁里是以「图片夹具」为名前缀逐条列出的(行首即图片相对路径),
-    // 故断言落在 images 通道而不是 products。
-    expectProducts: [],
-    expectImages: ['manual/images/logo.png'],
-    expectOutput: /字节漂移/,
-  },
-  {
-    // 「新增夹具没登记」这一格:静默放行正是本条要治的病,故必须判红并点名新文件。
-    name: '注入:新增一张未登记的图片夹具 → exit 非 0 且诊断点名该图片路径',
-    mutate: (dir) => {
-      writeFileSync(join(dir, 'samples', 'manual', 'images', 'selftest-new.png'), Buffer.from([1, 2, 3]), 'utf8');
-    },
-    expectCode: 1,
-    expectProducts: [],
-    expectImages: ['manual/images/selftest-new.png'],
-    expectOutput: /未登记字节基线/,
-  },
 ];
 
 const suite = createCaseSuite();
@@ -366,9 +345,9 @@ await suite.case('归因摘录', () => {
 });
 
 /* ---------- 汇总:段级成败按 case 结果判 ---------- */
-// 与搬迁前 `failures[]` 判定等价(任一档失败即非零退出),**分母也是同一个**:搬迁前写
-// `CASES.length + 2`(夹具表 7 条 + 表外两块),搬迁后由 `suite.results.length` 自然给出 9。
-// 两侧一旦不等,说明有档没接进 case —— 那正是 `gates-selftest-named-case` 要抓的形态。
+// 与搬迁前 `failures[]` 判定等价(任一档失败即非零退出),**分母由 `suite.results.length` 自然给出**。
+// 两条图片字节档迁往 gates/fixtures/check-image-digests.selftest.mjs 后,本表与其名册须同批减到
+// 7 条 —— 两侧不同步正是 `gates-selftest-case-roster`(⑯ 族两向差集)要抓的形态。
 const cases = suite.results;
 const failedCases = suite.failures;
 if (failedCases.length > 0) {

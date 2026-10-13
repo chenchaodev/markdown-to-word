@@ -22,7 +22,10 @@
  * 5. 图片夹具字节基线:覆盖面到**全部**图片夹具(磁盘派生)+ 漂移/未登记/残留三类判红
  *    逐条点名文件 + 全部一致的正向锚点。守的是「夹具漂移必须在 --check 里可见」——
  *    旧实现只逐字节比对被样例引用到的图片,未被引用的夹具与「源副本同时被改」都在
- *    判据之外,曾因此把夹具漂移误判成代码回归(见 gates/fixtures/gen-fixtures.mjs 文件头)。
+ *    判据之外,曾因此把夹具漂移误判成代码回归(判定体已独立成门禁
+ *    gates/fixtures/check-image-digests.mjs,见其文件头)。
+ *    同族的「空声明是合法终态」判定层(`classifyFixturesDeclaration`)在这里也有一条正向断言:
+ *    它是那 100 多处 `fixtures = null` 的唯一合法性来源,不能只靠生成器在用就以为它被守着。
  * 6. 段发现的递归性与去重(临时合成树,mkdtemp 在系统临时区,不落 test/ 树):
  *    二级/三级段被发现且段名是相对 rootDir 的完整相对路径、rootDir 缺省回落到段目录
  *    basename、祖先/后代段目录对不重复登记(且按段名归并报出,不是静默去重)、
@@ -40,16 +43,21 @@ import { discoverSegments, discoverSegmentsDetailed } from "../harness/runner.js
 import { removeTree } from "../harness/temp-resource.js";
 import {
   FIXTURE_SEGMENT_DIRS,
-  IMAGE_DIGEST_BASELINE,
   SEGMENT_EXEMPTIONS,
-  auditImageDigests,
   buildReadme,
   findOutputNameCollisions,
   listCandidateSegments,
-  listImageFixtures,
   planFixtureOutputs,
   validateSegmentContract,
 } from "../../gates/fixtures/gen-fixtures.mjs";
+// 图片字节基线那一面已独立成门禁(判定体与登记 CLI 都在这里),本段 import 它的判定层:
+// 守护对象随之解耦 —— 生成器被裁撤时,这一族断言不受影响。
+import {
+  IMAGE_DIGEST_BASELINE,
+  auditImageDigests,
+  classifyFixturesDeclaration,
+  listImageFixtures,
+} from "../../gates/fixtures/check-image-digests.mjs";
 import { SEGMENT_DIRS } from "../../shared/test-common-surface.js";
 
 /** 段目录硬编码残留:acceptance.mjs 若再写 `path.join(testRoot, "…")` 字面量,就是第二份清单 */
@@ -304,7 +312,30 @@ export async function run() {
       ok({ fixtures: { main: "x" }, meta: { description: "d" } }, "完整契约");
       ok({ fixtures: { main: "x" }, meta: { description: "d" }, run() {} }, "完整契约带 run");
     });
-    console.log("[ok] fixture-contract:契约判定 9 类失败模式命中 + 3 类正向锚点通过");
+    // 「= null 是合法终态」的判定层单列一条:上一档经由生成器的契约校验间接覆盖它,
+    // 而生成器是被裁撤议程上的那一侧 ⇒ 判定层一旦退化(例如把「缺声明」也判成合法终态),
+    // 那 100 多处空声明仍会静默合法、而缺声明的段会**静默跳过**(产物缺失无人知晓)。
+    await suite.case("4. 空声明合法终态判定层:缺声明/空声明/已声明三档各归各档", () => {
+      assert(
+        classifyFixturesDeclaration({ run() {} }) === "absent",
+        "没导出 fixtures 的段必须落 absent 档(缺声明是判红档,不是合法终态)",
+      );
+      assert(
+        classifyFixturesDeclaration({ fixtures: null }) === "null-terminal",
+        "`fixtures = null` 必须落合法终态档(它就是那批空声明的合法性来源)",
+      );
+      // 反向锚点:这一档判据退化时最隐蔽的形态是「什么都归 null-terminal」——
+      // 那样缺声明的段静默跳过、产物缺失无人知晓,而空声明这档反而照常绿。
+      assert(
+        classifyFixturesDeclaration({ fixtures: { main: "x" }, meta: { description: "d" } }) === "declared",
+        "导出了场景映射的段必须落 declared 档(不得被当成空声明)",
+      );
+      assert(
+        classifyFixturesDeclaration({ fixtures: {} }) === "declared",
+        "空对象不得落 null-terminal 档(它仍须由契约校验判红,否则空对象等于合法终态)",
+      );
+    });
+    console.log("[ok] fixture-contract:契约判定 9 类失败模式命中 + 3 类正向锚点通过 + 空声明合法终态判定层三档");
   }
 
   // ================= 5. 产物命名 / 撞车 / README 索引 =================
@@ -368,7 +399,7 @@ export async function run() {
       // 后者是恒绿失效形态,故与漂移同级判红而非放行。
       assert(
         baselineKeys.join(",") === foundKeys.join(","),
-        `图片夹具基线与磁盘实测不同集(新增夹具须跑 --print-image-baseline 登记;删除/改名须清基线):\n`
+        `图片夹具基线与磁盘实测不同集(新增夹具须跑 check:image-digests --print-image-baseline 登记;删除/改名须清基线):\n`
           + `  基线(${baselineKeys.length})=${baselineKeys.join(",")}\n`
           + `  实测(${foundKeys.length})=${foundKeys.join(",")}`,
       );
