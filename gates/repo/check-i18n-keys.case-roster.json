@@ -1,0 +1,28 @@
+{
+  "_comment": "`case 登记名册`:本族(gates-selftest-case-roster)判的是**名还在不在**,不是「断言一条未删」。\n\n**半齿上限(转正也不消除)**:「删 case + 同批删名册这一条」是**一次**改动,判据看不见\n(两侧同时变 ⇒ 两向差集仍为空)。本族只抓**单侧**漂移:册有源无(有人删了 case 忘了删册)、\n源有册无(源码新增的档没进册)。两侧同改靠 code review 的并排 diff。\n\n**播种声明**:本名册与那份自测**同批落地**(新门禁的第一天),故对播种之前的删除零证明力;\n自播种之日起才有看守力。\n\n取名策略见 gates/repo/check-test-layout.mjs#GATE_SELFTEST_CASE_SOURCES 里本文件那一行:\ntable-field:KNOWN_SHAPES.name + table-field:SAFE_SHAPES.name + table-field:MUTATIONS.name\n+ inline-case,按该顺序、策略内按出现序。\n⚠ **四类策略一律用 `name` 不出 `id`**:理由照 check-output-unwritable-registry 那一行\n(check-test-layout.selftest.mjs 的名册族夹具用**策略签名**从登记表认领「在册 demo 路径」,\n其中一档的签名是「同时有 `field: 'name'` 与 `field: 'id'`」;本行若有 `field: 'id'` 就会命中\n同一签名而排位靠后。本行**四类策略并存**(两张判定层表 + 一张变异表 + 内联),因此\n「单策略」那几个 demo 签名(内联 / 表 name / wrapper / id / call-cases)一条都不命中,\n夹具不会改拿本行铺合成树。)\n⚠ 本载体有**真变异档**:变异① 往**合成 HTML**(被检主体)注入字典外 key,判红并点名后逐字还原;\n变异② 改**判定本体**的字典成员判据,令合成根转绿以证明「判红由该判据产生」,再逐字还原。\n两者还原前都先比对,拒绝覆盖第三方改动。\n⚠ 第 7–10 条是判定层**判绿反向锚点**(合法键 / 四形态 / 剥注释不误伤 / 单引号),其中\n「剥注释不误伤」一格是「先剥注释再扫」这一族的牙齿:注释里的字典外 key 若被当属性,该格立刻红。",
+  "cases": [
+    "判红:字典外 key(字面量形态,值域合法但 Dict 无此键)",
+    "判红:空值 data-i18n=\"\" —— tByKey(\"\") 静默清空文案",
+    "判红:值域含空格",
+    "判红:值域单段无点",
+    "判红:值域首尾空白",
+    "判红:data-i18n-title 形态字典外 key",
+    "判绿:合法键 base 形态",
+    "判绿:四种属性形态各异(base/title/aria-label/placeholder)",
+    "判绿:剥注释不误伤 —— 注释文本里的字典外 key 不算属性",
+    "判绿:单引号属性合法",
+    "变异① 往合成 HTML 注入一个字典外 key ⇒ 判红并点名 文件:行号: 属性名=值;撤掉 ⇒ 复绿",
+    "变异② 关掉判据本体的字典成员检查 ⇒ 字典外 key 不再判红(证明判红由该判据产生,不是恒红)",
+    "真实仓库零缺口:每个 data-i18n* 值都命中值域且在字典内(analyze 零问题)",
+    "真实仓库扫描面三项均非零:HTML 份数、属性出现数、字典键数都为正(防空门禁那档不是摆设)",
+    "判定层塌缩:某 HTML 文件零 data-i18n 属性 ⇒ judgeHtmlKeys 判红并点名该文件",
+    "判定层:空文件清单 ⇒ judgeHtmlKeys 零问题(空清单的塌缩由 CLI 的 files===0 档拦,分层同 check-segment-contracts)",
+    "行号定位:data-i18n 前的多行注释块不会让行号偏移(点名第 N 行的前提)",
+    "CLI 合成根:全部键合法 ⇒ exit 0 且打 [ok] 行",
+    "CLI 合成根塌缩:renderer 零 HTML ⇒ exit 1 且报「扫描面塌缩」",
+    "CLI 合成根:某 HTML 零 data-i18n ⇒ exit 1 且点名该文件",
+    "CLI:--help ⇒ exit 0 且打用法",
+    "CLI:无法识别的参数 ⇒ exit 1 且报 fail(不为拼错的旗标静默跑一遍判定)",
+    "真实仓库门禁本体未被改动且 exit 0(收尾:证明本 selftest 全程只动合成根/变异可还原,没留下残留)"
+  ]
+}

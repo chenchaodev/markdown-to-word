@@ -484,6 +484,28 @@ export const GATE_INDEX = Object.freeze(
       modulePath: "gates/repo/check-html-const-mirror.mjs",
       judgment: { module: "gates/repo/check-html-const-mirror.mjs", export: "judgeHtmlConstMirror", shaped: "{ problems: MirrorProblem[], stats }" },
     },
+    "i18n-keys": {
+      id: "i18n-keys",
+      // ⚠⚠ **上链的理由与 eol-anchor / output-unwritable-registry 同款,但它守护的是一族**静默失效**:
+      // `data-i18n*` 是运行期 string key 通道(消费方 `src/core/i18n/dom.ts` 的 applyStaticTexts
+      // 把属性值喂给 tByKey),而 tByKey 的回退链「当前语言 → en → key」两级都缺时返回 key 本身、
+      // **不抛错** ⇒ HTML 里写一个字典外的 key,症状不是报错而是界面**静默显示裸 key**
+      // (如 `foo.bar` 原文)。此前 `gates/` 对这族零命中(事实底账见
+      // `docs/evidence/20261006-173000-data-i18n属性通道无校验的事实底账.md`),没有任何门禁会红。
+      // 只在本地手动跑 ⇒ CI 上那类字典外 key 仍然发生,且发生时没人知道是哪道门禁本该拦住它。
+      //
+      // ⚠ **为什么读源码而不 import dict**:`Dict = keyof typeof dict` 定义在 `src/core/i18n/zh.ts`,
+      // import 它需先 build,那会给门禁加一道构建前置;本门禁从源码切片枚举键,零前置 ⇒ 可排在
+      // `build` 之前的静态门禁组内(与 check-html-const-mirror 同组:两者都读 renderer HTML 文本)。
+      npmScripts: ["check:i18n-keys", "check:i18n-keys:selftest"],
+      access: ACCESS_CHAIN,
+      modulePath: "gates/repo/check-i18n-keys.mjs",
+      judgment: {
+        module: "gates/repo/check-i18n-keys.mjs",
+        export: "judgeHtmlKeys",
+        shaped: "string[](纯函数:一组 HTML + 字典键集合 → 值域/字典成员/扫描面塌缩逐条问题清单)",
+      },
+    },
     "dual-matrix": {
       id: "dual-matrix",
       // ⚠ 零 npm script:不是 npm script 门禁,而是验收段内的一道门禁(由 M2W_ONLY 单独跑)。

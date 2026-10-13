@@ -22,7 +22,7 @@
 //   - `check-temp-cleanup.mjs:21`「排除 samples(被测样例数据本身,不是清理动作)」;
 //   - `check-test-numbering.mjs:20-24` 同款(排除写成显式清单,理由是「它不是断言」)。
 // 另两处是**范围**上根本没扫到它:
-//   - `npm run lint` = `eslint src/ test/ gates/ tools/` —— `samples/` 不在清单里;
+//   - `npm run lint` = `eslint src/ test/ gates/ tools/ shared/` —— `samples/` 不在清单里;
 //   - `tsc` 的 include 不含 `samples/`,`check-import-boundary` 的门禁主体豁免表也记着
 //     「实测没有任何 import 说明符指向 samples/」。
 //

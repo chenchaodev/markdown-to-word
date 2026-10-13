@@ -105,6 +105,8 @@ pdf 必然要 Electron 宿主（见「后果」第 2 条）。~~MCP 第一版**�
 **6. `tsconfig.json` / eslint / `build.files` / `repo-manifest` 零改动。**
 `include: ["src"]`、`eslint src/ test/ gates/ tools/`、`build.files` 正向仅 `dist/**`（`:101`）—— 三处均由派生式治理自动覆盖新树。`eslint.config.js:33` 已 ignore `dist`。`allowDefaultProject`（`:44`）注释明说「新增子目录自动覆盖」。
 
+> ⚠ **2026-10-13 REQ-237 补注**：上句的 lint 串已于 REQ-237 扩为 `eslint src/ test/ gates/ tools/ shared/`。此前 `shared/` 虽在 `eslint.config.js` 备好了 no-undef 等配置，但 CLI 从不把该目录传进去 ⇒ 那段配置空转、`shared/` 整棵树脱扫。**本条关于「`src/convert` 由 `eslint src/` 自动覆盖」的结论不因此改变**（它是 `src/` 子树，一直在覆盖面内）；变的只是扫描串多了 `shared/` 这一棵树。
+
 **7. 搬移时的两个陷阱。**
 - `merge.ts:82` 的 `dirs[0] ?? process.cwd()` 实际不可达（`:116-119` 空数组守卫在前）。**搬迁必须保持守卫在前**，否则行为从「抛 i18n 错误」静默变成「以 cwd 为基准」。
 - `context.ts:30-31` 的 `resolverCache`（LRU，上限 16）是唯一带跨调用可变状态的模块，随长驻进程长期存活。行为不变，但 commit message 须点名。

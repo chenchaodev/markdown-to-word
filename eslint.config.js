@@ -76,6 +76,10 @@ export default tseslint.config(
   {
     // 非 tsc program 的三棵树(gates / shared / tools)开 no-undef(REQ-170)。
     //
+    // ⚠ 这块对 `shared/` 生效的前提是 lint 扫描串含 `shared/` —— REQ-237(2026-10-13)补上该串,
+    // 此前配置在此空转(package.json 的 lint 串从不传 `shared/` ⇒ 脚本压根不扫它)。自此三棵树
+    // 才真被扫到,本块的 no-undef 才对 `shared/**` 名副其实。
+    //
     // 为什么需要它:`no-undef` 默认不在 tseslint.configs.recommended 里
     // (typescript-eslint 刻意关掉它,因为 TS 自己查未定义标识符)。而这三棵树不在任何
     // tsconfig 的 include 内(tsconfig.json 只含 src,tsconfig.test.json 只含 test),

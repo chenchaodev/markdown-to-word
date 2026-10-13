@@ -14,10 +14,10 @@
  * ⚠ **搬迁的代价,读本注前先分清三条事实(2026-10-09 实测)**:
  * ① **`no-undef` 这一条搬迁前后都没有** —— `eslint.config.js:95` 那块的 `files`
  *    不含 `test/**`,故本文件原来在 `test/` 下就没有 `no-undef`。**不是收益。**
- * ② **但 lint 的其余部分是真的丢了** —— lint 串是 `eslint src/ test/ gates/ tools/`,
- *    **不含 `shared/`** ⇒ 本文件从「被扫」变成「完全不被扫」。改法已登记 REQ-237,
- *    不在本工作项写域;代偿是单独跑 `npx eslint shared/case.js`(与 `npm run lint`
- *    是两条不同路径,那个退出码才有信息量)。
+ * ② **但 lint 的其余部分一度真的丢了** —— 搬迁时 lint 串是 `eslint src/ test/ gates/ tools/`、
+ *    **不含 `shared/`** ⇒ 本文件从「被扫」变成「完全不被扫」。**REQ-237(2026-10-13)已补该串**
+ *    (lint 现扫 `src/ test/ gates/ tools/ shared/`)⇒ 本文件重新被扫,这条代价随之消除;
+ *    当时登记的代偿动作(`npx eslint shared/case.js` 单点跑)随之退役。
  * ③ **唯一真收益是 `@ts-check` 从装饰变成真的** —— `tsconfig.test.json` 的 `include`
  *    只有 `test`,而门面 import 本实现 ⇒ 本实现必然进 program。**别把 ① 记成 ③。**
  *

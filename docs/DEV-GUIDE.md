@@ -18,7 +18,7 @@
 | ---- | ---- |
 | `npm install` | 安装依赖。运行时与构建期依赖(含 `typescript` / `@types/node` / `electron` / `electron-builder`)全在 `dependencies` + `devDependencies`,一次装齐,无「先单独装某几个包」的前置步骤 |
 | `npm run typecheck` | TS 类型检查(主树 `tsc --noEmit` + 测试树 `tsconfig.test.json` 按 `// @ts-check` 渐进,TS 7) |
-| `npm run lint` | ESLint 10 flat 检查 `src/ test/ gates/ tools/`(typescript-eslint 类型感知规则,side-by-side TS 6 API) |
+| `npm run lint` | ESLint 10 flat 检查 `src/ test/ gates/ tools/ shared/`(typescript-eslint 类型感知规则,side-by-side TS 6 API) |
 | `npm run build` | 构建 core 到 `dist/`(`tsc` + copy-renderer) |
 | `npm run dev` | 开发启动 = `build` 后**直接**起 Electron,**不带**构建新鲜度守卫 |
 | `npm run start` | 启动 Electron,但**先跑 `gates/smoke/check-build-fresh.mjs` 校验构建新鲜度** —— 只改了源码没重建时,守卫先拦下(`test:smoke` 用的是同一个守卫) |
@@ -51,7 +51,7 @@
 
 | 组 | 判据 | 成员 |
 | --- | --- | --- |
-| A 静态判定 | 只读源码与文本，不消费 `dist/`、不写产物 | 契约与依赖声明 · import 层向 · 变换分派 · 测试编号 · 临时目录清理 · 固定 action · 归档索引 · 文档指针 · 源码树布局 · HTML 常量镜像 · CHANGELOG 与发布说明（各含各自的 selftest） |
+| A 静态判定 | 只读源码与文本，不消费 `dist/`、不写产物 | 契约与依赖声明 · import 层向 · 变换分派 · 测试编号 · 临时目录清理 · 固定 action · 归档索引 · 文档指针 · 源码树布局 · HTML 常量镜像 · renderer HTML data-i18n 通道 · CHANGELOG 与发布说明（各含各自的 selftest） |
 | B 构建 + 代码质量 | 产出或消费 `dist/` | `build` → 产物侧层向 → `typecheck` → `lint` |
 | C 执行与判定 | 真跑测试、真跑产物判定、消费覆盖率数据 | 覆盖率 → 零覆盖判定 → 零覆盖判据自检 → 夹具漂移 → 冒烟 → 几何 |
 
@@ -84,7 +84,7 @@ MCP 形态的判定要点:stdout 上应恰好两个 JSON 帧(启动横幅与 cra
 
 | 门禁类别 | 脚本 | 接入点 |
 | ---- | ---- | ---- |
-| 构建 / 类型 / 风格 | `build` `typecheck` `lint` | `verify:ci` 链。`lint` 的覆盖面含**三棵非 tsc program 的树**(`gates/**/*.mjs`、`shared/**/*.mjs`、`shared/**/*.js`、`tools/**/*.mjs`)并对它们开 `no-undef` —— 这几棵树不在任何 tsconfig 的 `include` 内,而 `no-undef` 默认不在 `tseslint.configs.recommended` 里(typescript-eslint 刻意关它,因为 TS 自己查),不显式开则标识符拼错两道静态检查都不报、只有 `npm run acceptance` 真跑到才炸(node globals 在 `eslint.config.js` 该块集中声明,勿就地 `eslint-disable`)。**未开 `checkJs`** —— 实测给 `gates/` 开它产生上千条噪声(纯缺 JSDoc 标注的隐式 any ＋ 继承的 `noUncheckedIndexedAccess` ＋ 跨模块 typedef 引用),清零成本与「抓一个字符的错」的诉求差三个数量级(裁决见 `docs/adr/ADR-064-源码树一职责一文件与内部边界判据.md`) |
+| 构建 / 类型 / 风格 | `build` `typecheck` `lint` | `verify:ci` 链。`lint` 扫**五棵树**(`src/` `test/` `gates/` `tools/` `shared/`);其中 `gates` / `shared` / `tools` 三棵不在任何 tsconfig 的 `include` 内(`gates/**/*.mjs`、`shared/**/*.mjs`、`shared/**/*.js`、`tools/**/*.mjs`)开 `no-undef` —— `no-undef` 默认不在 `tseslint.configs.recommended` 里(typescript-eslint 刻意关它,因为 TS 自己查),不显式开则这几棵树里标识符拼错两道静态检查都不报、只有 `npm run acceptance` 真跑到才炸(node globals 在 `eslint.config.js` 该块集中声明,勿就地 `eslint-disable`)。**`shared/` 自 REQ-237(2026-10-13)才真正进 lint 扫描串** —— 此前 `eslint.config.js` 已为它备好 no-undef 配置,但脚本从不把该目录传进去 ⇒ 那段配置空转(`shared/` 整棵树脱扫)。**未开 `checkJs`** —— 实测给 `gates/` 开它产生上千条噪声(纯缺 JSDoc 标注的隐式 any ＋ 继承的 `noUncheckedIndexedAccess` ＋ 跨模块 typedef 引用),清零成本与「抓一个字符的错」的诉求差三个数量级(裁决见 `docs/adr/ADR-064-源码树一职责一文件与内部边界判据.md`) |
 | 开发启动 | `dev` `start` | 仅本地手动 |
 | 清理生成目录 | `clean:dist` `clean:release` | `verify:release` 链(`dist` 的首步,只删这两个生成目录) |
 | 清理 c8 的 V8 dump 临时目录 | —(**无 npm script**) | `node gates/artifacts/clean-artifacts.mjs --coverage-temp`。这是**独立的无值布尔开关,不是第四个 `--target` 关键字** —— `--target` 的取值域只有 `dist`/`release`/`all` 三档且被门禁逐字节钉死,加关键字会判红。`--coverage-temp` 的落点钉在 `package.json` 的 `test:coverage` 的 `--temp-directory=` 上。**默认不清**:`clean:dist` 不动它,`--target all` 也不带它 —— 它是测试运行器中间态、不进包,清理理由只是磁盘占用,搭车「删除不可逆」的动作不划算(`.c8-tmp` 实测约 134M) |
@@ -102,6 +102,7 @@ MCP 形态的判定要点:stdout 上应恰好两个 JSON 帧(启动横幅与 cra
 | 测试树布局(段目录 / 顶层目录 / `covers` / 层向) | `check:test-layout` `check:test-layout:selftest` | `verify:ci` 链。判据本体 `gates/repo/check-test-layout.mjs`;判据族逐条登记在它的 `CRITERIA`(族数随增删变动,**不在此抄数**),其中 L7 当前是 `pending`(见该常量表内的 `pendingReason`) |
 | 源码树布局(文件头注释 / 同层重名) | `check:src-layout` `check:src-layout:selftest` | `verify:ci` 链(A 组静态判定)。判据本体 `gates/repo/check-src-layout.mjs`,**npm script 自带 `--enforce`** ⇒ 链上跑的形态是 fail-closed。判定本体的 `main()` 仍保留「不带 `--enforce` 即只报告」的默认分支,那不是遗留:该分支的回归守护在 selftest 的「默认模式 exit 0」与「两模式退出码不同」两格 |
 | HTML 手写镜像 ↔ core 常量 | `check:html-const-mirror` | `verify:ci` 链(A 组静态判定)。判据本体 `gates/repo/check-html-const-mirror.mjs`,**npm script 自带 `--enforce`**;登记表 `MIRROR_PAIRS` 是判定本体的**形参**而非 CLI 可传项(能传登记表就能把自己摘出去)。⚠ `step` 属性**不在登记表内** —— core 全树没有 step 取值常量,它是「无对应物的手写值」而非镜像;负向夹具在 `test/gates/repo/html-const-mirror-gate.test.js`(段,不是 `.selftest.mjs` 载体) |
+| renderer HTML data-i18n 通道 | `check:i18n-keys` `check:i18n-keys:selftest` | `verify:ci` 链(A 组静态判定,读 renderer HTML + `src/core/i18n/zh.ts` **源码**,零 dist 前置,与 `check:html-const-mirror` 同组)。判据本体 `gates/repo/check-i18n-keys.mjs`;判**每个 `data-i18n*="值"` 的值必须是 Dict 键**(值域正则 + 字典键集合;键数跑 `node gates/repo/check-i18n-keys.mjs` 取,不复述),先剥 HTML 注释再扫。空值判红(`tByKey("")` 静默清空文案)、字典外值判红(运行期静默显示裸 key)、扫描面塌缩判红(零 HTML / 某 HTML 零属性,均从文件清单派生、无写死下限)。⚠ **不反向判「Dict 里没被 HTML 用的键 = 死键」** —— 静态 key 大量由 `t()` 用,死键判据面横跨 TS 与 HTML,属另一条工作线 |
 | 门禁索引表自身 | `check:gate-index:selftest` | `verify:ci` 链。**只有自检有 npm script**(`check:gate-index` 不存在),本体是纯数据表 `gates/repo/gate-index.mjs`,由 `check:test-layout` 的 L11 / L12 两条判据消费 |
 | 临时目录清理收口 | `check:temp-cleanup` `check:temp-cleanup:selftest` | `verify:ci` 链。判据本体 `gates/repo/check-temp-cleanup.mjs`(与 `check:test-numbering` 各自 fail closed 读同一单源的镜像判据,见「测试体系」节) |
 | 行尾敏感行锚 | `check:eol-anchor` `check:eol-anchor:selftest` | `verify:ci` 链。判据本体 `gates/repo/check-eol-anchor.mjs`。判「读文本 + **裸 LF 分隔符** + **内容级**消费(空行判定 / 逐行比对 / 整行定位 / 空行过滤)」的高危形态:裸 LF 用于计数 / 换行号在 CRLF 下同解,故不判;`/\r?\n/` 与 `'\r\n'` 是已容错形态,也不判。**它的结论与检出态无关**(扫的是源码里的形态,不是源码的行尾),本地 LF 与 CI CRLF 跑的是同一门判据 —— 这条已实测,改回「因依赖检出态才不上链」是错的 |

@@ -699,6 +699,26 @@ export const GATE_SELFTEST_CASE_SOURCES = Object.freeze([
     ]),
   }),
   Object.freeze({
+    file: "gates/repo/check-i18n-keys.selftest.mjs",
+    // 四类策略并存(与 check-eol-anchor / check-output-unwritable-registry 同款结构):两张判定层
+    // 表 + 一张变异表的档名都在 `name` 字段上,基线与合成根那几档是内联字面量。
+    //
+    // ⚠⚠ **四类策略一律用 `name` 而刻意不用 `id`**:理由照 check-eol-anchor 那一行的注释
+    // (check-test-layout.selftest.mjs 的名册族夹具用**策略签名**从本表认领「在册 demo 路径」,
+    // 其中一档的签名是「同时有 `field: 'name'` 与 `field: 'id'`」;若某行带 `field: 'id'` 会命中
+    // 同一签名而排位靠后,夹具改拿那一行铺合成树时那份合成源码里没有那几张表 ⇒ 抽出 0 条 ⇒
+    // 报「册有源无」。**代价不是夹具假红,是既有档里一档真的开始验错东西。**)本行只出 `name`。
+    // 本行**四策略并存**故「单策略」那几个 demo 签名(内联 / 表 name / wrapper / id / call-cases)
+    // 一条都不命中 ⇒ 夹具不会改拿本行去铺合成树。
+    // 变异档**逐条真改被检主体与判定本体再逐字还原**,故档名必须能被机械抽出对账。
+    strategies: Object.freeze([
+      Object.freeze({ kind: "table-field", table: "KNOWN_SHAPES", field: "name" }),
+      Object.freeze({ kind: "table-field", table: "SAFE_SHAPES", field: "name" }),
+      Object.freeze({ kind: "table-field", table: "MUTATIONS", field: "name" }),
+      Object.freeze({ kind: "inline-case" }),
+    ]),
+  }),
+  Object.freeze({
     file: "gates/repo/check-samples.selftest.mjs",
     // ⚠ 唯一一份**两套字段名**的:基线档取 `CASES.name`,变异实验取 `MUTATIONS.id`
     // (mutation.id 是它的档名,与基线不同源 —— 见那份自测的注释)。
