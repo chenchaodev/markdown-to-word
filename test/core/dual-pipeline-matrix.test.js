@@ -48,21 +48,23 @@
  * - allowedDiff:有意的实现差异,断言「差异确实存在且方向正确」(既防差异被
  *   意外抹平,也防差异扩大到契约之外)。
  *
- * 来源锚点格式 `文件:行号`,指向该维度在两侧的实现位置;行号随实现漂移,
- * 锚点失效时以该行断言的可执行事实为准重新定位(注释只是导航,不是断言)。
+ * 来源锚点格式 `{ at, has }`:`at` 指向该维度在两侧的实现位置(带人读说明),
+ * `has` 是该位置**必须出现的标识符** —— 实现改名/搬走时它会当场判红,而行号漂移
+ * 不会(行号只进告警文案)。括注里的说明只是导航,不参与判定。
  *
- * 锚点的**存在性由本段真校验**(6-C3):逐条打开源文件、确认行号在范围内。
- * 此前只校验格式不校验存在,实测 66 条里 25.8% 指向空行或纯注释、1 条越界
- * —— 「有字段但零约束」比没有字段更误导。行号指向注释行本身不算失败(注释
- * 常常正是解释该决策的位置),指向越界/空行才判红。
+ * 锚点的**存在性由本段真校验**:逐条打开源文件,确认 `has` 落在实质行上、锚点行本身
+ * 是实质行。此前只校验格式与「非空」,实测 86 条里 23% 指向纯标点或纯注释行
+ * (零信息行),且「行号在范围内」这项随任何无关编辑漂移 —— 改一行注释即假红,
+ * 指到无关的非空行则照样绿(台账记的那条 `convert.ts` 锚点长期绿即此形态)。故判据改为
+ * 「`has` 必须在该文件的实质行上出现」,把「指得对不对」交给机器而不是行号。
+ * 裁决与告警口径见 checkAnchor 的头注;漂移告警由矩阵形状 case 回显。
  *
- * 键覆盖登记**接门禁探针**(`check:gates` 的 `dual-matrix` 一项,见
- * `gates/probe/gate-probes/contract.mjs` 的 GATE_IDS 与 `gates/dual-matrix.mjs`):
- * 判据是本段的 `assertMatrixShape`(其中含键覆盖交叉核对),探针在系统临时目录的
- * 工程副本里注入两类故障 —— 删掉一行 `covers` 标记、给某行塞一个未登记的键 ——
- * 断言本段真的判红,即证明这道登记不是恒真断言。探针**不在** `verify:ci` 链内
- * (`check:gates` 是阴性自检,由 `test/gates/gate-probes.test.js` 在链内实跑),
- * 而本段本身随全量验收段在链内跑。
+ * 键覆盖登记与锚点判据的**有牙证明**都在本段内(不另挂探针):矩阵形状 case 之后紧跟
+ * 「锚点判据负向夹具」两组 case —— 逐档喂坏锚点(指向零信息行 / `has` 不命中 /
+ * 形状字段缺失)证明判红,并逐档证明确有该红时红、不该红时绿(行号漂移不判红)。
+ * ⚠ 此前本段头注称这两项由 `check:gates` 的 `dual-matrix` 探针守护
+ * (`gates/probe/gate-probes/contract.mjs` + `gates/dual-matrix.mjs`)—— 那棵树已删除,
+ * package.json 里也没有 `check:gates`,该指针是失效载体。
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -78,6 +80,7 @@ import {
   watermarkDmlRotation,
 } from "../../dist/core/settings/settings-defaults.js";
 import { WATERMARK_GRAY } from "../../dist/core/style/colors.js";
+import { captureAssertionFailure } from "../harness/assert.js";
 import { createCaseSuite } from "../harness/case.js";
 import { docxBookmarks, docxLinkBody, docxTocAnchors, pdfHeadingIds, pdfLinkBody, pdfTocItems } from "../harness/dual-extract.js";
 import { buildMatrixCtx } from "../harness/dual-sandbox.js";
@@ -136,7 +139,7 @@ import { MATRIX_ROW_IDS, assertKeyCoverageRegistered, keyCoverageCounts } from "
  * }} MatrixCtxExtended
  */
 
-export const meta = { description: "双管线差异矩阵(docx ↔ pdf):必须一致 / 允许不同的可执行断言表(26 行,键覆盖登记覆盖 8 个双管线键,含双侧提取器与经存在性校验的来源锚点)。" };
+export const meta = { description: "双管线差异矩阵(docx ↔ pdf):必须一致 / 允许不同的可执行断言表(26 行,键覆盖登记覆盖 8 个双管线键,含双侧提取器与抗漂移来源锚点 at+has)。" };
 // 场景导出(gen-fixtures 落盘为 docs/dual-pipeline-matrix*.md):样例字面量在
 // dual-samples.js,契约声明留在段层(生成器只认段文件的导出)。
 export const fixtures = {
@@ -152,11 +155,18 @@ export const fixtures = {
  * @param {unknown} cond 判定条件
  * @param {string} rowId 矩阵行 id(失败信息定位用)
  * @param {string} msg 失败说明
- * @returns {void}
+ * @returns {asserts cond} 收窄断言:`must(x !== undefined, …)` 之后 x 可直接当非空用
  */
 function must(cond, rowId, msg) {
   if (!cond) throw new Error(`[dual-matrix:${rowId}] ${msg}`);
 }
+
+/**
+ * 一条来源锚点:`at` 是位置(带说明的人读串),`has` 是**必须出现在那里的标识符**。
+ * @typedef {object} SourceAnchor
+ * @property {string} at `src/<文件>.ts:<行号>(说明)`
+ * @property {string} has 该位置必须出现的标识符(抗漂移锚;≥3 字符)
+ */
 
 /**
  * 差异矩阵表的一行。
@@ -168,7 +178,7 @@ function must(cond, rowId, msg) {
  *   任何设置键,如「只在一侧生效的 pdf 专属设置」或「纯语义维度」行)
  * @property {string} docxExtract docx 侧提取方式
  * @property {string} pdfExtract pdf 侧提取方式
- * @property {string[]} anchors 来源锚点
+ * @property {SourceAnchor[]} anchors 来源锚点
  * @property {(ctx: MatrixCtxExtended) => Promise<void>} verify 执行断言
  */
 
@@ -221,7 +231,7 @@ function pdfRuleFontSizePt(html, selector) {
  * - covers:本行覆盖的双管线键 id 列表(**可判字段**,与台账 DUAL_PIPELINE_KEYS 交叉核对;
  *   不覆盖任何设置键的行写 `covers: []`,不允许省略该字段);
  * - docxExtract / pdfExtract:双侧提取方式描述;
- * - anchors:来源锚点(src/<文件>.ts:<行号>);
+ * - anchors:来源锚点 `{ at: "src/<文件>.ts:<行号>(说明)", has: "<该处必现的标识符>" }`
  * - verify:执行断言(入参 ctx 含已渲染好的双侧产物与辅助提取结果)。
  */
 /** @type {MatrixRow[]} */
@@ -235,10 +245,10 @@ const MATRIX = [
     docxExtract: "document.xml 无 `title:`/`author:` 原文行;metadata.title 走封面",
     pdfExtract: "HTML 无 `title:`/`author:` 原文行;metadata.title 走封面",
     anchors: [
-      "src/core/convert.ts:87(先剥离,渲染只吃 body)",
-      "src/core/pipeline/frontmatter.ts:53",
-      "src/core/docx/render.ts:215(封面页)",
-      "src/core/pdf/template.ts:153(封面 + page-break)",
+      { at: "src/core/convert.ts:254(渲染只吃 md.body)", has: "md.body" },
+      { at: "src/core/pipeline/frontmatter.ts:53(parseFrontmatter 单源)", has: "parseFrontmatter" },
+      { at: "src/core/docx/render.ts:191(封面页插入)", has: "renderCoverPage" },
+      { at: "src/core/pdf/template.ts:177(封面 HTML;末尾 page-break)", has: "buildCoverHtml" },
     ],
     verify: async ({ docxXmlText, pdfHtml }) => {
       must(!docxXmlText.includes("title: 矩阵样例文档"), "frontmatter-strip", "docx 正文泄漏 frontmatter 原文行");
@@ -259,9 +269,9 @@ const MATRIX = [
     docxExtract: "w:pgSz(w/h/orient) + w:pgMar(top/right/bottom/left)",
     pdfExtract: "模板 CSS `@page { size: …; margin: …mm …mm …mm …mm }`",
     anchors: [
-      "src/core/docx/render.ts:231(纸张 twips + 四边距 twips)",
-      "src/core/pdf/template-css.ts:68(@page size/margin)",
-      "src/core/settings/settings-defaults.ts:428(validatePageSetup 几何门禁,两侧共用)",
+      { at: "src/core/docx/render.ts:208(纸张 twips;四边距在同函数 margin 对象)", has: "mmToTwips" },
+      { at: "src/core/pdf/template-css.ts:68(@page size/margin)", has: "@page" },
+      { at: "src/core/settings/settings-defaults.ts:399(validatePageSetup 几何门禁,两侧共用)", has: "validatePageSetup" },
     ],
     verify: async ({ geometry }) => {
       const [w, h] = geometry.paperTwips;
@@ -278,9 +288,9 @@ const MATRIX = [
     docxExtract: "白名单标签 → 对应 run 属性(bold / vertAlign);白名单外 → 整段丢弃",
     pdfExtract: "白名单标签 → 原样输出标签;白名单外 → 转义为文本",
     anchors: [
-      "src/core/markdown/html-whitelist.ts:12(ALLOWED_INLINE_TAGS 单源)",
-      "src/core/docx/handlers/inline-html.ts:48(标签→样式表,与白名单恒等)",
-      "src/core/pdf/rules/html.ts:10(白名单外转义)",
+      { at: "src/core/markdown/html-whitelist.ts:12(ALLOWED_INLINE_TAGS 单源)", has: "ALLOWED_INLINE_TAGS" },
+      { at: "src/core/docx/handlers/inline-html.ts:57(标签→样式表,与白名单恒等)", has: "INLINE_TAG_STYLES" },
+      { at: "src/core/pdf/rules/html.ts:77(白名单外转义)", has: "escapeHtml" },
     ],
     verify: async ({ whitelistDocxXml, whitelistPdfHtml }) => {
       must(ALLOWED_INLINE_TAGS.has("strong") && ALLOWED_INLINE_TAGS.has("sub"), "html-whitelist", "白名单缺少样本标签(契约漂移)");
@@ -302,10 +312,10 @@ const MATRIX = [
     docxExtract: "count(<w:br w:type=\"page\"/>)",
     pdfExtract: "count(<div class=\"page-break\">) 与 <hr>",
     anchors: [
-      "src/core/docx/render.ts:328(trim 后精确匹配 → PageBreak)",
-      "src/core/docx/handlers/fallback.ts:63(行内 html 路径同判定)",
-      "src/core/pdf/rules/html.ts:75(注释 → 分页 div)",
-      "src/core/pdf/template-css.ts:69(break-before: page)",
+      { at: "src/core/docx/render.ts:329(trim 后精确匹配 → PageBreak)", has: "page-break" },
+      { at: "src/core/docx/handlers/fallback.ts:63(行内 html 路径同判定)", has: "PageBreak" },
+      { at: "src/core/pdf/rules/html.ts:75(注释 → 分页 div)", has: "page-break" },
+      { at: "src/core/pdf/template-css.ts:69(break-before: page)", has: "break-before: page" },
     ],
     verify: async ({ pageBreak }) => {
       must(pageBreak.docxCount === 1, "explicit-page-break", `docx 分页符数量应为 1,实际 ${pageBreak.docxCount}`);
@@ -323,9 +333,9 @@ const MATRIX = [
     docxExtract: "TOC 静态条目 w:anchor(标题 slug) vs 标题书签 w:name",
     pdfExtract: "toc-l1..3 条目 <li class=\"toc-lN\"> vs <hN id=…>",
     anchors: [
-      "src/core/docx/prescan.ts:79(depth<=3 且有 id)",
-      "src/core/pdf/postprocess.ts:33(extractHeadings 只取 h1-h3)",
-      "src/core/markdown/slug.ts:8(slugify 空结果回退 section)",
+      { at: "src/core/docx/prescan.ts:81(depth<=3 且有 id)", has: "node.depth <= 3" },
+      { at: "src/core/pdf/postprocess.ts:38(extractHeadings 只取 h1-h3)", has: "extractHeadings" },
+      { at: "src/core/markdown/slug.ts:8(slugify 空结果回退 section)", has: "slugify" },
     ],
     verify: async ({ tocDocxXml, tocPdfHtml, emptyHeading }) => {
       const anchors = docxTocAnchors(tocDocxXml);
@@ -374,10 +384,11 @@ const MATRIX = [
     docxExtract: "题注段静态编号文本「图 1.1 …」「图 2.1 …」",
     pdfExtract: "xref 替换出的编号文本 + 模板 CSS counter 规则(显示态编号走伪元素)",
     anchors: [
-      "src/core/docx/handlers/captions.ts:75(章节号/序数分配)",
-      "src/core/docx/handlers/captions.ts:115(captionNumberText 单源)",
-      "src/core/pdf/template-css.ts:202(counter-increment)与 205(h1 重置)",
-      "src/core/pdf/rules/xref.ts:144(编号文本与 CSS counter 同源)",
+      { at: "src/core/docx/handlers/captions.ts:83(图/表序数分配)", has: "++figIndex" },
+      { at: "src/core/docx/handlers/captions.ts:115(captionNumberText 单源)", has: "captionNumberText" },
+      { at: "src/core/pdf/template-css.ts:202(fig counter-increment)", has: "counter-increment: figc" },
+      { at: "src/core/pdf/template-css.ts:205(h1c 重置)", has: "counter-reset: h1c" },
+      { at: "src/core/pdf/rules/xref.ts:144(编号文本与 CSS counter 同源)", has: "stripTrailingLabel" },
     ],
     verify: async ({ capDocxXml, capPdfHtml }) => {
       for (const needle of [
@@ -413,9 +424,9 @@ const MATRIX = [
     docxExtract: "书签 fig-<label>/tab-<label> + 文本无 `{#fig:` 残留;开关关闭 → 无书签、label 原样",
     pdfExtract: "锚点 <span id=\"fig:label\"> + 文本无 `{#fig:` 残留;开关关闭 → 无锚点、无编号 CSS",
     anchors: [
-      "src/core/docx/handlers/captions.ts:92(剥离 + 登记)",
-      "src/core/pdf/rules/xref.ts:140(stripTrailingLabel 剥离 + 登记)",
-      "src/core/markdown/cross-ref.ts:95(kindLabelRegex 单源)",
+      { at: "src/core/docx/handlers/captions.ts:92(尾部 label 剥离)", has: "labelMatch" },
+      { at: "src/core/pdf/rules/xref.ts:144(stripTrailingLabel 剥离)", has: "stripTrailingLabel" },
+      { at: "src/core/markdown/cross-ref.ts:95(kindLabelRegex 单源)", has: "kindLabelRegex" },
     ],
     verify: async ({ capDocxXml, capPdfHtml, labelOff }) => {
       const marks = docxBookmarks(capDocxXml);
@@ -442,9 +453,9 @@ const MATRIX = [
     docxExtract: "hyperlink anchor + 编号文本;悬空 → 「图 (?)」纯文本 + 警告",
     pdfExtract: "href + 编号文本;悬空 → 占位纯文本(无死链 href)+ 警告",
     anchors: [
-      "src/core/markdown/cross-ref.ts:22(CROSS_REF_KINDS 文案/占位单源)",
-      "src/core/docx/handlers/link-xref.ts:25(引用替换)",
-      "src/core/pdf/rules/xref.ts:79(两遍替换 + 悬空解包)",
+      { at: "src/core/markdown/cross-ref.ts:22(CROSS_REF_KINDS 文案/占位单源)", has: "CROSS_REF_KINDS" },
+      { at: "src/core/docx/handlers/link-xref.ts:25(引用替换)", has: "pushLinkRuns" },
+      { at: "src/core/pdf/rules/xref.ts:79(两遍替换 + 悬空解包)", has: "replaceXrefLinks" },
     ],
     verify: async ({ capDocxXml, capPdfHtml, capDocxWarnings, capPdfWarnings }) => {
       must(capDocxXml.includes('<w:hyperlink w:history="1" w:anchor="fig-alpha">'), "crossref-text-dangling", "docx 图引用缺跳转");
@@ -467,9 +478,9 @@ const MATRIX = [
     docxExtract: "编号静态文本 (N) + 书签 eq-<label> + 引用「式 (1)」",
     pdfExtract: "class=\"eq-num\">(N) + 锚点 id=\"eq:<label>\" + 引用 href 文本",
     anchors: [
-      "src/core/docx/handlers/equations.ts:57(buildEquationContext)",
-      "src/core/pdf/rules/equation.ts:25(eq_numbering 规则)",
-      "src/core/markdown/cross-ref.ts:109(EQ_LABEL_RE 单源)",
+      { at: "src/core/docx/handlers/equations.ts:57(buildEquationContext)", has: "buildEquationContext" },
+      { at: "src/core/pdf/rules/equation.ts:25(eq_numbering 规则)", has: "overrideEquationRule" },
+      { at: "src/core/markdown/cross-ref.ts:109(EQ_LABEL_RE 单源)", has: "EQ_LABEL_RE" },
     ],
     verify: async ({ eqDocxXml, eqPdfHtml, eqOffDocxXml, eqOffPdfHtml }) => {
       must(eqDocxXml.includes("<m:oMath"), "equation-label-switch", "docx display 公式未生成 MathML");
@@ -502,9 +513,9 @@ const MATRIX = [
     docxExtract: "失控/未覆盖公式 → 整式降级(等宽灰字 + 警告,无 m:oMath)",
     pdfExtract: "失控公式 → katex-error;超 maxSize 的显式尺寸被钳到 10em",
     anchors: [
-      "src/core/resource-limits.ts:34(DEFAULT_KATEX_RESOURCE_LIMITS 单源)",
-      "src/core/docx/handlers/math.ts:88(转发同一份边界)",
-      "src/core/pdf/render.ts:169(插件转发同一份边界)",
+      { at: "src/core/resource-limits.ts:34(DEFAULT_KATEX_RESOURCE_LIMITS 单源)", has: "DEFAULT_KATEX_RESOURCE_LIMITS" },
+      { at: "src/core/docx/handlers/math.ts:90(转发同一份边界)", has: "DEFAULT_KATEX_RESOURCE_LIMITS" },
+      { at: "src/core/pdf/render.ts:185(插件转发同一份边界)", has: "DEFAULT_KATEX_RESOURCE_LIMITS" },
     ],
     verify: async ({ katex }) => {
       must(
@@ -546,9 +557,9 @@ const MATRIX = [
     docxExtract: "已知语言 → <w:color …>;未知/失败 → 无 color + keyed 警告",
     pdfExtract: "已知语言 → pre.hljs + language-* class;未知/失败 → 无高亮 span + 同文案警告",
     anchors: [
-      "src/core/docx/handlers/code-highlight.ts:46(highlightCodeRuns,失败走 onFallback)",
-      "src/core/pdf/render.ts:139(highlight 回调,抛错回退转义 + 同 key 警告)",
-      "src/core/style/hljs-palette.ts:22(色板单源)",
+      { at: "src/core/docx/handlers/code-highlight.ts:48(highlightCodeRuns,失败走 onFallback)", has: "highlightCodeRuns" },
+      { at: "src/core/pdf/render.ts:173(highlight 回调,抛错回退转义 + 同 key 警告)", has: "pushWarningOnce" },
+      { at: "src/core/style/hljs-palette.ts:22(色板单源)", has: "HLJS_PALETTE" },
     ],
     verify: async ({ code }) => {
       must(code.docxKnown.includes('<w:color w:val="CF222E"/>'), "code-highlight", "docx 已知语言未着色(keyword)");
@@ -583,11 +594,12 @@ const MATRIX = [
     docxExtract: "同名 fig/tab 各命中各的书签编号;跨 kind 引用 → 占位 + keyed 警告;同 kind 重名 → 后写覆盖",
     pdfExtract: "同名 fig/tab 各命中各的锚点编号;跨 kind 引用 → 占位无死链 + 同文案警告;同 kind 重名 → 后写覆盖",
     anchors: [
-      "src/core/markdown/cross-ref.ts:33(captionLabelKey 键单源)",
-      "src/core/docx/ctx.ts:69(captionLabels 键 = kind + label)",
-      "src/core/docx/handlers/captions.ts:107(按 kind 登记)",
-      "src/core/docx/handlers/link-xref.ts:90(按 kind 查找)",
-      "src/core/pdf/rules/xref.ts:154(按 kind 登记)与 188(按 kind 查找)",
+      { at: "src/core/markdown/cross-ref.ts:84(captionLabelKey 键单源)", has: "captionLabelKey" },
+      { at: "src/core/docx/ctx.ts:69(captionLabels 键 = kind + label)", has: "captionLabels" },
+      { at: "src/core/docx/handlers/captions.ts:107(按 kind 登记)", has: "captionLabelKey" },
+      { at: "src/core/docx/handlers/link-xref.ts:90(按 kind 查找)", has: "captionLabelKey" },
+      { at: "src/core/pdf/rules/xref.ts:154(按 kind 登记)", has: "captionLabels.set(captionLabelKey" },
+      { at: "src/core/pdf/rules/xref.ts:189(按 kind 查找)", has: "captionLabels.get(captionLabelKey" },
     ],
     verify: async ({ nsDocxXml, nsPdfHtml, nsDocxWarnings, nsPdfWarnings, dupDocxXml, dupPdfHtml, dupPdfWarnings }) => {
       // 查表键含 kind(fig:a / tab:a 为两个键)→ 同名 label 的 fig/tab 题注各登记
@@ -684,9 +696,10 @@ const MATRIX = [
     docxExtract: "不可信命令与未覆盖结构 → 等宽灰字 + 警告(无 katex-error 标记)",
     pdfExtract: "不可信命令 → katex-error(标题含「不受信任」);未覆盖结构 → 正常渲染",
     anchors: [
-      "src/core/docx/handlers/math.ts:83(信任闸门)与 99(未覆盖 → 整式降级)",
-      "src/core/pdf/render.ts:170(guardUntrustedMath 预拦截)",
-      "src/core/resource-limits.ts:86(UNTRUSTED_TEX_COMMAND_RE 单源)",
+      { at: "src/core/docx/handlers/math.ts:83(信任闸门)", has: "hasUntrustedTexCommand" },
+      { at: "src/core/docx/handlers/math.ts:99(未覆盖节点 → 整式降级)", has: "components.length === 0" },
+      { at: "src/core/pdf/render.ts:186(guardUntrustedMath 预拦截)", has: "guardUntrustedMath" },
+      { at: "src/core/resource-limits.ts:86(UNTRUSTED_TEX_COMMAND_RE 单源)", has: "UNTRUSTED_TEX_COMMAND_RE" },
     ],
     verify: async ({ degrade }) => {
       must(!degrade.docxUntrusted.includes("katex-error"), "formula-degrade-trigger", "docx 侧不应出现 katex-error 标记");
@@ -710,9 +723,10 @@ const MATRIX = [
     docxExtract: "word/media/ 部件;失败 → 等宽原文 + 警告",
     pdfExtract: "<div class=\"mermaid-svg\">…</div>;失败 → pre.mermaid-fallback + 警告",
     anchors: [
-      "src/core/markdown/mermaid.ts:17(MermaidResult 契约:svg + png)",
-      "src/core/docx/handlers/code-block.ts:36(docx 内嵌 png)",
-      "src/core/pdf/mermaid.ts:46(内联 svg)与 49(失败降级)",
+      { at: "src/core/markdown/mermaid.ts:19(MermaidResult 契约:svg + png)", has: "MermaidResult" },
+      { at: "src/core/docx/handlers/code-block.ts:38(docx 内嵌 png)", has: "ImageRun" },
+      { at: "src/core/pdf/mermaid.ts:46(内联 svg)", has: "mermaid-svg" },
+      { at: "src/core/pdf/mermaid.ts:49(失败降级 → 代码块)", has: "fallback(code)" },
     ],
     verify: async ({ mermaid }) => {
       must(mermaid.docxHasMedia, "mermaid-carrier", "docx 未内嵌 mermaid PNG 部件");
@@ -742,9 +756,9 @@ const MATRIX = [
     docxExtract: "word/footnotes.xml 部件 + w:footnoteReference",
     pdfExtract: "section.footnotes + li.footnote-item + 回链锚点",
     anchors: [
-      "src/core/docx/render.ts:261(footnotes 部件,空则不生成)",
-      "src/core/pdf/render.ts:164(@mdit/plugin-footnote)",
-      "src/core/pdf/template-css.ts:160(脚注区样式;Chromium 无 float: footnote)",
+      { at: "src/core/docx/render.ts:237(footnotes 部件,空则不生成)", has: "ctx.footnote.notes" },
+      { at: "src/core/pdf/render.ts:180(@mdit/plugin-footnote)", has: "md.use(footnote)" },
+      { at: "src/core/pdf/template-css.ts:160(脚注区样式;Chromium 无 float: footnote)", has: ".footnotes" },
     ],
     verify: async ({ footnote }) => {
       must(footnote.docxHasPart, "footnote-implementation", "docx 缺少 footnotes.xml 部件");
@@ -765,8 +779,8 @@ const MATRIX = [
     docxExtract: "ListParagraph + w:numPr,无 checkbox 字形",
     pdfExtract: "li.task-list-item + ☑/☐ 字符,无 input/label 残留",
     anchors: [
-      "src/core/pipeline/parse.ts:40(remark-gfm 剥除 [x]/[ ] 标记)",
-      "src/core/pdf/render.ts:136(replaceTaskCheckboxes)",
+      { at: "src/core/pipeline/parse.ts:55(remark-gfm 任务列表按普通列表处理)", has: "remarkGfm" },
+      { at: "src/core/pdf/render.ts:123(replaceTaskCheckboxes)", has: "replaceTaskCheckboxes" },
     ],
     verify: async ({ task }) => {
       must(task.docxHasList, "tasklist-rendering", "docx 应按普通列表项渲染(ListParagraph)");
@@ -784,9 +798,9 @@ const MATRIX = [
     docxExtract: "同一 maxDocumentBytes 下是否产出 word/media/ 部件",
     pdfExtract: "同一 maxDocumentBytes 下是否产出 data: URL",
     anchors: [
-      "src/core/resource-limits.ts:69(字节口径由调用方决定)",
-      "src/core/docx/render.ts:180(台账按原始字节)",
-      "src/core/pdf/postprocess.ts:250(costOf = base64 长度)",
+      { at: "src/core/resource-limits.ts:119(字节闸门;口径由调用方决定)", has: "tryCharge" },
+      { at: "src/core/image/request-guard.ts:129(docx 侧缺省按原始字节)", has: "costOf" },
+      { at: "src/core/pdf/postprocess.ts:261(costOf = base64 长度)", has: "costOf" },
     ],
     verify: async ({ budget }) => {
       must(budget.docxEmbeds, "image-budget-accounting", "docx 在 raw+1 预算下应放行(记原始字节)");
@@ -803,9 +817,9 @@ const MATRIX = [
     docxExtract: "标题书签名(纯文本 slug)",
     pdfExtract: "hN 的 id(保留 markdown 标记中的字母数字,如链接目标)",
     anchors: [
-      "src/core/pipeline/parse.ts:53(docx 侧 id 来自 collectPlainText)",
-      "src/core/pdf/rules/heading-id.ts:52(token.content || tokens[idx+1].content 兜底)",
-      "src/core/markdown/slug.ts:8(slugify 只剔除非字母/数字/下划线/连字符)",
+      { at: "src/core/pipeline/parse.ts:71(docx 侧 id 来自 collectPlainText)", has: "collectText" },
+      { at: "src/core/pdf/rules/heading-id.ts:52(token.content 兜底)", has: "token.content" },
+      { at: "src/core/markdown/slug.ts:8(slugify 只剔除非字母/数字/下划线/连字符)", has: "slugify" },
     ],
     verify: async ({ heading }) => {
       must(docxBookmarks(heading.docxXml).includes("见-附录"), "heading-id-fallback", "docx 标题 id 应为纯文本 slug「见-附录」");
@@ -830,9 +844,9 @@ const MATRIX = [
     docxExtract: "TOC 域 w:dirty 属性(static=false / field=true)",
     pdfExtract: "core 产物无 toc-page;injectTocPageNumbers 回填后才有",
     anchors: [
-      "src/core/docx/chrome.ts:122(tocMode → beginDirty)",
-      "src/core/pdf/postprocess.ts:81(injectTocPageNumbers)",
-      "src/main/converter/electron-side.ts:96(field 模式两遍打印回填)",
+      { at: "src/core/docx/chrome.ts:123(tocMode → beginDirty)", has: "beginDirty" },
+      { at: "src/core/pdf/postprocess.ts:86(injectTocPageNumbers)", has: "injectTocPageNumbers" },
+      { at: "src/main/converter/electron-side.ts:103(field 模式两遍打印回填)", has: "injectTocPageNumbers" },
     ],
     verify: async ({ tocPage }) => {
       must(tocPage.staticDirtyFalse && !tocPage.staticHasDirtyTrue, "toc-page-numbers", "docx static 目录应为 dirty=false(免更新、无页码)");
@@ -850,8 +864,10 @@ const MATRIX = [
     docxExtract: "注入计数守卫统计 throwIfCanceled 次数(随块数增长)",
     pdfExtract: "同法统计(与文档规模无关的常数)",
     anchors: [
-      "src/core/docx/render.ts:198(块级循环内逐块复查)与 265(打包前)",
-      "src/core/pdf/render.ts:259(入口)与 279(阶段边界复查)",
+      { at: "src/core/docx/render.ts:199(块级循环内逐块复查;has 钉住那个块级循环)", has: "for (const node of ast.children)" },
+      { at: "src/core/docx/render.ts:267(打包前最后一道)", has: "Packer.toBuffer" },
+      { at: "src/core/pdf/render.ts:276(入口:闸门取得后立即复查)", has: "createCancellationGuard" },
+      { at: "src/core/pdf/render.ts:320(阶段边界复查)", has: "throwIfCanceled" },
     ],
     verify: async ({ cancel }) => {
       must(
@@ -879,9 +895,9 @@ const MATRIX = [
     docxExtract: "题注静态文本(首图无章节前缀)",
     pdfExtract: "CSS counter 分支(含 h1c 的 ::before 规则,首 h1 前章节号按 0 计)",
     anchors: [
-      "src/core/docx/handlers/captions.ts:97(chapter>0 才给章节号)",
-      "src/core/pdf/template-css.ts:205(hasH1 分支含 h1c)",
-      "src/core/pdf/rules/caption.ts:30(该边界在规则头注声明为已接受差异)",
+      { at: "src/core/docx/handlers/captions.ts:97(chapter>0 才给章节号)", has: "chapter > 0" },
+      { at: "src/core/pdf/template-css.ts:207(hasH1 分支:章节号 + 序数)", has: ".fig-caption::before" },
+      { at: "src/core/pdf/rules/caption.ts:30(该边界在规则头注声明为已接受差异)", has: "overrideCaptionRule" },
     ],
     verify: async ({ beforeH1 }) => {
       must(
@@ -917,10 +933,10 @@ const MATRIX = [
     docxExtract: "styles.xml docDefaults rFonts(ascii/eastAsia)+sz;正文段 w:jc + w:spacing/@w:line + w:ind/@w:firstLineChars",
     pdfExtract: "模板 CSS body font-family/font-size/line-height;`p { text-indent: 2em }` / `p { text-align: justify }`",
     anchors: [
-      "src/core/settings/typography.ts:177(DEFAULT_TYPOGRAPHY 单源)",
-      "src/core/docx/render.ts:223(排版注入 docDefaults run)",
-      "src/core/docx/handlers/inline-html.ts:26(正文段 jc/spacing/indent)",
-      "src/core/pdf/template-css.ts:79(body 字体/字号/行距)",
+      { at: "src/core/settings/typography.ts:177(DEFAULT_TYPOGRAPHY 单源)", has: "DEFAULT_TYPOGRAPHY" },
+      { at: "src/core/docx/render.ts:230(排版注入 docDefaults run)", has: "typography.bodySizePt" },
+      { at: "src/core/docx/handlers/inline-html.ts:26(正文段 jc/spacing/indent)", has: "renderBodyParagraph" },
+      { at: "src/core/pdf/template-css.ts:79(body 字体/字号/行距)", has: "typography.fontEastAsia" },
     ],
     verify: async ({ typo, typoDefault }) => {
       // 显式取值:两侧都读到设置值(而非恰好等于默认,故用非默认 typography)
@@ -983,12 +999,12 @@ const MATRIX = [
     docxExtract: "document.xml 三处 run 的 w:sz(题注 / 行内代码 / 代码块,按 run 文本绑定)",
     pdfExtract: "模板 CSS `.fig-caption, .tab-caption` / `code` / `pre.hljs code` 三条规则的 font-size",
     anchors: [
-      "src/core/settings/typography.ts:130(captionFontSizePt 推导单源)",
-      "src/core/settings/typography.ts:141(行内代码 / 代码块两个比例)",
-      "src/core/docx/handlers/captions.ts:125(题注经 ptToHalfPoints 落地)",
-      "src/core/docx/handlers/content.ts:84(行内代码字号)",
-      "src/core/docx/handlers/code-block.ts:48(代码块字号,高亮与等宽兜底共用)",
-      "src/core/pdf/template-css.ts:64(三处字号从 typography 推导)",
+      { at: "src/core/settings/typography.ts:130(captionFontSizePt 推导单源)", has: "captionFontSizePt" },
+      { at: "src/core/settings/typography.ts:141(行内代码 / 代码块两个比例)", has: "INLINE_CODE_SCALE" },
+      { at: "src/core/docx/handlers/captions.ts:125(题注经 ptToHalfPoints 落地)", has: "ptToHalfPoints" },
+      { at: "src/core/docx/handlers/content.ts:84(行内代码字号)", has: "inlineCodeFontSizePt" },
+      { at: "src/core/docx/handlers/code-block.ts:49(代码块字号,高亮与等宽兜底共用)", has: "codeBlockFontSizePt" },
+      { at: "src/core/pdf/template-css.ts:64(三处字号从 typography 推导)", has: "captionFontSizePt" },
     ],
     verify: async ({ derivedSizes }) => {
       const { nonDefault, def } = derivedSizes;
@@ -1077,9 +1093,9 @@ const MATRIX = [
     docxExtract: "HeadingLevel.HEADING_1 段落的 pPr 含 <w:pageBreakBefore/>",
     pdfExtract: "模板 CSS `h1 { break-before: page; }`(首个 h1 除外)",
     anchors: [
-      "src/core/docx/handlers/heading.ts:49(pageBreakBefore 仅 depth===1)",
-      "src/core/pdf/template-css.ts:173(h1 break-before + 首 h1 豁免)",
-      "src/core/settings/render-options.ts:94(breakBeforeH1 默认值解析)",
+      { at: "src/core/docx/handlers/heading.ts:49(pageBreakBefore 仅 depth===1)", has: "pageBreakBefore" },
+      { at: "src/core/pdf/template-css.ts:173(h1 break-before + 首 h1 豁免)", has: "break-before: page" },
+      { at: "src/core/settings/render-options.ts:120(breakBeforeH1 默认值解析)", has: "options.breakBeforeH1 ?? false" },
     ],
     verify: async ({ pageBreakH1 }) => {
       must(
@@ -1113,9 +1129,9 @@ const MATRIX = [
     docxExtract: "word/header*.xml 的文字与 w:jc;word/footer*.xml 的页码域",
     pdfExtract: "headerTemplate 的文字与 text-align;footerTemplate 的页码占位",
     anchors: [
-      "src/core/docx/headers.ts:25(三模式分流)",
-      "src/core/pdf/template.ts:59(default 出文档标题居中页眉)",
-      "src/core/convert.ts:267(页眉模板按配置构造)",
+      { at: "src/core/docx/headers.ts:25(三模式分流)", has: "buildHeaderForSection" },
+      { at: "src/core/pdf/template.ts:59(default 出文档标题居中页眉)", has: "buildPdfHeaderTemplate" },
+      { at: "src/core/convert.ts:318(页眉模板按配置构造)", has: "buildPdfHeaderTemplate" },
     ],
     verify: async ({ chromeDocx, chromePdf }) => {
       // default 模式:两侧同出「文档标题居中」(adr-030 6-B3 关闭的失效点)
@@ -1145,10 +1161,10 @@ const MATRIX = [
     docxExtract: "header part 的 wps:wsp 文字 + w:color + a:xfrm/@rot + w14:textFill/w14:alpha",
     pdfExtract: ".wm 覆盖层的文字 + color + transform rotate() + opacity",
     anchors: [
-      "src/core/settings/settings-defaults.ts:134(水印角度口径单点)",
-      "src/core/docx/chrome.ts:331(rot 取自 watermarkDmlRotation)",
-      "src/core/docx/chrome.ts:301(不透明度经 w14:textFill 真消费)",
-      "src/core/pdf/template.ts:124(水印 CSS 的角度与不透明度)",
+      { at: "src/core/settings/settings-defaults.ts:164(角度 → DML rot 换算单点)", has: "watermarkDmlRotation" },
+      { at: "src/core/docx/chrome.ts:384(rot 取自 watermarkDmlRotation)", has: "watermarkDmlRotation" },
+      { at: "src/core/docx/chrome.ts:360(不透明度经 w14:textFill 真消费)", has: "w14:textFill" },
+      { at: "src/core/pdf/template.ts:124(水印 CSS 的角度与不透明度)", has: "buildWatermarkCss" },
     ],
     verify: async ({ watermark: wm }) => {
       const angle = wm.settings.angle;
@@ -1209,6 +1225,173 @@ const ROW_TEXT_FIELDS = ["dimension", "docxExtract", "pdfExtract"];
 const sourceLineCache = new Map();
 
 /**
+ * 该行是否「实质」—— 含可校验的代码内容,而非空行/纯标点/纯注释。
+ *
+ * 为什么不用「非空」当判据:`}` `},` `);`、注释闭合符与 JSDoc 续行都非空,却是**零
+ * 信息行**:锚点指到那里等于什么都没校验(86 条实测 20 条如此,占 23%)。判据要问的是
+ * 「这一行指得到实现吗」,不是「这一行有字符吗」。
+ * @param {string} raw 源文件的一行原文
+ * @returns {boolean} 是否实质行
+ */
+function isSubstantiveLine(raw) {
+  const text = raw.trim();
+  if (text === "") return false;
+  if (/^(?:\/\/|\/\*|\*)/.test(text)) return false;
+  return !/^[\s)\]},;:*\/+=<>!&|{}[\]]+$/.test(text);
+}
+
+/**
+ * 一条锚点的判定结果。
+ *
+ * `failure` 与 `drift` 分开是本判据的**核心裁决**:锚点漂不漂与锚点对不对是两件事,
+ * 只有前者判红就会在每次无关编辑上假红(那正是本判据要消灭的东西),只有后者判红
+ * 就等于放弃「行号得指着实现」这条要求。判红只认 `failure`,`drift` 只进告警文案。
+ * @typedef {object} AnchorVerdict
+ * @property {string | null} failure 判红原因(通过则 null)
+ * @property {string | null} drift 行号层面的提示(**不判红**)
+ */
+
+/**
+ * 一条锚点的判定(矩阵形状守护与负向夹具共用的**唯一**实现)。
+ *
+ * 判定 = 文件存在 ∧ `has` 标识符在该文件的某条**实质行**上出现 ∧ 锚点行本身实质。
+ * 越界、以及 `has` 落在锚点行所属顶层声明之外(说明实现已经搬走/改名而锚点没跟上),
+ * 一律只出 `drift` 提示,不判红 —— 判「越界即红」就等于把行号重新变成判据,而行号
+ * 随任何一次无关编辑漂移(在上方插一行注释就会指到空行),那种红一次就足以让人此后
+ * 忽略这张表。反过来,「指到零信息行」判红是有意的:那种锚点什么都没校验,而它是
+ * **一次编辑就能改对**的(改行号),不必留着。
+ * @param {string} rowId 矩阵行 id(诊断前缀)
+ * @param {string} at 锚点位置 `src/<文件>.ts:<行号>(说明)`
+ * @param {string} has 该位置必须出现的标识符(抗漂移锚)
+ * @returns {AnchorVerdict}
+ */
+function checkAnchor(rowId, at, has) {
+  const fail = (/** @type {string} */ reason) => /** @type {AnchorVerdict} */ ({ failure: `[dual-matrix:${rowId}] ${reason}:${at}`, drift: null });
+  const match = /^src\/([\w./-]+\.ts):(\d+)/.exec(at);
+  if (!match) return fail("锚点须为 src/<文件>.ts:<行号>");
+  const relPath = `src/${match[1]}`;
+  const lineNo = Number(match[2]);
+  if (typeof has !== "string" || has.length < 3) {
+    return fail("锚点缺 has 标识符(抗漂移锚,须 ≥3 字符)");
+  }
+  let lines;
+  try {
+    lines = sourceLines(relPath);
+  } catch {
+    return fail(`锚点指向的源文件不存在:${relPath}`);
+  }
+  // has 用**子串**口径而非词边界:锚点也指着 CSS 选择器与代码片段(`@page` /
+  // `break-before: page` / `for (const node of ast.children)`),词边界会把它们全判红。
+  const hits = substantiveLinesWith(lines, has);
+  if (hits.length === 0) {
+    return fail(`has 标识符「${has}」在 ${relPath} 的任何实质行都不出现(实现已改名或搬走,或锚点指错)`);
+  }
+  if (lineNo < 1 || lineNo > lines.length) {
+    return { failure: null, drift: `行号越界(该文件共 ${lines.length} 行)` };
+  }
+  if (!isSubstantiveLine(lines[lineNo - 1] ?? "")) {
+    return fail("锚点指向零信息行(空 / 纯标点 / 纯注释)");
+  }
+  const decl = enclosingTopLevelDecl(lines, lineNo);
+  const inSameDecl = decl !== null && hits.some((no) => no >= decl.start && no <= decl.end);
+  if (!inSameDecl) {
+    const where = hits.slice(0, 3).join(" / ");
+    const suffix = hits.length > 3 ? " …" : "";
+    return { failure: null, drift: `has 实际出现在第 ${where}${suffix} 行,不在锚点行所属声明内(声明块未找到)` };
+  }
+  return { failure: null, drift: null };
+}
+
+/**
+ * 哪些行同时满足「实质」与「含 needle」的行号(1 基)。
+ * @param {string[]} lines 源文件行数组
+ * @param {string} needle 要出现的字面量
+ * @returns {number[]} 命中的行号
+ */
+function substantiveLinesWith(lines, needle) {
+  /** @type {number[]} */
+  const hits = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (isSubstantiveLine(lines[i] ?? "") && (lines[i] ?? "").includes(needle)) hits.push(i + 1);
+  }
+  return hits;
+}
+
+/**
+ * 第 lineNo 行落在哪个**顶层声明**的范围内(向上找所属声明)。
+ *
+ * 用途只有一处:判定 `has` 的命中是否与锚点行同属一个声明。漂移告警要能说出
+ * 「实现搬到哪去了」,光有行号不够 —— 顶层声明是「一处实现」的可读单位。
+ * 顶层声明的判据刻意取**列 0 的声明头**(列 0 = 不缩进,函数体内的语句一律不算),
+ * 范围取到下一个顶层声明头之前(含中间的 JSDoc 与空行)。
+ * @param {string[]} lines 源文件行数组
+ * @param {number} lineNo 1 基行号
+ * @returns {{ start: number, end: number, header: string } | null} 声明范围;不在任何声明内返回 null
+ */
+function enclosingTopLevelDecl(lines, lineNo) {
+  const DECL_RE = /^(?:export\s+)?(?:default\s+)?(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?(?:function\s*\*?|class|const|let|var|interface|type|enum|namespace)\b/;
+  let start = -1;
+  for (let i = 0; i < lines.length; i += 1) {
+    if (i + 1 > lineNo) break;
+    if (DECL_RE.test(lines[i] ?? "")) start = i + 1;
+  }
+  if (start < 0) return null;
+  for (let i = lineNo; i < lines.length; i += 1) {
+    if (DECL_RE.test(lines[i] ?? "")) return { start, end: i, header: (lines[start - 1] ?? "").trim() };
+  }
+  return { start, end: lines.length, header: (lines[start - 1] ?? "").trim() };
+}
+
+/**
+ * 把锚点串里的行号换掉(括注里的说明原样保留)。
+ * @param {string} at 锚点串 `src/<文件>.ts:<行号>(说明)`
+ * @param {number} lineNo 新行号
+ * @returns {string} 换过行号的锚点串
+ */
+function withLineNo(at, lineNo) {
+  return at.replace(/^src\/([\w./-]+\.ts):(\d+)/, (_whole, file) => `src/${file}:${String(lineNo)}`);
+}
+
+/**
+ * 该锚点所在源文件里第一条零信息行的行号(负向夹具取样用)。
+ * @param {string} at 锚点串
+ * @returns {number | null} 行号;该文件没有零信息行则 null
+ */
+function firstZeroInfoLineIn(at) {
+  const lines = anchorSourceLines(at);
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!isSubstantiveLine(lines[i] ?? "")) return i + 1;
+  }
+  return null;
+}
+
+/**
+ * 该锚点所在源文件里第一条**不含 needle 的实质行**的行号(抗假红夹具取样用)。
+ * @param {string} at 锚点串
+ * @param {string} needle 要避开的字面量
+ * @returns {number | null} 行号;找不到则 null
+ */
+function firstSubstantiveLineNotIn(at, needle) {
+  const lines = anchorSourceLines(at);
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    if (isSubstantiveLine(line) && !line.includes(needle)) return i + 1;
+  }
+  return null;
+}
+
+/**
+ * 取锚点所在源文件的行数组(夹具专用;解析失败即抛,由 case 记为失败)。
+ * @param {string} at 锚点串
+ * @returns {string[]} 行数组
+ */
+function anchorSourceLines(at) {
+  const match = /^src\/([\w./-]+\.ts):\d+/.exec(at);
+  if (!match) throw new Error(`[dual-matrix] 夹具取样用的锚点串格式非法:${at}`);
+  return sourceLines(`src/${match[1]}`);
+}
+
+/**
  * 取源文件行数组(按需读盘并缓存)。
  * @param {string} relPath 相对仓库根的源码路径
  * @returns {string[]} 行数组(读不到即抛错,由调用方转成锚点判红信息)
@@ -1223,10 +1406,15 @@ function sourceLines(relPath) {
 
 /**
  * 断言矩阵自身结构:每行齐备(判定类别 / 维度 / 键覆盖 / 双侧提取器 / 锚点 / 可执行断言),
- * 行 id 唯一,每条锚点的行号在源文件里真实存在,且**段声明的每个双管线键至少被一行覆盖**。
- * @returns {void}
+ * 行 id 唯一,每条锚点的 `has` 标识符在源文件里真实存在、锚点行落在实质行上,
+ * 且**段声明的每个双管线键至少被一行覆盖**。
+ *
+ * 返回值只有漂移告警(不判红):行号层面的失配一律走告警,理由见 checkAnchor 的裁决。
+ * @returns {string[]} 漂移告警文案(空数组 = 无漂移)
  */
 function assertMatrixShape() {
+  /** @type {string[]} */
+  const drifts = [];
   /** @type {Set<string>} */
   const ids = new Set();
   for (const row of MATRIX) {
@@ -1250,26 +1438,12 @@ function assertMatrixShape() {
       throw new Error(`[dual-matrix:${row.id}] 缺少来源锚点`);
     }
     for (const anchor of row.anchors) {
-      const match = /^src\/([\w./-]+\.ts):(\d+)/.exec(anchor);
-      if (!match) {
-        throw new Error(`[dual-matrix:${row.id}] 锚点须为 src/<文件>.ts:<行号>,实际:${anchor}`);
+      if (typeof anchor.at !== "string" || typeof anchor.has !== "string") {
+        throw new Error(`[dual-matrix:${row.id}] 锚点须为 { at, has } 两字段对象,实际:${JSON.stringify(anchor)}`);
       }
-      const relPath = `src/${match[1]}`;
-      const lineNo = Number(match[2]);
-      let lines;
-      try {
-        lines = sourceLines(relPath);
-      } catch {
-        throw new Error(`[dual-matrix:${row.id}] 锚点指向的源文件不存在:${relPath}(锚点 ${anchor})`);
-      }
-      if (lineNo < 1 || lineNo > lines.length) {
-        throw new Error(
-          `[dual-matrix:${row.id}] 锚点行号越界:${anchor}(该文件共 ${lines.length} 行)`,
-        );
-      }
-      if ((lines[lineNo - 1] ?? "").trim() === "") {
-        throw new Error(`[dual-matrix:${row.id}] 锚点指向空行:${anchor}`);
-      }
+      const verdict = checkAnchor(row.id, anchor.at, anchor.has);
+      if (verdict.failure !== null) throw new Error(verdict.failure);
+      if (verdict.drift !== null) drifts.push(`[dual-matrix:${row.id}] ${anchor.at} —— ${verdict.drift}`);
     }
     if (typeof row.verify !== "function") {
       throw new Error(`[dual-matrix:${row.id}] 缺少可执行断言(verify)`);
@@ -1294,6 +1468,7 @@ function assertMatrixShape() {
   const coversByRow = {};
   for (const row of MATRIX) coversByRow[row.id] = row.covers;
   assertKeyCoverageRegistered(coversByRow);
+  return drifts;
 }
 
 /* ---------- 6-C2 新增四行的产物装配(见文件头「为何在段内装配」) ---------- */
@@ -1499,11 +1674,73 @@ async function docxXmlOf(buffer) {
 export async function run() {
   const suite = createCaseSuite();
 
-  // 形状守护独立成一个 case:它判的是「矩阵这张表本身」(行字段齐备 / 锚点真实存在 /
-  // 行集合与台账逐字相符 / 逐键覆盖交叉核对),不依赖任何双侧产物 —— 放进逐行实跑那组里
-  // 会让「表写坏了」和「产物不对」两种失败报在同一个位置上。
-  await suite.case("矩阵形状:行字段齐备 + 锚点在源文件中真实存在 + 行集合与台账逐字相符 + 逐键覆盖交叉核对", () => {
-    assertMatrixShape();
+  // 形状守护独立成一个 case:它判的是「矩阵这张表本身」(行字段齐备 / 锚点的 has 真在
+  // 源文件里 / 行集合与台账逐字相符 / 逐键覆盖交叉核对),不依赖任何双侧产物 ——
+  // 放进逐行实跑那组里会让「表写坏了」和「产物不对」两种失败报在同一个位置上。
+  let drifts = /** @type {string[]} */ ([]);
+  await suite.case("矩阵形状:行字段齐备 + 锚点 has 在源文件实质行上 + 行集合与台账逐字相符 + 逐键覆盖交叉核对", () => {
+    drifts = assertMatrixShape();
+    for (const note of drifts) console.log(`[warn] dual-matrix 锚点行号漂移 ${note}`);
+  });
+
+  // 锚点判据的负向夹具(判据自 6-C3 起从未有过负例,不补则「新判据有牙」只是声明)。
+  // 落在此段而非新段的两个理由:① 新段要 import 本段(判据实现),而「段 import 段」
+  // 会被 check-test-layout 的 L4 判红;② 判据与它的夹具必须同处一段,否则夹具只能
+  // 验一份复制品。第一组验「该红时红」,第二组验「不该红时绿」—— 后者是抗漂移改造
+  // 的全部意义所在,一旦有人把行号收回判据就会在这里立刻红。
+  await suite.case("锚点判据负向夹具:零信息行判红 / has 不命中判红 / 缺字段判红 / 诊断互不相同", async () => {
+    const row0 = MATRIX[0];
+    must(row0 !== undefined, "anchor-fixtures", "矩阵为空,负向夹具无从取样");
+    const probe = row0.anchors[0];
+    must(probe !== undefined, "anchor-fixtures", "首行首锚点缺失,负向夹具无从取样");
+    const id = row0.id;
+    // 档一:锚点行指到零信息行(空 / 纯标点 / 纯注释)。行号取自源文件现况而非写死,
+    // 免得夹具自己先漂成假红。
+    const zeroInfoLine = firstZeroInfoLineIn(probe.at);
+    must(zeroInfoLine !== null, "anchor-fixtures", `样例锚点所在源文件里找不到零信息行:${probe.at}`);
+    const zeroInfo = checkAnchor(id, withLineNo(probe.at, zeroInfoLine), probe.has);
+    must(zeroInfo.failure !== null, "anchor-fixtures", `锚点指向零信息行未判红(${probe.at})`);
+    // 档二:has 指向该文件里不存在的标识符(实现改名/搬走的形态)
+    const ghost = checkAnchor(id, probe.at, "noSuchIdentifierInThisFile_9f3a");
+    must(ghost.failure !== null, "anchor-fixtures", `has 不命中未判红(${probe.at})`);
+    must(ghost.failure !== zeroInfo.failure, "anchor-fixtures", "两条诊断文案相同,说明有一档落到了另一档的分支");
+    // 档三:形状字段缺失(锚点退回纯字符串形态)——真改 MATRIX 再撤回,验证的是
+    // assertMatrixShape 的实际通路而不是它的复制品;恢复必须放 finally。
+    const saved = row0.anchors;
+    try {
+      row0.anchors = /** @type {SourceAnchor[]} */ (/** @type {unknown} */ (["src/core/convert.ts:254(纯字符串形态)"]));
+      const outcome = await captureAssertionFailure(() => assertMatrixShape());
+      must(outcome.threw, "anchor-fixtures", "锚点退回纯字符串后形状守护未判红");
+      must(
+        (outcome.message ?? "").includes("须为 { at, has }"),
+        "anchor-fixtures",
+        `形状缺失的诊断没点名字段形态:${outcome.message ?? ""}`,
+      );
+    } finally {
+      row0.anchors = saved;
+    }
+    const restored = await captureAssertionFailure(() => assertMatrixShape());
+    must(restored.threw === false, "anchor-fixtures", `撤回后形状守护仍判红:${restored.message ?? ""}`);
+  });
+
+  await suite.case("锚点判据负向夹具:has 正确时行号漂移不判红(抗假红)", () => {
+    const row0 = MATRIX[0];
+    must(row0 !== undefined, "anchor-drift", "矩阵为空,负向夹具无从取样");
+    const probe = row0.anchors[0];
+    must(probe !== undefined, "anchor-drift", "首行首锚点缺失,负向夹具无从取样");
+    const id = row0.id;
+    // 指向同文件里另一处**实质**行(与 has 命中处无关):行号判据治不了这种漂移 ——
+    // 这正是本判据把「对不对」交给 has、把行号降级成告警的原因。
+    const elsewhere = firstSubstantiveLineNotIn(probe.at, probe.has);
+    must(elsewhere !== null, "anchor-drift", `样例锚点所在源文件里找不到旁处的实质行:${probe.at}`);
+    const drifted = checkAnchor(id, withLineNo(probe.at, elsewhere), probe.has);
+    must(drifted.failure === null, "anchor-drift", `行号漂移到无关实质行却判红了:${drifted.failure ?? ""}`);
+    // 行号越界同理:只告警不判红
+    const outOfRange = checkAnchor(id, withLineNo(probe.at, 999999), probe.has);
+    must(outOfRange.failure === null, "anchor-drift", `行号越界却判红了:${outOfRange.failure ?? ""}`);
+    must(outOfRange.drift !== null, "anchor-drift", "行号越界未给出漂移告警");
+    // 撤回(还原成真实锚点)后复绿
+    must(checkAnchor(id, probe.at, probe.has).failure === null, "anchor-drift", "还原成真实锚点后仍判红");
   });
 
   // 双侧产物由沙箱装配(见 test/harness/dual-sandbox.js):逐维度真跑一次 convert,
