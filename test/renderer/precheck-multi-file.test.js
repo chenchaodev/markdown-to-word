@@ -34,7 +34,6 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
 import { installDomStub, fireListener, makeElement } from "./dom-stub.js";
 import { loadConvertFlowDeps } from "./convert-flow-deps.js";
@@ -55,10 +54,11 @@ function assert(cond, msg) {
 }
 
 /**
- * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
- * 被测的 dist 模块由 `await import(distUrl(...))` 的**运行期动态 import** 载入
- * (路径 `path.join` 逐段拼出),另有几处对 `src/renderer/**` 的**字符串路径**文本断言,
- * 段内零 renderer import。
+ * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,段主体现在对静态抽取器可见 ——
+ * 被测的 dist 模块由 `await import("../../dist/…")` 的**运行期动态 import** 载入
+ * (字面量说明符;仍是动态 import,必须晚于 DOM stub 安装才加载)。另有几处对
+ * `src/renderer/**`(源码与 CSS)的**字符串路径**文本断言,抽取器看不见那些路径,
+ * 故 covers 声明保留 —— 它声明本段主体,与 import 形态无关。
  *
  * 主体依据(头注 + 段内加载位置):头注写「预检覆盖批量 / 合并路径 + 报告对话框按文件分组」。
  * 逐条对应:
@@ -70,7 +70,8 @@ function assert(cond, msg) {
  * - `style/base.css` 与 `style/dialogs.css` —— 第 25 组两条 `flex:none` 的源契约断言。
  *
  * 另加载 `dist/core/i18n/index.js` 取三语言字典作**期望值**(判据上的「夹具输入/规格」,
- * 非被测行为:本段不替 i18n 下断言,只拿它的文案当比对基准),故不声明 core 层元素。
+ * 非被测行为:本段不替 i18n 下断言,只拿它的文案当比对基准)。该引用字面化后是 L5
+ * 跨层 import,按「只提供数据」的判准在 L5 豁免表登记,故本段仍不声明 core 层元素。
  */
 export const covers = [
   "src/renderer/convert/convert-flow.ts",
@@ -114,8 +115,6 @@ export const fixtures = null;
 
 export async function run() {
   const suite = createCaseSuite();
-  /** @param {string} rel @returns {string} */
-  const distUrl = (rel) => pathToFileURL(path.join(ROOT, "dist", "renderer", rel)).href;
 
   /** 预检请求的源文件序列(断言「每文件一次」的唯一依据)。 */
   /** @type {string[]} */
@@ -213,23 +212,38 @@ export async function run() {
   const mergeCount = () => mergeCalls.length;
   const batchCount = () => batchCalls.length;
 
+  /** 合并用例的两个源文件(定长:段内只读数不改动,故按元组标注,索引取值不再是
+   *  `string | undefined` —— noUncheckedIndexedAccess 下原先要逐处断言/转型)。 */
+  /** @type {[string, string]} */
   const mergeFiles = ["C:\\work\\a.md", "C:\\work\\b.md"];
 
   try {
-    const flow = await import(distUrl("convert/convert-flow.js"));
-    const dialogs = await import(distUrl("ui/dialogs.js"));
+    // 字面量动态 import:门禁的静态抽取器只认 `import("字面量")`。仍是**运行期**动态
+    // import —— dist 模块必须晚于上面的 installDomStub 才加载。core 层那两处是夹具
+    // 输入(i18n 字典/文案),属 L5 跨层,按豁免表登记(见段头注)。
+    const flow = await import("../../dist/renderer/convert/convert-flow.js");
+    const dialogs = await import("../../dist/renderer/ui/dialogs.js");
     // convert 刀起结果呈现面(ui/dialogs 的五个符号)改为组合根注入的端口(ADR-075 §四);
     // ui 侧的关闭路径与 settings 的另存为弹窗关闭同理收 deps。三份都按组合根同一份清单装配。
-    const convertFlowDeps = await loadConvertFlowDeps(distUrl);
-    const { updateActionButtons } = await import(distUrl("convert/file-list.js"));
+    const convertFlowDeps = await loadConvertFlowDeps();
+    const { updateActionButtons } = await import("../../dist/renderer/convert/file-list.js");
     const dialogsDeps = { recomputeActionButtons: updateActionButtons };
     dialogs.bindPrecheckDialogEvents(dialogsDeps);
-    const i18n = await import(pathToFileURL(path.join(ROOT, "dist", "core", "i18n", "index.js")).href);
+    const i18n = await import("../../dist/core/i18n/index.js");
     // t / setLanguage 现由 core/i18n/index.js 一并再导出(ADR-064 把原 i18n.ts 桶溶进
     // i18n/ 后,index.ts 是唯一公开桶)。下面这一行与上一行因此取的是同一个模块 ——
     // 留着是为了不改动本段既有的变量名与用法;新写代码直接用上面的 i18n 即可。
-    const i18nApi = await import(pathToFileURL(path.join(ROOT, "dist", "core", "i18n/index.js")).href);
-    const { state } = await import(distUrl("state/state.js"));
+    const i18nApi = await import("../../dist/core/i18n/index.js");
+    const { state } = await import("../../dist/renderer/state/state.js");
+    // DICT 的导出形状按 Dict 联合键索引,而本段有两类运行期字符串键:第 24 组逐语言
+    // 按 key 遍历、assertThrownFailure 的 statusKey/titleKey 由实参传入 ⇒ 按
+    // i18n-registry 段同款口径开一个窄化视窗(取值形态不变,Partial 的 undefined 仍交给
+    // 断言的 typeof 判定,不开「默认空串」那种后门)。
+    const DICT_VIEW = /** @type {Record<string, Record<string, string | undefined>>} */ (
+      /** @type {unknown} */ (i18n.DICT)
+    );
+    /** @param {string} code @returns {Record<string, string | undefined>} */
+    const dictOf = (code) => DICT_VIEW[code] ?? {};
     // 结果弹窗会把「模态可见」置起来挡住后续用例;本段只关心预检门
     state.suppressCompleteDialog = true;
     state.selectedFormat = "docx";
@@ -493,7 +507,7 @@ export async function run() {
         convertCalls.push({ filePath, format });
         return { ok: true, outputPath: "out.docx", warnings: [] };
       };
-      const selection = await import(distUrl("convert/events/selection.js"));
+      const selection = await import("../../dist/renderer/convert/events/selection.js");
       // onStageChanged 必填(ADR-075 §四)。本段只驱动粘贴文本分支 → runConvert,
       // 走不到 applySelection 的成功路径,故该端口永不被调;装配仍补齐,理由同上。
       selection.bindSelectionEvents({
@@ -868,14 +882,14 @@ export async function run() {
      * 一条流程抛错后的失败呈现共核(三条流程结构共用,差异只经实参传入):
      * 状态行文案 / 卡片 kind / 卡片标题 / 卡片错误文案 / 命令锁释放 / mode 归位。
      * @param label 用例标签(失败消息前缀)
-     * @param statusKey 该流程的状态行 i18n key
-     * @param titleKey 该流程的汇总卡标题 i18n key
+     * @param {import("../../dist/core/i18n/index.js").I18nKey} statusKey 该流程的状态行 i18n key
+     * @param {import("../../dist/core/i18n/index.js").I18nKey} titleKey 该流程的汇总卡标题 i18n key
      * @param presentedError 该流程应当呈现的错误文案(可操作化之后)
      */
     const assertThrownFailure = (
       /** @type {string} */ label,
-      /** @type {string} */ statusKey,
-      /** @type {string} */ titleKey,
+      statusKey,
+      titleKey,
       /** @type {string} */ presentedError,
     ) => {
       assert(
@@ -1071,18 +1085,18 @@ export async function run() {
     for (const key of NEW_KEYS) {
       await suite.case(`i18n · ${key} 三语言齐备且占位符一致`, () => {
         for (const { code } of i18n.LANGUAGES) {
-          const value = i18n.DICT[code][key];
+          const value = dictOf(code)[key];
           assert(
             typeof value === "string" && value.trim().length > 0,
             `${code} 应有非空文案 ${key}`,
           );
           assert(
-            placeholders(value) === placeholders(i18n.DICT.zh[key]),
-            `${code}.${key} 占位符应与 zh 一致(zh=[${placeholders(i18n.DICT.zh[key])}] ${code}=[${placeholders(value)}])`,
+            placeholders(value) === placeholders(dictOf("zh")[key]),
+            `${code}.${key} 占位符应与 zh 一致(zh=[${placeholders(dictOf("zh")[key])}] ${code}=[${placeholders(value)}])`,
           );
         }
-        assert(i18n.DICT.en[key] !== i18n.DICT.zh[key], `en.${key} 不应沿用中文原文`);
-        assert(i18n.DICT.ja[key] !== i18n.DICT.zh[key], `ja.${key} 不应沿用中文原文`);
+        assert(dictOf("en")[key] !== dictOf("zh")[key], `en.${key} 不应沿用中文原文`);
+        assert(dictOf("ja")[key] !== dictOf("zh")[key], `ja.${key} 不应沿用中文原文`);
       });
     }
     await suite.case("i18n · blockedTitle 不带占位符且与真失败标题不同文案", () => {
@@ -1107,7 +1121,7 @@ export async function run() {
           i18nApi.setLanguage(code);
           assert(
             i18nApi.t("convert.merge.blockedStatus", { count: 2 }) ===
-              i18n.DICT[code]["convert.merge.blockedStatus"].replace("${count}", "2"),
+              (dictOf(code)["convert.merge.blockedStatus"] ?? "").replace("${count}", "2"),
             `${code} 下 t(convert.merge.blockedStatus) 应命中本语言字典`,
           );
         }

@@ -11,7 +11,6 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
 import { globalSlot, setGlobalSlot } from "./dom-stub.js";
 import { loadBookWizardDeps } from "./wizard-deps.js";
@@ -33,10 +32,12 @@ function assert(cond, msg) {
 }
 
 /**
- * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
- * 被测的 dist 模块由 `await import(distUrl(...))` 的**运行期动态 import** 载入
- * (路径 `path.join` 逐段拼出),另有对 `wizard/book-wizard.ts` 的**字符串路径**文本断言,
- * 段内零 renderer import。
+ * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,段主体现在对静态抽取器可见 ——
+ * 被测的 dist 模块由 `await import("../../dist/renderer/…")` 的**运行期动态 import**
+ * 载入(字面量说明符;仍是动态 import,必须晚于 DOM stub 安装才加载)。另有两处对
+ * `src/renderer/wizard/book-wizard.ts` 的**字符串路径**文本断言(`fs.readFileSync`
+ * 拼接路径),抽取器看不见那条路径,故 covers 声明保留 —— 它声明本段主体,与 import
+ * 形态无关。
  *
  * 主体依据(头注 + 段内加载位置):头注写「renderer 向导命令守卫与预检按钮忙态测试」。逐条对应:
  * - `convert/convert-flow.ts` —— 向导打开(模态)期间背景命令阻断、预检按钮忙态探针与点击
@@ -371,22 +372,26 @@ export async function run() {
   });
 
   try {
-    /** @param {string} rel @returns {string} */
-    const distUrl = (rel) => pathToFileURL(path.join(ROOT, "dist", "renderer", rel)).href;
-    const flow = await import(distUrl("convert/convert-flow.js"));
-    const { state } = await import(distUrl("state/state.js"));
+    // 字面量动态 import:门禁的静态抽取器只认 `import("字面量")`。仍是**运行期**动态
+    // import —— dist 模块必须晚于上面的 DOM stub 安装才加载(dom/refs 在模块初始化期
+    // 抓 document),改成静态 import 会把加载提到 stub 之前、直接跑不通。
+    const flow = await import("../../dist/renderer/convert/convert-flow.js");
+    const { state } = await import("../../dist/renderer/state/state.js");
     // 模块命名空间别名 wizard:单例运行态经 `runtime` 只读门面出口
     // (原先是三个可变绑定直接导出,REQ-241 改为 const 门面 + 模块私有 let)。
-    const { runtime: wizard } = await import(distUrl("wizard/wizard-runtime.js"));
-    const bookWizard = await import(distUrl("wizard/book-wizard.js"));
-    const actions = await import(distUrl("convert/events/convert-actions.js"));
-    const fileList = await import(distUrl("convert/file-list.js"));
+    const { runtime: wizard } = await import("../../dist/renderer/wizard/wizard-runtime.js");
+    const bookWizard = await import("../../dist/renderer/wizard/book-wizard.js");
+    const actions = await import("../../dist/renderer/convert/events/convert-actions.js");
+    const fileList = await import("../../dist/renderer/convert/file-list.js");
     // openBookWizard 自 wizard 刀起收 BookWizardDeps(ADR-075 §四),本段共用一份装配
-    const bookWizardDeps = await loadBookWizardDeps(distUrl);
+    const bookWizardDeps = await loadBookWizardDeps();
     // convert 刀起结果呈现面改为组合根注入的端口(ADR-075 §四),本段共用一份装配
-    const convertFlowDeps = await loadConvertFlowDeps(distUrl);
+    const convertFlowDeps = await loadConvertFlowDeps();
 
-    actions.bindConvertActionsEvents(convertFlowDeps);
+    // ConvertActionsEventsDeps = ConvertFlowDeps & FileListDeps,比本段装配的呈现面多一个
+    // onStageChanged(舞台跃迁通知)。本段只驱动菜单命令侧,那条端口永不被调;装配仍补齐,
+    // 与 precheck / ui-interaction 两段的 bindSelectionEvents 同口径。
+    actions.bindConvertActionsEvents({ ...convertFlowDeps, onStageChanged: () => {} });
     const keydownRaw = docListeners.get("keydown");
     const convertBtn = elementFor("convertBtn");
     await suite.case("转换域在 document 上绑定快捷键", () => {

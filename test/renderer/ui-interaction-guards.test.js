@@ -40,7 +40,6 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
 import { createAsserter } from "../harness/assert.js";
 import { createCaseSuite } from "../harness/case.js";
@@ -50,10 +49,11 @@ import { installDomStub, fireListener, makeElement, makeKeyEvent } from "./dom-s
 import { loadConvertFlowDeps } from "./convert-flow-deps.js";
 
 /**
- * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
- * 被测的 dist 模块由 `await import(distUrl(...))` 的**运行期动态 import** 载入
- * (路径 `path.join` 逐段拼出),另有对 `index.html` 的**字符串路径**文本断言,段内零
- * renderer import。
+ * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,段主体现在对静态抽取器可见 ——
+ * 被测的 dist 模块由 `await import("../../dist/renderer/…")` 的**运行期动态 import**
+ * 载入(字面量说明符;仍是动态 import,必须晚于 installDomStub 才加载)。另有对
+ * `index.html` 的**字符串路径**文本与结构断言(`fs.readFileSync` + 标签树解析),
+ * 抽取器看不见那条路径,故 covers 声明保留 —— 它声明本段主体,与 import 形态无关。
  *
  * 主体依据(头注 + 段内加载位置):头注写「阶段 4 UX 缺口回归段(可观察行为 + 源契约双层断言)」。
  * 逐条对应:
@@ -71,7 +71,8 @@ import { loadConvertFlowDeps } from "./convert-flow-deps.js";
  * - `index.html` —— (2) 「动态状态节点一律不带 data-i18n」与静态回退逐字一致那两组断言。
  *
  * 另加载 `dist/core/i18n/index.js` 取字典与 `htmlLangOf` 作**期望值/格式化函数**
- * (夹具输入,本段不替 i18n 下断言),故不声明 core 层元素。
+ * (夹具输入,本段不替 i18n 下断言)。该引用字面化后是 L5 跨层 import(本段内两处,
+ * 同一说明符),按「只提供数据」的判准在 L5 豁免表登记,故不声明 core 层元素。
  */
 export const covers = [
   "src/renderer/convert/events/selection.ts",
@@ -96,9 +97,6 @@ export const covers = [
 function assert(cond, msg) {
   harnessAssert(cond, msg);
 }
-
-/** @param {string} rel @returns {string} */
-const distUrl = (rel) => pathToFileURL(path.join(ROOT, "dist", rel)).href;
 
 /** 冲刷微任务与已就绪的宏任务,让未 await 的命令链(void 启动)跑完。 */
 async function flush() {
@@ -274,14 +272,19 @@ export async function run() {
     });
   }
 
-  // 取数(载入 i18n 注册表)留在 case 外:下面四条静态回退判定的期望值来自它
-  const i18n = await import(distUrl("core/i18n/index.js"));
-  const STATIC_KEYS = [
+  // 取数(载入 i18n 注册表)留在 case 外:下面四条静态回退判定的期望值来自它。
+  // 字面量动态 import:门禁的静态抽取器只认 `import("字面量")`;core 层引用是夹具输入
+  // (字典/文案),属 L5 跨层,按豁免表登记。core/i18n 不碰 DOM,故刻意留在 stub 之前载入;
+  // renderer 侧那几个模块仍必须晚于下面的 installDomStub(dom/refs 在模块初始化期抓
+  // document),见 try 块内。
+  const i18n = await import("../../dist/core/i18n/index.js");
+  // ⚠ 按 I18nKey 标注:字典的导出形状按 Dict 联合键索引,下面是按 key 遍历的动态取值
+  const STATIC_KEYS = /** @type {Array<import("../../dist/core/i18n/index.js").I18nKey>} */ ([
     "settings.presetScopeNote",
     "settings.tagNotInPreset",
     "settings.watermarkNote",
     "settings.headerFooterDefaultNote",
-  ];
+  ]);
   for (const key of STATIC_KEYS) {
     await suite.case(`源契约:静态回退节点 ${key} 的文案与 zh 字典逐字一致`, () => {
       const re = new RegExp(`data-i18n="${key}"[^>]*>([^<]*)<`, "s");
@@ -321,14 +324,14 @@ export async function run() {
   });
 
   try {
-    const dialogs = await import(distUrl("renderer/ui/dialogs.js"));
-    const selection = await import(distUrl("renderer/convert/events/selection.js"));
-    const { state } = await import(distUrl("renderer/state/state.js"));
-    const panel = await import(distUrl("renderer/settings/settings-panel.js"));
+    const dialogs = await import("../../dist/renderer/ui/dialogs.js");
+    const selection = await import("../../dist/renderer/convert/events/selection.js");
+    const { state } = await import("../../dist/renderer/state/state.js");
+    const panel = await import("../../dist/renderer/settings/settings-panel.js");
     // convert 刀起:结果呈现面改为组合根注入的端口、关闭路径收 deps(ADR-075 §四)。
     // 两份都按组合根同一份端口清单在测试侧装配。
-    const convertFlowDeps = await loadConvertFlowDeps((rel) => distUrl(`renderer/${rel}`));
-    const { updateActionButtons } = await import(distUrl("renderer/convert/file-list.js"));
+    const convertFlowDeps = await loadConvertFlowDeps();
+    const { updateActionButtons } = await import("../../dist/renderer/convert/file-list.js");
     const dialogsDeps = { recomputeActionButtons: updateActionButtons };
     dialogs.bindPrecheckDialogEvents(dialogsDeps);
 
@@ -370,7 +373,7 @@ export async function run() {
     // 用户会以为改得了顺序/看得 了预览 —— 而这些对本次转换无效。
     // 事件层早有 state.mode 守卫(dblclick / dragstart / Alt+± / 移除),
     // 本段守的是「声明层」:draggable 真的置 false、容器挂忙碌类、悬停提示收回。
-    const fileList = await import(distUrl("renderer/convert/file-list.js"));
+    const fileList = await import("../../dist/renderer/convert/file-list.js");
     // 队列容器要有可枚举的行,替掉 stub 的恒空 querySelectorAll
     /** @type {Array<{ draggable?: boolean; title?: string; dataset: Record<string, string> }>} */
     const renderedRows = [];
@@ -380,8 +383,10 @@ export async function run() {
 
     state.selectedFiles = ["a.md", "b.md"];
     state.mode = null;
-    // 空闲态:可拖、挂「双击预览」提示(期望值由字典推,不写死文案)
-    const previewHint = i18n.DICT.zh["file.dblclickPreview"];
+    // 空闲态:可拖、挂「双击预览」提示(期望值由字典推,不写死文案)。
+    // 字典是 Partial(按 Dict 联合索引得 string|undefined);缺键时下面 replace 会炸,
+    // 那正是要暴露的,故不兜空串。
+    const previewHint = /** @type {string} */ (i18n.DICT.zh["file.dblclickPreview"]);
     renderedRows.length = 0;
     fileList.renderMultiList();
     renderedRows.push(
@@ -505,7 +510,7 @@ export async function run() {
     const hideAllModals = () => {
       for (const id of MODAL_IDS) dom.elementFor(id).classList.add("hidden");
     };
-    const flow = await import(distUrl("renderer/convert/convert-flow.js"));
+    const flow = await import("../../dist/renderer/convert/convert-flow.js");
     hideAllModals();
     state.selectedFiles = ["C:\\docs\\a.md", "C:\\docs\\b.md"];
     state.mode = null;
@@ -716,9 +721,10 @@ export async function run() {
     const titleEl = dom.elementFor("batchDialogTitle");
     /**
      * @param {{ okCount?: number, failCount?: number, canceledCount?: number }} over
-     * @returns {{ items: unknown[], okCount: number, failCount: number, canceledCount: number }}
+     * @returns {import("../../dist/core/ipc-contract.js").BatchResult}
      */
     const batchResult = (over) => ({
+      ok: true,
       items: [],
       okCount: 0,
       failCount: 0,
@@ -750,7 +756,7 @@ export async function run() {
     // (5) 转换忙碌态:进度区启停同时把消息槽标 aria-busy。
     // 百分比之外读屏还需要一个「正在转换」的整体状态位 —— 挂在消息槽上,
     // 与状态行(role=status)的阶段播报分工:一个说「在做什么」,一个说「忙」。
-    const utils = await import(distUrl("renderer/dom/dom-ops.js"));
+    const utils = await import("../../dist/renderer/dom/dom-ops.js");
     const messageSlot = dom.elementFor("messageSlot");
     utils.showProgress();
     await suite.case("(5) showProgress 把消息槽标 aria-busy=true", () => {
@@ -947,10 +953,10 @@ export async function run() {
     // applyStaticTexts 扫不到它们,只有 refreshDynamicSettingsText 会重算;反过来
     // 静态节点只由 applyStaticTexts 刷。**两类都断言**才等于覆盖了原来那条正则的
     // 全部意图(且更强:它还锁住了「钩子确实跑过」这件事本身)。
-    const appBindings = await import(distUrl("renderer/settings/settings-bindings-app.js"));
+    const appBindings = await import("../../dist/renderer/settings/settings-bindings-app.js");
     // i18n 逻辑层(setLanguage / applyStaticTexts 的实现侧):core/i18n/index.js 只是
     // 注册表(DICT / LANGUAGES),两处不是同一个模块,别混用
-    const i18nLogic = await import(distUrl("core/i18n/index.js"));
+    const i18nLogic = await import("../../dist/core/i18n/index.js");
     const outputDirEl = dom.elementFor("outputDirValue");
     const pdfCssEl = dom.elementFor("pdfCssStatus");
     const logoEl = dom.elementFor("headerLogoStatus");
@@ -983,7 +989,21 @@ export async function run() {
         selectionRenders += 1;
       },
     };
-    appBindings.appWriteHooks(appGroupDeps).languageSelect(
+    // 工厂返回类型 WriteHooksOf<"app"> 是**按组反推的钩子表**,而声明表条目的 group 注解
+    // 是 ControlGroup 并集(settings-controls-table 的 ValueEntry/derivedEntry 工厂签名),
+    // GroupOf<K> extends G 恒假 ⇒ 产物侧这个映射被擦成空表,取不到 languageSelect。
+    // 按 WriteHookRegistry 全量形状取:键名与 settings-bindings-app.ts 的 appWriteHooks
+    // 返回值一致(theme / languageSelect),运行期调用形态不变。
+    const appHooks = /** @type {Record<string, import("../../dist/renderer/settings/settings-controls-table.js").WriteHook>} */ (
+      /** @type {unknown} */ (appBindings.appWriteHooks(appGroupDeps))
+    );
+    // 取到的单条钩子再窄化一次:Record 取值在 noUncheckedIndexedAccess 下是
+    // `WriteHook | undefined`,而这里的语义是「键必然在,调不到就是生产侧改了键名」——
+    // 那时的 TypeError 正是要暴露的,不用可选调用把它静默掉。
+    const languageSelect = /** @type {import("../../dist/renderer/settings/settings-controls-table.js").WriteHook} */ (
+      appHooks.languageSelect
+    );
+    languageSelect(
       panel.settingsWriteContext,
       /** @type {any} */ ({ value: "en", checked: false, valueAsNumber: Number.NaN }),
       (/** @type {unknown} */ value) => { writtenLang = value; },

@@ -13,9 +13,6 @@
  *
  * 用最小 DOM stub 驱动 dist 向导模块(元素工厂与 dom-stub.js 同款)。
  */
-import path from "node:path";
-import { pathToFileURL } from "node:url";
-import { ROOT } from "../harness/paths.js";
 import { fireListener, installDomStub } from "./dom-stub.js";
 import { loadBookWizardDeps } from "./wizard-deps.js";
 import { createAsserter } from "../harness/assert.js";
@@ -35,10 +32,10 @@ function assert(cond, msg) {
 }
 
 /**
- * 本段测哪一层(ADR-062 L4 声明通道):**renderer**。`state/state.ts` 仍由
- * `await import(distUrl("renderer/state/state.js"))` 的**运行期动态 import** 载入
- * (路径 `path.join` 逐段拼出,判据的静态抽取器看不见),故仍需 covers 声明本层主体;
- * 被测的向导模块则写成字面量 `import("../../dist/renderer/wizard/book-wizard.js")`。
+ * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,段主体现在对静态抽取器可见 ——
+ * `wizard/book-wizard.js` 与 `state/state.js` 都由 `await import("../../dist/renderer/…")`
+ * 的**运行期动态 import** 载入(字面量说明符;仍是动态 import,必须晚于 DOM stub 安装
+ * 才加载)。covers 声明保留:它声明本段主体,与 import 形态无关。
  *
  * 主体依据(头注 + 段内加载位置):头注写「成书向导「每次打开同步最新设置 + 步骤名随语言
  * 刷新」回归段」,并写明「外壳在 open 时重建(而非复用首次构建的 DOM)」。故主体是:
@@ -48,16 +45,14 @@ function assert(cond, msg) {
  *
  * 另加载 `dist/core/i18n/index.js`(DICT / 语言注册表 / `setLanguage`)与
  * `dist/core/settings/settings-defaults.js` 作**夹具输入**(文案单源与设置基线;本段只在
- * 「关掉自动目录后回填值仍是上次那个」这类格子里借它们造前置态,不对它们下断言),
- * 故不声明 core 层元素。
+ * 「关掉自动目录后回填值仍是上次那个」这类格子里借它们造前置态,不对它们下断言)。这些
+ * 引用字面化后是 L5 跨层 import(与 `state` 同段混在 renderer 主体旁),按「只提供数据」
+ * 的判准在 L5 豁免表登记,故不声明 core 层元素。
  */
 export const covers = [
   "src/renderer/wizard/book-wizard.ts",
   "src/renderer/state/state.ts",
 ];
-
-/** @param {string} rel @returns {string} */
-const distUrl = (rel) => pathToFileURL(path.join(ROOT, "dist", rel)).href;
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
@@ -73,19 +68,22 @@ export async function run() {
     },
   });
   try {
-    const i18n = await import(distUrl("core/i18n/index.js")); // DICT / 语言注册表
-    const { setLanguage } = await import(distUrl("core/i18n/index.js")); // 语言状态切换
+    // 字面量动态 import:门禁的静态抽取器只认 `import("字面量")`。core 层那几处是夹具
+    // 输入(i18n 字典/文案与设置基线),属 L5 跨层,按豁免表登记;仍是**运行期**动态
+    // import —— dist 模块必须晚于上面的 installDomStub 才加载(dom/refs 在模块初始化期
+    // 抓 document),改成静态 import 会把加载提到 stub 之前、直接跑不通。
+    const i18n = await import("../../dist/core/i18n/index.js"); // DICT / 语言注册表
+    const { setLanguage } = await import("../../dist/core/i18n/index.js"); // 语言状态切换
     const { cloneDefaultSettings } = await import(
-      distUrl("core/settings/settings-defaults.js")
+      "../../dist/core/settings/settings-defaults.js"
     );
-    const { state } = await import(distUrl("renderer/state/state.js"));
+    const { state } = await import("../../dist/renderer/state/state.js");
     // 被测主体写成字面量 import():门禁的静态抽取器只认 `import("字面量")`,经 distUrl(…)
     // 的间接形态对它不可见,本段主体就得靠豁免表记着。仍是动态 import —— DOM stub 必须
     // 先装好(见 installDomStub),静态 import 会把加载提到它之前。
     const bookWizard = await import("../../dist/renderer/wizard/book-wizard.js");
     // openBookWizard 自 wizard 刀起收 BookWizardDeps(ADR-075 §四),本段共用一份装配。
-    // 本段 distUrl 以 dist/ 起(非 dist/renderer/),故前缀传 "renderer/"。
-    const bookWizardDeps = await loadBookWizardDeps(distUrl, "renderer/");
+    const bookWizardDeps = await loadBookWizardDeps();
 
     // 与生产(renderer/state/state.ts 初始 state)共用同一个工厂:此前这里手写的
     // 4 组展开与生产的 2 组展开不同形,生产新增分组时本段会静默漏掉一块。

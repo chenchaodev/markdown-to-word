@@ -19,9 +19,6 @@
  * 改写 document.activeElement;抽屉的分组 Tab 走段内注入的元素级 querySelector
  * 探针(stub 契约:选择器命中由用例给,不在 stub 里做全局表)。
  */
-import path from "node:path";
-import { pathToFileURL } from "node:url";
-import { ROOT } from "../harness/paths.js";
 import { installDomStub, makeElement, makeKeyEvent } from "./dom-stub.js";
 import { createAsserter } from "../harness/assert.js";
 import { createCaseSuite } from "../harness/case.js";
@@ -30,9 +27,11 @@ import { createCaseSuite } from "../harness/case.js";
 const { assert } = createAsserter("focus-return-guards");
 
 /**
- * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
- * 被测的 dist 模块由 `await import(distUrl(...))` 的**运行期动态 import** 载入
- * (路径 `path.join` 逐段拼出,不在 import 语句位置),段内零 renderer import。
+ * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看得见本段的主体 ——
+ * 被测的 dist 模块由**字面量**说明符的运行期动态 import 载入(门禁静态抽取器认
+ * `import("字面量")` 这一形态,故「已被测试到达」不必靠豁免表记着);仍保持**动态**
+ * import 而非静态:dist 的 dom/refs.js 在模块初始化期就抓 document,必须晚于上面的
+ * installDomStub 才加载,提成静态 import 会直接跑不通。
  *
  * 主体依据(头注 + 实现位置):头注写「契约(浮层「关掉后焦点回到哪」是键盘可用性的地基):
  * 打开前记下来源(rememberFocusOrigin),关闭时原样归还(restoreFocusOrigin)」,并逐条点名
@@ -54,8 +53,6 @@ export const covers = [
 
 /** 取元素 id(失败消息用)。 */
 const idOf = (/** @type {{ id?: string }} */ el) => `#${el?.id ?? "?"}`;
-
-const distUrl = (/** @type {string} */ rel) => pathToFileURL(path.join(ROOT, "dist", rel)).href;
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
 export const fixtures = null;
@@ -104,12 +101,14 @@ export async function run() {
   );
 
   try {
-    const dialogs = await import(distUrl("renderer/ui/dialogs.js"));
-    const drawer = await import(distUrl("renderer/settings/settings-drawer.js"));
-    const presetActions = await import(distUrl("renderer/settings/settings-preset-actions.js"));
-    const { state } = await import(distUrl("renderer/state/state.js"));
+    const dialogs = await import("../../dist/renderer/ui/dialogs.js");
+    const drawer = await import("../../dist/renderer/settings/settings-drawer.js");
+    const presetActions = await import("../../dist/renderer/settings/settings-preset-actions.js");
+    const { state } = await import("../../dist/renderer/state/state.js");
+    // refs 在类型上是真实 DOM 元素,而本段驱动的是 dom-stub 契约上的同 id 元素(refs 的
+    // 元素绑定在段内 stub 上,`===` 比对的是 stub 对象)⇒ 整批按 any 取,比对才成立。
     const { batchDialogOk, completeDialogOk, precheckContinue, presetNameInput } =
-      await import(distUrl("renderer/dom/refs.js"));
+      /** @type {any} */ (await import("../../dist/renderer/dom/refs.js"));
     const el = (/** @type {string} */ id) => dom.elementFor(id);
     el("settingsDrawer").querySelector = (/** @type {string} */ sel) =>
       sel === ".settings-tab.active" ? activeTab : null;
@@ -117,8 +116,8 @@ export async function run() {
     // 关闭路径自 convert 刀起收 deps(遮罩显隐重算的端口,ADR-075 §四):弹窗走
     // ui/dialogs 的 ModalCloseDeps,另存为预设弹窗走 settings 的 PresetActionsDeps。
     // 两份都按组合根的同一份端口清单在测试侧装配。
-    const fileList = await import(distUrl("renderer/convert/file-list.js"));
-    const domOps = await import(distUrl("renderer/dom/dom-ops.js"));
+    const fileList = await import("../../dist/renderer/convert/file-list.js");
+    const domOps = await import("../../dist/renderer/dom/dom-ops.js");
     const dialogsDeps = { recomputeActionButtons: fileList.updateActionButtons };
     const presetActionsDeps = {
       afterModalClosed: () => dialogs.afterModalClosed(dialogsDeps),
@@ -156,7 +155,9 @@ export async function run() {
       state.selectedFiles = ["C:\\docs\\a.md", "C:\\docs\\b.md"];
       el("batchBtn").classList.remove("hidden");
       dom.document.activeElement = el("batchBtn");
-      dialogs.showBatchDialog(batchResult(2));
+      // batchResult 是「最小可用形状」(本段只关心焦点,不弹真汇总);BatchResult 的其余
+      // 字段 showBatchDialog 不走,故喂进去时按 any 过类型,运行期形状与改前一致。
+      dialogs.showBatchDialog(/** @type {any} */ (batchResult(2)));
       assert(
         dom.document.activeElement === batchDialogOk,
         `批量弹窗打开后焦点应落「确定」${idOf(batchDialogOk)},实际 ${idOf(dom.document.activeElement)}`,
@@ -277,11 +278,13 @@ export async function run() {
       };
       const lower = makeDialog("trap-lower");
       const upper = makeDialog("trap-upper");
-      const releaseLower = domOps.trapFocus(lower.dialog);
+      // trapFocus 的形参类型是 HTMLElement,而本段传的是 dom-stub 的元素(stub 契约:
+      // 可聚焦项经 withFocus 装配)⇒ 两处调用按 any 过类型,运行期形状与改前一致。
+      const releaseLower = domOps.trapFocus(/** @type {any} */ (lower.dialog));
       // document 监听表按类型单槽 ⇒ 每次登记后各取一次处理器,自己模拟浏览器
       // 「同一个 keydown 依次命中两个 capture 监听器」(只派发一次就只能量到栈顶那一个)
       const lowerKeydown = requireKeydownHandler("下层陷阱");
-      const releaseUpper = domOps.trapFocus(upper.dialog);
+      const releaseUpper = domOps.trapFocus(/** @type {any} */ (upper.dialog));
       const upperKeydown = requireKeydownHandler("上层陷阱");
       assert(
         lowerKeydown !== upperKeydown,

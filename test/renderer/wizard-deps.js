@@ -9,8 +9,13 @@
  * deps 对象 —— 端口清单只此一份(两段共用本文件),组合根那份是另一处,两者同源于
  * `BookWizardDeps` 类型,少一个字段两处都会在 `typecheck` 处编译不过。
  *
- * 为什么不写死 dist 根:两个段的 `distUrl` 基准不同(一个以 `dist/renderer/` 起、
- * 一个以 `dist/` 起),故由调用方传入自己的 `distUrl` 与可选前缀。
+ * 为什么写死字面量而不是继续收 `distUrl` 形参:两个调用方传进来的 `distUrl` 基准并不
+ * 相同(一派以 `dist/renderer/` 起、一派以 `dist/` 起再拼 `renderer/`),但它们解析到的
+ * 是**同一个**绝对路径 —— 形参曾经只是在桥接各段自己的本地路径风格,不是在指向不同目标。
+ * 现在写死字面量 `import("../../dist/renderer/…")`,理由是门禁的静态抽取器只认
+ * `import("字面量")`:形参化之后,这些 dist 模块在「已被 test/ 实际到达」这件事上永久
+ * 失明,而本文件正是见证它们被加载的那一处。仍是**动态** import —— dist 模块必须晚于
+ * DOM stub 安装才加载,改成静态 import 会把加载提到 stub 之前、直接跑不通。
  *
  * ⚠ 加端口时**两处一起改**(本文件 + 组合根),否则漏的一处会在 typecheck 处红 ——
  * 这是刻意的:deps 类型是必填形参、无默认值,漏项不可能静默通过。
@@ -18,22 +23,20 @@
 import { loadConvertFlowDeps } from "./convert-flow-deps.js";
 
 /**
- * @param {(rel: string) => string} distUrl 调用方自己的 dist 路径函数
- * @param {string} [prefix] distUrl 之上的相对前缀(如 `renderer/`),默认空
  * @returns {Promise<import("../../dist/renderer/wizard/book-wizard.js").BookWizardDeps>}
  */
-export async function loadBookWizardDeps(distUrl, prefix = "") {
+export async function loadBookWizardDeps() {
   const [flow, fileList, drawer, logic, save, presetBindings, panel, dialogs, flowDeps] =
     await Promise.all([
-      import(distUrl(`${prefix}convert/convert-flow.js`)),
-      import(distUrl(`${prefix}convert/file-list.js`)),
-      import(distUrl(`${prefix}settings/settings-drawer.js`)),
-      import(distUrl(`${prefix}settings/settings-logic.js`)),
-      import(distUrl(`${prefix}settings/settings-save.js`)),
-      import(distUrl(`${prefix}settings/settings-bindings-preset.js`)),
-      import(distUrl(`${prefix}settings/settings-panel.js`)),
-      import(distUrl(`${prefix}ui/dialogs.js`)),
-      loadConvertFlowDeps(distUrl, prefix),
+      import("../../dist/renderer/convert/convert-flow.js"),
+      import("../../dist/renderer/convert/file-list.js"),
+      import("../../dist/renderer/settings/settings-drawer.js"),
+      import("../../dist/renderer/settings/settings-logic.js"),
+      import("../../dist/renderer/settings/settings-save.js"),
+      import("../../dist/renderer/settings/settings-bindings-preset.js"),
+      import("../../dist/renderer/settings/settings-panel.js"),
+      import("../../dist/renderer/ui/dialogs.js"),
+      loadConvertFlowDeps(),
     ]);
   return {
     // convert/convert-flow.js —— convert 刀起 runMerge / withPrecheck 各接一份呈现面

@@ -26,7 +26,6 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
 import { createAsserter } from "../harness/assert.js";
 import { createCaseSuite } from "../harness/case.js";
@@ -53,8 +52,11 @@ import {
 /**
  * 本段测哪一层(ADR-062 L4 声明通道):**renderer**(复核确认 —— 头注第一行「设置抽屉逐控件
  * 基线段」+ 第 15 行「DOM 来自**真实 index.html**」,主体确在 renderer)。
- * 判据静态看不见的原因:七个被测 dist 模块由 `await import(dist(...))` 的**运行期动态
- * import** 载入(`path.join` 逐段拼出),另有两处对 `src/renderer/**` 的**字符串路径**文本读取。
+ * 判据静态看得见的原因:七个被测 dist 模块由**字面量**说明符的**运行期动态 import**
+ * 载入(门禁静态抽取器认 `import("字面量")` 这一形态),另有两处对 `src/renderer/**`
+ * 的**字符串路径**文本读取。仍保持**动态** import 而非静态:dist 的 dom/refs.js 在
+ * 模块初始化期就抓 document,必须晚于 installDomStub 才加载,提成静态 import 会直接
+ * 跑不通。
  *
  * 主体依据(头注三条行为 + 段内加载位置):
  * - `settings/settings-panel.ts` —— `applySettingsToControls`(hydrate 那条)与三道手写门控的
@@ -196,9 +198,6 @@ const BASE = {
   obsidian: { compat: true, attachmentFolder: "att" },
 };
 
-/** @param {string} rel @returns {string} */
-const distUrl = (rel) => pathToFileURL(path.join(ROOT, "dist", rel)).href;
-
 // 显式声明本段无验收样例
 export const fixtures = null;
 
@@ -301,8 +300,6 @@ export async function run() {
   /** @type {any} */
   let lastPatch = null;
 
-  const dist = (/** @type {string} */ rel) => distUrl(rel);
-
   // ⚠️ 先装 stub 再 import dist:dist 的 dom/refs.js 在**模块求值期**就调
   // document.getElementById,document 必须在 import 之前就位。api 里的闭包引用
   // 下方才声明的 state / mergeSettingsWithDefaults —— 只在测试执行期(此时已赋值)
@@ -327,16 +324,24 @@ export async function run() {
   });
 
   const { mergeSettingsWithDefaults, outputDirDisplayText, headerLogoDisplayName } =
-    await import(dist("renderer/settings/settings-logic.js"));
-  const table = await import(dist("renderer/settings/settings-controls-table.js"));
-  const { state } = await import(dist("renderer/state/state.js"));
+    await import("../../dist/renderer/settings/settings-logic.js");
+  // state / i18n / table / DEFAULT_SETTINGS 四个绑定按 any 取:本段喂给它们的是**最小
+  // 夹具形状**(BASE 是刻意偏离默认值的基线、probe 要改写编译期 Object.freeze 的表、
+  // state.settings 按字符串键索引),与 dist 声明表的完整生产类型天然不合 —— 按 any 取
+  // 即维持字面量化之前(包装形态动态 import)的类型基线,断言本身不依赖这些类型。
+  const table = /** @type {any} */ (
+    await import("../../dist/renderer/settings/settings-controls-table.js")
+  );
+  const { state } = /** @type {any} */ (await import("../../dist/renderer/state/state.js"));
   // core/i18n/index.js 是 core/i18n 的唯一公开桶:注册表(DICT / LANGUAGES / isLanguage /
   // htmlLangOf)与逻辑层(setLanguage / t / applyStaticTexts)都从它出。
-  const i18n = await import(dist("core/i18n/index.js"));
-  const panel = await import(dist("renderer/settings/settings-panel.js"));
-  const bindings = await import(dist("renderer/settings/settings-bindings.js"));
-  const { DEFAULT_SETTINGS } = await import(dist("core/settings/settings-defaults.js"));
-  const { TEMPLATE_PRESETS } = await import(dist("core/settings/presets.js"));
+  const i18n = /** @type {any} */ (await import("../../dist/core/i18n/index.js"));
+  const panel = await import("../../dist/renderer/settings/settings-panel.js");
+  const bindings = await import("../../dist/renderer/settings/settings-bindings.js");
+  const { DEFAULT_SETTINGS } = /** @type {any} */ (
+    await import("../../dist/core/settings/settings-defaults.js")
+  );
+  const { TEMPLATE_PRESETS } = await import("../../dist/core/settings/presets.js");
 
   /** 取 id 元素 */
   const el = (/** @type {string} */ id) => dom.elementFor(id);

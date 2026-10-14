@@ -8,7 +8,6 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
 import { globalSlot, setGlobalSlot } from "./dom-stub.js";
 import { loadConvertFlowDeps } from "./convert-flow-deps.js";
@@ -29,10 +28,12 @@ function assert(cond, msg) {
 }
 
 /**
- * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
- * 被测的四个 dist renderer 模块由 `await import(pathToFileURL(...).href)` 的**运行期
- * 动态 import** 载入(路径逐段 `path.join` 拼出,不在 import 语句位置),段内零
- * renderer import。
+ * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,段主体现在对静态抽取器可见 ——
+ * 被测的 dist renderer 模块由 `await import("../../dist/renderer/…")` 的**运行期动态
+ * import** 载入(字面量说明符;仍是动态 import,dist 模块必须晚于 DOM stub 安装才加载)。
+ * 另有段末两处对 `src/renderer/convert/events/dialogs-events.ts` 的**字符串路径**文本
+ * 断言(`fs.readFileSync(path.join(ROOT, …))`,抽取器看不见那条路径),故 covers 声明保留
+ * —— 它声明本段主体,与 import 形态无关,不因字面量化而删。
  *
  * 主体依据(头注 + 段内实现位置):头注写「renderer 转换命令/预检 single-flight 直测」,
  * 逐条对应到四处实现:
@@ -253,29 +254,18 @@ export async function run() {
   });
 
   try {
-    const testUrl = pathToFileURL(
-      path.join(ROOT, "dist/renderer/convert/convert-flow.js"),
-    );
-    const flow = await import(testUrl.href);
-    const dialogsUrl = pathToFileURL(
-      path.join(ROOT, "dist/renderer/ui/dialogs.js"),
-    );
-    const dialogs = await import(dialogsUrl.href);
-    const stateUrl = pathToFileURL(
-      path.join(ROOT, "dist/renderer/state/state.js"),
-    );
-    const { state } = await import(stateUrl.href);
+    // 字面量动态 import:门禁的静态抽取器只认 `import("字面量")`。仍是**运行期**动态
+    // import —— dist 模块必须晚于上面的 DOM stub 安装才加载(dom/refs 在模块初始化期
+    // 抓 document),改成静态 import 会把加载提到 stub 之前、直接跑不通。
+    const flow = await import("../../dist/renderer/convert/convert-flow.js");
+    const dialogs = await import("../../dist/renderer/ui/dialogs.js");
+    const { state } = await import("../../dist/renderer/state/state.js");
 
     // convert 刀起结果呈现面(ui/dialogs 的五个符号)改为组合根注入的端口(ADR-075 §四),
     // 测试侧按同一份清单装配(convert-flow-deps.js,与组合根同源于 ConvertFlowDeps)。
-    /** @param {string} rel @returns {string} */
-    const testUrlForDeps = (rel) =>
-      pathToFileURL(path.join(ROOT, "dist/renderer", rel)).href;
-    const convertFlowDeps = await loadConvertFlowDeps(testUrlForDeps);
+    const convertFlowDeps = await loadConvertFlowDeps();
     // ui/dialogs 的关闭路径同理收 deps;遮罩重算用真实 file-list 出口。
-    const { updateActionButtons } = await import(
-      pathToFileURL(path.join(ROOT, "dist/renderer/convert/file-list.js")).href
-    );
+    const { updateActionButtons } = await import("../../dist/renderer/convert/file-list.js");
     const dialogsDeps = { recomputeActionButtons: updateActionButtons };
     // 预检弹窗的按钮/遮罩接线自 convert 刀起由组合根带 deps 登记(原先在模块加载期),
     // 本段要在驱动遮罩点击之前补上这一步。
@@ -309,10 +299,7 @@ export async function run() {
       modalVisible = false;
     });
 
-    const eventsUrl = pathToFileURL(
-      path.join(ROOT, "dist/renderer/convert/events/convert-actions.js"),
-    );
-    await import(eventsUrl.href);
+    await import("../../dist/renderer/convert/events/convert-actions.js");
 
     // ---- 3. 转换 mode 也计入锁 ----
     await suite.case("转换 mode 期间 command lock 生效", () => {

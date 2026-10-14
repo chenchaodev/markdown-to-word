@@ -13,7 +13,6 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
 import { globalSlot, setGlobalSlot } from "./dom-stub.js";
 import { createAsserter } from "../harness/assert.js";
@@ -33,9 +32,11 @@ function assert(cond, msg) {
 }
 
 /**
- * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
- * 四个被测 dist 模块由 `await import(distUrl(...))` 的**运行期动态 import** 载入
- * (路径 `path.join` 逐段拼出,不在 import 语句位置),段内零 renderer import。
+ * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看得见本段的主体 ——
+ * 四个被测 dist 模块由**字面量**说明符的运行期动态 import 载入(门禁静态抽取器认
+ * `import("字面量")` 这一形态,故「已被测试到达」不必靠豁免表记着);仍保持**动态**
+ * import 而非静态:dist 模块经 dom/refs 在模块初始化期抓 document,必须晚于上面的
+ * setGlobalSlot 才加载,提成静态 import 会直接跑不通。
  *
  * 主体依据(头注 + 段内加载位置):头注写「renderer 命令入口事件边界与 single-flight 行为
  * 测试」。逐条对应四处实现:
@@ -326,17 +327,17 @@ export async function run() {
   });
 
   try {
-    /** @param {string} rel @returns {string} */
-    const distUrl = (rel) => pathToFileURL(path.join(ROOT, "dist", "renderer", rel)).href;
-    const flow = await import(distUrl("convert/convert-flow.js"));
-    const { state } = await import(distUrl("state/state.js"));
-    const selection = await import(distUrl("convert/events/selection.js"));
-    const actions = await import(distUrl("convert/events/convert-actions.js"));
+    const flow = await import("../../dist/renderer/convert/convert-flow.js");
+    const { state } = await import("../../dist/renderer/state/state.js");
+    const selection = await import("../../dist/renderer/convert/events/selection.js");
+    const actions = await import("../../dist/renderer/convert/events/convert-actions.js");
 
     // 本段驱动的都是命令锁与在途守卫;file-list 的舞台跃迁通知端口(实现体在 ui/recent-files)
     // 不在本段判据面内,故接空实现,只把 deps 形状喂对。
-    selection.bindSelectionEvents({ onStageChanged: () => {} });
-    actions.bindConvertActionsEvents();
+    // dist 类型要求整份 SelectionEventsDeps / ConvertActionsEventsDeps,而本段只喂用得到
+    // 的端口(其余成员不被调用)⇒ 按 any 喂最小 stub,运行期形状与改前一致。
+    selection.bindSelectionEvents(/** @type {any} */ ({ onStageChanged: () => {} }));
+    (/** @type {() => unknown} */ (actions.bindConvertActionsEvents))();
     // 元素表跨段共享,前序段可能留下可见弹窗遮罩:统一复位为隐藏,模态判定从干净态起算
     for (const [id, el] of elements) {
       if (id.endsWith("Dialog")) el.classList.add("hidden");
