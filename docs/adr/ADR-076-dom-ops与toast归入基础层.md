@@ -47,6 +47,8 @@ ADR-075 禁令 3 禁的是「用白名单压绿现存跨 feature 边」。本条
 - **组合根不必持有 DOM 工具包**，`renderer.ts` 的接线面小一圈。
 - **各刀的重编**：搬迁后余下 22 条 = settings **2**（其中 1 条属交汇点）· convert **7**+交汇 **3** · wizard **12** · ui **1**（交汇点源侧）。⚠ 阶段③ 工作单的按源根统计**不再等于各刀的实际边数**，取数一律以判据实跑读数为准。
 - **`dom-ops.ts` 的两处模块级可变状态（`:167` `trapStack` · `:217` `focusOriginStack`）随文件进基础层**。它们在阶段③ 底账里是「档 A 真跨 feature」那 7 处中的 2 处，其收敛（模块级可变状态收敛进 store，属独立一步）的落点随之要重新裁决 —— 基础层持有可变状态是否可接受，本条**不裁决**，留给那一步。
+
+  > **已裁决（2026-10-13，用户裁决 · REQ-241）：留在 `dom/` 基础层，不搬进 `state/`。** 理由有两条，第二条才是决定性的：① 这两处的实质确是档 A（被 settings-drawer · settings-preset-actions · dialogs · book-wizard 四个 feature 交错进出）—— 若只按「跨 feature 就该进 store」一刀切，它们该搬；② 但栈元素是 `HTMLElement`，而 `state/state.ts` 全文零 DOM 引用，搬进 store 等于给 store 长出 DOM 概念，「纯数据 store」这名头衔当场失效。⇒ **档 A 的「必须收敛」不等于「必须搬进 store」**：判据是「不得有第二个跨模块写入点」，而 `trapStack` 的写入点只有 `trapFocus`/其 release 闭包一处、`focusOriginStack` 只有 `rememberFocusOrigin`/`restoreFocusOrigin` 一处，本就是单源。AD-065 的三档登记与完整判据见 [ADR-065 实施记录](ADR-065-renderer功能层注入式重构.md#实施记录req-2412026-10-13)。**连带项作废**：此前 evidence 记的「`trapStack` 搬迁须与 `dom/dom-ops.ts` 新增的 `state/` import 同提交」那条口径已销 —— 不搬即无新 import，该约束无对象。
 - **`ui/` 目录的职责随之收窄**：搬走之后 `ui/` 装的是弹窗与最近列表这类真正的 feature 行为，`dom/` 装元素映射与元素操作。`RENDERER_TOP_DIRS` 那张目录表不受影响（只登记顶层目录，这四个功能根本身不动）。
 - **搬迁要过 `check-src-layout` 的内部目录准入**（ADR-064），由门禁判，本条不预判它的结论。
 

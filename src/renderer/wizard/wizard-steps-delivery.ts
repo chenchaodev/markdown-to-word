@@ -30,12 +30,9 @@ import {
   type AppTocMode,
   type WizardFieldsDeps,
 } from "./wizard-fields.js";
-import { currentStep, draft, wizardEl } from "./wizard-runtime.js";
+import { runtime } from "./wizard-runtime.js";
 import {
-  coverAuthorInput,
-  coverDateInput,
-  coverFromFm,
-  coverTitleInput,
+  coverRefs,
   renderCoverPreview,
 } from "./wizard-steps.js";
 
@@ -51,10 +48,24 @@ export interface WizardStepsDeliveryDeps extends WizardFieldsDeps {
   renderSelection: () => void;
 }
 
-/* 各步需读写的合并源/格式控件引用(每次 open 由 buildStepMerge/buildStepOutput 重建) */
-export let sourcesList: HTMLUListElement;
-export let sourcesEmpty: HTMLElement;
-export let formatRadios: HTMLElement;
+/* 各步需读写的合并源/格式控件引用(每次 open 由 buildStepMerge/buildStepOutput 重建)。
+ * 私有 let + 只读门面出口,而非可变绑定导出(理由同 wizard-steps 的 coverRefs)。 */
+let sourcesList: HTMLUListElement;
+let sourcesEmpty: HTMLElement;
+let formatRadios: HTMLElement;
+
+/** 合并源/格式控件引用的只读门面(赋值只在 buildStepMerge / buildStepOutput)。 */
+export const deliveryRefs = {
+  get sourcesList(): HTMLUListElement {
+    return sourcesList;
+  },
+  get sourcesEmpty(): HTMLElement {
+    return sourcesEmpty;
+  },
+  get formatRadios(): HTMLElement {
+    return formatRadios;
+  },
+};
 
 /* ---------- 步骤 5:合并源 ---------- */
 export function buildStepMerge(deps: WizardStepsDeliveryDeps): HTMLElement {
@@ -76,10 +87,10 @@ async function addSources(deps: WizardStepsDeliveryDeps): Promise<void> {
   try {
     const paths = await window.api.openMarkdowns();
     if (paths.length === 0) return;
-    draft.sources.push(...paths);
+    runtime.draft.sources.push(...paths);
     syncSources(deps);
     // 选完首文件后预填封面(设计 §4.2 / §4.5)
-    if (draft.sources.length >= 1 && !draft.cover.title && !draft.cover.author && !draft.cover.date) {
+    if (runtime.draft.sources.length >= 1 && !runtime.draft.cover.title && !runtime.draft.cover.author && !runtime.draft.cover.date) {
       await prefillCoverFromFirstSource();
     }
   } catch {
@@ -90,17 +101,17 @@ async function addSources(deps: WizardStepsDeliveryDeps): Promise<void> {
 /** 渲染合并源列表(上移/下移/移除) */
 function syncSources(deps: WizardStepsDeliveryDeps): void {
   sourcesList.replaceChildren();
-  draft.sources.forEach((file, i) => {
+  runtime.draft.sources.forEach((file, i) => {
     const name = file.split(/[\\/]/).pop() ?? file;
     const up = h("button", { type: "button", class: "btn btn-ghost sm", text: "↑", title: t("wizard.merge.up") ?? "up" });
     const down = h("button", { type: "button", class: "btn btn-ghost sm", text: "↓", title: t("wizard.merge.down") ?? "down" });
     const remove = h("button", { type: "button", class: "btn btn-text sm", dataset: { i18n: "common.remove" }, text: t("common.remove") });
     if (i === 0) (up as HTMLButtonElement).disabled = true;
-    if (i === draft.sources.length - 1) (down as HTMLButtonElement).disabled = true;
+    if (i === runtime.draft.sources.length - 1) (down as HTMLButtonElement).disabled = true;
     up.addEventListener("click", () => moveSource(deps, i, -1));
     down.addEventListener("click", () => moveSource(deps, i, 1));
     remove.addEventListener("click", () => {
-      draft.sources.splice(i, 1);
+      runtime.draft.sources.splice(i, 1);
       syncSources(deps);
     });
     sourcesList.appendChild(
@@ -111,9 +122,9 @@ function syncSources(deps: WizardStepsDeliveryDeps): void {
       ]),
     );
   });
-  sourcesEmpty.classList.toggle("hidden", draft.sources.length >= 2);
+  deliveryRefs.sourcesEmpty.classList.toggle("hidden", runtime.draft.sources.length >= 2);
   // 同步主舞台文件列表(向导关闭后可见)
-  state.selectedFiles = [...draft.sources];
+  state.selectedFiles = [...runtime.draft.sources];
   deps.renderSelection();
   // 合并源增减后即时刷新导航按钮态(否则「下一步」disabled 停留陈旧值,见 canAdvance 第 5 步门槛)
   renderStep();
@@ -121,22 +132,22 @@ function syncSources(deps: WizardStepsDeliveryDeps): void {
 
 function moveSource(deps: WizardStepsDeliveryDeps, i: number, offset: number): void {
   const target = i + offset;
-  if (target < 0 || target >= draft.sources.length) return;
-  const [m] = draft.sources.splice(i, 1);
-  draft.sources.splice(target, 0, m!);
+  if (target < 0 || target >= runtime.draft.sources.length) return;
+  const [m] = runtime.draft.sources.splice(i, 1);
+  runtime.draft.sources.splice(target, 0, m!);
   syncSources(deps);
 }
 
 /** 读首文件 frontmatter 预填封面(设计 §4.2) */
 async function prefillCoverFromFirstSource(): Promise<void> {
-  const first = draft.sources[0];
+  const first = runtime.draft.sources[0];
   if (!first) return;
   try {
     const fm = await window.api.readFrontmatter(first);
-    if (fm.title) coverTitleInput.value = draft.cover.title = fm.title;
-    if (fm.author) coverAuthorInput.value = draft.cover.author = fm.author;
-    if (fm.date) coverDateInput.value = draft.cover.date = fm.date;
-    if (fm.title || fm.author || fm.date) coverFromFm.classList.remove("hidden");
+    if (fm.title) coverRefs.titleInput.value = runtime.draft.cover.title = fm.title;
+    if (fm.author) coverRefs.authorInput.value = runtime.draft.cover.author = fm.author;
+    if (fm.date) coverRefs.dateInput.value = runtime.draft.cover.date = fm.date;
+    if (fm.title || fm.author || fm.date) coverRefs.fromFm.classList.remove("hidden");
     renderCoverPreview();
   } catch {
     /* 忽略:预填失败不阻断 */
@@ -226,7 +237,7 @@ export function buildStepOutput(deps: WizardStepsDeliveryDeps): HTMLElement {
   ]);
   formatRadios.querySelectorAll<HTMLInputElement>('input[type="radio"]').forEach((r) =>
     r.addEventListener("change", () => {
-      if (r.checked) draft.format = r.value as WizardDraft["format"];
+      if (r.checked) runtime.draft.format = r.value as WizardDraft["format"];
     }),
   );
 
@@ -281,28 +292,30 @@ export function buildStepOutput(deps: WizardStepsDeliveryDeps): HTMLElement {
 
 /* ---------- 渲染当前步(导航态;与合并源联动刷新同岛,见文件头) ---------- */
 export function renderStep(): void {
-  const body = wizardEl?.querySelector<HTMLElement>("#wizardBody");
+  const container = runtime.wizardEl;
+  const step = runtime.currentStep;
+  const body = container?.querySelector<HTMLElement>("#wizardBody");
   if (!body) return;
   body.querySelectorAll<HTMLElement>(".wz-pane").forEach((pane) => {
-    pane.classList.toggle("active", pane.dataset.step === String(currentStep));
+    pane.classList.toggle("active", pane.dataset.step === String(step));
   });
   // stepper 状态着色
-  wizardEl?.querySelectorAll<HTMLElement>(".wizard-steps > li").forEach((li) => {
-    const step = Number(li.dataset.step);
-    li.classList.toggle("wz-step--current", step === currentStep);
-    li.classList.toggle("wz-step--done", step < currentStep);
-    li.classList.toggle("wz-step--future", step > currentStep);
-    if (step === currentStep) li.setAttribute("aria-current", "step");
+  container?.querySelectorAll<HTMLElement>(".wizard-steps > li").forEach((li) => {
+    const liStep = Number(li.dataset.step);
+    li.classList.toggle("wz-step--current", liStep === step);
+    li.classList.toggle("wz-step--done", liStep < step);
+    li.classList.toggle("wz-step--future", liStep > step);
+    if (liStep === step) li.setAttribute("aria-current", "step");
     else li.removeAttribute("aria-current");
   });
   // 导航按钮态
-  const prevBtn = wizardEl?.querySelector<HTMLButtonElement>("#wizardPrev");
-  const nextBtn = wizardEl?.querySelector<HTMLButtonElement>("#wizardNext");
-  const finishBtn = wizardEl?.querySelector<HTMLButtonElement>("#wizardFinish");
-  if (prevBtn) prevBtn.disabled = isFirstStep(currentStep);
-  if (nextBtn) nextBtn.classList.toggle("hidden", isLastStep(currentStep));
-  if (finishBtn) finishBtn.classList.toggle("hidden", !isLastStep(currentStep));
-  if (nextBtn) nextBtn.disabled = !canAdvance(currentStep, draft);
+  const prevBtn = container?.querySelector<HTMLButtonElement>("#wizardPrev");
+  const nextBtn = container?.querySelector<HTMLButtonElement>("#wizardNext");
+  const finishBtn = container?.querySelector<HTMLButtonElement>("#wizardFinish");
+  if (prevBtn) prevBtn.disabled = isFirstStep(step);
+  if (nextBtn) nextBtn.classList.toggle("hidden", isLastStep(step));
+  if (finishBtn) finishBtn.classList.toggle("hidden", !isLastStep(step));
+  if (nextBtn) nextBtn.disabled = !canAdvance(step, runtime.draft);
   // 进入封面步时若已有源文件则预填
-  if (currentStep === 2) void prefillCoverFromFirstSource();
+  if (step === 2) void prefillCoverFromFirstSource();
 }

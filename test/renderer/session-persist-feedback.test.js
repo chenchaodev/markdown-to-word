@@ -8,12 +8,18 @@
  * - 设置保存失败(persistSettings):保留用户当前编辑内容与控件值(不回滚到
  *   main cache),状态区给出可见提示;下一次保存并入待重试草稿并真正落盘,
  *   成功后清除未保存提示;成功路径的权威回填与语言/主题副作用保持不变。
+ * - 舞台浮层的自动收起与最近区块刷新(REQ-239:这两条此前零断言):舞台跃迁
+ *   通知端口(convert/file-list 的 onStageChanged)真的驱动收起,手动切换受尊重;
+ *   转换成功后经 state.recentRefreshHandler 刷新历史条,失败路径不多读一次
+ *   ui-state,读取失败静默保持当前展示。
  */
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { globalSlot, setGlobalSlot } from "./dom-stub.js";
 import { createAsserter } from "../harness/assert.js";
 import { createCaseSuite } from "../harness/case.js";
+import { ROOT } from "../harness/paths.js";
 
 const { assert: harnessAssert } = createAsserter("session-persist-feedback");
 
@@ -36,10 +42,14 @@ function assert(cond, msg) {
  * 主体依据(头注 + 段内加载位置):头注写「renderer 持久化失败反馈直测」并逐条点名:
  * - `state/state.ts` —— 会话持久化单一写入点(`renderSelection` / `renderMultiList` /
  *   `moveItem` 每次变更只发一次 `uiStateSet`,内容未变的纯重渲染不重复 mutation);
- * - `convert/file-list.ts` —— 多文件列表的变更与移动那一侧;
+ * - `convert/file-list.ts` —— 多文件列表的变更与移动那一侧,以及舞台跃迁通知端口
+ *   (`onStageChanged`,组合根注入)的调用点;
+ * - `convert/convert-flow.ts` —— 转换成功后/失败后是否通知刷新最近区块(端口两端
+ *   的消费侧);
  * - `settings/settings-panel.ts` 与 `settings/settings-drawer.ts` —— 设置保存失败
  *   (`persistSettings`)与抽屉开合两处 ui-state 写入;
- * - `ui/recent-files.ts` 与 `ui/first-run-guide.ts` —— 清空最近与首启引导两处写入;
+ * - `ui/recent-files.ts` 与 `ui/first-run-guide.ts` —— 历史条的折叠判定与渲染、
+ *   清空最近、首启引导三处写入;
  * - `dom/refs.js` 对应的 `dom/refs.ts` —— 被驱动的 DOM 元素解析。
  *
  * 另加载 `dist/core/i18n/index.js` 的 `t` 与 `dist/core/settings/settings-defaults.js` 的
@@ -49,6 +59,7 @@ function assert(cond, msg) {
 export const covers = [
   "src/renderer/state/state.ts",
   "src/renderer/convert/file-list.ts",
+  "src/renderer/convert/convert-flow.ts",
   "src/renderer/settings/settings-panel.ts",
   "src/renderer/settings/settings-drawer.ts",
   "src/renderer/ui/recent-files.ts",
@@ -83,15 +94,16 @@ export const covers = [
  * @property {(type: string) => void} removeEventListener
  * @property {() => void} focus
  * @property {() => void} replaceChildren
- * @property {() => void} setAttribute
- * @property {() => void} removeAttribute
- * @property {() => null} getAttribute
- * @property {() => boolean} hasAttribute
+ * @property {(key: string, value: unknown) => void} setAttribute
+ * @property {(key: string) => void} removeAttribute
+ * @property {(key: string) => string | null} getAttribute
+ * @property {(key: string) => boolean} hasAttribute
  * @property {(selector: string) => null} querySelector
  * @property {(selector: string) => never[]} querySelectorAll
  * @property {() => boolean} contains
  * @property {() => void} append
  * @property {() => void} appendChild
+ * @property {(event: { type: string }) => boolean} dispatchEvent
  */
 
 /** @param {string[]} [initial] @returns {StubClassList} */
@@ -119,6 +131,8 @@ function makeClassList(initial = []) {
 function makeElement() {
   /** @type {Map<string, (...args: unknown[]) => unknown>} */
   const listeners = new Map();
+  /** @type {Map<string, string>} */
+  const attributes = new Map();
   const el = {
     classList: makeClassList([]),
     dataset: {},
@@ -137,15 +151,25 @@ function makeElement() {
     removeEventListener(/** @type {string} */ type) { listeners.delete(type); },
     focus() {},
     replaceChildren() {},
-    setAttribute() {},
-    removeAttribute() {},
-    getAttribute() { return null; },
-    hasAttribute() { return false; },
+    // 属性真存真取:aria-* 语义(aria-expanded / aria-invalid 等)是被测代码**写完再读**
+    // 的,存成空实现会让「写对了」恒真(读回恒为 null)⇒ 那类断言等于没写。
+    setAttribute(/** @type {string} */ key, /** @type {unknown} */ value) {
+      attributes.set(key, String(value));
+    },
+    removeAttribute(/** @type {string} */ key) { attributes.delete(key); },
+    getAttribute(/** @type {string} */ key) { return attributes.get(key) ?? null; },
+    hasAttribute(/** @type {string} */ key) { return attributes.has(key); },
     querySelector() { return null; },
     querySelectorAll() { return []; },
     contains() { return false; },
     append() {},
     appendChild() {},
+    /** 派发本元素上登记的监听器(段内 stub 契约:只有本段能触达被测代码自绑的监听)。 */
+    dispatchEvent(/** @type {{ type: string }} */ event) {
+      const fn = listeners.get(event.type);
+      if (typeof fn === "function") fn(event);
+      return true;
+    },
   };
   return /** @type {StubElement} */ (el);
 }
@@ -238,6 +262,20 @@ export async function run() {
   let rejectSettings = false;
   /** @type {Record<string, unknown> | null} */
   let mainSettings = null;
+  // ---- 9 档(最近区块刷新链)的编排位:ui-state 读取可计数 / 可切失败;main 侧历史记录可编排 ----
+  /** @type {number[]} */
+  const uiStateGetCalls = [];
+  let uiStateGetFails = false;
+  /** @type {import("../../dist/core/ipc-contract.js").RecentFile[]} */
+  let mainRecentFiles = [];
+  let convertOutcome = /** @type {{ ok: boolean, outputPath?: string, error?: string }} */ ({
+    ok: true,
+    outputPath: "C:\\session-persist\\out.docx",
+  });
+  // 被测代码造的节点流水(本段 stub 的 createElement 不挂树,只能按创建顺序看内容):
+  // 历史行的文件名就落在这些节点的 textContent 上。
+  /** @type {StubElement[]} */
+  const createdNodes = [];
   // window.api 桩:本段单独持有引用,便于按用例改写单个方法(被测模块始终经 window.api 调用)
   const apiStub = {
     uiStateSet: (/** @type {Record<string, unknown>} */ patch) => {
@@ -245,6 +283,30 @@ export async function run() {
       return rejectWrites
         ? Promise.reject(new Error("EACCES: ui-state.json"))
         : Promise.resolve({ ...patch });
+    },
+    uiStateGet: () => {
+      uiStateGetCalls.push(uiStateGetCalls.length);
+      return uiStateGetFails
+        ? Promise.reject(new Error("EIO: ui-state.json"))
+        : Promise.resolve({
+            panelOpen: { page: false },
+            suppressCompleteDialog: false,
+            firstRun: false,
+            lastSessionFiles: [],
+            recentFiles: mainRecentFiles,
+          });
+    },
+    // 预检无告警 ⇒ 单文件转换直接放行(本段只关心转换**之后**的通知行为)
+    precheck: () => Promise.resolve([]),
+    // 模拟 main 侧:成功才把这次产物记进历史列表(main 自己维护 ui-state.json)
+    convert: (/** @type {string} */ filePath, /** @type {"docx" | "pdf"} */ format) => {
+      if (convertOutcome.ok) {
+        mainRecentFiles = [
+          ...mainRecentFiles,
+          { path: filePath, name: filePath.split("\\").pop() ?? filePath, format, ts: 1 },
+        ];
+      }
+      return Promise.resolve({ ...convertOutcome });
     },
     settingsSet: (/** @type {Record<string, unknown>} */ patch) => {
       settingsCalls.push(patch);
@@ -262,8 +324,16 @@ export async function run() {
     getElementById: /** @param {string} id */ (id) => el(id),
     querySelector: () => null,
     querySelectorAll: () => [],
-    createElement: () => makeElement(),
-    createElementNS: () => makeElement(),
+    createElement: () => {
+      const node = makeElement();
+      createdNodes.push(node);
+      return node;
+    },
+    createElementNS: () => {
+      const node = makeElement();
+      createdNodes.push(node);
+      return node;
+    },
     addEventListener() {},
     removeEventListener() {},
   });
@@ -302,6 +372,7 @@ export async function run() {
     const { state } = await load("../../dist/renderer/state/state.js");
     stateRef = state;
     const fileList = await load("../../dist/renderer/convert/file-list.js");
+    const convertFlow = await load("../../dist/renderer/convert/convert-flow.js");
     const settingsPanel = await load("../../dist/renderer/settings/settings-panel.js");
     const settingsDrawer = await load("../../dist/renderer/settings/settings-drawer.js");
     const recentFiles = await load("../../dist/renderer/ui/recent-files.js");
@@ -311,7 +382,7 @@ export async function run() {
     // 当时的 document stub 上),读自己的 stub 会与被测模块脱节。
     const { DEFAULT_SETTINGS } = await load("../../dist/core/settings/settings-defaults.js");
     const refs = await load("../../dist/renderer/dom/refs.js");
-    const { dropZone, histCount, historyBar, statusEl, tocInput } = refs;
+    const { dropZone, histCount, histToggle, historyBar, statusEl, tocInput } = refs;
     for (const exported of Object.values(refs)) hardenElementShape(exported);
     /**
      * ADR-075 阶段④:`ui/recent-files` 与 `ui/first-run-guide` 的跨功能协作改为收
@@ -352,11 +423,220 @@ export async function run() {
       suppressCompleteDialog: state.suppressCompleteDialog,
       firstRun: state.firstRun,
     };
-    // file-list 的舞台跃迁通知端口:实现体在 ui/recent-files,本段判的是会话持久化
-    // 写入点(队列渲染那侧),不判历史浮层收起时机 —— 故接空实现,只把 deps 形状喂对。
-    const fileListDeps = { onStageChanged: () => {} };
+    // file-list 的舞台跃迁通知端口:实现体在 ui/recent-files 的 evaluateAutoCollapse,
+    // 这里接**真实实现**(与组合根 renderer.ts 的 fileListDeps 同一份)。此前接的是空桩,
+    // 「自动收起」这条语义因此零断言(REQ-239)。本块(9 档)排在下面各步之前正是因为
+    // 该实现体持有一份模块级快照(上次「有无文件」),它的「首次渲染」前提要求那时
+    // 还一次舞台跃迁都没发生过。
+    /** @type {import("../../dist/renderer/convert/file-list.js").FileListDeps} */
+    const fileListDeps = { onStageChanged: recentFiles.evaluateAutoCollapse };
     const saveFailed = t("preset.saveFailed");
     const countCalls = () => calls.filter((c) => "lastSessionFiles" in c).length;
+
+    /* ================= 9. 舞台浮层自动收起 + 最近区块刷新(REQ-239) =================
+     * 这两条语义此前在整棵测试树里零断言:舞台跃迁通知(convert/file-list 的
+     * onStageChanged 端口)与转换成功后的最近区块刷新(state.recentRefreshHandler)。
+     * 两者的可观测面都很窄,且都不是「调用计数」而是**产物**:
+     * - 收起 = historyBar.dataset.open 与 histToggle 的 aria-expanded 两个写点
+     *   (recent-files 的 setHistoryOpen 是唯一写者);
+     * - 刷新 = histCount 文本与新建的历史行节点上的文件名。
+     * 故断言全落在产物上,不落在「桩被调了几次」上(否则反向变异一改就穿帮)。
+     */
+    // 组合根那一行接线(9i 的钉点)与本段自装的 deps 是同一句:段内跑不了组合根
+    // (它在模块体里就跑初始化与 IPC),所以接线那一半只能读源文本,见 9i。
+    recentFiles.bindRecentFilesEvents(recentFilesDeps); // 历史条的 toggle/清空/行点击监听
+    const historyOpen = () => historyBar.dataset.open;
+    const ariaExpanded = () => histToggle.getAttribute("aria-expanded");
+    /** 派发 toggle 点击(= 用户手动展开/收起;派发而非直接改 dataset:那条监听本身
+     *  也得钉住,且下面的 9c 断言只有「监听真的跑了」才会绿)。 */
+    const clickHistToggle = () => histToggle.dispatchEvent({ type: "click" });
+
+    // ---- 9a. 首次渲染一律收起(浮层语义:默认展开即默认遮挡) ----
+    await suite.case("历史条首次渲染一律收起(舞台此刻为空也收起)", () => {
+      historyBar.dataset.open = "true"; // 先摆成「展开」:收起必须是一次真实写入
+      state.selectedFiles = [];
+      recentFiles.renderRecentList([
+        { path: "C:\\session-persist\\recent-a.md", name: "recent-a.md", format: "docx", ts: 1 },
+      ]);
+      assert(
+        historyOpen() === "false" && ariaExpanded() === "false",
+        `首次渲染应收起浮层(data-open/aria-expanded 同写),实际 ${historyOpen()}/${ariaExpanded()}`,
+      );
+      assert(histCount.textContent === "1", `首次渲染应渲染出历史行,计数实际 ${histCount.textContent}`);
+    });
+
+    // ---- 9b(A1):空 → 有文件 收起浮层(舞台跃迁端口真的被通知) ----
+    await suite.case("舞台空→有文件时收起历史浮层", () => {
+      clickHistToggle(); // 手动展开(9a 之后是收起,点一下即展开)
+      assert(historyOpen() === "true", `前置条件:手动展开应写成 data-open=true,实际 ${historyOpen()}`);
+      fileList.applySelection(fileListDeps, ["C:\\session-persist\\x.md"]);
+      assert(
+        historyOpen() === "false",
+        `空→有文件应自动收起浮层,实际 ${historyOpen()}(端口未通知时此处保持展开)`,
+      );
+      assert(
+        ariaExpanded() === "false",
+        `收起必须同步读屏语义,实际 aria-expanded=${ariaExpanded()}`,
+      );
+    });
+
+    // ---- 9c(A2):已有文件时尊重手动切换(不因再次通知而收起) ----
+    await suite.case("舞台有文件时尊重手动展开(不自动收起)", () => {
+      // 9b 之后是收起态,点一下即展开;此后 applySelection 不该把它收回去
+      clickHistToggle();
+      assert(historyOpen() === "true", `前置条件:手动展开应写成 data-open=true,实际 ${historyOpen()}`);
+      fileList.applySelection(fileListDeps, ["C:\\session-persist\\y.md"]);
+      assert(
+        historyOpen() === "true",
+        `已有文件时新的通知不应收起手动展开的浮层,实际 ${historyOpen()}`,
+      );
+      assert(ariaExpanded() === "true", `展开态应同步给读屏,实际 aria-expanded=${ariaExpanded()}`);
+    });
+
+    // ---- 9d:非空 → 空 不收起(收起只发生在「让位新内容」这一个方向) ----
+    await suite.case("舞台非空→空不收起浮层", () => {
+      fileList.applySelection(fileListDeps, []); // 9c 之后浮层是展开态
+      assert(
+        historyOpen() === "true",
+        `清空选择不是「新内容」,不该收起浮层,实际 ${historyOpen()}`,
+      );
+    });
+
+    // ---- 9e:语言切换(纯重渲染,内容未变)不改折叠态 ----
+    await suite.case("语言切换的纯重渲染不改动折叠态也不重复写盘", async () => {
+      fileList.applySelection(fileListDeps, ["C:\\session-persist\\y.md"]); // 空→有文件:收起
+      await flush(); // 去重键在写成功后回填:不等它落地,下一次重渲染会被判成新内容
+      clickHistToggle(); // 手动展开
+      const writesBefore = countCalls();
+      setLanguage("en");
+      try {
+        fileList.renderSelection(fileListDeps); // 语言切换后的纯重渲染(内容未变)
+        await flush();
+        assert(
+          historyOpen() === "true",
+          `语言切换属纯重渲染,不应改动折叠态,实际 ${historyOpen()}`,
+        );
+        assert(
+          countCalls() === writesBefore,
+          `纯重渲染不应重复写会话文件,实际新增 ${countCalls() - writesBefore} 次`,
+        );
+      } finally {
+        // 复位放 finally:上面任一断言失败都不能把英文文案漏给后续各步
+        // (它们的期望文案是进入本块时按中文取的)。
+        setLanguage("zh");
+      }
+    });
+
+    /* ---- 9f-9h(B 档):最近区块的刷新通知(state.recentRefreshHandler) ---- */
+    // 消费侧走真实转换(convert/convert-flow 的单文件流程),成功/失败两态都跑一遍;
+    // 呈现面(ui/dialogs)按组合根同一份端口清单装配,只记调用不真弹窗。
+    /** @type {import("../../dist/renderer/convert/convert-flow.js").ConvertFlowDeps} */
+    const convertFlowDeps = {
+      showPrecheckDialog: () => Promise.resolve(true),
+      precheckFileLabels: (paths) => [...paths],
+      showSummary: () => {},
+      showCompleteDialog: () => {},
+      showBatchDialog: () => {},
+    };
+    state.recentRefreshHandler = recentFiles.refreshRecentFiles; // 与组合根 renderer.ts 同一行接线
+    mainRecentFiles = [
+      { path: "C:\\session-persist\\recent-a.md", name: "recent-a.md", format: "docx", ts: 1 },
+    ];
+    recentFiles.renderRecentList(mainRecentFiles);
+    const nodesBefore = createdNodes.length;
+    const rowTextPresent = (/** @type {string} */ name) =>
+      createdNodes.slice(nodesBefore).some((node) => node.textContent === name);
+
+    await suite.case("转换成功后最近区块被刷新(计数与行文本都更新)", async () => {
+      await convertFlow.runConvert(convertFlowDeps, "C:\\session-persist\\fresh.md", "docx");
+      await flush(); // 刷新回调是 void 启动,须等它落地
+      assert(
+        histCount.textContent === "2",
+        `成功转换后历史计数应更新为 2,实际 ${histCount.textContent}`,
+      );
+      assert(
+        rowTextPresent("fresh.md"),
+        "成功转换后历史条应渲染出新行的文件名,实际未找到该行节点",
+      );
+      assert(
+        uiStateGetCalls.length === 1,
+        `成功转换应恰好读一次 ui-state,实际 ${uiStateGetCalls.length} 次`,
+      );
+      // 接线那一半:段内跑不了组合根(它模块体即初始化 + IPC),故这一行读源文本。
+      // 钉的是「组合根确实把刷新回调接到 ui 侧的 refreshRecentFiles」——
+      // 上面那段运行期行为钉的是「回调确实被调用且刷出了新行」,两半合起来才闭环。
+      // 仓库根取 harness/paths.js 的单源,不在段内按目录层级上跳自算 —— 自算写法
+      // 会被 no-self-computed-root 判红(上跳基准随目录改层级静默指错位置)。
+      const rendererSource = fs.readFileSync(
+        path.resolve(ROOT, "src/renderer/renderer.ts"),
+        "utf8",
+      );
+      assert(
+        rendererSource.includes("state.recentRefreshHandler = refreshRecentFiles"),
+        "组合根应把 state.recentRefreshHandler 接到 ui 侧的 refreshRecentFiles",
+      );
+    });
+
+    await suite.case("转换失败不刷新最近区块(ui-state 不多读一次)", async () => {
+      convertOutcome = { ok: false, error: "EACCES: 源文件不可读" };
+      statusEl.textContent = "";
+      const readsBefore = uiStateGetCalls.length;
+      await convertFlow.runConvert(convertFlowDeps, "C:\\session-persist\\failed.md", "docx");
+      await flush();
+      assert(
+        uiStateGetCalls.length === readsBefore,
+        `失败路径不应多读 ui-state,实际新增 ${uiStateGetCalls.length - readsBefore} 次`,
+      );
+      assert(
+        histCount.textContent === "2" && !rowTextPresent("failed.md"),
+        `失败转换不应进历史条,实际计数 ${histCount.textContent}`,
+      );
+      assert(
+        statusEl.textContent !== "" && statusEl.classList.contains("status--error"),
+        "失败路径本身仍须有可见反馈(本档只钉「不刷新」,不顺带放过静默)",
+      );
+      convertOutcome = { ok: true, outputPath: "C:\\session-persist\\out.docx" };
+    });
+
+    await suite.case("最近区块刷新时读 ui-state 失败:列表原样且状态区不报错", async () => {
+      uiStateGetFails = true;
+      statusEl.textContent = "";
+      statusEl.classList.remove("status--error");
+      const nodesBefore2 = createdNodes.length;
+      await recentFiles.refreshRecentFiles();
+      await flush();
+      assert(
+        histCount.textContent === "2",
+        `读取失败应保持当前展示,实际计数 ${histCount.textContent}`,
+      );
+      assert(
+        createdNodes.length === nodesBefore2,
+        `读取失败不应重绘历史行,实际新建 ${createdNodes.length - nodesBefore2} 个节点`,
+      );
+      assert(
+        statusEl.textContent === "" && !statusEl.classList.contains("status--error"),
+        `刷新失败是静默降级(保持展示),不该在状态区报错,实际 ${JSON.stringify(statusEl.textContent)}`,
+      );
+      uiStateGetFails = false;
+    });
+
+    // ---- 9i:舞台跃迁端口的组合根接线(源文本层,理由同 9f 的那一半) ----
+    await suite.case("组合根把舞台跃迁端口接到 evaluateAutoCollapse", () => {
+      // 仓库根取 harness/paths.js 的单源,不在段内按目录层级上跳自算 —— 自算写法
+      // 会被 no-self-computed-root 判红(上跳基准随目录改层级静默指错位置)。
+      const rendererSource = fs.readFileSync(
+        path.resolve(ROOT, "src/renderer/renderer.ts"),
+        "utf8",
+      );
+      assert(
+        rendererSource.includes("onStageChanged: evaluateAutoCollapse"),
+        "组合根的 fileListDeps 应把 onStageChanged 接到 ui 侧的 evaluateAutoCollapse",
+      );
+    });
+
+    // 本块自己也经 applySelection 写过会话文件;下面第 1 步起以 `calls` 为**绝对**
+    // 计数基线(recordAt(calls, 0/1/2)),故此处把写入流水交还到零起点。
+    calls.length = 0;
 
     // ---- 1. renderSelection:一次变更 = 一次 uiStateSet(单一写入点,无重复 mutation) ----
     state.selectedFiles = ["C:\\session-persist\\case-1.md"];

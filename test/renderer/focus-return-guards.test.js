@@ -8,6 +8,8 @@
  *   「有焦点」会把「掉到 body」也放过 —— 那是本段最该拦的回归);
  * - 叠层不乱:预设保存弹窗叠在设置抽屉之上,关弹窗只回抽屉内那一层,
  *   关抽屉才回顶栏 ⚙(来源按栈记,不按单值);
+ * - 叠层期间键盘流也只有一份:非栈顶的焦点陷阱不得劫持 Tab(双重劫持会让
+ *   Tab 永远在两个弹窗的首项间来回跳);
  * - 来源已失效(元素被移除 / disabled)时不硬按,退到可见主操作钮。
  *
  * 初始落点侧:设置抽屉落当前激活分组 Tab(以 tablist 开场的对话框),
@@ -20,7 +22,7 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ROOT } from "../harness/paths.js";
-import { installDomStub, makeElement } from "./dom-stub.js";
+import { installDomStub, makeElement, makeKeyEvent } from "./dom-stub.js";
 import { createAsserter } from "../harness/assert.js";
 import { createCaseSuite } from "../harness/case.js";
 
@@ -80,6 +82,20 @@ export async function run() {
     trackFocus: true,
   });
 
+  /**
+   * 取 document 级 keydown 处理器并确认它真登记了。
+   * 单槽表(dom-stub 的 documentListeners 按类型存一个)下,后一次登记顶掉前一次,
+   * 故「取到的是函数」本身就是判据的一半;另一半是两次取到的**不是同一个**
+   * (两个陷阱各自登记过)。类型收窄用显式转换而非 `!`(测试树是 JS,不允许断言删除符)。
+   * @param {string} label 归属标签(失败消息用)
+   * @returns {(event: ReturnType<typeof makeKeyEvent>) => void}
+   */
+  const requireKeydownHandler = (label) => {
+    const fn = dom.documentListeners.get("keydown");
+    assert(typeof fn === "function", `${label} 应已登记 keydown 监听(未登记则栈顶判定无从比较)`);
+    return /** @type {(event: ReturnType<typeof makeKeyEvent>) => void} */ (fn);
+  };
+
   // 设置抽屉的初始落点是「当前激活分组 Tab」:被测代码在抽屉元素上调
   // querySelector 取它(不是 document 级),按 stub 契约段内注入最小命中实现。
   // 探针元素自造,须显式过一次 withFocus 才会真的落焦(见 dom-stub.js 装配注记)。
@@ -102,6 +118,7 @@ export async function run() {
     // ui/dialogs 的 ModalCloseDeps,另存为预设弹窗走 settings 的 PresetActionsDeps。
     // 两份都按组合根的同一份端口清单在测试侧装配。
     const fileList = await import(distUrl("renderer/convert/file-list.js"));
+    const domOps = await import(distUrl("renderer/dom/dom-ops.js"));
     const dialogsDeps = { recomputeActionButtons: fileList.updateActionButtons };
     const presetActionsDeps = {
       afterModalClosed: () => dialogs.afterModalClosed(dialogsDeps),
@@ -240,8 +257,54 @@ export async function run() {
       assert(landed !== trigger, "触发元素已失效时不得把焦点按回它(按上去等于丢焦点)");
     });
 
+    // ---- 8. 叠层期间的键盘流:焦点陷阱栈只有栈顶处理 Tab ----
+    await suite.case("非栈顶的焦点陷阱不劫持键盘流(栈顶独占)", () => {
+      // 两个同时打开的陷阱 = 真实形态(设置抽屉常驻陷阱,其上再叠一层弹窗)。
+      // 本段此前零 case 调 trapFocus、零 keydown 派发,栈顶独占那条判据
+      // (dom-ops 的 trapFocus 里「非栈顶陷阱不处理」)因此从未被钉过。
+      const makeDialog = (/** @type {string} */ id) => {
+        const dialog = makeElement({ id });
+        // 可聚焦项须经 withFocus 才会真的落焦(见 dom-stub.js 装配注记)
+        const first = dom.withFocus(makeElement({ id: `${id}-first` }));
+        const last = dom.withFocus(makeElement({ id: `${id}-last` }));
+        // trapFocus 的可聚焦过滤读 el.offsetParent !== null(浏览器里由布局给出,
+        // stub 无布局):非空占位即「可见」
+        for (const node of [dialog, first, last]) {
+          /** @type {Record<string, unknown>} */ (node).offsetParent = {};
+        }
+        dialog.querySelectorAll = () => [first, last];
+        return { dialog, first, last };
+      };
+      const lower = makeDialog("trap-lower");
+      const upper = makeDialog("trap-upper");
+      const releaseLower = domOps.trapFocus(lower.dialog);
+      // document 监听表按类型单槽 ⇒ 每次登记后各取一次处理器,自己模拟浏览器
+      // 「同一个 keydown 依次命中两个 capture 监听器」(只派发一次就只能量到栈顶那一个)
+      const lowerKeydown = requireKeydownHandler("下层陷阱");
+      const releaseUpper = domOps.trapFocus(upper.dialog);
+      const upperKeydown = requireKeydownHandler("上层陷阱");
+      assert(
+        lowerKeydown !== upperKeydown,
+        "两个陷阱各自登记了 keydown 监听(否则下面的栈顶判定无从比较)",
+      );
+      const toLower = makeKeyEvent("Tab", dom.document.activeElement);
+      lowerKeydown(toLower);
+      const toUpper = makeKeyEvent("Tab", dom.document.activeElement);
+      upperKeydown(toUpper);
+      assert(
+        !toLower.preventDefaultCalled,
+        "非栈顶陷阱不得劫持 Tab(双重焦点劫持会让 Tab 永远跳回下层首项)",
+      );
+      assert(
+        toUpper.preventDefaultCalled && dom.document.activeElement === upper.first,
+        `栈顶陷阱应把焦点拉回自己的首项,实际落到 ${idOf(dom.document.activeElement)}`,
+      );
+      releaseUpper();
+      releaseLower();
+    });
+
     console.log(
-      "[ok] focus-return-guards:弹窗/抽屉默认落点 + 四类关闭归还具体元素 + 叠层栈序 + 失效兜底 断言通过",
+      "[ok] focus-return-guards:弹窗/抽屉默认落点 + 四类关闭归还具体元素 + 叠层栈序 + 栈顶独占 + 失效兜底 断言通过",
     );
     return { cases: suite.results };
   } finally {

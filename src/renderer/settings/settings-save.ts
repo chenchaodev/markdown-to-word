@@ -23,24 +23,13 @@
  */
 import { t } from "../../core/i18n/index.js";
 import type { AppSettings } from "../../core/settings/settings-defaults.js";
-import type { SettingsMergePatch } from "../../core/settings/merge-patch.js";
-import { state } from "../state/state.js";
+import { state, type SettingsSaveHooks } from "../state/state.js";
 import { mergePendingSavePatch, normalizePageSetup, reconcileSettingsSave } from "./settings-logic.js";
 
-/** 设置抽屉交给本流水线的 DOM 触点(由 settings-panel.ts 在模块初始化时注册)。 */
-export interface SettingsSaveHooks {
-  /** 页面设置被规范化后回填全部控件。 */
-  applyControls(): void;
-  /** main 权威值落到 renderer state 与语言/主题副作用。 */
-  applyAuthoritative(settings: AppSettings): void;
-  /** 状态区写错误文案。 */
-  setError(message: string): void;
-  /** 状态区当前文案是否仍等于本模块写入的失败原文(用于精确复位,不误清其它流程提示)。 */
-  isStatusMine(text: string): boolean;
-  /** 清空状态区。 */
-  clearStatus(): void;
-  /** 刷新抽屉副标题等 chrome。 */
-  refreshDrawerMeta(): void;
+/** 设置抽屉交给本流水线的 DOM 触点(由 settings-panel 注册;缺失即零触点)。
+ *  类型声明在 state/(store 持这个槽,槽的类型与槽同处)。 */
+function hooks(): SettingsSaveHooks {
+  return state.settingsSave.hooks ?? NOOP_HOOKS;
 }
 
 const NOOP_HOOKS: SettingsSaveHooks = {
@@ -52,43 +41,33 @@ const NOOP_HOOKS: SettingsSaveHooks = {
   refreshDrawerMeta: () => {},
 };
 
-let hooks: SettingsSaveHooks = NOOP_HOOKS;
-
 /** 由设置面板在模块初始化时调用,交出它的 DOM 触点(见文件头「拆法」第 2 条)。 */
 export function registerSettingsSaveHooks(next: SettingsSaveHooks): void {
-  hooks = next;
+  state.settingsSave.hooks = next;
 }
 
-/* ---------- 跨模块共享的失败重试台账 ---------- */
-
-/** 保存修订号:并发保存时只有最后一次的结果被采纳,旧的不得回填控件。 */
-let settingsSaveRevision = 0;
-
-/** 保存失败后待重试的草稿 patch(失败不丢编辑内容):下一次保存与新 patch 合并后
- *  一并提交,成功即清空;否则失败期间编辑的字段只存在于 renderer 内存。
- *  **抽屉与向导写的是同一份** —— 跨模块各自维护草稿会在交替写入时丢字段。
- *  形状 = `SettingsMergePatch`(core 单源,与 IPC `settingsSet` 同一处声明):草稿装的是
- *  `mergePendingSavePatch` 的产物,而后者对逐字段兜底的五块产出的是**块内部分字段**的对象。 */
-let pendingSavePatch: SettingsMergePatch = {};
-
-/** 最近一次失败反馈写入状态区的原文:成功保存后据此精确复位(不误清其它流程提示)。 */
-let pendingSaveFailureText: string | null = null;
+/* ---------- 跨模块共享的失败重试台账(ADR-065 §决定 ③:已收敛进 store) ----------
+ * 四处原先是本文件的模块级可变状态(`hooks` / 修订号 / 待重试草稿 / 失败原文),
+ * 现按 ADR-065 §决定 ③ 整组搬进 `state.settingsSave`。**整组搬**而非拆三家:
+ * 抽屉与向导写同一份草稿,而「失败要不要落可见提示」的判定就落在修订号与失败
+ * 原文上 —— 台账与反馈触点拆成两处,会让两者各说各话。 */
 
 /** 保存失败反馈:状态区可见提示 + 留痕;编辑内容与控件值一律保留(草稿),
  *  提示持续显示直到下一次成功保存 —— 期间它就是「未保存」状态的唯一可见标记。 */
 function reportSettingsSaveFailure(error: unknown): void {
   console.error("[settings] 设置写盘失败(保留当前编辑内容,待下次保存重试)", error);
-  pendingSaveFailureText = t("preset.saveFailed");
-  hooks.setError(pendingSaveFailureText);
+  state.settingsSave.failureText = t("preset.saveFailed");
+  hooks().setError(state.settingsSave.failureText);
 }
 
 /** 成功保存后复位未保存提示:仅当状态区仍是本模块写入的失败原文才清空,
  *  避免抹掉转换/复制等其他流程刚写入的状态文案。 */
 function clearSettingsSaveFailure(): void {
-  if (!pendingSaveFailureText) return;
-  const writtenByUs = hooks.isStatusMine(pendingSaveFailureText);
-  pendingSaveFailureText = null;
-  if (writtenByUs) hooks.clearStatus();
+  const written = state.settingsSave.failureText;
+  if (!written) return;
+  const writtenByUs = hooks().isStatusMine(written);
+  state.settingsSave.failureText = null;
+  if (writtenByUs) hooks().clearStatus();
 }
 
 /**
@@ -107,26 +86,27 @@ export function persistSettings(patch: Partial<AppSettings>): void {
     const normalized = normalizePageSetup(candidate, state.settings.pageSetup);
     if (normalized.corrected) {
       state.settings.pageSetup = normalized.pageSetup;
-      if (normalized.error) hooks.setError(normalized.error);
-      hooks.applyControls();
+      if (normalized.error) hooks().setError(normalized.error);
+      hooks().applyControls();
       nextPatch = { ...patch, pageSetup: normalized.pageSetup };
     }
   }
-  hooks.refreshDrawerMeta();
-  const revision = ++settingsSaveRevision;
+  hooks().refreshDrawerMeta();
+  state.settingsSave.revision += 1;
+  const revision = state.settingsSave.revision;
   // 待重试草稿 + 本次编辑:失败过的字段必须随下一次保存落盘,否则只活在内存里
-  const attempt = mergePendingSavePatch(pendingSavePatch, nextPatch);
+  const attempt = mergePendingSavePatch(state.settingsSave.pendingPatch, nextPatch);
   void reconcileSettingsSave({
     save: () => window.api.settingsSet(attempt),
-    isCurrent: () => revision === settingsSaveRevision,
-    apply: hooks.applyAuthoritative,
+    isCurrent: () => revision === state.settingsSave.revision,
+    apply: hooks().applyAuthoritative,
     onFailure: (error) => {
-      pendingSavePatch = attempt;
+      state.settingsSave.pendingPatch = attempt;
       reportSettingsSaveFailure(error);
     },
   }).then((outcome) => {
     if (outcome === "saved") {
-      pendingSavePatch = {};
+      state.settingsSave.pendingPatch = {};
       clearSettingsSaveFailure();
     }
     if (outcome !== "failed") {
@@ -135,7 +115,7 @@ export function persistSettings(patch: Partial<AppSettings>): void {
   }).catch((error: unknown) => {
     // 回填/清理环节异常(如控件回填抛错):按未提交处理 —— 草稿保留并给出可见
     // 反馈,下次保存仍会带上它重试;不静默吞错。
-    pendingSavePatch = attempt;
+    state.settingsSave.pendingPatch = attempt;
     reportSettingsSaveFailure(error);
   });
 }

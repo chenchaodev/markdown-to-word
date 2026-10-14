@@ -375,7 +375,9 @@ export async function run() {
     const distUrl = (rel) => pathToFileURL(path.join(ROOT, "dist", "renderer", rel)).href;
     const flow = await import(distUrl("convert/convert-flow.js"));
     const { state } = await import(distUrl("state/state.js"));
-    const runtime = await import(distUrl("wizard/wizard-runtime.js"));
+    // 模块命名空间别名 wizard:单例运行态经 `runtime` 只读门面出口
+    // (原先是三个可变绑定直接导出,REQ-241 改为 const 门面 + 模块私有 let)。
+    const { runtime: wizard } = await import(distUrl("wizard/wizard-runtime.js"));
     const bookWizard = await import(distUrl("wizard/book-wizard.js"));
     const actions = await import(distUrl("convert/events/convert-actions.js"));
     const fileList = await import(distUrl("convert/file-list.js"));
@@ -397,7 +399,7 @@ export async function run() {
     const btnDisabled = () => convertBtn.disabled;
     const mergeCount = () => mergeCalls.length;
     const completeDialog = elementFor("completeDialog");
-    const step = () => runtime.currentStep;
+    const step = () => wizard.currentStep;
     hideOverlays();
 
     // ---- 1. 预检进行中:转换按钮视觉置灰(忙态探针与点击守卫同源) ----
@@ -498,8 +500,8 @@ export async function run() {
     });
 
     // ---- 5. 付印链:single-flight + 两格式依次,链内不起第二条命令 ----
-    runtime.draft.sources = ["C:\\work\\a.md", "C:\\work\\b.md"];
-    runtime.draft.format = "both";
+    wizard.draft.sources = ["C:\\work\\a.md", "C:\\work\\b.md"];
+    wizard.draft.format = "both";
     state.selectedFiles = ["C:\\work\\a.md", "C:\\work\\b.md"];
     for (let i = 0; i < 6 && step() < 7; i++) handlerOf(nextEl, "click")();
     const precheckBeforeFinish = precheckCalls;
@@ -556,7 +558,7 @@ export async function run() {
     });
     const finishEl2 = /** @type {WizardStubElement} */ (finishBtn2);
 
-    runtime.draft.sources = ["C:\\work\\a.md", "C:\\work\\b.md"];
+    wizard.draft.sources = ["C:\\work\\a.md", "C:\\work\\b.md"];
     state.mode = "merge";
     const mergesBeforeBlocked = mergeCalls.length;
     await suite.case("转换进行中再付印不并发起第二条链且向导保持打开", async () => {
@@ -578,8 +580,8 @@ export async function run() {
     // ---- 7. 前序留下前台模态(完成弹窗):第二次格式转换按单一明确结果拦下 ----
     bookWizard.openBookWizard(bookWizardDeps);
     overlay = currentOverlay();
-    runtime.draft.sources = ["C:\\work\\a.md", "C:\\work\\b.md"];
-    runtime.draft.format = "both";
+    wizard.draft.sources = ["C:\\work\\a.md", "C:\\work\\b.md"];
+    wizard.draft.format = "both";
     state.suppressCompleteDialog = false; // 转换结束展示完成弹窗(前台模态)
     const mergesBeforeModal = mergeCalls.length;
     const finishBtn3 = findById(overlay, "wizardFinish");

@@ -38,22 +38,17 @@ import {
 } from "./wizard-state.js";
 import { h, setChecked } from "./wizard-fields.js";
 import {
-  currentStep,
-  draft,
   resetDraft,
+  runtime,
   setStep,
   setWizardEl,
-  wizardEl,
 } from "./wizard-runtime.js";
 import {
   buildStepCover,
   buildStepHeader,
   buildStepTemplate,
   buildStepWatermark,
-  coverAuthorInput,
-  coverDateInput,
-  coverFromFm,
-  coverTitleInput,
+  coverRefs,
   renderCoverPreview,
   type WizardStepsDeps,
 } from "./wizard-steps.js";
@@ -61,10 +56,8 @@ import {
   buildStepMerge,
   buildStepOutput,
   buildStepToc,
-  formatRadios,
+  deliveryRefs,
   renderStep,
-  sourcesEmpty,
-  sourcesList,
   type WizardStepsDeliveryDeps,
 } from "./wizard-steps-delivery.js";
 
@@ -159,15 +152,15 @@ function buildWizard(deps: BookWizardDeps): HTMLElement {
   // 拒绝时步序不变,用户可继续停留在当前步;关闭向导始终可用,不留死路。
   skipBtn.addEventListener("click", () => {
     if (isWizardCommandBlocked(deps)) return;
-    goTo(nextStep(currentStep));
+    goTo(nextStep(runtime.currentStep));
   });
   prevBtn.addEventListener("click", () => {
     if (isWizardCommandBlocked(deps)) return;
-    goTo(prevStep(currentStep));
+    goTo(prevStep(runtime.currentStep));
   });
   nextBtn.addEventListener("click", () => {
     if (isWizardCommandBlocked(deps)) return;
-    if (canAdvance(currentStep, draft)) goTo(nextStep(currentStep));
+    if (canAdvance(runtime.currentStep, runtime.draft)) goTo(nextStep(runtime.currentStep));
   });
   finishBtn.addEventListener("click", () => void finishWizard(deps));
 
@@ -215,11 +208,12 @@ function goTo(step: number): void {
  * 取判定时临时摘掉自身遮罩并在同一任务内恢复(不产生重排/闪烁,焦点陷阱不受影响)。
  */
 function isWizardCommandBlocked(deps: BookWizardDeps): boolean {
-  if (!wizardEl) return deps.isConvertCommandBlocked();
-  const visible = !wizardEl.classList.contains("hidden");
-  if (visible) wizardEl.classList.add("hidden");
+  const container = runtime.wizardEl;
+  if (!container) return deps.isConvertCommandBlocked();
+  const visible = !container.classList.contains("hidden");
+  if (visible) container.classList.add("hidden");
   const blocked = deps.isConvertCommandBlocked();
-  if (visible) wizardEl.classList.remove("hidden");
+  if (visible) container.classList.remove("hidden");
   return blocked;
 }
 
@@ -241,9 +235,9 @@ function cleanMetadata(cover: WizardDraft["cover"]): DocMetadata | undefined {
  */
 async function finishWizard(deps: BookWizardDeps): Promise<void> {
   if (isWizardCommandBlocked(deps)) return;
-  const files = draft.sources.length ? draft.sources : state.selectedFiles;
-  const metadata = cleanMetadata(draft.cover);
-  const format = draft.format;
+  const files = runtime.draft.sources.length ? runtime.draft.sources : state.selectedFiles;
+  const metadata = cleanMetadata(runtime.draft.cover);
+  const format = runtime.draft.format;
   closeBookWizard(deps);
   await deps.withPrecheck([], async () => {
     if (format === "both") {
@@ -260,7 +254,7 @@ async function finishWizard(deps: BookWizardDeps): Promise<void> {
 
 /* ---------- 打开 / 关闭 ---------- */
 export function openBookWizard(deps: BookWizardDeps): void {
-  if (wizardEl && !wizardEl.classList.contains("hidden")) return;
+  if (runtime.wizardEl && !runtime.wizardEl.classList.contains("hidden")) return;
   // 与设置抽屉互斥:打开向导前若抽屉开着,先关抽屉(释放其陷阱)
   if (deps.isSettingsDrawerOpen()) deps.closeSettingsDrawer();
   triggerBtn = document.activeElement as HTMLElement;
@@ -269,22 +263,22 @@ export function openBookWizard(deps: BookWizardDeps): void {
   // 每次打开重建外壳:各步骤控件在构建期从 state.settings 取值,复用旧 DOM 会让
   // 向导停留在上次打开时的设置快照(向导外改过排版/页眉/水印/目录后再开会失真);
   // 重建同时让步骤名按当前语言生成(stepLabels 构建期取 t)。
-  wizardEl?.remove();
+  runtime.wizardEl?.remove();
   releaseTrap?.();
   releaseTrap = null;
   const el = buildWizard(deps);
   setWizardEl(el);
   document.body.appendChild(el);
   // 重置瞬时字段(草稿与控件同源,避免上次输入残留)
-  coverTitleInput.value = "";
-  coverAuthorInput.value = "";
-  coverDateInput.value = "";
-  coverFromFm.classList.add("hidden");
+  coverRefs.titleInput.value = "";
+  coverRefs.authorInput.value = "";
+  coverRefs.dateInput.value = "";
+  coverRefs.fromFm.classList.add("hidden");
   renderCoverPreview();
-  setChecked(formatRadios, "docx");
-  draft.format = "docx";
-  sourcesList.replaceChildren();
-  sourcesEmpty.classList.remove("hidden");
+  setChecked(deliveryRefs.formatRadios, "docx");
+  runtime.draft.format = "docx";
+  deliveryRefs.sourcesList.replaceChildren();
+  deliveryRefs.sourcesEmpty.classList.remove("hidden");
   el.classList.remove("hidden");
   // 翻译静态文案(动态构建的 data-i18n 属性);applyStaticTexts 扫描整文档,幂等
   applyStaticTexts();
@@ -297,8 +291,8 @@ export function openBookWizard(deps: BookWizardDeps): void {
 }
 
 export function closeBookWizard(deps: BookWizardDeps): void {
-  if (!wizardEl || wizardEl.classList.contains("hidden")) return;
-  wizardEl.classList.add("hidden");
+  if (!runtime.wizardEl || runtime.wizardEl.classList.contains("hidden")) return;
+  runtime.wizardEl.classList.add("hidden");
   releaseTrap?.();
   releaseTrap = null;
   // 向导也是 .dialog-overlay,同属 isModalCommandBlocked 的判据面:遮罩显隐一变

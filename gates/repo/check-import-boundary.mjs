@@ -799,6 +799,48 @@ export const LAYER_TEXT_RULES = Object.freeze([
       + '唯一碰 DOM 的文件流出去,「DOM 面只写不持有」这条不变量随即失守,而这类改动在'
       + '桶溶进目录的拆分里极易顺手发生(把 t.ts 的状态变量一起搬过来并带上 export)',
   },
+  // ADR-065 §决定 ③ 的机械判据:「模块级可变状态收敛进 state/」此前只有一句
+  // 失效的自述(state.ts 文件头曾写「全部模块级可变状态收敛于此」,而实测 renderer
+  // 有二十余处模块级 let 散在其外),没有任何机制承接。本条补上机制。
+  //
+  // **scope 选 `renderer-outside-state` 而非 `src/renderer/` 之外**:
+  // ① 判据对象是 renderer 的模块级可变状态 —— core / main / convert / cli / mcp
+  //    的可变绑定不在 ADR-065 的范围内,把它们一并纳入会让本条的 reason 与 scope
+  //    不一致(读者按理由来、按 scope 判);
+  // ② `state/` 自身豁免:store 的落点就是它,而它内部是否出现可变绑定由别的纪律管
+  //    (纯 reducer 化属另一决定),本条只管「离开了 store 就没有跨模块可变出口」。
+  // 排除 state/ 与「把整个 src/renderer 都纳入」的差别仅在 store 自己身上 ——
+  // 实测 store 内部零命中,故两种 scope 当前的判定面完全一致,选窄的那一个是因为
+  // 它准确表达了判据的对象。
+  //
+  // 转正前 **不带** pending:建时即绿。11 处 `export let`(全在 wizard)在
+  // REQ-241 同批清零(改为 const 只读门面 + 模块私有 let),故两侧实测 0 命中;
+  // 若清零未做完就撤掉这个豁免,判据会当场判红 —— 那时正确的动作是把 pending 加回去,
+  // 而不是往白名单里搬名字。
+  {
+    id: 'renderer-no-export-let',
+    scope: 'renderer-outside-state',
+    // 只抄 `i18n-dom-no-export-let` 的**第一个** pattern。第二个(`export\s*\{…\}`)
+    // **刻意不抄**:那一条的成立前提是「core/i18n/ 的唯一公开桶是 index.ts,再导出
+    // 全部由它承担,故 dom.ts 里任何 export 子句要么冗余要么正是泄漏形态」——
+    // renderer 没有这个前提,pure.ts / settings-logic.ts / settings-panel.ts /
+    // about.ts 四处 `export { … }` 全是正当的值再导出(实测),照抄即四处假阳性,
+    // 消它的唯一手段是开豁免表,而豁免表正是本仓门禁反复批的那种形态。
+    // 残留缺口(登记不隐藏):`let x = 1; export { x };` 这种**绕一步**的写法不在
+    // 本判据覆盖内 —— 判它要跨语句符号追踪(ADR-064 :236 已登记为超出本仓门禁
+    // 架构能力)。第一条 Direct 形态(`export let`)已归零,残留的是两步形态。
+    patterns: Object.freeze([
+      {
+        id: 'export-let-or-var',
+        label: '导出可变绑定(let/var)',
+        re: /\bexport\s+(?:let|var)\b/g,
+      },
+    ]),
+    reason: 'renderer 的模块级可变状态以 state/ 为唯一共享落点(ADR-065 §决定 ③):'
+      + 'state/ 之外导出可变绑定,等于给「绕过 store 的第二个写入点」开门 —— '
+      + '任何 import 方都能重绑它,而 store 的单一来源不再成立。需要跨模块共享的'
+      + '状态搬进 state/,只在一文件内用的保持私有(不 export)',
+  },
   {
     id: 'main-windows-no-up',
     scope: 'main-windows',
@@ -1035,6 +1077,48 @@ export function selfCheckTextLayerRules() {
       name: 't.ts 里的 export { … }(应判绿:scope 只覆盖 dom.ts 一个文件)',
       file: 'core/i18n/t.ts',
       text: 'const current = "zh";\nexport { current };\n',
+      expect: 0,
+    },
+    // ---- renderer-no-export-let:两个方向都要钉,且 scope 收窄要有对照 ----
+    {
+      // 违例方向①:renderer feature 里的可变绑定导出(原 wizard-runtime.ts 那一行原样)。
+      name: 'renderer feature 导出 mutable let(应判红)',
+      file: 'renderer/wizard/wizard-runtime.ts',
+      text: 'export let currentStep = 1;\n',
+      expect: 1,
+    },
+    {
+      // 违例方向②:`var` 形态与 `let` 同义,共用一个分支会留下同义绕过口
+      // (与 ROOT_COMPUTE_PATTERNS 覆盖 3/4 同一理由)。
+      name: 'renderer feature 导出 var(应判红:与 let 同义)',
+      file: 'renderer/ui/recent-files.ts',
+      text: 'export var lastStageHasFiles = false;\n',
+      expect: 1,
+    },
+    {
+      // 判绿方向①:const 只读门面是本条放行的形态(REQ-241 把 11 处可变导出
+      // 改成的就是它)—— 若本条把 const 也判红,等于逼人退回 export let。
+      name: 'renderer feature 的 const 只读门面(应判绿:REQ-241 的目标形态)',
+      file: 'renderer/wizard/wizard-runtime.ts',
+      text: 'let currentStep = 1;\nexport const runtime = {\n  get currentStep(): number {\n    return currentStep;\n  },\n};\n',
+      expect: 0,
+    },
+    {
+      // 判绿方向②:state/ 自身豁免 —— store 的落点就是它(scope 排除它)。
+      // 把 scope 放大到整个 renderer/ 后本夹具立刻变红。
+      name: 'state/ 内的可变导出(应判绿:store 落点自身豁免)',
+      file: 'renderer/state/state.ts',
+      text: 'export let recentRefreshHandler: (() => void) | null = null;\n',
+      expect: 0,
+    },
+    {
+      // 判绿方向③:scope 只管 renderer —— 同一条形态在 src 别的树合法
+      // (ADR-065 的范围就是 renderer 的模块级状态)。用 main/ 下的文件而非
+      // core/i18n/dom.ts:后者已被 i18n-dom-no-export-let 覆盖(会命中另一条规则),
+      // 取它会让「期望 0 还是 1」变成另一条规则的断言,读起来像在测那条。
+      name: 'renderer 之外的同一形态(应判绿:scope 只覆盖 renderer)',
+      file: 'main/persist/settings.ts',
+      text: 'export let cached: AppSettings | null = null;\n',
       expect: 0,
     },
   ];
@@ -1475,6 +1559,13 @@ function scopeMatches(scope, file) {
   // renderer/ 之下,故单列一个 scope 形态
   if (scope === 'renderer-foundation') {
     return file.startsWith('renderer/dom/') || file.startsWith('renderer/state/');
+  }
+  // 判据 renderer-no-export-let 的 scope:renderer 之下、state/ 之外。按**排除**
+  // 写而不是枚举前缀(同 outside-core):renderer 之下的顶层目录会增减,枚举前缀
+  // 会在新增目录那天静默漏判(恒绿)。排除 state/ 的理由见规则体那段注释 ——
+  // store 的落点就是它,本条判的是「离开了 store 就没有跨模块可变出口」。
+  if (scope === 'renderer-outside-state') {
+    return file.startsWith('renderer/') && !file.startsWith('renderer/state/');
   }
   // core 的 pdf 子树:scope 按 src 顶层目录匹配,故 core/pdf/** 需单列形态
   if (scope === 'core-pdf') return file.startsWith('core/pdf/');

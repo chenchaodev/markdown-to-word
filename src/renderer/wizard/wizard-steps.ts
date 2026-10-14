@@ -5,7 +5,9 @@
  * 交付三步(合并源/目录/付印)见 wizard-steps-delivery.ts,字段校验绑定见
  * wizard-fields.ts,外壳/导航/付印提交见 book-wizard.ts。
  * 封面控件引用在本模块赋值(buildStepCover),外壳打开重置与交付步预填经
- * import 读取(ESM 实时绑定,导入只读——赋值仅在本模块,不越界)。
+ * import 读取。**不越界的读也不再给可重绑定出口**(同 wizard-runtime):
+ * 五个 `let` 是模块私有可变绑定,经 `coverRefs` 只读门面出口,import 方拿到的
+ * 始终是当次构建的最新元素,且无法重绑。
  * 依赖方向:本模块 → wizard-fields、wizard-runtime、core / state(单向),
  * 不反向引用外壳。对 settings 的协作(套用预设 / 导入模板 / 落盘 / 预设与展示名)
  * 自 REQ-218 #10 阶段④ 起经组合根注入的 WizardStepsDeps 形参进入,不再有跨功能
@@ -42,7 +44,7 @@ import {
   type MarginField,
   type WizardFieldsDeps,
 } from "./wizard-fields.js";
-import { draft } from "./wizard-runtime.js";
+import { runtime } from "./wizard-runtime.js";
 
 /**
  * 跨功能协作面(ADR-075 阶段④:组合根组装 · 本模块接形参 · 类型由本 feature 自报;
@@ -63,12 +65,33 @@ export interface WizardStepsDeps extends WizardFieldsDeps {
   importDocxTemplate: () => Promise<void>;
 }
 
-/* 各步需读写的封面控件引用(每次 open 由 buildStepCover 重建) */
-export let coverTitleInput: HTMLInputElement;
-export let coverAuthorInput: HTMLInputElement;
-export let coverDateInput: HTMLInputElement;
-export let coverPreview: HTMLElement;
-export let coverFromFm: HTMLElement;
+/* 各步需读写的封面控件引用(每次 open 由 buildStepCover 重建)。
+ * 私有 let + 只读门面出口,而非可变绑定导出:后者允许任何 import 方重绑,
+ * 而赋值必须留在 buildStepCover(与「每次打开重建控件」的生命周期同源)。 */
+let coverTitleInput: HTMLInputElement;
+let coverAuthorInput: HTMLInputElement;
+let coverDateInput: HTMLInputElement;
+let coverPreview: HTMLElement;
+let coverFromFm: HTMLElement;
+
+/** 封面控件引用的只读门面(赋值只在 buildStepCover)。 */
+export const coverRefs = {
+  get titleInput(): HTMLInputElement {
+    return coverTitleInput;
+  },
+  get authorInput(): HTMLInputElement {
+    return coverAuthorInput;
+  },
+  get dateInput(): HTMLInputElement {
+    return coverDateInput;
+  },
+  get preview(): HTMLElement {
+    return coverPreview;
+  },
+  get fromFm(): HTMLElement {
+    return coverFromFm;
+  },
+};
 
 /* ---------- 步骤 1:模板预设 ---------- */
 export function buildStepTemplate(deps: WizardStepsDeps): HTMLElement {
@@ -227,9 +250,9 @@ export function buildStepCover(): HTMLElement {
   coverFromFm = h("p", { class: "wz-hint hidden", dataset: { i18n: "wizard.cover.fromFrontmatter" }, text: t("wizard.cover.fromFrontmatter") });
 
   const onInput = (): void => {
-    draft.cover.title = coverTitleInput.value;
-    draft.cover.author = coverAuthorInput.value;
-    draft.cover.date = coverDateInput.value;
+    runtime.draft.cover.title = coverTitleInput.value;
+    runtime.draft.cover.author = coverAuthorInput.value;
+    runtime.draft.cover.date = coverDateInput.value;
     renderCoverPreview();
   };
   coverTitleInput.addEventListener("input", onInput);
@@ -251,9 +274,9 @@ export function buildStepCover(): HTMLElement {
 
 /** 封面实时预览(右侧卡;标题衬线 / 作者 UI / 日期 mono) */
 export function renderCoverPreview(): void {
-  const title = draft.cover.title.trim();
-  const author = draft.cover.author.trim();
-  const date = draft.cover.date.trim();
+  const title = runtime.draft.cover.title.trim();
+  const author = runtime.draft.cover.author.trim();
+  const date = runtime.draft.cover.date.trim();
   coverPreview.replaceChildren();
   if (!title) {
     coverPreview.appendChild(h("p", { class: "wz-cover-empty", text: t("wizard.cover.missingTitle") }));
