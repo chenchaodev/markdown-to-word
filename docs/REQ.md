@@ -12,8 +12,8 @@
 
 | 项 | 值 |
 |---|---|
-| 已用最大号 | REQ-242 |
-| 下一个可用号 | REQ-243 |
+| 已用最大号 | REQ-244 |
+| 下一个可用号 | REQ-245 |
 
 「已用最大号」= 下方四节里出现过的最大号，**含待拍板与未开工的行** —— 那些需求已经占号，不因尚未开工而退回池子。
 
@@ -41,6 +41,7 @@
 | REQ-020 | 批量重命名 | 待拍板 | 2026-08-16 当初否决：边缘便利（维持砍）。2026-09-29 用户裁决恢复为待拍板。 | 随时 | 无 |
 | REQ-021 | 代码高亮主题切换 | 待拍板 | 2026-08-16 当初否决：仅 pdf 有意义，打印需求趋零（维持砍）。2026-09-29 用户裁决恢复为待拍板。 | 随时 | 无 |
 | REQ-163 | 库模式（npm 包） | 未开工 | 由 REQ-006 拆出。core 纯度已实测达标但打包面为零：本仓 `private: true`、无 `bin`/`exports`/`types`，`tsconfig.json` 无 `declaration` 键 ⇒ dist 不产 `.d.ts`，对外暴露类型需新增该键。与 MCP 无技术共同点故拆号 | 「是否对外发 npm 包」决策后开工 | docs/adr/ADR-060-多层交付面与headless装配层.md |
+| REQ-244 | WriteHooksOf 按组窄化失效 | 待拍板 | REQ-243 收尾附带发现、纯读类型推导核实。`settings-controls-table.ts:578` 的 `WriteHooksOf<G>` 按组窄化失效：三个条目工厂的 `spec.group` 全声明为完整联合（行号见 evidence）⇒ `GroupOf<K>` 对每个 K 都是同一联合 ⇒ 条件与 K **无关**，只会整体成立或整体落空。⇒ 四处按组声明实得空对象类型，「多写/漏写都在 tsc 期报错」对它们不成立。⚠ `WriteHookRegistry`（G=完整联合）仍是全键表。 | 动 CONTROL_ENTRIES 的 group 声明或 HookedWriteKey 时 | docs/evidence/20261014-224211-WriteHooksOf按组窄化失效的类型事实.md |
 
 ## 在办
 
@@ -248,6 +249,7 @@
 | REQ-241 | renderer 模块级可变状态收敛进 store | 已完成 | 已闭合:export let 11 归零,档A 四处收敛进 store,新门禁 renderer-no-export-let 已 fail-closed。三档登记落 ADR-065;lastStageHasFiles 写明不是派生值而是通知时刻快照。两栈按裁决留在 dom/,ADR-076 已回填。 | 下次动 renderer 模块级 let/var 时 | docs/adr/ADR-065-renderer功能层注入式重构.md §决定;docs/adr/ADR-076-dom-ops与toast归入基础层.md 后果节;工作载体 #10 右注(载体已收尾删除)原文入档 docs/evidence/20261011-101152-最优架构整改工作载体原文.md |
 | REQ-196 | L1 未实现：段↔主体一对一无看守 | 已完成 | 已闭合：新增三族判据 + 同族第三张豁免表 + 基线生成入口，口径按裁决改弱形态「源模块须有交代」。「到达」定义直接复用 isSubjectImport，本文件不再有第二份判定。基线构成、七份变异自证与两处次生发现见 evidence。 | 新增 src/** 模块样文件时 | docs/evidence/20261014-201028-REQ196源模块交代门禁的口径裁决与留痕.md · docs/adr/ADR-062-测试树位置即身份与门禁元框架瘦身.md:85（L1 口径裁决块） |
 | REQ-242 | 间接动态 import 对静态抽取器不可见 | 已完成 | 已闭合：改 2 个文件 5 处，把那 5 个模块换成字面量 import()（保持动态不动静态），删掉 5 条 indirect-load-not-visible 表项。L5 实测零新增（侦察的 8 条是全量清扫数字）；_baseline 未动。残留债：61 处可字面化点未扫。 | 动 `extractImports` 或给它加新调用方时 | docs/evidence/20261014-201028-REQ196源模块交代门禁的口径裁决与留痕.md（第九节） |
+| REQ-243 | 测试侧动态 import 字面量化与 helper 去参数化 | 已完成 | 已闭合：61 处包装形态字面量化 + 两 helper 去形参（5 个调用方实测解析到同一文件）。L5 补 9 条、src-module 删 14 条 stale，⑰ 已到达 84→98，残留包装形态零命中。附带发现 WriteHooksOf 按组窄化失效，另立 REQ-244。 | 新增 dist 模块加载点时 | docs/evidence/20261014-201028-REQ196源模块交代门禁的口径裁决与留痕.md（第十节） |
 ## 已作废
 
 = 需求被**终审否决**，行**永久保留**、**号永不复用**。否决理由与复活条件在本行；长篇依据在「分析在哪」。
