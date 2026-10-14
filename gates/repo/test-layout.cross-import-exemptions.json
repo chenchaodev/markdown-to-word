@@ -142,6 +142,51 @@
       "segment": "test/gates/check-pointers-ledger.test.js",
       "specifier": "shared/markdown-table.mjs",
       "reason": "同 e2e 段:只取 TITLE_LIMIT 作超标题列夹具的长度,断言对象是本层 checkLedgerShape / checkTableShape 的判红与「退出保留」行为。取单源而非写字面量,理由同上 —— 夹具长度必须跟着判据常量走。"
+    },
+    {
+      "segment": "test/renderer/precheck-multi-file.test.js",
+      "specifier": "dist/core/i18n/index.js",
+      "reason": "i18n 字典只作本段多文件合并断言的夹具输入:预期键名/文案取自字典单源,改字典值段仍成立;被测主体是 precheck 与合并流程本身。"
+    },
+    {
+      "segment": "test/renderer/session-persist-feedback.test.js",
+      "specifier": "dist/core/i18n/index.js",
+      "reason": "本段取 core 的 t 与 setLanguage 只为切换语言后核对状态区文案与持久化字段的期望值,不断言 i18n 实现;被测主体是 renderer 会话持久化反馈路径。"
+    },
+    {
+      "segment": "test/renderer/session-persist-feedback.test.js",
+      "specifier": "dist/core/settings/settings-defaults.js",
+      "reason": "DEFAULT_SETTINGS 只作夹具基线:用它复位设置再断言本段主体写进去的值,改默认值本段仍成立;被测主体是设置失败反馈与会话持久化。"
+    },
+    {
+      "segment": "test/renderer/settings-controls.test.js",
+      "specifier": "dist/core/i18n/index.js",
+      "reason": "i18n 的 t 只作控件文案的期望值来源,换任何字典该段关于 settings-controls 的断言仍成立;被测主体是 renderer 的控件表格绑定。"
+    },
+    {
+      "segment": "test/renderer/settings-controls.test.js",
+      "specifier": "dist/core/settings/settings-defaults.js",
+      "reason": "DEFAULT_SETTINGS 只作夹具基线,驱动本段喂给控件的最小设置形状;不断言默认值自身;被测主体是控件绑定与探测改写。"
+    },
+    {
+      "segment": "test/renderer/settings-controls.test.js",
+      "specifier": "dist/core/settings/presets.js",
+      "reason": "TEMPLATE_PRESETS 只作夹具输入,用于核对模板预设控件回显;被测主体是 renderer 控件绑定而非 core 预设清单。"
+    },
+    {
+      "segment": "test/renderer/ui-interaction-guards.test.js",
+      "specifier": "dist/core/i18n/index.js",
+      "reason": "i18n 的 t 只作交互守卫断言的文案期望值;被测主体是 renderer 的交互守卫路径,字典换值不影响其成立与否。"
+    },
+    {
+      "segment": "test/renderer/wizard-open-sync.test.js",
+      "specifier": "dist/core/i18n/index.js",
+      "reason": "本段用 t 断言向导打开时文案随语言刷新,字典本身不是被测对象;被测主体是向导每次打开同步最新设置与步骤名随语言刷新的行为。"
+    },
+    {
+      "segment": "test/renderer/wizard-open-sync.test.js",
+      "specifier": "dist/core/settings/settings-defaults.js",
+      "reason": "DEFAULT_SETTINGS 只作夹具基线,用于构造被同步进去的设置快照;被测主体是向导打开时的同步,不是默认值。"
     }
   ]
 }
