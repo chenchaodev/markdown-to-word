@@ -35,9 +35,11 @@ function assert(cond, msg) {
 }
 
 /**
- * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
- * 被测的 dist 模块由 `await load("../../dist/renderer/…")` 的**运行期动态 import** 载入
- * (相对路径经 `path.resolve` 拼出,不在 import 语句位置),段内零 renderer import。
+ * 本段测哪一层(ADR-062 L4 声明通道):**renderer**。本段主体一部分(state / settings-panel /
+ * settings-drawer / dom refs)由 `await load("../../dist/renderer/…")` 的**运行期动态
+ * import** 载入(相对路径经 `path.resolve` 拼出,判据的静态抽取器看不见),故仍需 covers
+ * 声明本层主体;file-list / convert-flow / recent-files / first-run-guide 写成字面量
+ * `import("../../dist/renderer/…")`。
  *
  * 主体依据(头注 + 段内加载位置):头注写「renderer 持久化失败反馈直测」并逐条点名:
  * - `state/state.ts` —— 会话持久化单一写入点(`renderSelection` / `renderMultiList` /
@@ -371,12 +373,16 @@ export async function run() {
     const load = (rel) => import(pathToFileURL(path.resolve(here, rel)).href);
     const { state } = await load("../../dist/renderer/state/state.js");
     stateRef = state;
-    const fileList = await load("../../dist/renderer/convert/file-list.js");
-    const convertFlow = await load("../../dist/renderer/convert/convert-flow.js");
+    // 本段主体这几个模块走**字面量 import()** 而非 load(…):说明符写成字面量后,门禁的
+    // 静态抽取器才看得见它们(判据只认 `import("字面量")`),否则「已被测试到达」这一事实
+    // 只能靠豁免表记着。仍是动态 import —— refs 在模块初始化期抓 document,必须晚于上面的
+    // setGlobalSlot 才加载,改成静态 import 会直接跑不通。
+    const fileList = await import("../../dist/renderer/convert/file-list.js");
+    const convertFlow = await import("../../dist/renderer/convert/convert-flow.js");
     const settingsPanel = await load("../../dist/renderer/settings/settings-panel.js");
     const settingsDrawer = await load("../../dist/renderer/settings/settings-drawer.js");
-    const recentFiles = await load("../../dist/renderer/ui/recent-files.js");
-    const firstRunGuide = await load("../../dist/renderer/ui/first-run-guide.js");
+    const recentFiles = await import("../../dist/renderer/ui/recent-files.js");
+    const firstRunGuide = await import("../../dist/renderer/ui/first-run-guide.js");
     const { t } = await load("../../dist/core/i18n/index.js");
     // 状态元素取自 refs 模块自身:同进程内前序段可能已加载过该模块(元素绑定在
     // 当时的 document stub 上),读自己的 stub 会与被测模块脱节。

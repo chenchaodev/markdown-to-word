@@ -35,9 +35,10 @@ function assert(cond, msg) {
 }
 
 /**
- * 本段测哪一层(ADR-062 L4 声明通道):**renderer**,判据静态看不见本段的主体 ——
- * 被测的向导模块由 `await import(distUrl("renderer/wizard/book-wizard.js"))` 的
- * **运行期动态 import** 载入(路径 `path.join` 逐段拼出),段内零 renderer import。
+ * 本段测哪一层(ADR-062 L4 声明通道):**renderer**。`state/state.ts` 仍由
+ * `await import(distUrl("renderer/state/state.js"))` 的**运行期动态 import** 载入
+ * (路径 `path.join` 逐段拼出,判据的静态抽取器看不见),故仍需 covers 声明本层主体;
+ * 被测的向导模块则写成字面量 `import("../../dist/renderer/wizard/book-wizard.js")`。
  *
  * 主体依据(头注 + 段内加载位置):头注写「成书向导「每次打开同步最新设置 + 步骤名随语言
  * 刷新」回归段」,并写明「外壳在 open 时重建(而非复用首次构建的 DOM)」。故主体是:
@@ -78,7 +79,10 @@ export async function run() {
       distUrl("core/settings/settings-defaults.js")
     );
     const { state } = await import(distUrl("renderer/state/state.js"));
-    const bookWizard = await import(distUrl("renderer/wizard/book-wizard.js"));
+    // 被测主体写成字面量 import():门禁的静态抽取器只认 `import("字面量")`,经 distUrl(…)
+    // 的间接形态对它不可见,本段主体就得靠豁免表记着。仍是动态 import —— DOM stub 必须
+    // 先装好(见 installDomStub),静态 import 会把加载提到它之前。
+    const bookWizard = await import("../../dist/renderer/wizard/book-wizard.js");
     // openBookWizard 自 wizard 刀起收 BookWizardDeps(ADR-075 §四),本段共用一份装配。
     // 本段 distUrl 以 dist/ 起(非 dist/renderer/),故前缀传 "renderer/"。
     const bookWizardDeps = await loadBookWizardDeps(distUrl, "renderer/");

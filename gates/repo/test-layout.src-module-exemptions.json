@@ -477,31 +477,6 @@
       "file": "src/core/ipc-contract.ts",
       "category": "type-only-module",
       "reason": "纯类型契约模块(无可执行语句,coverage 门禁那边已按 empty-module 登记):五个段只以 @typedef/@type 取它的类型,没有一处运行期加载;test/main/ui-state.test.js 的注释里也明写「另 type-only 引用的dist/core/ipc-contract.js(RecentFile 类型)不声明:它是纯类型」。"
-    },
-    {
-      "file": "src/renderer/convert/convert-flow.ts",
-      "category": "indirect-load-not-visible",
-      "reason": "测试确实在运行期加载过它(ui-interaction-guards 经 await import(distUrl(…))、session-persist-feedback 经 await load(…),convert-command-lock 经 path.join(ROOT,…)),但这三条都不是字面 import('…') 形态,静态抽取器看不见 ⇒ 按口径判为未到达。处置:改成直引产物的静态 import,或让实参成为字面量;那时反向 ratchet 会立刻把它带出本表。"
-    },
-    {
-      "file": "src/renderer/convert/file-list.ts",
-      "category": "indirect-load-not-visible",
-      "reason": "测试确实在运行期加载过它(focus-return-guards 经 await import(distUrl(…))、session-persist-feedback 经 await load(…),convert-command-lock 经 pathToFileURL(path.join(ROOT,…)) 拼 URL),但都不是字面 import('…') 形态 ⇒ 静态抽取器看不见。处置同族其余各条:把引用改成静态可见形态。"
-    },
-    {
-      "file": "src/renderer/ui/first-run-guide.ts",
-      "category": "indirect-load-not-visible",
-      "reason": "首次运行向导:session-persist-feedback 段经 await load(…) 在运行期加载过它(同段 :409 另有一处 @type 类型引用),但 load 的实参不是字面 import('…') ⇒ 静态抽取器看不见。处置:改成静态 import。"
-    },
-    {
-      "file": "src/renderer/ui/recent-files.ts",
-      "category": "indirect-load-not-visible",
-      "reason": "最近文件面板:session-persist-feedback 段经 await load(…) 在运行期加载过它(同段 :395 另有一处 @type 类型引用),但 load 的实参不是字面 import('…') ⇒ 静态抽取器看不见。处置:改成静态 import。"
-    },
-    {
-      "file": "src/renderer/wizard/book-wizard.ts",
-      "category": "indirect-load-not-visible",
-      "reason": "书目录向导:wizard-deps.js 的 @returns 只取它的依赖类型,而 wizard-open-sync 段的注释明写「被测的向导模块由 await import(distUrl(\"renderer/wizard/book-wizard.js\")) 的…」—— 即运行期确实加载过,只是那条路径经 distUrl(…) 间接、字面上不是 import('…')。处置:改成静态 import 形态。"
     }
   ],
   "_baseline": {
