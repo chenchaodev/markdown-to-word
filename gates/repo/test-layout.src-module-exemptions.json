@@ -1,0 +1,587 @@
+{
+  "_comment": "源模块豁免表 —— 「每个 `src/**` 模块样文件在测试面上有没有交代」的登记表。**初版**由 `node gates/repo/check-test-layout.mjs --write-src-module-baseline` 生成,并把当时未到达的那批模块**冻结**进 `_baseline`;此后本表只许减不许增(补上测试 ⇒ 删表项,反向 ratchet 会盯着)。",
+  "_schema": {
+    "key": "entries[].file",
+    "baseline": "`_baseline.files` 是**基线戳的唯一凭据**:带 `baseline` 戳(或 reason 句首写着带日期的基线句)的表项,只有 file 在清单里才合法 —— 拿它登记别的模块就是「先豁免后补理由」。",
+    "reason": "必填、且 trim 后 ≥20 **字**(按码点计)。",
+    "category": "取值域:no-test-yet / runtime-entry / type-only-module / baseline-snapshot。`baseline-snapshot` 只是来源标记(「本条由生成入口一次性登记,尚未逐条复核」),它**只在携带合法基线戳时成立**。",
+    "ratchet": "表项必须当前仍未被任何测试到达,否则判红(stale)。"
+  },
+  "entries": [
+    {
+      "file": "src/cli/index.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/convert/delivery-settings.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/convert/run.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/docx/chrome.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/docx/ctx.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/docx/handlers/bookmark.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/docx/handlers/captions.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/docx/handlers/code-block.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/docx/handlers/code-highlight.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/docx/handlers/content.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/docx/handlers/equations.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/docx/handlers/fallback.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/docx/handlers/heading.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/docx/handlers/image-run.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/docx/handlers/link-xref.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/docx/handlers/table.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/docx/headers.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/docx/numbering.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/docx/prescan.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/i18n/dom.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/i18n/en.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/i18n/ja.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/image/image-path-policy.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/image/request-guard.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/markdown/comment.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/markdown/heading-numbering.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/markdown/mermaid.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/markdown/preprocess-body.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/markdown/source-ranges.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/pdf/rules/caption.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/pdf/rules/equation.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/pdf/rules/heading-id.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/pdf/rules/html.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/pdf/rules/image.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/pdf/rules/shared.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/pdf/rules/table.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/pdf/rules/xref.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/pdf/template-css.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/preload-api.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/settings/merge-patch.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/text/error-message.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/main/converter/electron-side.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/main/index.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/main/menu.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/main/preload.cts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/main/services/pdf-host-profile.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/about-preload.cjs",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/about.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/convert/events/convert-actions.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/convert/events/dialogs-events.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/convert/events/drop.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/convert/events/index.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/convert/events/selection.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/dom/dom-ops.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/dom/refs.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/dom/toast.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/lang-bootstrap.js",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/renderer.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/settings/settings-bindings-app.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/settings/settings-bindings-convert.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/settings/settings-bindings-headerwatermark.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/settings/settings-bindings-numbering.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/settings/settings-bindings-preset.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/settings/settings-bindings-typography.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/settings/settings-bindings.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/settings/settings-drawer.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/settings/settings-panel.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/settings/settings-preset-actions.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/settings/settings-save.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/state/state.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/ui/dialogs.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/wizard/wizard-fields.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/wizard/wizard-runtime.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/wizard/wizard-steps-delivery.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/renderer/wizard/wizard-steps.ts",
+      "category": "baseline-snapshot",
+      "baseline": "2026-10-14",
+      "reason": "基线(2026-10-14 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成这条模块自己的理由。"
+    },
+    {
+      "file": "src/core/i18n/warning.ts",
+      "category": "type-only-module",
+      "reason": "i18n 的警告类型层:段里对它的全部引用都是 JSDoc 类型标注(@type/@param 上的 KeyedWarning、ConvertWarning),没有任何测试在运行期加载过它 —— 类型标注不是取得被测对象的手段,故按口径判为未到达。补测试请从 i18n 警告的取值行为那侧入手,不要只加类型用例。"
+    },
+    {
+      "file": "src/core/i18n/zh.ts",
+      "category": "type-only-module",
+      "reason": "i18n 词典模块:仓内唯一引用是 i18n-registry 段的 @typedef {import(…).Dict} 类型标注,没有任何运行期加载。要补测试,应断言词典键的增删与回退,而不是再加一处 typedef。"
+    },
+    {
+      "file": "src/core/image/image-resolver.ts",
+      "category": "type-only-module",
+      "reason": "图片解析模块:pdf-postprocess 段只以 @typedef 取它的请求类型(ImageResolverRequest),运行期走的是已构建的PDF 渲染路径,没有任何测试直接加载过它。补测试请断言解析结果的取值与拒绝分支。"
+    },
+    {
+      "file": "src/core/ipc-contract.ts",
+      "category": "type-only-module",
+      "reason": "纯类型契约模块(无可执行语句,coverage 门禁那边已按 empty-module 登记):五个段只以 @typedef/@type 取它的类型,没有一处运行期加载;test/main/ui-state.test.js 的注释里也明写「另 type-only 引用的dist/core/ipc-contract.js(RecentFile 类型)不声明:它是纯类型」。"
+    },
+    {
+      "file": "src/renderer/convert/convert-flow.ts",
+      "category": "indirect-load-not-visible",
+      "reason": "测试确实在运行期加载过它(ui-interaction-guards 经 await import(distUrl(…))、session-persist-feedback 经 await load(…),convert-command-lock 经 path.join(ROOT,…)),但这三条都不是字面 import('…') 形态,静态抽取器看不见 ⇒ 按口径判为未到达。处置:改成直引产物的静态 import,或让实参成为字面量;那时反向 ratchet 会立刻把它带出本表。"
+    },
+    {
+      "file": "src/renderer/convert/file-list.ts",
+      "category": "indirect-load-not-visible",
+      "reason": "测试确实在运行期加载过它(focus-return-guards 经 await import(distUrl(…))、session-persist-feedback 经 await load(…),convert-command-lock 经 pathToFileURL(path.join(ROOT,…)) 拼 URL),但都不是字面 import('…') 形态 ⇒ 静态抽取器看不见。处置同族其余各条:把引用改成静态可见形态。"
+    },
+    {
+      "file": "src/renderer/ui/first-run-guide.ts",
+      "category": "indirect-load-not-visible",
+      "reason": "首次运行向导:session-persist-feedback 段经 await load(…) 在运行期加载过它(同段 :409 另有一处 @type 类型引用),但 load 的实参不是字面 import('…') ⇒ 静态抽取器看不见。处置:改成静态 import。"
+    },
+    {
+      "file": "src/renderer/ui/recent-files.ts",
+      "category": "indirect-load-not-visible",
+      "reason": "最近文件面板:session-persist-feedback 段经 await load(…) 在运行期加载过它(同段 :395 另有一处 @type 类型引用),但 load 的实参不是字面 import('…') ⇒ 静态抽取器看不见。处置:改成静态 import。"
+    },
+    {
+      "file": "src/renderer/wizard/book-wizard.ts",
+      "category": "indirect-load-not-visible",
+      "reason": "书目录向导:wizard-deps.js 的 @returns 只取它的依赖类型,而 wizard-open-sync 段的注释明写「被测的向导模块由 await import(distUrl(\"renderer/wizard/book-wizard.js\")) 的…」—— 即运行期确实加载过,只是那条路径经 distUrl(…) 间接、字面上不是 import('…')。处置:改成静态 import 形态。"
+    }
+  ],
+  "_baseline": {
+    "date": "2026-10-14",
+    "files": [
+      "src/cli/index.ts",
+      "src/convert/delivery-settings.ts",
+      "src/convert/run.ts",
+      "src/core/docx/chrome.ts",
+      "src/core/docx/ctx.ts",
+      "src/core/docx/handlers/bookmark.ts",
+      "src/core/docx/handlers/captions.ts",
+      "src/core/docx/handlers/code-block.ts",
+      "src/core/docx/handlers/code-highlight.ts",
+      "src/core/docx/handlers/content.ts",
+      "src/core/docx/handlers/equations.ts",
+      "src/core/docx/handlers/fallback.ts",
+      "src/core/docx/handlers/heading.ts",
+      "src/core/docx/handlers/image-run.ts",
+      "src/core/docx/handlers/link-xref.ts",
+      "src/core/docx/handlers/table.ts",
+      "src/core/docx/headers.ts",
+      "src/core/docx/numbering.ts",
+      "src/core/docx/prescan.ts",
+      "src/core/i18n/dom.ts",
+      "src/core/i18n/en.ts",
+      "src/core/i18n/ja.ts",
+      "src/core/image/image-path-policy.ts",
+      "src/core/image/request-guard.ts",
+      "src/core/markdown/comment.ts",
+      "src/core/markdown/heading-numbering.ts",
+      "src/core/markdown/mermaid.ts",
+      "src/core/markdown/preprocess-body.ts",
+      "src/core/markdown/source-ranges.ts",
+      "src/core/pdf/rules/caption.ts",
+      "src/core/pdf/rules/equation.ts",
+      "src/core/pdf/rules/heading-id.ts",
+      "src/core/pdf/rules/html.ts",
+      "src/core/pdf/rules/image.ts",
+      "src/core/pdf/rules/shared.ts",
+      "src/core/pdf/rules/table.ts",
+      "src/core/pdf/rules/xref.ts",
+      "src/core/pdf/template-css.ts",
+      "src/core/preload-api.ts",
+      "src/core/settings/merge-patch.ts",
+      "src/core/text/error-message.ts",
+      "src/main/converter/electron-side.ts",
+      "src/main/index.ts",
+      "src/main/menu.ts",
+      "src/main/preload.cts",
+      "src/main/services/pdf-host-profile.ts",
+      "src/renderer/about-preload.cjs",
+      "src/renderer/about.ts",
+      "src/renderer/convert/events/convert-actions.ts",
+      "src/renderer/convert/events/dialogs-events.ts",
+      "src/renderer/convert/events/drop.ts",
+      "src/renderer/convert/events/index.ts",
+      "src/renderer/convert/events/selection.ts",
+      "src/renderer/dom/dom-ops.ts",
+      "src/renderer/dom/refs.ts",
+      "src/renderer/dom/toast.ts",
+      "src/renderer/lang-bootstrap.js",
+      "src/renderer/renderer.ts",
+      "src/renderer/settings/settings-bindings-app.ts",
+      "src/renderer/settings/settings-bindings-convert.ts",
+      "src/renderer/settings/settings-bindings-headerwatermark.ts",
+      "src/renderer/settings/settings-bindings-numbering.ts",
+      "src/renderer/settings/settings-bindings-preset.ts",
+      "src/renderer/settings/settings-bindings-typography.ts",
+      "src/renderer/settings/settings-bindings.ts",
+      "src/renderer/settings/settings-drawer.ts",
+      "src/renderer/settings/settings-panel.ts",
+      "src/renderer/settings/settings-preset-actions.ts",
+      "src/renderer/settings/settings-save.ts",
+      "src/renderer/state/state.ts",
+      "src/renderer/ui/dialogs.ts",
+      "src/renderer/wizard/wizard-fields.ts",
+      "src/renderer/wizard/wizard-runtime.ts",
+      "src/renderer/wizard/wizard-steps-delivery.ts",
+      "src/renderer/wizard/wizard-steps.ts"
+    ]
+  }
+}

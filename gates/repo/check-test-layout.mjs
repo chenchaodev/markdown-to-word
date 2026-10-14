@@ -66,6 +66,33 @@
 //      ——import 还在、`.case(` 仍 ≥1 处。本族补的正是这个缺口。
 //      ⚠ **本族已转 fail-closed**(命中进 problems、参与退出码);⑭ 亦已于 2026-10-11 转正
 //      (REQ-240)⇒ 两者同进 problems 通道,「未接入」与「名册漂移」按 id 分别归因。
+//   ⑰ src-module-unaccounted(REQ-196 · ADR-062 的 L1 弱形态「源模块须有交代」):**每个
+//      `src/**` 模块样文件**要么被 `test/` 下某处**实际到达**,要么在源模块豁免表登记 ——
+//      两者皆无即判红并点名该模块。
+//      ⚠ **刻意不做「源 ↔ 段 一对一」**(ADR-062 原表 L1 的字面口径):实测 163 个源模块里只有
+//      4 个按路径镜像到段,做成 fail-closed 等价于先补一百多段测试的工程量,而那正是 ADR-062
+//      主线的前置 —— 前置押着主线就永久死锁。可达性的口径(哪些引用算「到达」)见判定本体里
+//      `reachedSrcModules` 的注释。
+//   ⑱ src-module-exemption-stale(同条的反向 ratchet):**已被到达**却仍留在豁免表里 ⇒ 判红并
+//      点名删哪一条。不设这一档的话表只增不减,「体量可见」名存实亡。
+//   ⑲ src-module-exemption-table:上面那张表**自身**的四档 fail-closed(读不到 / 缺 entries /
+//      缺 `_baseline` 冻结清单 / 表项键名错、category 越值域、reason 不足门槛、file 不存在),
+//      外加**基线戳滥用**那一档 —— 理由见下面「基线戳为什么必须被拒绝用于非基线新增」小节。
+//
+// ---- 源模块豁免表:为什么它带 `_baseline` 冻结清单,而另两张表没有 ----
+//
+// 另两张表(L5 / C3)的表项是**逐条人工审过的豁免**:理由必须**先于**豁免存在,所以它们**刻意
+// 不给** `--write-*` 生成入口(给了就变成「先豁免后补理由」)。
+// 本表的表项是**一次性现状快照**:ADR-062 裁决明写「75 条各带带日期的基线戳,理由就是『现状如此』,
+// 不为躲红而编」—— 这与上面两张的前提相反,故形态也就必须相反:它给 `--write-src-module-baseline`,
+// 而那张生成入口在表**第一次**运行时把「当时未到达的模块集合」冻结进 `_baseline.files`。
+//
+// ⚠ **冻结清单是「基线戳不可滥用」的唯一机器凭据**:带 `baseline` 戳(或在 reason 里写着带日期的
+// 基线句)的表项,**只有它的 file 在 `_baseline.files` 里才合法**。没有它,「跑一次生成入口之后
+// 再拿那句戳登记新模块」与「基线当日就未到达」在门禁上完全同形 ⇒ 这道门会退化成「先豁免后补理由」。
+// ⚠ 冻结清单**只增不减的义务在人工 review**:它是历史记录(删表项不该改它),但门禁**判不出**
+// 「有人把一条基线模块从清单里抹掉了」—— 那要让新模块继承旧戳,只可能发生在有人**手改**本文件时。
+// 那一档由 `--write-src-module-baseline` 的「已存在 `_baseline` 即原样保留」语义挡住大半。
 //
 // ---- ⑯ 本族的三条自述边界(下一个会话读到这里时按这三条判断本族能顶什么)----
 //
@@ -245,7 +272,7 @@
 // (验收段在 Electron 里跑,而它 import 本模块的时刻不该决定整场验收的退出码);而注册表
 // R4b 会逐项对账「judgment.load 声明」与「顶层是否自执行」的事实。守卫写法与
 // check-src-layout.mjs / check-import-boundary.mjs / check-changelog.mjs 同形。
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { isMainModule, parseArgs } from "../../shared/cli.mjs";
 import { lexSource } from "../../shared/copy-closure.js";
@@ -444,6 +471,72 @@ export const GATE_EXEMPTIONS_REL = "gates/repo/test-layout.gate-exemptions.json"
 export const GATE_SUBJECT_EXEMPTIONS_REL = "gates/repo/test-layout.gate-subject-exemptions.json";
 
 /**
+ * REQ-196「源模块须有交代」族的豁免表 —— **同族第三张**,与上两张同目录同命名法。
+ *
+ * 形态是**源模块路径一元组**:本族的判定对象是「一个 `src/**` 模块样文件在测试面上有没有交代」,
+ * 交代挂在模块上(不挂在某条 import 边上),故键只能是模块路径。
+ *
+ * ⚠ **它带一张另两张没有的东西:`_baseline` 冻结清单**(见 {@link SRC_MODULE_BASELINE_STAMP_RE}
+ * 与数据文件里的 `_schema.ratchet`)。另两张表的表项是**逐条人工审过的豁免**(理由必须先于
+ * 豁免存在),本表的表项是**一次性现状快照** —— 两者形态不同,看守方式也就必须不同。
+ */
+export const SRC_MODULE_EXEMPTIONS_REL = "gates/repo/test-layout.src-module-exemptions.json";
+
+/**
+ * 豁免表里「基线来源」那一档的分类值 —— **它不是一种免检理由,而是来源标记**:表示
+ * 「本条由 `--write-src-module-baseline` 一次性登记、分类尚未逐条复核」。⚠ 它**只在携带
+ * 合法基线戳时成立**(见判定本体里 `src-module-exemption-stamp` 那一档)—— 否则它会退化成
+ * 「先豁免后补理由」的藏身处。
+ *
+ * ⚠ **它抽成常量,是因为「它不可手写」这条语义必须由具名排除来表达**:可手写值域早先是用
+ * `.slice(0, -1)` 按**数组位置**把它切掉的,于是「它在末尾」成了隐式约定 —— 日后有人往
+ * 值域末尾追加一个新分类,就会把它**静默**挤出 help 文案里的合法值列表。位置承载语义是
+ * 静默失效的典型形态(不报错,只是文案开始说假话),故改为按值排除。
+ * @type {string}
+ */
+export const SRC_MODULE_BASELINE_CATEGORY = "baseline-snapshot";
+
+/**
+ * 本表的 `category` 取值域 —— **本表单列,不复用 `check-coverage-zero.mjs` 的
+ * {@link import("./check-coverage-zero.mjs").EXEMPTION_CATEGORIES}**,三条理由:
+ *
+ *   ① **语义不同**:coverage 那两个值回答的是「为什么 c8 把它记成 0%」,且它用**编译产物的形态**
+ *      自洽校验(`isEmptyModuleArtifact`:产物里除 `export {}` 外没有任何可执行语句)。
+ *      本门禁是**纯文本**门禁、不读 `dist/`(那是 gitignored 的构建产物,存在性由构建新鲜度门禁
+ *      管),照抄同名值就得到一个**无人校验的分类** —— 那正是本仓反复批过的「声明与实际不符」。
+ *   ② **值域装不下**:coverage 那张表现有 9 条、绝大多数是结构性不可测;本表的判定面是
+ *     **全部 `src/**` 模块样文件**,主体是「有可执行逻辑、只是尚无测试段到达」——
+ *     那在 coverage 的两值里无处安放,硬塞进 `runtime-entry` 等于谎报。
+ *   ③ **共用一张清单等于把两张表的演进绑在一起**:c8 参数或分类调整那天,本表的表项会在
+ *     与本族无关的原因上变红,而读的人只会看到本族判红。
+ *
+ * `baseline-snapshot` 见 `SRC_MODULE_BASELINE_CATEGORY`(它不是一种可手写的分类值)。
+ * @type {ReadonlyArray<string>}
+ */
+export const SRC_MODULE_EXEMPTION_CATEGORIES = Object.freeze([
+  "no-test-yet",
+  "runtime-entry",
+  "type-only-module",
+  // ⚠ **这一值记录的是「引用形态的可见性缺口」,不是模块的性质** —— 它与 `type-only-module`
+  // 的区别必须分清:那个说「没有任何测试在运行期加载过它」,这个说「**加载过**,但那条路径对
+  // 静态抽取器不可见」。两者的处置也不同(前者补测试;后者把间接动态 import 改成静态可见形态)。
+  // 把它们并成一个值,等于让表里出现「说测试没加载过它,而它其实被加载过」的条目 ——
+  // 那与本门禁存在的理由(体量可见**且**陈述为真)相反。
+  "indirect-load-not-visible",
+  SRC_MODULE_BASELINE_CATEGORY,
+]);
+
+/**
+ * 基线戳在 `reason` 正文里的**句首标记**。
+ *
+ * 为什么除 `baseline` 字段之外还要判这个正则:基线戳的实体是「**截至某日实测无测试到达**」这句
+ * 断言,它同时出现在字段与正文里。**只判字段的话,把那一句连同日期抄进 reason、却不写字段的形态
+ * 会溜过去** —— 而那正是本族要防的滥用(抄一句现状断言当理由)。故两个通道都要拦。
+ * @type {RegExp}
+ */
+export const SRC_MODULE_BASELINE_STAMP_RE = /^基线\(\d{4}-\d{2}-\d{2} 实测\)/;
+
+/**
  * `dist/**` 产物扩展名 → 其镜像 `src/**` 源文件的**候选**扩展名(按 `tsconfig.json` 的
  * `outDir: dist` + `module: NodeNext` 的 emit 规则反推,**不是**一份登记的镜像源清单)。
  *
@@ -462,6 +555,26 @@ export const ARTIFACT_SOURCE_EXTS = Object.freeze({
   ".mjs": Object.freeze([".mts"]),
   ".cjs": Object.freeze([".cts"]),
 });
+
+/**
+ * `src/**` **模块样文件**的扩展名集合 —— **由 emit 规则派生,不是另列一张清单**。
+ *
+ * 取 {@link ARTIFACT_SOURCE_EXTS} 的**键 ∪ 值**:键那三个是产物扩展名(它们同时是仓内**可能**存在的
+ * 源扩展名 —— `.js` 源是 `allowJs` 的既成先例 `src/renderer/lang-bootstrap.js`,`.cjs` / `.mjs`
+ * 是 NodeNext 的模块后缀),值那五个是 tsc 能从 `src/` emit 出的源扩展名。
+ * ⚠ 另列一张字面量清单 = 一处「改了 emit 规则不会跟着动」的副本,而漏一个扩展名的失效形态是
+ * **恒绿**(那个后缀的模块永远不进判定面,而门禁什么也不说)。
+ *
+ * ⚠ **`.d.ts` 不在集合内**:手写的 `.d.ts` 是**声明**而不是模块(没有运行期取值路径,任何 import
+ * 都到不了它),把它算进判定面会要求一条它永远拿不到的交代。本仓当前零个 `.d.ts`
+ * (ADR-069 的 `declaration: true` 产出的是 `dist/` 侧的声明文件),故这一条当前恒不触发 ——
+ * 它是**口径**,不是对现状的描述。
+ * @type {ReadonlySet<string>}
+ */
+const SRC_MODULE_EXTS = new Set([
+  ...Object.keys(ARTIFACT_SOURCE_EXTS),
+  ...Object.values(ARTIFACT_SOURCE_EXTS).flat(),
+]);
 
 // `SOURCE_ARTIFACT_EXTS` / `DIST_TREE` / `SRC_TREE`(随 TEST_REL / SEGMENT_EXT / mirroredSourceOf)
 // 一并下沉到 `shared/mirror-path.mjs`,在此经 import + 上方 re-export 使用;镜像常量只此一处定义。
@@ -1101,6 +1214,35 @@ export const CRITERIA = Object.freeze([
     // diff 与 ADR-074 后果节的「搬迁四步」。另一条边界同样不受转正影响:本族判
     // 「名还在不在」而非「名对不对」,期望正则被放宽那类削弱不在射程内。
   }),
+  // ---- REQ-196 的 L1 弱形态「源模块须有交代」:正向未登记 / 反向 ratchet / 表自身 ----
+  Object.freeze({
+    // ⚠ **它与上面各族都分立,不并进任何一行**:它判的面是 `src/**` 的模块(不是段、不是门禁),
+    // 处置也不同(补一段测试 / 或登记一张独立豁免表)。并表会让「源模块没有交代」在读数上混进
+    // 「段放错了层」那一堆里,而那两件事的处置互不相干。
+    id: "src-module-unaccounted",
+    title:
+      "源模块须有交代:每个 src/** 模块样文件要么被 test/ 下某处实际到达(引用解析后落在它的同名"
+      + "编译产物上),要么在源模块豁免表登记 —— 两者皆无即判红并点名该模块"
+      + "(ADR-062 的 L1 弱形态:不做「源↔段 一对一」,那等价于先补一百多段测试的工程量)",
+  }),
+  Object.freeze({
+    // ⚠ **与 `src-module-unaccounted` 分立的理由与 `l5-exemption-stale` 对 `test-layer-cross-import`
+    // 同款**:stale 表项的处置是「**删表项**」,与「补交代」是两件事;并进一行时读者拿到的
+    // 「补一段测试或登记豁免」指引解不开这一档(补多少测试都没用:表项该删)。
+    id: "src-module-exemption-stale",
+    title:
+      "源模块豁免表反向 ratchet:已被 test/ 实际到达的模块仍留在表里 ⇒ 判红并点名删哪一条"
+      + "(否则表只增不减,藏起来的一直藏着,「体量可见」名存实亡)",
+  }),
+  Object.freeze({
+    // 四档并一行的理由与 L11 的 `gate-has-carrier` 同款:结论与处置**完全同一件**(这张表坏了或
+    // 写错了,处置都是「修表」),拆多行只会让 `--help` 的计数虚增。
+    id: "src-module-exemption-table",
+    title:
+      "源模块豁免表自身失效:读不到 / 缺 entries 数组 / 缺 _baseline 冻结清单 / 表项键名错或同一 "
+      + "file 登记两条 / category 越值域 / reason 缺失或不足 20 码点 / file 不存在或不在判定面内 ⇒ 判红;"
+      + "另判**基线戳滥用**(拿 --write-src-module-baseline 写下的带日期戳去登记基线之外的模块)",
+  }),
   ]);
 
 /**
@@ -1128,7 +1270,8 @@ function isRegistered(id, criteria, sink) {
   return false;
 }
 
-const USAGE = "用法: node gates/repo/check-test-layout.mjs [--write-l5-exemptions] [--help]";
+const USAGE = "用法: node gates/repo/check-test-layout.mjs [--write-l5-exemptions] "
+  + "[--write-src-module-baseline] [--help]";
 
 /**
  * @typedef {object} DirEntry 一个目录项(注入面用的最小形状)
@@ -1187,6 +1330,14 @@ const USAGE = "用法: node gates/repo/check-test-layout.mjs [--write-l5-exempti
  * @property {number} gateRosterOnlyInRoster 「册有源无」条数(册里那条 case 源码已无)
  * @property {number} gateRosterOnlyInSource 「源有册无」条数(源码里那条 case 没进册)
  * @property {number} gateRosterNames 名册侧 case 名总数(读数用,与判红数不同口径)
+ * @property {number} srcModules `src/**` 模块样文件数(⑰ 族的分母)
+ * @property {number} srcModulesReached 其中被 `test/` 下某处实际到达的个数
+ * @property {number} srcUnaccounted 未到达且未登记 ⇒ 判红的模块数
+ * @property {number} srcExemptions 源模块豁免表项数(读数用)
+ * @property {number} srcTableProblems 表自身失效(读不到 / 缺 entries / 缺 _baseline)条数
+ * @property {number} srcBadEntries 表项键名错、字段不达标、重复登记、file 不在判定面内条数
+ * @property {number} srcStampMisuse 基线戳用于非基线模块的表项数
+ * @property {number} srcStaleExemptions 已被到达却仍留在表里的表项数(反向 ratchet)
  */
 
 /**
@@ -1689,7 +1840,8 @@ export function foreignLayerOf(resolved, mirror) {
 }
 
 /**
- * C1 的「被测 import」单一定义(两档共用;五类排除的逐条依据见文件头同名小节)。
+ * 本文件「被测 import」的**单一定义** —— C1 两档与 ⑰ 族「源模块须有交代」**共用这一条**
+ * (⑰ 族侧的同口径理由与裁决见 {@link reachedSrcModules} 的注释;五类排除的逐条依据见文件头同名小节)。
  *
  * 收敂成一句:**解析后落在 `dist/**` 的值引用**。裸包名 / `node:` 内建 / 第三方包
  * `resolved === null`;`test/harness/**`(测试框架自身)与其它段(段 import 段已由 L4
@@ -1697,8 +1849,11 @@ export function foreignLayerOf(resolved, mirror) {
  *
  * ⚠ **这一条不得改成「解析成功即算」**:那会把 289 处 harness 引用与 73 处 `src/**`
  * type-only 引用算进分母,C1 于是退化成「谁引用助手最多 / 类型标注写对没有」的检查。
+ *
+ * ⚠ **也**不得在调用方**另写一份收窄的拷贝**再传给 ⑰ 族:本文件里「什么算被测 import」必须
+ * 只有这一处定义,否则那条「type-only 不是取得被测对象的手段」的理由会在第二份里被重新解释一遍。
  * @param {{ resolved: string | null, typeOnly: boolean }} entry `extractImports` 的一条
- * @returns {boolean} 是否是 C1 两档的判据对象
+ * @returns {boolean} 是否是被测 import(C1 两档与 ⑰ 族的判据对象)
  */
 export function isSubjectImport(entry) {
   return entry.resolved !== null && !entry.typeOnly && entry.resolved.startsWith(DIST_TREE);
@@ -1847,7 +2002,10 @@ export function caseContractState(text, file, moduleRel = CASE_MODULE_REL) {
  *
  * 全部诊断经唯一出口 `report(id, line)`,进 `problems` 还是 `info` 由 `CRITERIA` 决定
  * (见文件头「强制等级」一节)。判定本体的 IO 注入面**不含**登记表:那是不可注入的模块常量。
- * @param {Partial<TestLayoutCtx> & { criteriaOverride?: readonly { id: string, pending?: boolean }[] }} [base] 注入面(见 makeTestLayoutCtx)
+ * @param {Partial<TestLayoutCtx> & {
+ *   criteriaOverride?: readonly { id: string, pending?: boolean }[],
+ *   srcModuleExemptions?: { entries?: Record<string, unknown>[], baseline?: { date: string, files: string[] } | null, problems?: string[] },
+ * }} [base] 注入面(见 makeTestLayoutCtx)
  * @returns {{ problems: string[], info: string[], stats: TestLayoutStats, l5ExemptionCount: number }}
  */
 /**
@@ -2006,6 +2164,125 @@ export function loadGateSubjectExemptions(root = ROOT) {
   }
   entries = list;
   return { entries, problems };
+}
+
+/**
+ * 列出 `src/**` 下全部**模块样文件**(仓相对 POSIX,已排序)—— ⑰ 族的判定面全集。
+ *
+ * 走的是 {@link collectFilesUnder}(与段侧、门禁自测侧**同一个 walker**):另写一份就是把那三条
+ * 约定(跳过 `node_modules` / 不吞 `ctx.listDir` 抛错 / 排序)各复制一份并让它们各自漂移,而漂移的
+ * 失效形态是**恒绿**(一份 walker 静默收零份,全族判据一起「全绿」)。
+ *
+ * ⚠ ctx.listDir 抛错**不在此吞掉**:调用方已用 `scan-surface-missing` 判红「读不到 `src/` 子树」
+ * (那里就是为这件事设的一档),这里再吞一次就成了两处不同口径的静默。
+ * @param {TestLayoutCtx} ctx 注入面
+ * @returns {string[]} 模块样文件的仓相对 POSIX 路径
+ */
+export function collectSrcModules(ctx) {
+  return collectFilesUnder(ctx, SRC_TREE.slice(0, -1), (rel) => {
+    if (rel.endsWith(".d.ts")) return false;
+    const dot = rel.lastIndexOf(".");
+    return dot >= 0 && SRC_MODULE_EXTS.has(rel.slice(dot));
+  });
+}
+
+/**
+ * `test/` 下**实际到达**了哪些 `src/**` 模块(按被测引用的解析结果反推)。
+ *
+ * **两个维度互相正交,只对齐了后者**:
+ *   - **扫哪些文件** —— `test/**` 的**全部**文件,不只 `.test.js` 段。段经 `test/harness/**`、
+ *     `test/core/*-helpers.js` 这类非段支持文件间接到达被测对象是既有形态,只扫段会把
+ *     「经助手到达」误判成「没有交代」,而经助手到达也是交代。
+ *   - **什么算到达** —— {@link isSubjectImport}(本文件「被测 import」的**单一定义**,与 C1 两档
+ *     同口径共用):解析后落在 `dist/**` 的**值**引用。
+ *
+ * ⚠ **已裁决(2026-10-14,用户裁决 · REQ-196 收尾):第二维度必须与 `isSubjectImport` 同口径,
+ * type-only 不算到达。** 三条理由:
+ *   - ⑰ 族的诊断行字面写的是「已被 test/ 实际到达」。凡靠 `import type` 才被提及的模块,
+ *     **任何测试都从未加载过它** —— 把它们算进「实际到达」就是那条诊断在说假话,
+ *     而「把未加载的东西报成已到达」正是本仓反复点名的**假绿**(ADR-062 判 L11 的 basename 口径
+ *     用的就是同一个理由)。
+ *   - `isSubjectImport` 排除 type-only 的**理由不因族而异**:type-only 是编译期擦除的类型标注,
+ *     不是取得被测对象的手段。两族若各持一份定义,那条理由迟早在某一族上被重新解释一遍。
+ *   - 靠 type-only 才被提及的模块**必须进豁免表**(而不是被判为已到达):进了表它带一条
+ *     `category` 与理由,**体量在表里可见**;留在「已到达」那侧则完全不可见 —— 而这张门禁
+ *     存在的理由就是体量可见。
+ *
+ * ⚠ 反推仍用 `mirrorSourceCandidates`(产物 → 一组候选源扩展名),任一候选在磁盘上存在即算有源 ——
+ * 与 C1 档一同一份映射,不另立一张源↔产物对照表。
+ *
+ * 取被到达集合的命令(`--write-src-module-baseline` 落基线时用的就是它):
+ * `node gates/repo/check-test-layout.mjs` 的结论行里 `其中已被 test/ 实际到达 N 个` 那一段。
+ *
+ * @param {TestLayoutCtx} ctx 注入面
+ * @param {string[]} testFiles `test/` 下的全部文件(已由调用方扫好,**不重扫**)
+ * @returns {Set<string>} 被到达的源模块路径集合
+ */
+export function reachedSrcModules(ctx, testFiles) {
+  /** @type {Set<string>} */
+  const reached = new Set();
+  for (const file of testFiles) {
+    for (const entry of extractImports(ctx.readText(file), file)) {
+      if (!isSubjectImport(entry)) continue;
+      for (const candidate of mirrorSourceCandidates(/** @type {string} */ (entry.resolved))) {
+        if (ctx.fileExists(candidate)) reached.add(candidate);
+      }
+    }
+  }
+  return reached;
+}
+
+/**
+ * 读源模块豁免表。**四档 fail-closed**,与 `loadL5Exemptions` / `loadGateSubjectExemptions` 同形,
+ * 外加本表特有的一档:**缺 `_baseline` 冻结清单**。
+ *
+ * ⚠ 为什么多这一档:基线戳的合法性**全部**由 `_baseline.files` 决定(见文件头「源模块豁免表」
+ * 小节)。清单缺了而门禁仍判红是必要的 —— 缺清单时戳无从核对,一律判红,读者立刻知道表不完整;
+ * 静默当「没有戳约束」则等于把本族唯一的滥用防线拆掉。
+ *
+ * ⚠ 返回 `baseline` 而不只是 `entries`:判定本体要在**注入面**上跑同一道戳校验,而注入面
+ * (`base.srcModuleExemptions`)传的是**整张表**(另两张表的注入面只传 `entries`,因为它们没有
+ * 清单这一半)。判据本体不读文件,表的一切事实都必须由读表层交出来。
+ * @param {string} [root] 仓库根(默认真实仓库)
+ * @returns {{ entries: Record<string, unknown>[], baseline: { date: string, files: string[] } | null, problems: string[] }}
+ */
+export function loadSrcModuleExemptions(root = ROOT) {
+  const file = path.join(root, ...SRC_MODULE_EXEMPTIONS_REL.split("/"));
+  /** @type {string[]} */
+  const problems = [];
+  /** @type {Record<string, unknown>[]} */
+  let entries = [];
+  /** @type {{ date: string, files: string[] } | null} */
+  let baseline = null;
+  let raw;
+  try {
+    raw = JSON.parse(readFileSync(file, "utf8"));
+  } catch (error) {
+    return {
+      entries,
+      baseline,
+      problems: [`源模块豁免表读不到或不是合法 JSON:${SRC_MODULE_EXEMPTIONS_REL}`
+        + `(${error instanceof Error ? error.message : String(error)}) —— 当空表放行的话,每一个未到达`
+        + "的模块都会落进「未登记」而症状看起来仍然正确,但归因指向的是模块而不是表不见了"
+        + "(处置会把人领去补测试,补完表还是红的)。故判红"],
+    };
+  }
+  const list = Array.isArray(raw?.entries) ? raw.entries : null;
+  if (list === null) {
+    return { entries, baseline, problems: [`源模块豁免表缺 entries 数组:${SRC_MODULE_EXEMPTIONS_REL}`] };
+  }
+  entries = list;
+  const stamp = raw?._baseline;
+  if (!isBaselineManifest(stamp)) {
+    return {
+      entries,
+      baseline,
+      problems: [`源模块豁免表缺 _baseline 冻结清单(需 date + files 两个字段):${SRC_MODULE_EXEMPTIONS_REL}`
+        + " —— 基线戳的合法性只由那份清单判定,清单缺了就没有任何东西能挡住「抄一句基线理由登记新模块」"],
+    };
+  }
+  baseline = { date: /** @type {{ date: string }} */ (stamp).date, files: /** @type {{ files: string[] }} */ (stamp).files };
+  return { entries, baseline, problems };
 }
 
 /**
@@ -2430,6 +2707,14 @@ export function checkTestLayout(base = {}) {
     gateRosterOnlyInRoster: 0,
     gateRosterOnlyInSource: 0,
     gateRosterNames: 0,
+    srcModules: 0,
+    srcModulesReached: 0,
+    srcUnaccounted: 0,
+    srcExemptions: 0,
+    srcTableProblems: 0,
+    srcBadEntries: 0,
+    srcStampMisuse: 0,
+    srcStaleExemptions: 0,
   };
 
   /** @type {string[]} */
@@ -2783,6 +3068,135 @@ export function checkTestLayout(base = {}) {
       "test-layer-gate-subject",
       `${entry.segment} → test-layer-gate-subject:门禁主体豁免表登记了 (${entry.specifier}),`
       + "但本次扫描没有命中它 —— 段被搬走或那条 import 删了,豁免必须同批删掉",
+    );
+  }
+
+  // ---- REQ-196 ⑰–⑲:源模块须有交代(正向未登记 / 反向 ratchet / 表自身四档 + 戳滥用)----
+  //
+  // ⚠ **整段不受 `indexInRoot` 约束**(与 C3 / L11 相反):本族的判定面是 `src/**` 与 `test/**` 两棵树,
+  // 与门禁索引毫无关系 —— 用 `indexInRoot` 圈它等于给「树的身份」这一概念再加一个含义。
+  // 合成根上这两棵树都在,所以本族在合成夹具上照常判定(自检的负向夹具正需要它)。
+  const srcTable = base.srcModuleExemptions ?? loadSrcModuleExemptions(ctx.root);
+  for (const problem of srcTable.problems ?? []) {
+    stats.srcTableProblems += 1;
+    report("src-module-exemption-table", `${SRC_MODULE_EXEMPTIONS_REL} → src-module-exemption-table:${problem}`);
+  }
+  stats.srcExemptions = srcTable.entries.length;
+  const srcModuleSet = new Set(collectSrcModules(ctx));
+  stats.srcModules = srcModuleSet.size;
+  // 零分母判红:本族在「一个源模块都没扫到」时是**恒绿**的最坏形态(没有任何模块需要交代)。
+  // ⚠ 这里**不设段数下限那类硬编码下限**(下限是易腐化值):判据是「零」这个由派生本身给出的事实,
+  // 而「塌到很少」那一档由 `deriveMirrorLayers` 的读树失败那一档(`scan-surface-missing`)兜着。
+  if (srcModuleSet.size === 0) {
+    report(
+      "scan-surface-missing",
+      `${SRC_TREE} → scan-surface-missing:${SRC_TREE} 下扫到 0 个模块样文件(扩展名集合派生自 `
+      + `ARTIFACT_SOURCE_EXTS,共 ${SRC_MODULE_EXTS.size} 个)—— 判定面为空时⑰族是恒绿`
+      + "(零个模块需要交代,门禁什么也不说而输出是 exit 0)",
+    );
+  }
+  const reached = reachedSrcModules(ctx, files);
+  stats.srcModulesReached = [...reached].filter((file) => srcModuleSet.has(file)).length;
+  /** 冻结清单里的 file 集合(戳合法性唯一的机器凭据) */
+  const baselineFiles = new Set(srcTable.baseline?.files ?? []);
+  const baselineDate = srcTable.baseline?.date;
+  /** @type {Map<string, { category: string, reason: string }>} 表项(file → 归一化后) */
+  const srcByFile = new Map();
+  for (const [index, entry] of srcTable.entries.entries()) {
+    if (typeof entry?.file !== "string" || entry.file === "") {
+      stats.srcBadEntries += 1;
+      report(
+        "src-module-exemption-table",
+        `源模块豁免表 → src-module-exemption-table:第 ${index + 1} 项缺 file 字段`
+        + "(键名写错会让整条豁免静默失效 —— 它拿到的键永远命中不上,而模块照旧落进「未登记」)",
+      );
+      continue;
+    }
+    if (srcByFile.has(entry.file)) {
+      stats.srcBadEntries += 1;
+      report(
+        "src-module-exemption-table",
+        `源模块豁免表 → src-module-exemption-table:${entry.file} 被登记了不止一条`
+        + "(重复登记让后一条静默覆盖前一条:读的人以为两条理由都被采纳过,实际只有一条生效)",
+      );
+      continue;
+    }
+    const category = typeof entry.category === "string" ? entry.category : "";
+    const reason = typeof entry.reason === "string" ? entry.reason : "";
+    srcByFile.set(entry.file, { category, reason });
+    const chars = reasonChars(reason);
+    if (chars < REASON_MIN_CHARS) {
+      stats.srcBadEntries += 1;
+      report(
+        "src-module-exemption-table",
+        `源模块豁免表 → src-module-exemption-table:${entry.file} 的 reason 缺失或只有 ${chars} 字`
+        + `(不足门槛 ${REASON_MIN_CHARS} 字)—— 本表登记的是「这个模块为什么至今没有交代」,`
+        + "写不出这句话就说明该补一段测试,而不是该把它塞进表里",
+      );
+    }
+    if (!SRC_MODULE_EXEMPTION_CATEGORIES.includes(category)) {
+      stats.srcBadEntries += 1;
+      report(
+        "src-module-exemption-table",
+        `源模块豁免表 → src-module-exemption-table:${entry.file} 的 category = ${JSON.stringify(category)} 非法`
+        + `(合法值:${SRC_MODULE_EXEMPTION_CATEGORIES.join("/")})—— 取值域来自显式清单,`
+        + "分类不是自由文本:它决定读者该按哪一类去复核这条豁免",
+      );
+    }
+    // 基线戳的两条通道都要核(字段 与 reason 正文):抄走基线那句话却不写字段的形态,
+    // 只判字段就溜过去了 —— 理由见文件头「源模块豁免表」小节。
+    const stamped = entry.baseline !== undefined || SRC_MODULE_BASELINE_STAMP_RE.test(reason);
+    if (stamped && (typeof entry.baseline !== "string" || entry.baseline !== baselineDate
+      || !baselineFiles.has(entry.file))) {
+      stats.srcStampMisuse += 1;
+      report(
+        "src-module-exemption-table",
+        `源模块豁免表 → src-module-exemption-table:${entry.file} 带着基线戳`
+        + `(${JSON.stringify(entry.baseline ?? "(reason 正文里的基线句)")}),而它不在 _baseline 冻结清单里`
+        + `(清单日期 ${JSON.stringify(baselineDate ?? "(无清单)")})—— 基线戳是一次性现状快照的凭据,`
+        + "**只能用于基线当日就未到达的那批模块**。拿它登记别的模块(尤其是刚新增的)就是"
+        + "「先豁免后补理由」,正是另两张豁免表刻意不给生成入口要防的形态。"
+        + "处置:① 给这个模块补一段测试(本族的正道);② 保留表项但把 reason 改写成"
+        + "**这条模块自己的**理由、并把 category 改成真实分类(去掉 baseline 戳)",
+      );
+    }
+    if (!ctx.fileExists(entry.file)) {
+      stats.srcBadEntries += 1;
+      report(
+        "src-module-exemption-table",
+        `源模块豁免表 → src-module-exemption-table:${entry.file} 已不是现存文件(改名/删除后残留,请删掉该条目)`,
+      );
+    } else if (!srcModuleSet.has(entry.file)) {
+      stats.srcBadEntries += 1;
+      report(
+        "src-module-exemption-table",
+        `源模块豁免表 → src-module-exemption-table:${entry.file} 存在但不在 ⑰ 族的判定面内`
+        + "(它不是 `src/**` 模块样文件:后缀不在 emit 规则派生的集合里,或是 `.d.ts` 声明)"
+        + " —— 登记一个判据面外的文件等于让这张表凭空多出一条永远不会被 ratchet 盯住的条目",
+      );
+    }
+  }
+  for (const file of srcModuleSet) {
+    if (reached.has(file)) continue;
+    if (srcByFile.has(file)) continue;
+    stats.srcUnaccounted += 1;
+    report(
+      "src-module-unaccounted",
+      `${file} → src-module-unaccounted:${SRC_TREE} 下这个模块没有被 test/ 下任何文件实际到达`
+      + "(到达的口径:某处引用解析后落在它的同名编译产物上),也没在源模块豁免表登记"
+      + ` —— 它在测试面上**没有任何交代**。处置:① 补一段测试到达它(段不必按路径镜像它);`
+      + `② 确实结构上不可测或暂无必要 ⇒ 在 ${SRC_MODULE_EXEMPTIONS_REL} 按 file 登记一条`
+      + "(category + reason ≥20 字);③ 它本不该存在 ⇒ 删掉它",
+    );
+  }
+  for (const [file] of srcByFile) {
+    if (!reached.has(file)) continue;
+    stats.srcStaleExemptions += 1;
+    report(
+      "src-module-exemption-stale",
+      `${file} → src-module-exemption-stale:源模块豁免表登记了它,但本次扫描显示它已被 test/ 下某处`
+      + "实际到达 —— 豁免已失效,请把这一条删掉。留着它,表只会单调增长、失效项永远占着位子,"
+      + "而「体量可见」这个读数会开始说谎",
     );
   }
 
@@ -3333,11 +3747,134 @@ function writeL5ExemptionsBaseline() {
   return 0;
 }
 
+/**
+ * 基线表项的 `reason` 正文(带日期的基线句 —— {@link SRC_MODULE_BASELINE_STAMP_RE} 认的就是它)。
+ * @param {string} date 基线日期(`YYYY-MM-DD`)
+ * @returns {string}
+ */
+function baselineReason(date) {
+  return `基线(${date} 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— `
+    + "本条是一次性现状快照,**不是**「已审过、无需测试」的结论。补上测试之后请删掉本条"
+    + "(反向 ratchet 会判红提醒);若要保留,请把 category 改成真实分类并把 reason 改写成"
+    + "这条模块自己的理由。";
+}
+
+/**
+ * `--write-src-module-baseline`:把「当前未到达任何测试的源模块」登记进豁免表,**首次**运行时
+ * 顺带冻结 `_baseline` 清单(日期 + 那批模块路径)。
+ *
+ * ⚠ **与 `--write-l5-exemptions` 的取向相反,刻意如此**:L5 那张表的表项必须**先有理由**才该存在,
+ * 所以它的生成入口留空 reason、逼人逐条看过再填。本表的表项是**现状快照**(ADR-062 裁决:
+ * 「理由就是『现状如此』,不为躲红而编」),故它给 reason 一句带日期的现状断言 —— 而那句断言的
+ * 合法性**只**由 `_baseline.files` 兜着:出了清单,同一句话就是「先豁免后补理由」。
+ *
+ * ⚠ **幂等,且必须幂等**:重复运行逐字保留既有 `_baseline` 与既有 `entries`(只追加「新出现且未登记」
+ * 的模块)。这不是洁癖 —— 验收要求「跑两次零 diff」,更要紧的是**整表覆写会把人工复核过的
+ * category/reason 冲掉**(L5 那张表的同类警告正是为此写的)。
+ * @returns {number} 退出码(0 = 已写入)
+ */
+function writeSrcModuleBaseline() {
+  const target = path.join(ROOT, ...SRC_MODULE_EXEMPTIONS_REL.split("/"));
+  const today = new Date().toISOString().slice(0, 10);
+  /** @type {Record<string, unknown>} */
+  let table;
+  if (existsSync(target)) {
+    try {
+      table = JSON.parse(readFileSync(target, "utf8"));
+    } catch (error) {
+      console.error(
+        `[test-layout:baseline] ${SRC_MODULE_EXEMPTIONS_REL} 已存在但不是合法 JSON`
+        + `(${error instanceof Error ? error.message : String(error)})—— 刻意不覆写:`
+        + "覆写一份坏表等于把人工复核过的理由连同根因一起丢掉,请手工修好或移开该文件后重跑",
+      );
+      return 1;
+    }
+  } else {
+    table = {
+      _comment: "源模块豁免表 —— 「每个 `src/**` 模块样文件在测试面上有没有交代」的登记表。"
+        + "**初版**由 `node gates/repo/check-test-layout.mjs --write-src-module-baseline` 生成,"
+        + "并把当时未到达的那批模块**冻结**进 `_baseline`;此后本表只许减不许增"
+        + "(补上测试 ⇒ 删表项,反向 ratchet 会盯着)。",
+      _schema: {
+        key: "entries[].file",
+        baseline: "`_baseline.files` 是**基线戳的唯一凭据**:带 `baseline` 戳(或 reason 句首写着带日期的"
+          + "基线句)的表项,只有 file 在清单里才合法 —— 拿它登记别的模块就是「先豁免后补理由」。",
+        reason: `必填、且 trim 后 ≥${REASON_MIN_CHARS} **字**(按码点计)。`,
+        category: `取值域:${SRC_MODULE_EXEMPTION_CATEGORIES.join(" / ")}。`
+          + "`baseline-snapshot` 只是来源标记(「本条由生成入口一次性登记,尚未逐条复核」),"
+          + "它**只在携带合法基线戳时成立**。",
+        ratchet: "表项必须当前仍未被任何测试到达,否则判红(stale)。",
+      },
+      entries: [],
+    };
+  }
+  const ctx = makeTestLayoutCtx({ root: ROOT });
+  const reached = reachedSrcModules(ctx, collectTestFiles(ctx));
+  const unreached = collectSrcModules(ctx).filter((file) => !reached.has(file));
+  /** @type {{ date: string, files: string[] }} */
+  const baseline = isBaselineManifest(table._baseline) ? table._baseline : { date: today, files: [...unreached] };
+  // ⚠ **逐字保留既有表项**:整表覆写会冲掉人工复核过的 category/reason(理由见本函数注释)。
+  const entries = Array.isArray(table.entries) ? table.entries : [];
+  const registered = new Set(entries.map((entry) => entry?.file));
+  const frozen = new Set(baseline.files);
+  let added = 0;
+  for (const file of unreached) {
+    if (registered.has(file)) continue;
+    registered.add(file);
+    added += 1;
+    if (frozen.has(file)) {
+      entries.push({
+        file,
+        category: SRC_MODULE_BASELINE_CATEGORY,
+        baseline: baseline.date,
+        reason: baselineReason(baseline.date),
+      });
+    } else {
+      // 出了冻结清单 ⇒ **刻意不给戳、不给理由**:这一条只能靠人写,生成入口没有资格替它背书。
+      entries.push({ file });
+    }
+  }
+  table._baseline = baseline;
+  table.entries = entries;
+  // ⚠ **建目录**:生成入口的「首次运行」形态正是「表还不存在」,而表住在 `gates/repo/` 下。
+  // 那一层在本仓恒在,可这个入口不该把「自己所在目录必然已存在」当前提(判据里的隐含前提
+  // 换一个根就失配,而失配的形态是**崩溃**而不是判红)。
+  mkdirSync(path.dirname(target), { recursive: true });
+  writeFileSync(target, `${JSON.stringify(table, null, 2)}\n`, "utf8");
+  console.log(
+    `[test-layout:baseline] 已写入 ${SRC_MODULE_EXEMPTIONS_REL}:新增 ${added} 条(表内共 ${entries.length} 条)`
+    + `;冻结清单 ${baseline.files.length} 条,基线日期 ${baseline.date}`
+    + "\n  ⚠ 出了冻结清单的新增项是**光秃的**(无 category / 无 reason)⇒ 它们会判红,请逐条补:"
+    + `category 取 ${SRC_MODULE_EXEMPTION_CATEGORIES.filter((c) => c !== SRC_MODULE_BASELINE_CATEGORY).join(" / ")} 之一、`
+    + `reason ≥${REASON_MIN_CHARS} 字。基线戳**不能**用在它们身上(那正是本族要拦的滥用)。`,
+  );
+  return 0;
+}
+
+/**
+ * 一个值是不是**形状正确的** `_baseline` 清单(date + files 两个字段)。
+ *
+ * ⚠ 形状检查与 `loadSrcModuleExemptions` 里那一档**同判准、不同落点**:那里判「形状不对 ⇒ 判红」
+ * (表坏了要让门禁说话),这里判「形状不对 ⇒ 按首次生成处理」。两处各写一份字面量判据就是
+ * 两处会漂的副本,故**由本函数单点持有**,读表侧与写表侧都调它。
+ * @param {unknown} value 待判定的值
+ * @returns {boolean}
+ */
+function isBaselineManifest(value) {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = /** @type {{ date?: unknown, files?: unknown }} */ (value);
+  return typeof candidate.date === "string" && Array.isArray(candidate.files)
+    && candidate.files.every((file) => typeof file === "string");
+}
+
 export function main(argv = []) {
   /** @type {Record<string, string | boolean>} */
   let options;
   try {
-    options = parseArgs(argv, { booleans: ["help", "write-l5-exemptions"], usage: USAGE });
+    options = parseArgs(argv, {
+      booleans: ["help", "write-l5-exemptions", "write-src-module-baseline"],
+      usage: USAGE,
+    });
   } catch (error) {
     // 未知参数一律失败:静默按默认跑一遍报绿就是「假通过」
     console.error(`[test-layout:fail] ${error instanceof Error ? error.message : String(error)}`);
@@ -3345,6 +3882,9 @@ export function main(argv = []) {
   }
   if (options["write-l5-exemptions"] === true) {
     return writeL5ExemptionsBaseline();
+  }
+  if (options["write-src-module-baseline"] === true) {
+    return writeSrcModuleBaseline();
   }
   if (options.help === true) {
     // ⚠ 两个计数**由 CRITERIA 派生**,不写死:写死的数字在加一族/删一族那天会静默说谎,
@@ -3361,6 +3901,11 @@ export function main(argv = []) {
         "                        表已有条目时**不要重跑**:先 `git checkout -- gates/repo/"
           + "test-layout.cross-import-exemptions.json`,",
         "                        再照本节说的「追加」手工补那一条(表项的键是 (段, 说明符) 二元组)。",
+        `  --write-src-module-baseline 把当前未被任何测试到达的 src/** 模块登记进源模块豁免表`,
+        "                        (首次运行时顺带把那一批冻结进 _baseline,此后只许减不许增)。",
+        "                        只写不判,绝不进 verify:ci。⚠ 与上面那个入口相反:它**幂等**",
+        "                        (逐字保留既有条目与冻结清单,重复运行零 diff),且出了冻结清单",
+        "                        的新增项**不带基线戳、不带理由** —— 那些只能靠人写。",
         `  强制等级(由本文件 CRITERIA 派生):${failClosed} 族 fail-closed(命中即非零退出) /`
         + ` ${reportOnly} 族 report-only(命中只报告,结构上不计退出码)。`,
         // ⚠ report-only 的族**逐个点名**:只给一个计数的话,「哪几族待转正」这件事就得回到源码里
@@ -3444,6 +3989,13 @@ export function main(argv = []) {
       + `分母是全部 ${stats.gateSelftests} 份自测)`
       + ` ⚠ 半齿上限:「删 case + 同批删册」是一次改动、判据看不见 —— 本族只抓**单侧**漂移`
       + enforcement("gates-selftest-case-roster"),
+    `源模块须有交代 src-module-unaccounted 判红 ${stats.srcUnaccounted} 项`
+      + `(src/** 模块样文件 ${stats.srcModules} 个 / 其中已被 test/ 实际到达 ${stats.srcModulesReached} 个)`
+      + enforcement("src-module-unaccounted"),
+    `源模块豁免表 ${SRC_MODULE_EXEMPTIONS_REL} 共 ${stats.srcExemptions} 条`
+      + `(表自身失效判红 ${stats.srcTableProblems} / 表项不达标判红 ${stats.srcBadEntries}`
+      + ` / 基线戳滥用判红 ${stats.srcStampMisuse} / 反向 ratchet stale 判红 ${stats.srcStaleExemptions})`
+      + enforcement("src-module-exemption-stale"),
   ].join(";");
   const named = problems.map((problem) => problem.split(" → ")[0] ?? problem);
 

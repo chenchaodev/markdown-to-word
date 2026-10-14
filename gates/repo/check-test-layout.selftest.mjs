@@ -66,6 +66,7 @@ import {
   L5_EXEMPTIONS_REL,
   loadGateExemptions,
   loadGateSubjectExemptions,
+  loadSrcModuleExemptions,
   judgeL11Carrier,
   judgeL12ChainMembership,
   makeGateRegistryCtx,
@@ -73,6 +74,8 @@ import {
   MIN_SCANNED_FILES,
   NON_MIRROR_TOP_DIRS,
   REASON_MIN_CHARS,
+  SRC_MODULE_EXEMPTION_CATEGORIES,
+  SRC_MODULE_EXEMPTIONS_REL,
   TEST_REL,
 } from "./check-test-layout.mjs";
 // 链根从**单源**取(与判定本体同一处 import),不在夹具里手抄一份 ——
@@ -141,6 +144,17 @@ function wellFormedSegment(layer) {
 const BASE_PAD = MIN_SCANNED_FILES + 10;
 
 /**
+ * 夹具底板里 `_baseline` 冻结清单的**占位日期**。
+ *
+ * ⚠ **它是一个字面量而不是现算的今天**:夹具必须**可复现** —— 今天生成的夹具与明年生成的夹具
+ * 若日期不同,「基线戳滥用」那一档的正负两侧就得跟着换断言,而判据本身与日期无关。
+ * ⚠ 它与真实仓那份表里的日期**故意不同**:真实表的日期是**基线当日**这个事实,夹具这份只是形状
+ * 占位。两者混用会让「夹具里能过的戳在真实仓里过不了」这类差异无从归因。
+ * @type {string}
+ */
+const FIXTURE_BASELINE_DATE = "2000-01-01";
+
+/**
  * 从段所在目录到契约模块的相对说明符(仓库相对 POSIX 路径)。
  * @param {string} fromDir 段所在目录(仓库相对 POSIX)
  * @param {string} to 目标文件(仓库相对 POSIX)
@@ -188,6 +202,107 @@ function caseContractProbe(rel) {
 }
 
 /**
+ * 一段「本层主体齐备,并额外到达本层另外几个产物」的段 —— **底板专用的到达凭证**。
+ *
+ * ⚠ **为什么底板需要这两段**(⑰族「源模块须有交代」落地时才暴露出来):`createFixture` 为 C1
+ * 档一在 `src/` 下造了几个**只被某些夹具当跨层目标**的源文件(`main/other.mts`、`main/one.mts`、
+ * `renderer/settings/settings-logic.ts`、`main/persist/ui-state.ts`)。而**只有那几条夹具**会去
+ * 引用它们 —— 底板本身不引用 ⇒ 未改动的底板上它们「未被任何测试到达」⇒ ⑰族会在**每一条**既有夹具
+ * 上先报一条与它无关的红(症状离根因隔着一整族判据,最难归因)。
+ *
+ * ⚠ **修法刻意选「让底板真的到达它们」而不是「把它们预置进豁免表」**:后者要求每条夹具都注入
+ * 一张恰好覆盖「本夹具没到达的那几个」的表 —— 而哪些模块被到达**取决于夹具本身**,底板算不出来。
+ * 更糟的是它会让⑰族的正向档无从测(底板默认就是「全登记」)。让底板到达它们则与 L5/C3 的
+ * 底板纪律同款:**底板必须先满足全部判据**。
+ *
+ * ⚠ 引用形态取**副作用 import**(`import "../../dist/…"`):它不引入任何绑定名,故不必为每个产物
+ * 起一个唯一标识符,而 `extractImports` 的副作用导入抽取(`SIDE_EFFECT_RE`)照样解析出 `resolved`。
+ * ⚠ 这些产物都是**本层**的 ⇒ 不产生任何跨层命中(L5/C3 零影响),只是把「到达」这件事坐实。
+ * @param {string} layer 层名
+ * @param {string[]} artifacts 该层内、仓相对 `dist/` 去掉前缀的产物路径
+ * @returns {string}
+ */
+function reachingSegment(layer, artifacts) {
+  return [
+    "// @ts-check",
+    `/** 夹具段:本层主体齐备,并额外到达本层这几个产物(底板的到达凭证,见本函数注释)。 */`,
+    `import { subject } from "../../dist/${layer}/subject.js";`,
+    ...artifacts.map((artifact) => `import "../../dist/${artifact}";`),
+    "import { createCaseSuite } from \"../harness/case.js\";",
+    "export const meta = { description: 'reaching-helpers' };",
+    "export async function run() {",
+    "  const suite = createCaseSuite();",
+    '  await suite.case("本层主体与到达凭证同时成立", () => {',
+    '    if (subject === undefined) throw new Error("缺本层主体");',
+    "  });",
+    "  return { cases: suite.results };",
+    "}",
+    "",
+  ].join("\n");
+}
+
+/**
+ * 一条**合形状**的源模块豁免表项(⑰族夹具用)。
+ *
+ * ⚠ **为什么不手写字面量**:本族判 `reason ≥ REASON_MIN_CHARS` 码点与 `category ∈ 取值域`,
+ * 手写三条表项就意味着同一句判准抄三遍、且改门槛那天三处都要跟着改。集中在这里 ⇒ 一处改,
+ * 全部夹具同步。
+ *
+ * ⚠ `baseline` 字段**刻意不给**:带戳的表项还要额外过「file 在冻结清单里」那一档,而这几条夹具
+ * 验的都不是戳,给戳只会多一个与本夹具无关的失败面。戳那一档由它自己的夹具单独验。
+ * @param {string} file 源模块路径
+ * @param {string} why 这一条为什么在表里(会被拼进 reason)
+ * @returns {Record<string, unknown>}
+ */
+function srcModuleExemption(file, why) {
+  return {
+    file,
+    category: SRC_MODULE_EXEMPTION_CATEGORIES[0],
+    reason: `夹具:${why}(这是合成根上的登记表项,只为让本夹具不先被⑰族判红,与被测判据无关)`,
+  };
+}
+
+/**
+ * ⑰ 族**口径**夹具用的两个段:同一个源模块(`src/core/typed-only.ts`),一个只以 **type-only**
+ * 形态引用它、一个以**值**引用引用它。形状其余部分与 `wellFormedSegment` 同款(本层主体齐备
+ * + 接具名 case 契约),故两格之间只有「引用形态」这一个差别。
+ *
+ * ⚠ 为什么必须成对:单独一格只证明「type-only 不算到达」,另一格才证明「值引用确实算到达」——
+ * 而**放宽**口径(把 type-only 加回来)只会让第一格翻脸,`reachedSrcModules` 的取值逻辑
+ * 一旦被改宽,没有第二格就无人发现。
+ * @param {"type-only"|"value"} mode 引用形态
+ * @returns {string}
+ */
+function typedRefSegment(mode) {
+  return [
+    "// @ts-check",
+    mode === "value"
+      ? "/** 夹具段:本层主体齐备,另以**值引用**到达 dist/core/typed-only.js。 */"
+      : "/** 夹具段:本层主体齐备,另**只以类型形态**引用 dist/core/typed-only.js。 */",
+    'import { subject } from "../../dist/core/subject.js";',
+    ...(mode === "value"
+      ? ['import { payload } from "../../dist/core/typed-only.js";']
+      : ['/** @typedef {import("../../dist/core/typed-only.js").Payload} Payload */']),
+    "import { createCaseSuite } from \"../harness/case.js\";",
+    "export const meta = { description: 'typed-ref' };",
+    "export async function run() {",
+    "  const suite = createCaseSuite();",
+    ...(mode === "value"
+      ? ['  await suite.case("值引用取到了", () => { if (payload === undefined || subject === undefined) throw new Error("缺引用"); });']
+      : ["/** @type {Payload} */", "  const typedOnly = { payload: 1 };",
+        '  await suite.case("只有类型引用", () => { if (typedOnly.payload !== 1 || subject === undefined) throw new Error("缺本层主体"); });']),
+    "  return { cases: suite.results };",
+    "}",
+    "",
+  ].join("\n");
+}
+
+/** 只以 type-only 形态引用的那段 */
+const TYPE_ONLY_REF_SEGMENT = typedRefSegment("type-only");
+/** 以值引用引用的那段(与上一段只有引用形态之差) */
+const VALUE_REF_SEGMENT = typedRefSegment("value");
+
+/**
  * 造一棵合成仓根。
  * @param {Readonly<Record<string, string>>} [extra] 仓库相对 POSIX 路径 → 正文
  * @param {{ keepSegmentsCaseBare?: boolean }} [opts] `keepSegmentsCaseBare`:本夹具的
@@ -219,12 +334,27 @@ function createFixture(extra = {}, opts = {}) {
   // 缺了它,每条进程级夹具都会先被「豁免表读不到」判红 —— 症状离根因很远。
   // 底板给一份**空表**:各夹具要豁免什么就自己注入(ctx.l5Exemptions),不在这里预置。
   //
-  // ⚠ **两张表都要造**:C3 的表搬成数据文件后,进程级夹具走的是与 L5 同款的读盘路径
+  // ⚠ **三张表都要造**:C3 的表搬成数据文件后,进程级夹具走的是与 L5 同款的读盘路径
   // (`judge()` 那侧靠注入面绕开,进程级这侧没有注入面可用)。少造一张 ⇒ C3 先被
-  // 「表读不到」判红,那是一条与夹具本意无关的红。
-  for (const rel of [L5_EXEMPTIONS_REL, GATE_SUBJECT_EXEMPTIONS_REL]) {
-    writeUnder(dir, rel, `${JSON.stringify({ _comment: "夹具底板:空豁免表。", entries: [] }, null, 2)}\n`);
+  // 「表读不到」判红,那是一条与夹具本意无关的红。⑰族那张也一样,且它还多一档
+  // 「缺 `_baseline` 冻结清单」⇒ 空表也必须带一个形状正确的清单。
+  for (const rel of [L5_EXEMPTIONS_REL, GATE_SUBJECT_EXEMPTIONS_REL, SRC_MODULE_EXEMPTIONS_REL]) {
+    writeUnder(dir, rel, `${JSON.stringify({
+      _comment: "夹具底板:空豁免表。",
+      _baseline: { date: FIXTURE_BASELINE_DATE, files: [] },
+      entries: [],
+    }, null, 2)}\n`);
   }
+  // 到达凭证段:让上面那几个「只被个别夹具当跨层目标」的源模块在底板上就已被到达(理由见
+  // `reachingSegment` 的注释)。它们引用的是**本层**产物,故不引入任何跨层命中。
+  writeUnder(dir, `${TEST_REL}/main/reached-helpers.test.js`, reachingSegment("main", [
+    "main/other.mjs",
+    "main/one.mjs",
+    "main/persist/ui-state.js",
+  ]));
+  writeUnder(dir, `${TEST_REL}/renderer/reached-helpers.test.js`, reachingSegment("renderer", [
+    "renderer/settings/settings-logic.js",
+  ]));
   for (let i = 0; i < BASE_PAD; i += 1) {
     const layer = BASE_SRC_LAYERS[i % BASE_SRC_LAYERS.length] ?? "core";
     writeUnder(dir, `${TEST_REL}/${layer}/pad-${i}.test.js`, wellFormedSegment(layer));
@@ -271,6 +401,8 @@ function writeUnder(root, rel, body) {
  * @param {readonly Record<string, object>} [opts.gateRegistry] 门禁索引(注入面;缺省 = 空索引)
  * @param {{segment: string, specifier: string, reason: string}[]} [opts.gateSubjectExemptions]
  *   C3 的门禁主体豁免表(注入面;缺省 = 空表,理由见 `judge` 里那段注释)
+ * @param {{entries?: Record<string, unknown>[], baseline?: {date: string, files: string[]}|null}} [opts.srcModuleExemptions]
+ *   ⑰族的源模块豁免表(注入面;缺省 = 空表 + 空冻结清单,理由见 `judge` 里那段注释)
  * @param {{ id: string }[]} [opts.criteriaOverride] 判据登记表覆盖(⚠ 只允许删行,见下)
  * @returns {{ problems: string[], info: string[], stats: import("./check-test-layout.mjs").TestLayoutStats }}
  */
@@ -304,6 +436,14 @@ function judge(extra, opts = {}) {
       // 症状离根因隔着一整族判据。底板(`createFixture`)也造了一份空表给**进程级**夹具用,
       // 那一条路径没有注入面可走。
       gateSubjectExemptions: opts.gateSubjectExemptions ?? [],
+      // ⑰族那张表**同样必须显式注入空表**(与上面两张同款理由:合成根里没有那张数据文件,
+      // 不注入就会命中「表读不到 → 判红」那一档,让每条夹具都多出一条与本夹具无关的红)。
+      // ⚠ 它比另两张**多**要一样东西:`_baseline` 冻结清单 —— 缺它命中的是「缺 _baseline」那一档,
+      // 同样判红。基线日期取占位常量(理由见 `FIXTURE_BASELINE_DATE`)。
+      srcModuleExemptions: opts.srcModuleExemptions ?? {
+        entries: [],
+        baseline: { date: FIXTURE_BASELINE_DATE, files: [] },
+      },
       // ⚠ 删行口是自检专用,且**只允许删行**。它必须永远是「拿掉一行让漏斗查不到」这一个方向 ——
       // 一旦它能新增表项或加 `pending: true`,注入口就成了「可配置即假话」的后门:
       // 自检夹具能调档 ⇒ 生产调用点也能调档 ⇒ fail-open。另两个方向由门禁的
@@ -1237,6 +1377,12 @@ const CASES = [
       [`shared/paths.js`]: "export const ROOT = '/x';\n",
       [`${TEST_REL}/behavior/ok.test.js`]: behaviorSegment(["src/core/real.ts", "shared/paths.js"]),
     },
+    // ⚠ 本夹具要验的是 L6,而 `src/core/real.ts` 是**只被 covers 声明引用**、没有任何 import
+    // 到达它 ⇒ ⑰族(源模块须有交代)会先报它。显式登记掉,让本夹具只验 L6。
+    srcModuleExemptions: {
+      entries: [srcModuleExemption("src/core/real.ts", "本夹具只用 covers 声明引用它,不 import 它的产物")],
+      baseline: { date: FIXTURE_BASELINE_DATE, files: [] },
+    },
     expect: null,
   },
   {
@@ -1248,6 +1394,12 @@ const CASES = [
     extra: {
       [`src/core/real.ts`]: "export const real = 1;\n",
       [`${TEST_REL}/core/declared.test.js`]: behaviorSegment(["src/core/real.ts"]),
+    },
+    // 同上:这个模块只出现在 covers 声明里(本夹具验的正是「声明通道零 import 也能过 L4」),
+    // 故它对⑰族而言确实「未被到达」,显式登记掉以免本夹具验成两族叠加。
+    srcModuleExemptions: {
+      entries: [srcModuleExemption("src/core/real.ts", "本夹具只用 covers 声明引用它,刻意零 import")],
+      baseline: { date: FIXTURE_BASELINE_DATE, files: [] },
     },
     expect: null,
     expectAbsent: /test\/core\/declared\.test\.js → test-layer-self-hosted/,
@@ -1427,6 +1579,12 @@ const CASES = [
         "export async function run() { return subject; }",
         "",
       ].join("\n"),
+    },
+    // ⚠ 本夹具要的正是「段**没有**落在那个同名源上」⇒ 它对⑰族而言必然是「未被到达」,
+    // 显式登记掉,免得本夹具验成 C1 档二与⑰族两族的叠加(症状出了分不清是哪一族的红)。
+    srcModuleExemptions: {
+      entries: [srcModuleExemption("src/convert/preprocess.ts", "本夹具要验的正是段不落在它上面")],
+      baseline: { date: FIXTURE_BASELINE_DATE, files: [] },
     },
     expect: null,
     expectAbsent: /test-segment-mirror-same-name/,
@@ -1629,6 +1787,262 @@ const CASES = [
     },
     expect: null,
     expectAbsent: /test-layer-gate-subject/,
+  },
+  // ---- REQ-196 ⑰–⑲:源模块须有交代(正向 / 反向 ratchet / 表项完整性 / 基线戳滥用)----
+  //
+  // 这一族的**基线是干净的**:底板的每个 `src/**` 模块都被底板段到达(见 `reachingSegment`),
+  // 故下面每一条负向档的判红都只可能来自本族自己 —— 不存在「先被别的族顶住出口码」。
+  {
+    // 档一(正向):新增一个未被任何测试到达、也没登记的源模块 ⇒ 判红并点名。
+    // ⚠ **它是本族存在的全部理由**:没有这一档,「一个没人管的新模块」在门禁上完全不可见。
+    name: "⑰族:新增一个未被任何测试到达且未登记的 src 模块 → 判红并点名该模块",
+    judgeOnly: true,
+    extra: { ["src/core/undeclared.ts"]: "export const undeclared = 1;\n" },
+    expect: /src\/core\/undeclared\.ts → src-module-unaccounted:.*没在源模块豁免表登记/,
+    // 处置指引必须点名**两条正当出路**(补测试 / 登记豁免)—— 只点名模块的话,读者仍不知道该做什么。
+    expectAlso: /处置:① 补一段测试到达它.*② 确实结构上不可测或暂无必要/,
+  },
+  {
+    // 档一的对侧(反向锚点):把那个模块登记进表 ⇒ 同一条判红消失。
+    // ⚠ 缺这一档的话,上面那档可能只是「恒红」—— 没人能证明合法登记形态真的能过。
+    name: "⑰族:同一个模块登记进豁免表(且 reason 达标)→ 该档判红消失",
+    judgeOnly: true,
+    extra: { ["src/core/undeclared.ts"]: "export const undeclared = 1;\n" },
+    srcModuleExemptions: {
+      entries: [srcModuleExemption("src/core/undeclared.ts", "本模块暂无测试段到达")],
+      baseline: { date: FIXTURE_BASELINE_DATE, files: [] },
+    },
+    expect: null,
+    expectAbsent: /src-module-unaccounted/,
+  },
+  {
+    // 档二(反向 ratchet):**已被到达**的模块却留在表里 ⇒ 判红并点名删哪一条。
+    // ⚠ 这是本族防止豁免表变成藏东西的地方的那颗牙:没有它,表只增不减,
+    // 「有多少模块至今没有交代」这个读数会停在播种那天的数字上再也不动。
+    name: "⑱族:已被 test/ 实际到达的模块仍留在豁免表里 → 判红并点名该删哪一条(ratchet)",
+    judgeOnly: true,
+    extra: {},
+    // `src/core/subject.ts` 被底板每一段 import ⇒ 它**已被到达**。
+    srcModuleExemptions: {
+      entries: [srcModuleExemption("src/core/subject.ts", "曾经的未到达快照,测试后来到达了它")],
+      baseline: { date: FIXTURE_BASELINE_DATE, files: [] },
+    },
+    expect: /src\/core\/subject\.ts → src-module-exemption-stale:.*请把这一条删掉/,
+  },
+  {
+    // 档三 A:拿基线戳(字段形态)登记一个**不在冻结清单里**的模块 ⇒ 判红。
+    // 这正是「先豁免后补理由」的入口:生成入口跑过一次之后,任何人都能抄到那句带日期的话。
+    name: "⑲族:拿基线戳登记冻结清单之外的模块 → 判红(先豁免后补的入口被堵)",
+    judgeOnly: true,
+    extra: { ["src/core/undeclared.ts"]: "export const undeclared = 1;\n" },
+    srcModuleExemptions: {
+      entries: [{
+        file: "src/core/undeclared.ts",
+        category: "baseline-snapshot",
+        baseline: FIXTURE_BASELINE_DATE,
+        reason: `基线(${FIXTURE_BASELINE_DATE} 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 抄来的`,
+      }],
+      // ⚠ 冻结清单是**空**的 ⇒ 这一条在清单外 ⇒ 戳不合法。
+      baseline: { date: FIXTURE_BASELINE_DATE, files: [] },
+    },
+    expect: /src\/core\/undeclared\.ts 带着基线戳.*不在 _baseline 冻结清单里/,
+  },
+  {
+    // 档三 B:同一件事的**第二个可绕面** —— 抄了基线那句带日期的话,却**不写** baseline 字段。
+    // ⚠ 少这一档的话,那一档就只是「字段写对了吗」的检查:把字段删掉即可带着基线断言过关,
+    // 而它断言的内容(「截至某日实测无测试到达」)对**这个**模块是假的。
+    name: "⑲族:把基线句抄进 reason 但不写 baseline 字段 → 仍判红(戳有两个通道)",
+    judgeOnly: true,
+    extra: { ["src/core/undeclared.ts"]: "export const undeclared = 1;\n" },
+    srcModuleExemptions: {
+      entries: [{
+        file: "src/core/undeclared.ts",
+        category: "baseline-snapshot",
+        reason: `基线(${FIXTURE_BASELINE_DATE} 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 抄来的`,
+      }],
+      baseline: { date: FIXTURE_BASELINE_DATE, files: [] },
+    },
+    expect: /src\/core\/undeclared\.ts 带着基线戳\("\(reason 正文里的基线句\)"\)/,
+  },
+  {
+    // 档三 C(反向锚点):同一个模块**在**冻结清单里、戳也带对了 ⇒ 判绿。
+    // ⚠ 这一格证明档三是「**越权**使用戳才红」而不是「带戳就红」—— 后者会让基线表永远无法使用,
+    // 而一个永远用不了的机制等于没有。
+    name: "⑲族:基线戳用在冻结清单之内的模块上 → 判绿(戳的合法形态)",
+    judgeOnly: true,
+    extra: { ["src/core/undeclared.ts"]: "export const undeclared = 1;\n" },
+    srcModuleExemptions: {
+      entries: [{
+        file: "src/core/undeclared.ts",
+        category: "baseline-snapshot",
+        baseline: FIXTURE_BASELINE_DATE,
+        reason: `基线(${FIXTURE_BASELINE_DATE} 实测):截至该日,本模块的编译产物未被 test/ 下任何文件引用到达 —— 清单内`,
+      }],
+      baseline: { date: FIXTURE_BASELINE_DATE, files: ["src/core/undeclared.ts"] },
+    },
+    expect: null,
+    expectAbsent: /src-module-exemption-table/,
+  },
+  {
+    // 档四 A:`reason` 缺失(空串)⇒ 判红。空串是「不足门槛」那一档的特例(0 < 20)。
+    name: "⑲族:表项的 reason 为空 → 判红(挂表项却说不出为什么它至今没有交代)",
+    judgeOnly: true,
+    extra: { ["src/core/undeclared.ts"]: "export const undeclared = 1;\n" },
+    srcModuleExemptions: {
+      entries: [{ file: "src/core/undeclared.ts", category: SRC_MODULE_EXEMPTION_CATEGORIES[0], reason: "" }],
+      baseline: { date: FIXTURE_BASELINE_DATE, files: [] },
+    },
+    expect: new RegExp(
+      `src/core/undeclared\\.ts 的 reason 缺失或只有 0 字\\(不足门槛 ${REASON_MIN_CHARS} 字\\)`,
+    ),
+  },
+  {
+    // 档四 B:`reason` 写得太短 ⇒ 判红,且诊断**回显实测字数**(写死一个数会让改门槛那天说谎)。
+    name: "⑲族:表项的 reason 不足 20 码点 → 判红并回显实测字数",
+    judgeOnly: true,
+    extra: { ["src/core/undeclared.ts"]: "export const undeclared = 1;\n" },
+    srcModuleExemptions: {
+      entries: [{ file: "src/core/undeclared.ts", category: SRC_MODULE_EXEMPTION_CATEGORIES[0], reason: "见谅" }],
+      baseline: { date: FIXTURE_BASELINE_DATE, files: [] },
+    },
+    expect: new RegExp(
+      `src/core/undeclared\\.ts 的 reason 缺失或只有 2 字\\(不足门槛 ${REASON_MIN_CHARS} 字\\)`,
+    ),
+  },
+  {
+    // 档四 C:`category` 越值域 ⇒ 判红。分类不是自由文本:它决定读者按哪一类去复核这条豁免。
+    name: "⑲族:表项的 category 不在显式取值域内 → 判红",
+    judgeOnly: true,
+    extra: { ["src/core/undeclared.ts"]: "export const undeclared = 1;\n" },
+    srcModuleExemptions: {
+      entries: [{ file: "src/core/undeclared.ts", category: "看起来没问题", reason: "夹具:这一条只用来验 category 取值域那一档,理由本身达标即可" }],
+      baseline: { date: FIXTURE_BASELINE_DATE, files: [] },
+    },
+    // 取值域清单**由被测模块现取**,不手抄:手抄的那份会在分类增删那天静默说谎。
+    expect: new RegExp(`category = "看起来没问题" 非法\\(合法值:${SRC_MODULE_EXEMPTION_CATEGORIES.join("/")}\\)`),
+  },
+  {
+    // 档四 D:`file` 指向的文件已不存在(改名/删除后残留)⇒ 判红。
+    name: "⑲族:表项的 file 已不是现存文件 → 判红(残留表项)",
+    judgeOnly: true,
+    extra: {},
+    srcModuleExemptions: {
+      entries: [srcModuleExemption("src/core/vanished.ts", "这个文件早已被删掉,表项该同批删")],
+      baseline: { date: FIXTURE_BASELINE_DATE, files: [] },
+    },
+    expect: /src\/core\/vanished\.ts 已不是现存文件/,
+  },
+  {
+    // 档四 E:表项缺 `file` 键 ⇒ 判红。跳过等于给「写错键名」开静默放行的口:
+    // 它拿不到键 ⇒ 该模块照旧落进「未登记」,而没人知道表里其实有一条。
+    name: "⑲族:表项缺 file 键 → 判红(键名写错会让豁免静默失效)",
+    judgeOnly: true,
+    extra: { ["src/core/undeclared.ts"]: "export const undeclared = 1;\n" },
+    srcModuleExemptions: {
+      entries: [{ category: SRC_MODULE_EXEMPTION_CATEGORIES[0], reason: "夹具:这一条没有 file 键,用来验键名校验那一档" }],
+      baseline: { date: FIXTURE_BASELINE_DATE, files: [] },
+    },
+    expect: /源模块豁免表 → src-module-exemption-table:第 1 项缺 file 字段/,
+  },
+  {
+    // 档四 F:同一个 file 登记两条 ⇒ 判红。重复登记会让后一条静默覆盖前一条,
+    // 读的人以为两条理由都被采纳过,实际只有一条生效。
+    name: "⑲族:同一个 file 被登记了不止一条 → 判红(重复登记让前一条静默失效)",
+    judgeOnly: true,
+    extra: { ["src/core/undeclared.ts"]: "export const undeclared = 1;\n" },
+    srcModuleExemptions: {
+      entries: [
+        srcModuleExemption("src/core/undeclared.ts", "第一条理由"),
+        srcModuleExemption("src/core/undeclared.ts", "第二条理由"),
+      ],
+      baseline: { date: FIXTURE_BASELINE_DATE, files: [] },
+    },
+    expect: /src\/core\/undeclared\.ts 被登记了不止一条/,
+  },
+  {
+    // 档四 G:`file` 真实存在但**不在判定面内**(这里是 `.css`)⇒ 判红。
+    // 判 `fileExists` 单独一档不够:登记一个 CSS 会让表里多出一条**永远不会被 ratchet 盯住**的条目
+    // (模块判据面里没有它,stale 那一档自然也不问它)。
+    name: "⑲族:表项的 file 存在但不是 src/** 模块样文件 → 判红(判据面外的条目无人 ratchet)",
+    judgeOnly: true,
+    extra: { ["src/renderer/style/extra.css"]: "body { color: #000; }\n" },
+    srcModuleExemptions: {
+      entries: [srcModuleExemption("src/renderer/style/extra.css", "样式表不是模块,登记它属于判据面外")],
+      baseline: { date: FIXTURE_BASELINE_DATE, files: [] },
+    },
+    expect: /src\/renderer\/style\/extra\.css 存在但不在 ⑰ 族的判定面内/,
+  },
+  {
+    // 读表档 1/5:文件压根不在。当空表放行的话,症状看起来仍然正确(每个未到达模块都「未登记」),
+    // 但归因指向模块而不是表不见了 —— 处置把人领去补测试,补完表还是红的。
+    name: "⑲族读表:表文件不在 → 判红(不得静默当空表)",
+    srcModuleExemptionLoad: "missing",
+    expect: new RegExp(`源模块豁免表读不到或不是合法 JSON:${SRC_MODULE_EXEMPTIONS_REL.replace(/\./g, "\\.")}`),
+  },
+  {
+    name: "⑲族读表:表文件在但 JSON 坏了 → 判红",
+    srcModuleExemptionLoad: "corrupt",
+    expect: /源模块豁免表读不到或不是合法 JSON/,
+  },
+  {
+    name: "⑲族读表:缺 entries 数组 → 判红",
+    srcModuleExemptionLoad: "no-entries",
+    expect: new RegExp(`源模块豁免表缺 entries 数组:${SRC_MODULE_EXEMPTIONS_REL.replace(/\./g, "\\.")}`),
+  },
+  {
+    // ⚠ 本表**特有**的一档:entries 在、戳也在,但没有那份冻结清单 —— 合法表项能读到、
+    // 合法性却无从核对。这一档判红而不是「当没有戳约束」放过去。
+    name: "⑲族读表:缺 _baseline 冻结清单 → 判红(戳无从核对,不能当没有约束)",
+    srcModuleExemptionLoad: "no-baseline",
+    expect: /源模块豁免表缺 _baseline 冻结清单/,
+  },
+  {
+    // 读表档的对侧:形状正确 ⇒ 零读表诊断。
+    // ⚠ 它是上面四档的**反向锚点**:只断「坏表会红」的话,一个「永远报红」的读表实现照样全绿。
+    name: "⑲族读表:表形状正确 → 零读表诊断",
+    srcModuleExemptionLoad: "empty",
+    expect: null,
+  },
+  {
+    // 真实仓上本族的机械证据:**分母非零 + 判红 0 + 表非空 + 四档全归零**。
+    //
+    // ⚠ **两侧都要断**:只断「判红 0」的话,表被清空 / 判定面塌成零时它照样成立,
+    // 而那正是这一族最坏的失效形态(没有任何模块需要交代 ⇒ 全绿)。
+    // ⚠ **计数一律不写死**:条数随每次基线与补测试变动,写死会在变动那天变成一条自己把自己判红的夹具。
+    name: "真实仓库:源模块族的分母与表都非零且四档归零(不误伤,且证明真被验证过)",
+    realRepo: true,
+    expectCode: 0,
+    expect: new RegExp(
+      `源模块须有交代 src-module-unaccounted 判红 0 项\\(src/\\*\\* 模块样文件 [1-9]\\d* 个`
+      + ` / 其中已被 test/ 实际到达 [1-9]\\d* 个\\)\\(fail-closed[^)]*\\);`
+      + `源模块豁免表 \\S+ 共 [1-9]\\d* 条\\(表自身失效判红 0 / 表项不达标判红 0`
+      + ` / 基线戳滥用判红 0 / 反向 ratchet stale 判红 0\\)`,
+    ),
+  },
+  {
+    // ⑰ 族的**口径本身**(不是它的某一档):「实际到达」= `isSubjectImport`(值引用)。
+    // ⚠ **这一格是口径换掉之后必须有的那一格**:底板里每个源模块都被**值**引用到达,
+    // 所以若有人把 `reachedSrcModules` 悄悄放宽回「type-only 也算」,**其余 180 多条夹具
+    // 一条都不会翻脸**(它们看不到这个差别)。少这一格,口径就是无人看守的。
+    name: "⑰族口径:仅靠 type-only 引用到达的 src 模块算**未到达**(与 isSubjectImport 同口径)",
+    judgeOnly: true,
+    extra: {
+      ["src/core/typed-only.ts"]: "export const payload = 1;\n",
+      [`${TEST_REL}/core/typed-only-ref.test.js`]: TYPE_ONLY_REF_SEGMENT,
+    },
+    expect: /src\/core\/typed-only\.ts → src-module-unaccounted:/,
+  },
+  {
+    // 上一格的对侧(反向锚点):同一个模块改用**值引用**到达 ⇒ 判绿。
+    // 少了它,上面那格可能只是「恒红」—— 而两格同时在,才证明判据读的是「值的形态」而不是别的。
+    name: "⑰族口径:同一个模块以值引用到达 → 判绿(type-only 排除不误伤真到达)",
+    judgeOnly: true,
+    extra: {
+      ["src/core/typed-only.ts"]: "export const payload = 1;\n",
+      [`${TEST_REL}/core/typed-only-ref.test.js`]: VALUE_REF_SEGMENT,
+    },
+    expect: null,
+    expectAbsent: /src-module-unaccounted/,
   },
   // ---- L5 豁免表:三条 fail-closed + 表项粒度 ----
   // 注入面是 ctx.l5Exemptions(与 readText / listDir / fileExists 同一形态):合成目录上
@@ -3382,6 +3796,42 @@ function runOne(testCase) {
     }
     return;
   }
+  if (testCase.srcModuleExemptionLoad !== undefined) {
+    // ⑰族读表档:走 `loadSrcModuleExemptions` 的**真实读盘路径**(临时合成根),理由与上面两张
+    // 表的读表档逐字同款 —— 注入面按构造永远「读得到」,那一档就无人验证了。
+    // 五种形态各一:文件不在 / JSON 坏了 / 缺 entries / 缺 _baseline 冻结清单 / 形状正确。
+    // ⚠ 「缺 _baseline」那一档是本表**特有**的:基线戳的合法性只由那份清单判定,
+    // 清单缺了若当「没有戳约束」放过去,本族唯一的滥用防线就静默拆掉了。
+    const dir = mkdtempSync(join(tmpdir(), "m2w-src-module-exempt-selftest-"));
+    try {
+      const shape = (/** @type {Record<string, unknown>} */ value) => `${JSON.stringify(value, null, 2)}\n`;
+      if (testCase.srcModuleExemptionLoad === "corrupt") {
+        writeUnder(dir, SRC_MODULE_EXEMPTIONS_REL, "{ this is not json ");
+      } else if (testCase.srcModuleExemptionLoad === "no-entries") {
+        writeUnder(dir, SRC_MODULE_EXEMPTIONS_REL, shape({ _comment: "缺 entries 键" }));
+      } else if (testCase.srcModuleExemptionLoad === "no-baseline") {
+        writeUnder(dir, SRC_MODULE_EXEMPTIONS_REL, shape({ _comment: "缺 _baseline 冻结清单", entries: [] }));
+      } else if (testCase.srcModuleExemptionLoad === "empty") {
+        writeUnder(dir, SRC_MODULE_EXEMPTIONS_REL, shape({
+          _baseline: { date: FIXTURE_BASELINE_DATE, files: [] },
+          entries: [],
+        }));
+      }
+      const { problems: loaded } = loadSrcModuleExemptions(dir);
+      const joined = loaded.join("\n");
+      if (testCase.expect === null ? loaded.length === 0 : testCase.expect.test(joined)) {
+        console.log(`[ok] test-layout-selftest:${testCase.name}(${loaded.length} 条读表诊断)`);
+      } else {
+        throw new Error(
+          `${testCase.name}:期望${testCase.expect === null ? "零读表诊断" : `匹配 ${testCase.expect}`},`
+          + `实际 ${loaded.length} 条\n${joined || "(零诊断)"}`,
+        );
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    return;
+  }
   if (testCase.gateFamily !== undefined) {
     // L11/L12 档:直调判定本体。**不 spawn、不建合成 test/ 树** —— 这两族的面是
     // 「门禁清单 + scripts 表」,与 test/ 树无关(理由见 judgeGate 的注释)。
@@ -3469,6 +3919,7 @@ function runOne(testCase) {
       // 缺省仍是空表 —— 合成树里没有 gates/,如实。
       gateRegistry: testCase.gateRegistry,
       gateSubjectExemptions: testCase.gateSubjectExemptions,
+      srcModuleExemptions: testCase.srcModuleExemptions,
       criteriaOverride: testCase.criteriaOverride,
       // 本族这一条要验的正是「段没接入 ⇒ 判红」,故它的合成段必须保持裸形态 ——
       // 它是唯一一条**不自带** case.js 桩的族二夹具(自带桩就会被桩的存在带过)。
