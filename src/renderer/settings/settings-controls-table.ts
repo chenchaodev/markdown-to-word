@@ -105,10 +105,10 @@ function writePath<K extends BlockKey, P extends BlockField<K>>(
 }
 
 /** 值控件:读设置 / 写设置 / 转控件值 / 回填控件。 */
-export interface ValueEntry<F extends ValueForm, V, C> {
+export interface ValueEntry<F extends ValueForm, V, C, G extends ControlGroup = ControlGroup> {
   readonly kind: "value";
   readonly form: F;
-  readonly group: ControlGroup;
+  readonly group: G;
   readonly reset: ResetPolicy;
   readonly block: BlockKey;
   readonly locator: ControlLocator;
@@ -131,9 +131,9 @@ export interface ValueEntry<F extends ValueForm, V, C> {
  * 展示文本不是设置值本身(路径 → 文件名 / 空值 → 占位文案),故不进回显值映射,
  * 由「设置值驱动的那组同步函数」算(登记见 VALUE_DRIVEN_EFFECTS)。
  */
-export interface ChipEntry {
+export interface ChipEntry<G extends ControlGroup = ControlGroup> {
   readonly kind: "chip";
-  readonly group: ControlGroup;
+  readonly group: G;
   readonly reset: ResetPolicy;
   readonly block: BlockKey;
   /** 抽屉内展示位。 */
@@ -150,9 +150,9 @@ export interface ChipEntry {
  * 派生键:控件值由别的设置反解(预设 id 是「当前设置匹配哪个预设」的结论,
  * 不是 AppSettings 的字段),故无 block;复位时随其来源字段一起重算。
  */
-export interface DerivedEntry {
+export interface DerivedEntry<G extends ControlGroup = ControlGroup> {
   readonly kind: "derived";
-  readonly group: ControlGroup;
+  readonly group: G;
   readonly reset: ResetPolicy;
   readonly locator: { readonly by: "id"; readonly id: string };
 }
@@ -162,10 +162,10 @@ export type ControlEntry = ValueEntry<ValueForm, unknown, unknown> | ChipEntry |
 
 /** 值控件条目(工厂):保住 read / write / toControl 的具体类型 ——
  *  整表用 satisfies 注解会把类型擦成 unknown,派生映射就无从谈起。 */
-function valueEntry<F extends ValueForm, K extends BlockKey, P extends BlockField<K> = never, C = PathValue<K, P>>(
+function valueEntry<F extends ValueForm, K extends BlockKey, P extends BlockField<K> = never, C = PathValue<K, P>, G extends ControlGroup = ControlGroup>(
   spec: {
     readonly form: F;
-    readonly group: ControlGroup;
+    readonly group: G;
     readonly reset: ResetPolicy;
     readonly block: K;
     /** 块内字段名;缺省表示该块是标量顶层键(键即块名)。 */
@@ -175,7 +175,7 @@ function valueEntry<F extends ValueForm, K extends BlockKey, P extends BlockFiel
     readonly toControl?: (value: PathValue<K, P>) => C;
     readonly echo?: readonly string[];
   },
-): ValueEntry<F, PathValue<K, P>, C> {
+): ValueEntry<F, PathValue<K, P>, C, G> {
   const toControl =
     spec.toControl ?? ((value: PathValue<K, P>) => value as unknown as C);
   const read = (settings: AppSettings): PathValue<K, P> =>
@@ -196,22 +196,22 @@ function valueEntry<F extends ValueForm, K extends BlockKey, P extends BlockFiel
   };
 }
 
-function chipEntry(spec: {
-  readonly group: ControlGroup;
+function chipEntry<G extends ControlGroup>(spec: {
+  readonly group: G;
   readonly reset: ResetPolicy;
   readonly block: BlockKey;
   readonly display: string;
   readonly mirrors: readonly string[];
   readonly write: readonly string[];
   readonly read: (settings: AppSettings) => string;
-}): ChipEntry {
+}): ChipEntry<G> {
   return { kind: "chip", ...spec };
 }
 
-function derivedEntry(spec: {
-  readonly group: ControlGroup;
+function derivedEntry<G extends ControlGroup>(spec: {
+  readonly group: G;
   readonly locator: { readonly by: "id"; readonly id: string };
-}): DerivedEntry {
+}): DerivedEntry<G> {
   return { kind: "derived", reset: "derived", ...spec };
 }
 
@@ -574,7 +574,16 @@ export type HookedWriteKey = (typeof HOOKED_WRITE_KEYS)[number];
 /** 某条目所属的组(按清单反推某键归哪一组,故组归属只有一处声明)。 */
 type GroupOf<K extends ControlKey> = (typeof CONTROL_ENTRIES)[K]["group"];
 
-/** 某组自己的那几条写侧钩子(多写/漏写都在 tsc 期报错)。 */
+/**
+ * 某组自己的那几条写侧钩子(多写/漏写都在 tsc 期报错)。
+ *
+ * ⚠ **按组取键依赖三个条目工厂把 `group` 的字面量类型一路穿到 `group` 字段上**:
+ * `GroupOf<K>` 取的是 `(typeof CONTROL_ENTRIES)[K]["group"]` 的**属性级**类型,只有当
+ * 工厂的 `G` 形参从 `spec.group` 推断出来时,每个键才带自己的组字面量。三处工厂的
+ * `group` 若都写成裸 `ControlGroup`,条件 `GroupOf<K> extends G` 就与 K 无关 ——
+ * 只会整体成立或整体落空,**按组这一层静默退化成 `{}`,四张按组登记表一份检查都不剩,
+ * 而 tsc 不会报任何错**。新增第四种工厂时必须同样把 `G` 穿过去。
+ */
 export type WriteHooksOf<G extends ControlGroup> = {
   readonly [K in HookedWriteKey as GroupOf<K> extends G ? K : never]: WriteHook;
 };
