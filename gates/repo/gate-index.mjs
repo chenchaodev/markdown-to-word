@@ -22,12 +22,13 @@
 //
 // ---- `enforcement` 是指针不是清单(同 registry.mjs:846 已写的那句理由)----
 // 强制等级的状态会变、复述即漂移源(与 T5-a「强制等级留门禁源码」同源)。故这里只存
-// `<模块相对路径>#<导出名>`,真有分级表的门禁才写这一条 —— 当前**只有两道**(带这条的项会随新增
+// `<模块相对路径>#<导出名>`,真有分级表的门禁才写这一条 —— 当前**只有三道**(带这条的项会随新增
 // 门禁增减;要重新取它跑 `node -e "import('./gates/repo/gate-index.mjs').then(m=>console.log(Object.keys(m.GATE_INDEX).filter(k=>m.GATE_INDEX[k].enforcement).join(',')))"`):
 //   - `check-test-layout.mjs#CRITERIA`(判据登记表;族数会随增删判据变,取它跑
 //     `node -e "import('./gates/repo/check-test-layout.mjs').then(m=>console.log(m.CRITERIA.length))"`)
 //   - `check-import-boundary.mjs#LAYER_RULES`(层向规则的 deny-list;条数同理,取它跑
 //     `node -e "import('./gates/repo/check-import-boundary.mjs').then(m=>console.log(m.LAYER_RULES.length))"`)
+//   - `check-selftest-mutation-guard.mjs#MUTATION_GUARDS`(闭合清单里哪条自守标记 required)
 // 其余门禁**没有**这一条:白名单 / 豁免表(如 `check-temp-cleanup` 的 `ALLOWLIST`、
 // `check-changelog` 的规则表)语义是「豁免」不是「强制等级」,给它们编一个指针会让读的人
 // 以为那里也有一张分级表。
@@ -375,6 +376,17 @@ export const GATE_INDEX = Object.freeze(
       modulePath: "gates/repo/check-docs.mjs",
       judgment: { module: "gates/repo/check-pointers.mjs", export: "main", shaped: "退出码(0 = 通过 / 1 = 有错)" },
     },
+    "selftest-mutation-guard": {
+      id: "selftest-mutation-guard",
+      npmScripts: ["check:selftest-mutation-guard"],
+      access: ACCESS_CHAIN,
+      modulePath: "gates/repo/check-selftest-mutation-guard.mjs",
+      judgment: { module: "gates/repo/check-selftest-mutation-guard.mjs", export: "judgeSelftestMutationGuards", shaped: "{ problems: string[], stats: { total, mutating, guarded }, classified: string[] }" },
+      // 判据分级落在「哪些自守标记是**必须**的」上(闭合清单里仅 `mutation-effective` 一条
+      // required:true,其余为可选);required 条目另受自测的双向 ratchet 守着(摘掉即判红)。
+      enforcement: "gates/repo/check-selftest-mutation-guard.mjs#MUTATION_GUARDS",
+    },
+
     "test-layout": {
       id: "test-layout",
       npmScripts: ["check:test-layout"],

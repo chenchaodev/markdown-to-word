@@ -841,6 +841,16 @@ export const GATE_SELFTEST_CASE_SOURCES = Object.freeze([
     ]),
   }),
   Object.freeze({
+    file: "gates/repo/check-selftest-mutation-guard.selftest.mjs",
+    // 档名分布在两张顶层表(分类档 / 判定档)与若干内联 `suite.case(...)` 上,三者并存;
+    // 少列一条即抽不全 —— 「册有源无 / 源有册无」两向差集任一方向失衡都会判红。
+    strategies: Object.freeze([
+      Object.freeze({ kind: "table-field", table: "CLASSIFY_CASES", field: "name" }),
+      Object.freeze({ kind: "table-field", table: "JUDGE_CASES", field: "name" }),
+      Object.freeze({ kind: "inline-case" }),
+    ]),
+  }),
+  Object.freeze({
     file: "gates/repo/check-src-layout.selftest.mjs",
     // ⚠ **唯一一份「内联表」形态**:表驱动档走三张顶层表,而白名单 / 塌缩那 4 组把
     // `cases: [...]` **就地内联**在 `runSyntheticRootCases({...})` 的实参里 ——

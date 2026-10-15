@@ -41,7 +41,6 @@
 | REQ-020 | 批量重命名 | 待拍板 | 2026-08-16 当初否决：边缘便利（维持砍）。2026-09-29 用户裁决恢复为待拍板。 | 随时 | 无 |
 | REQ-021 | 代码高亮主题切换 | 待拍板 | 2026-08-16 当初否决：仅 pdf 有意义，打印需求趋零（维持砍）。2026-09-29 用户裁决恢复为待拍板。 | 随时 | 无 |
 | REQ-163 | 库模式（npm 包） | 未开工 | 由 REQ-006 拆出。core 纯度已实测达标但打包面为零：本仓 `private: true`、无 `bin`/`exports`/`types`，`tsconfig.json` 无 `declaration` 键 ⇒ dist 不产 `.d.ts`，对外暴露类型需新增该键。与 MCP 无技术共同点故拆号 | 「是否对外发 npm 包」决策后开工 | docs/adr/ADR-060-多层交付面与headless装配层.md |
-| REQ-245 | 自测夹具的文本变异匹配对行尾敏感 | 待拍板 | 2026-10-15 发版实测:本轮新增的 check-image-digests.selftest.mjs 里,mutateAndRun 先把内容归一到 LF 并在归一结果上校验 from 存在,却先转回检出形态的 EOL 再拿 LF 写就的 from 做替换 ⇒ Windows runner(core.autocrlf=true 检出转 CRLF)下变异成为空操作:CI 恒红、本地恒绿。该形态在本仓第四次复发。已修该处,但无机器判据要求自测的变异匹配对行尾不敏感。 | 新增带文本变异的自测夹具时 | gates/fixtures/check-image-digests.selftest.mjs(mutateAndRun,2026-10-15 已修并留 why 注释) · .gitattributes(同形态前三次复发的记录) · 提交 c874f30 |
 
 ## 在办
 
@@ -251,6 +250,7 @@
 | REQ-242 | 间接动态 import 对静态抽取器不可见 | 已完成 | 已闭合：改 2 个文件 5 处，把那 5 个模块换成字面量 import()（保持动态不动静态），删掉 5 条 indirect-load-not-visible 表项。L5 实测零新增（侦察的 8 条是全量清扫数字）；_baseline 未动。残留债：61 处可字面化点未扫。 | 动 `extractImports` 或给它加新调用方时 | docs/evidence/20261014-201028-REQ196源模块交代门禁的口径裁决与留痕.md（第九节） |
 | REQ-243 | 测试侧动态 import 字面量化与 helper 去参数化 | 已完成 | 已闭合：61 处包装形态字面量化 + 两 helper 去形参（5 个调用方实测解析到同一文件）。L5 补 9 条、src-module 删 14 条 stale，⑰ 已到达 84→98，残留包装形态零命中。附带发现 WriteHooksOf 按组窄化失效，另立 REQ-244。 | 新增 dist 模块加载点时 | docs/evidence/20261014-201028-REQ196源模块交代门禁的口径裁决与留痕.md（第十节） |
 | REQ-244 | WriteHooksOf 按组窄化失效 | 已完成 | 已闭合：三处工厂加泛形参 G，按组取键恢复。探针实证由「漏键/越权均零错误」翻为 TS2741/TS2353，且 **src 改后仍零错误**（四张既有登记表本就正确，是检查在确认它们）。新增 why 注释防同类静默失效。残留：mirror 组的 format 至今无键集检查。 | 新增第四种条目工厂时 | docs/evidence/20261014-224211-WriteHooksOf按组窄化失效的类型事实.md |
+| REQ-245 | 自测夹具的文本变异匹配对行尾敏感 | 已完成 | 已闭合:新增 check:selftest-mutation-guard,判「gates 下做文本变异的 selftest 必须带变异生效自守」。实测 26 份里判出 6 份文本变异型(自守齐全),另设恒绿防护挡分类失效。按用户裁决只补这道判据,未动那 6 份的匹配逻辑。已知局限逐条写进判据本体。 | 新增带文本变异的自测夹具时 | gates/repo/check-selftest-mutation-guard.mjs（判定本体与闭合清单）· 同名 .selftest.mjs（9 档）· gates/repo/check-test-layout.mjs（GATE_SELFTEST_CASE_SOURCES 登记行） |
 ## 已作废
 
 = 需求被**终审否决**，行**永久保留**、**号永不复用**。否决理由与复活条件在本行；长篇依据在「分析在哪」。
