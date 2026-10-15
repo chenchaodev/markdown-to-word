@@ -458,10 +458,10 @@
             data-i18n-aria-label="settings.title" aria-label="设置">
             <button type="button" class="settings-tab active" id="settingsTab-preset" role="tab"
               aria-selected="true" aria-controls="settingsPanel-preset" tabindex="0"
-              data-group="preset" data-i18n="settings.groupPreset">预 设</button>
+              data-group="preset" data-i18n="settings.groupPreset">预设</button>
             <button type="button" class="settings-tab" id="settingsTab-typography" role="tab"
               aria-selected="false" aria-controls="settingsPanel-typography" tabindex="-1"
-              data-group="typography" data-i18n="settings.groupTypography">排 版</button>
+              data-group="typography" data-i18n="settings.groupTypography">排版</button>
             <button type="button" class="settings-tab" id="settingsTab-headerwatermark" role="tab"
               aria-selected="false" aria-controls="settingsPanel-headerwatermark" tabindex="-1"
               data-group="headerwatermark" data-i18n="settings.groupHeaderWatermark">页眉页脚与水印</button>
@@ -470,16 +470,16 @@
               data-group="numbering" data-i18n="settings.groupNumbering">编号与目录</button>
             <button type="button" class="settings-tab" id="settingsTab-convert" role="tab"
               aria-selected="false" aria-controls="settingsPanel-convert" tabindex="-1"
-              data-group="convert" data-i18n="settings.groupConvert">转 换</button>
+              data-group="convert" data-i18n="settings.groupConvert">转换</button>
             <button type="button" class="settings-tab" id="settingsTab-app" role="tab"
               aria-selected="false" aria-controls="settingsPanel-app" tabindex="-1"
-              data-group="app" data-i18n="settings.groupApp">应 用</button>
+              data-group="app" data-i18n="settings.groupApp">应用</button>
           </nav>
           <div class="settings-panels">
           <!-- ── 01 预设:风格起点与其管理(本体入预设) ── -->
           <section class="sec active" id="settingsPanel-preset" role="tabpanel"
             aria-labelledby="settingsTab-preset" data-group="preset">
-            <div class="sec-h"><span class="sec-num">01</span><span class="sec-title" data-i18n="settings.groupPreset">预 设</span><span class="sec-rule"></span></div>
+            <div class="sec-h"><span class="sec-num">01</span><span class="sec-title" data-i18n="settings.groupPreset">预设</span><span class="sec-rule"></span></div>
             <div class="setting-field">
               <label class="setting-label" for="templatePreset" data-i18n="settings.presetLabel">模板预设</label>
               <!-- sel-wrap:原生 select + 自绘箭头(guidelines §2 sel 模式;自定义预设可达
@@ -525,7 +525,7 @@
           <!-- ── 02 排版:物理页面 + 字符段落(合并原 02 页面 + 03 文字,✅入预设) ── -->
           <section class="sec" id="settingsPanel-typography" role="tabpanel"
             aria-labelledby="settingsTab-typography" data-group="typography">
-            <div class="sec-h"><span class="sec-num">02</span><span class="sec-title" data-i18n="settings.groupTypography">排 版</span><span class="sec-rule"></span></div>
+            <div class="sec-h"><span class="sec-num">02</span><span class="sec-title" data-i18n="settings.groupTypography">排版</span><span class="sec-rule"></span></div>
             <!-- 枚举 ≤5 → seg 分段(guidelines §3.1 映射表);radio 语义保留,
                   name="paper"/name="orientation" 与 settings-bindings 的组绑定对应。
                   同名 radio 组在快速参数条中镜像一份(document 级同组成组),
@@ -777,7 +777,7 @@
           <!-- ── 05 转换(不入任何预设,合并原 09 AI/Obsidian + 07 输出) ── -->
           <section class="sec" id="settingsPanel-convert" role="tabpanel"
             aria-labelledby="settingsTab-convert" data-group="convert">
-            <div class="sec-h"><span class="sec-num">05</span><span class="sec-title" data-i18n="settings.groupConvert">转 换</span><span class="scope-tag" data-i18n="settings.tagNotInPreset">不入预设</span><span class="sec-rule"></span></div>
+            <div class="sec-h"><span class="sec-num">05</span><span class="sec-title" data-i18n="settings.groupConvert">转换</span><span class="scope-tag" data-i18n="settings.tagNotInPreset">不入预设</span><span class="sec-rule"></span></div>
             <div class="sw-row">
               <span>
                 <span class="row-l" id="aiCleanupLabel" data-i18n="settings.aiCleanup">AI 清理</span>
@@ -815,6 +815,7 @@
             </div>
             <div class="row block">
               <label class="row-l" for="obsidianAttachmentFolder" data-i18n="settings.obsidianAttachmentFolder">Obsidian 附件子文件夹</label>
+              <div class="row-sub" data-i18n="settings.obsidianAttachmentFolderDesc">用于解析 ![[图片]] 路径前缀（默认 Attachments）</div>
               <input type="text" id="obsidianAttachmentFolder" class="tin" style="width: 100%" />
             </div>
             <div class="row block">
@@ -882,7 +883,7 @@
           <!-- ── 06 应用(不入任何预设) ── -->
           <section class="sec" id="settingsPanel-app" role="tabpanel"
             aria-labelledby="settingsTab-app" data-group="app">
-            <div class="sec-h"><span class="sec-num">06</span><span class="sec-title" data-i18n="settings.groupApp">应 用</span><span class="scope-tag" data-i18n="settings.tagNotInPreset">不入预设</span><span class="sec-rule"></span></div>
+            <div class="sec-h"><span class="sec-num">06</span><span class="sec-title" data-i18n="settings.groupApp">应用</span><span class="scope-tag" data-i18n="settings.tagNotInPreset">不入预设</span><span class="sec-rule"></span></div>
             <div class="row">
               <span class="row-l" data-i18n="settings.groupAppearance">主题</span>
               <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.groupAppearance" aria-label="主题">
