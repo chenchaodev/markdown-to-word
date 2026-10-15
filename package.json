@@ -135,7 +135,8 @@
       "!dist/**/*.d.{ts,cts,mts}",
       "package.json",
       "!node_modules/highlight.js/styles/**",
-      "!node_modules/**/*.map"
+      "!node_modules/**/*.map",
+      "!node_modules/**/*.d.{ts,cts,mts}"
     ],
     "extraFiles": [
       {
