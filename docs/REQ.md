@@ -12,8 +12,8 @@
 
 | 项 | 值 |
 |---|---|
-| 已用最大号 | REQ-245 |
-| 下一个可用号 | REQ-246 |
+| 已用最大号 | REQ-246 |
+| 下一个可用号 | REQ-247 |
 
 「已用最大号」= 下方四节里出现过的最大号，**含待拍板与未开工的行** —— 那些需求已经占号，不因尚未开工而退回池子。
 
@@ -251,6 +251,7 @@
 | REQ-243 | 测试侧动态 import 字面量化与 helper 去参数化 | 已完成 | 已闭合：61 处包装形态字面量化 + 两 helper 去形参（5 个调用方实测解析到同一文件）。L5 补 9 条、src-module 删 14 条 stale，⑰ 已到达 84→98，残留包装形态零命中。附带发现 WriteHooksOf 按组窄化失效，另立 REQ-244。 | 新增 dist 模块加载点时 | docs/evidence/20261014-201028-REQ196源模块交代门禁的口径裁决与留痕.md（第十节） |
 | REQ-244 | WriteHooksOf 按组窄化失效 | 已完成 | 已闭合：三处工厂加泛形参 G，按组取键恢复。探针实证由「漏键/越权均零错误」翻为 TS2741/TS2353，且 **src 改后仍零错误**（四张既有登记表本就正确，是检查在确认它们）。新增 why 注释防同类静默失效。残留：mirror 组的 format 至今无键集检查。 | 新增第四种条目工厂时 | docs/evidence/20261014-224211-WriteHooksOf按组窄化失效的类型事实.md |
 | REQ-245 | 自测夹具的文本变异匹配对行尾敏感 | 已完成 | 已闭合:新增 check:selftest-mutation-guard,判「gates 下做文本变异的 selftest 必须带变异生效自守」。实测 26 份里判出 6 份文本变异型(自守齐全),另设恒绿防护挡分类失效。按用户裁决只补这道判据,未动那 6 份的匹配逻辑。已知局限逐条写进判据本体。 | 新增带文本变异的自测夹具时 | gates/repo/check-selftest-mutation-guard.mjs（判定本体与闭合清单）· 同名 .selftest.mjs（9 档）· gates/repo/check-test-layout.mjs（GATE_SELFTEST_CASE_SOURCES 登记行） |
+| REQ-246 | 仓库级 EOL 策略：检出也统一 LF | 已完成 | 首条改 text=auto eol=lf,四条定点 pin 退役(binary 七条保留,那不是行尾策略)。交付时确认:形态分布取 git ls-files --eol 已归零 crlf/mixed、与 HEAD 零 diff、全链 verify:ci exit 0。 | 有人把 eol=lf 放宽,或 CRLF 再从仓外溜进来时 | 决策与实测依据在 .gitattributes 首条注释(旧裁决为何不成立、三形态拼布) |
 ## 已作废
 
 = 需求被**终审否决**，行**永久保留**、**号永不复用**。否决理由与复活条件在本行；长篇依据在「分析在哪」。
