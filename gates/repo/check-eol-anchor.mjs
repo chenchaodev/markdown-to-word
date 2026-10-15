@@ -1,11 +1,16 @@
 // 行尾敏感锚点门禁(纯文本判定,无产物、幂等,exit 0/1)。
 //
 // ---- 它守住什么 ----
-// 检出态的行尾由各端 `core.autocrlf` 决定(`.gitattributes` 的 `* text=auto` + Windows runner
-// 的 autocrlf=true ⇒ CI 上检出即 CRLF),而本仓的门禁与验收段大量**读文件文本**。
-// 一旦读进来的是 CRLF 而判据用**字面量 LF** 做锚,失效形态是**静默**的:
-// 判据一条都匹配不上 → 抽出空表/空集 → 以「与本次改动无关」的行数红,或干脆恒绿。
-// REQ-202 记的那天 CI 连红四次,四次同族(检出为 CRLF × 判据用字面量 LF 锚点),就是这一族。
+// 本仓的门禁与验收段大量**读文件文本**。一旦读进来的是 CRLF 而判据用**字面量 LF** 做锚,
+// 失效形态是**静默**的:判据一条都匹配不上 → 抽出空表/空集 → 以「与本次改动无关」的行数红,
+// 或干脆恒绿。REQ-202 记的那天 CI 连红四次,四次同族(检出为 CRLF × 判据用字面量 LF 锚点),
+// 就是这一族。
+//
+// ⚠ **2026-10-15 起它从「日常风险」变成「回归护栏」**:`.gitattributes` 首条已改为
+//   `* text=auto eol=lf`,检出侧不再是各端 autocrlf 说了算,工作树理应只有一种形态。
+//   本门禁**保留** —— 它守的正是「这个理应」不被悄悄放宽,以及 CRLF 从别处溜进来:
+//   手工粘贴、仓外拷入、生成器落盘、或有人把 `eol=lf` 改回去。判红文案因此改写为
+//   「形态被从外部破坏」,而不是「按设计如此」。
 //
 // **本门禁只做检测,不做归一原语的收口**:收口跨树(`shared/` 零跨树出边,承载不了
 // `gates/` 的调用),是另一条工作线。本门禁的价值是让下一次写这种代码在**当场**红。
@@ -792,7 +797,7 @@ export const SELF_PROBE = Object.freeze([
   {
     id: "probe-in-memory-string-is-not-read-derived",
     expectHit: false,
-    // 合成字符串 / 内存拼接:不经盘,行尾不由 autocrlf 决定 ⇒ 不判
+    // 合成字符串 / 内存拼接:不经盘 ⇒ 不经检出转换 ⇒ 不判
     code: [
       "export function synth(name) {",
       "  const lines = `| ${name} |`.split('\\n');",
@@ -979,9 +984,11 @@ export async function main(argv = [], base = {}) {
         + `豁免 ${EXEMPTIONS.length} 条,本次命中 ${result.allowHits} 条,按设计零命中 ${result.allowCold} 条)`,
     );
     console.error(
-      "[eol-anchor:fail] 检出态行尾由各端 autocrlf 决定(CI 的 Windows runner 检出即 CRLF),"
-        + "而 `split('\\n')` 切出的每一行在 CRLF 下尾部挂一个 `\\r`:空行判定恒假、"
-        + "两侧逐行比对恒不等、整行定位恒不命中。**修法不是把 `\\n` 改成 `\\r?\\n`** —— "
+      "[eol-anchor:fail] 工作树按 `.gitattributes` 的 `* text=auto eol=lf` 理应只有 LF 形态"
+        + "(gitattributes 的 eol 优先于 core.autocrlf),出现命中说明 CRLF 是**从外部溜进来的**"
+        + "—— 仓外拷入 / 手工粘贴 / 生成器落盘 / 有人把策略放宽了。此时 `split('\\n')` 切出的"
+        + "每一行尾部挂一个 `\\r`:空行判定恒假、两侧逐行比对恒不等、整行定位恒不命中。"
+        + "**修法不是把 `\\n` 改成 `\\r?\\n`** —— "
         + "那只改这一处判定,下一处读文本的地方照样中招;正路是**在读入侧归一**"
         + "(`.replace(/\\r\\n/g, '\\n')`,或复用已收口的 `test/harness/eol.js` 的 normalizeEol)。"
         + "确属已容错 / 合成字符串等非雷形态,在 gates/repo/check-eol-anchor.mjs 的 EXEMPTIONS "
