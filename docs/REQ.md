@@ -12,8 +12,8 @@
 
 | 项 | 值 |
 |---|---|
-| 已用最大号 | REQ-244 |
-| 下一个可用号 | REQ-245 |
+| 已用最大号 | REQ-245 |
+| 下一个可用号 | REQ-246 |
 
 「已用最大号」= 下方四节里出现过的最大号，**含待拍板与未开工的行** —— 那些需求已经占号，不因尚未开工而退回池子。
 
@@ -41,6 +41,7 @@
 | REQ-020 | 批量重命名 | 待拍板 | 2026-08-16 当初否决：边缘便利（维持砍）。2026-09-29 用户裁决恢复为待拍板。 | 随时 | 无 |
 | REQ-021 | 代码高亮主题切换 | 待拍板 | 2026-08-16 当初否决：仅 pdf 有意义，打印需求趋零（维持砍）。2026-09-29 用户裁决恢复为待拍板。 | 随时 | 无 |
 | REQ-163 | 库模式（npm 包） | 未开工 | 由 REQ-006 拆出。core 纯度已实测达标但打包面为零：本仓 `private: true`、无 `bin`/`exports`/`types`，`tsconfig.json` 无 `declaration` 键 ⇒ dist 不产 `.d.ts`，对外暴露类型需新增该键。与 MCP 无技术共同点故拆号 | 「是否对外发 npm 包」决策后开工 | docs/adr/ADR-060-多层交付面与headless装配层.md |
+| REQ-245 | 自测夹具的文本变异匹配对行尾敏感 | 待拍板 | 2026-10-15 发版实测:本轮新增的 check-image-digests.selftest.mjs 里,mutateAndRun 先把内容归一到 LF 并在归一结果上校验 from 存在,却先转回检出形态的 EOL 再拿 LF 写就的 from 做替换 ⇒ Windows runner(core.autocrlf=true 检出转 CRLF)下变异成为空操作:CI 恒红、本地恒绿。该形态在本仓第四次复发。已修该处,但无机器判据要求自测的变异匹配对行尾不敏感。 | 新增带文本变异的自测夹具时 | gates/fixtures/check-image-digests.selftest.mjs(mutateAndRun,2026-10-15 已修并留 why 注释) · .gitattributes(同形态前三次复发的记录) · 提交 c874f30 |
 
 ## 在办
 
