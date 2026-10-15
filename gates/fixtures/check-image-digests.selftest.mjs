@@ -113,7 +113,13 @@ function mutateAndRun(from, to) {
     throw new Error(`变异定位失败:${checkerPath} 里找不到 ${JSON.stringify(from)}`);
   }
   if (from === to) throw new Error("变异是空操作:结论会是假的");
-  const mutated = (eol === "\n" ? probe : probe.replace(/\n/g, eol)).replace(from, to);
+  // ⚠ **替换必须在归一后的 `probe` 上做,EOL 转回放在其后**:反过来(先把 probe 转回 CRLF
+  // 再拿 LF 写就的 `from` 去匹配)在 CRLF 检出下必然匹配不上,变异成为空操作,
+  // :117 那道自守随即报「变异未改变文件内容」—— 本地(LF 落盘)绿、CI(Windows runner
+  // 的 autocrlf 检出转 CRLF)恒红。本仓已为同类形态在 `.gitattributes` 里定点钉过四组文件,
+  // 那是治检出;此处治的是「变异匹配不该对行尾敏感」,两层都要留。
+  const replaced = probe.replace(from, to);
+  const mutated = eol === "\n" ? replaced : replaced.replace(/\n/g, eol);
   if (mutated === original) throw new Error("变异未改变文件内容:结论会是假的");
   writeFileSync(checkerPath, mutated, "utf8");
   /** @type {{ status: number | null, stdout: string, stderr: string, restored: boolean }} */
