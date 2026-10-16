@@ -224,6 +224,9 @@ export const fixtures = null;
  *   - unregister-gate:把 tocModeVisibility 这条门控从 CONTROL_GATES 登记里摘掉
  *                     → 期望红在「关掉自动目录:change 路径应同步收起目录下拉」
  *                     (门控的 change 侧接缝按登记反查,摘掉即静默不生效)。
+ *   - factory-bare-generic:把 chipEntry 工厂的返回类型从 `ChipEntry<G>` 抹成裸 `ChipEntry`
+ *                     → 期望红在「条目工厂把组泛型 G 穿到 group」(纯类型层失效,运行期不可见:
+ *                     四张按组写侧登记表会静默退化而 tsc 零诊断,只能由源文本判据钉住)。
  * 用法:M2W_ONLY=settings-controls M2W_PROBE=ref-id npm run test
  */
 const PROBE = process.env.M2W_PROBE ?? "";
@@ -239,6 +242,7 @@ const PROBE = process.env.M2W_PROBE ?? "";
  * @property {string[]} ids 元素 id 集合
  * @property {string[]} radioNames radio 组名集合
  * @property {boolean} hooked 是否声明了写侧钩子
+ * @property {string | null} labelKey 控件行标签的字典键(抽屉外镜像/顶栏控件为 null)
  */
 
 /**
@@ -1036,6 +1040,20 @@ bindings.bindSettingsEvents({ renderSelection: () => {} });
     assertRefContract(refsSource, indexHtml);
   });
 
+  // 负探针 · factory-bare-generic:只改坏声明表源码文本(断言逻辑一行不动),
+  // 自证下面这条工厂泛型护栏真会变红。判据面是**源文本**而非运行态:该失效是纯类型层的
+  // (四张按组写侧登记表静默退化),跑起来与改前逐字节同形,运行期断言无从察觉。
+  let tableSource = fs.readFileSync(
+    path.join(ROOT, "src", "renderer", "settings", "settings-controls-table.ts"),
+    "utf8",
+  );
+  if (PROBE === "factory-bare-generic") {
+    tableSource = tableSource.replace("}): ChipEntry<G> {", "}): ChipEntry {");
+  }
+  await suite.case("契约 · 条目工厂把组泛型 G 穿到 group(按组登记表非空的前提)", () => {
+    assertFactoryGroupGeneric(tableSource);
+  });
+
   // 负探针 · mislabel:把 theme 的复位口径**误标**成 reset(只改输入:直接改 dist 产物里
   // 的表条目,断言逻辑一行不动)。theme 属应用偏好,抽屉「恢复默认」刻意保留 ——
   // 误标后它会被算进复位集,期望红在「保留集双向一致」与「复位集 ⊆ 顶层键 − 保留集」。
@@ -1204,6 +1222,25 @@ async function assertTableContract(check, table, controls, indexHtml, defaults, 
       assert(
         DRAWER_GROUP_BY_KEY.get(row.key) === row.group,
         `声明表条目 ${row.key} 的组归属 ${row.group} 与几何规格 ${DRAWER_GROUP_BY_KEY.get(row.key)} 不一致`,
+      );
+    }
+  });
+
+  // 跨组检索的标签单源(ADR-077):抽屉内**每一条**都必须带 labelKey,镜像/顶栏条目必须没有 ——
+  // 检索按 `t(labelKey)` 取文案,漏一条的后果是该控件的标签检索不到(静默少一个命中),
+  // 而镜像条目带上它会让检索把抽屉外的控件也算进来(与「跨六组」的口径不符)。
+  await check("契约 · 抽屉内条目逐个带检索标签,抽屉外条目不带", () => {
+    for (const row of rows) {
+      if (row.group === "mirror") {
+        assert(
+          row.labelKey === null,
+          `抽屉外条目 ${row.key} 不应带 labelKey(它不参与抽屉内检索),实际 ${JSON.stringify(row.labelKey)}`,
+        );
+        continue;
+      }
+      assert(
+        typeof row.labelKey === "string" && row.labelKey.length > 0,
+        `抽屉内条目 ${row.key} 没有 labelKey —— 它在跨组检索里检索不到(标签单源在声明表,漏声明即静默漏一条命中)`,
       );
     }
   });
@@ -1416,6 +1453,50 @@ export function assertRefContract(refsSource, htmlSource) {
     assert(
       groupNames.has(name),
       `refs.ts 的 radio 组选择器 input[name="${name}"] 在 index.html 命中 0 个元素(拼错会静默空转)`,
+    );
+  }
+}
+
+/**
+ * 条目工厂的组泛型穿线判据(纯判定:读声明表源码文本,不碰任何运行态;
+ * 负探针与 run() 共用同一函数,保证自证走的是真实判定)。
+ *
+ * ⚠ **为什么必须判、且只能判源文本**:三处工厂的 `G` 形参若不从 `spec.group` 推断出来
+ * (写死成裸 `ControlGroup`),`WriteHooksOf<G>` 里 `GroupOf<K> extends G` 就与 K 无关 ——
+ * 四张按组写侧登记表(`WriteHooksOf<"preset">` 等)静默退化成 `{}` / 全量,而 **tsc 一条
+ * 诊断都不报**(见 settings-controls-table.ts 里 WriteHooksOf 的注)。该失效是**纯类型层**的:
+ * 编译产物与改前逐字节同形,任何运行期断言都无从察觉 ⇒ 只能钉住三处签名的源文本。
+ *
+ * 判三件事:形参带 `G extends ControlGroup`、spec 的 `group` 字段是 `G`、返回类型把 `G` 穿过去。
+ *
+ * @param {string} source settings-controls-table.ts 源码
+ * @returns {void} 有偏差即抛
+ */
+export function assertFactoryGroupGeneric(source) {
+  /** 三处工厂:名 → 返回类型的期望片段。 */
+  const factories = [
+    ["valueEntry", "ValueEntry<F, PathValue<K, P>, C, G>"],
+    ["chipEntry", "ChipEntry<G>"],
+    ["derivedEntry", "DerivedEntry<G>"],
+  ];
+  for (const [name, returnType] of factories) {
+    const at = source.indexOf(`function ${name}<`);
+    assert(at >= 0, `声明表里找不到条目工厂 ${name} 的定义(改名后本判据会静默失效)`);
+    // spec 类型体里没有嵌套花括号,故首个 `}` 即 spec 的收尾 —— 头部 = 泛型形参 + 参数类型
+    const headEnd = source.indexOf("}", at);
+    assert(headEnd > at, `条目工厂 ${name} 的 spec 参数类型没找到收尾花括号(形态变了,本判据需同步)`);
+    const head = source.slice(at, headEnd + 1);
+    assert(
+      head.includes("G extends ControlGroup"),
+      `条目工厂 ${name} 丢了 \`G extends ControlGroup\` 泛型形参 —— 裸 ControlGroup 会让四张按组写侧登记表静默退化`,
+    );
+    assert(
+      /readonly\s+group:\s*G;/.test(head),
+      `条目工厂 ${name} 的 spec.group 未声明为泛型 G(G 没从 spec.group 推断出来)`,
+    );
+    assert(
+      source.slice(headEnd).includes(`): ${returnType} {`),
+      `条目工厂 ${name} 的返回类型未把 G 穿过去(期望 \`): ${returnType} {\`)`,
     );
   }
 }

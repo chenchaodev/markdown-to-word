@@ -272,7 +272,20 @@ const dict = {
     "settings.stepIncreaseAria": "增大字号",
     "settings.firstLineIndent": "首行缩进 2 字符",
     "settings.firstLineIndentDesc": "正文段落首行缩进 2 字符",
-    "settings.sectionParagraph": "段 落",
+    // 组内段标签(P2 · ADR-077):只做视觉分段与检索落点,不是折叠层。
+    // zh 值一律不写字间硬空格 —— 字距由 .sub-label 的 letter-spacing 出(ADR-077 后果节)
+    "settings.sectionPage": "页面",
+    "settings.sectionText": "文字",
+    "settings.sectionParagraph": "段落",
+    "settings.sectionWatermark": "水印",
+    "settings.sectionCleanup": "清理",
+    "settings.sectionOutput": "产物",
+    "settings.sectionPdfStyle": "PDF 样式",
+    // 跨组检索(P2 · ADR-077):控件标签经声明表 labelKey 单源取,此处只放框体与状态行文案
+    "settings.searchAria": "搜索设置项",
+    "settings.searchPlaceholder": "搜索设置项…",
+    "settings.searchHits": "匹配 ${count} 项",
+    "settings.searchNoHits": "没有匹配的设置项",
     "settings.align": "对齐方式",
     "settings.alignLeft": "左对齐",
     "settings.alignJustify": "两端对齐",

@@ -449,31 +449,73 @@
             </svg>
           </button>
         </header>
+        <!-- 跨组检索(P2 · ADR-077):形态沿用 .tin(guidelines §2 搜索过滤框 filter-box)。
+             输入即跨六组过滤控件(不隐藏任何控件,只跳转 + 计数)—— 控件标签经声明表
+             labelKey 单源取,本文件不列任何「控件 → 标签」清单。
+             它不是分组导航的一员:刻意不带 role="tab"/"tabpanel"(几何规格与静态契约
+             都按 === 6 计数 tab 与 tabpanel),也不入声明表(非持久化设置项)。 -->
+        <div class="drawer-search">
+          <input
+            type="search"
+            id="settingsFilter"
+            class="tin filter-box"
+            placeholder="搜索设置项…"
+            aria-label="搜索设置项"
+            data-i18n-placeholder="settings.searchPlaceholder"
+            data-i18n-aria-label="settings.searchAria"
+            aria-describedby="settingsFilterStatus"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <!-- 检索状态行(命中数 / 无命中空态):内容按当前语言与查询重算,故不带 data-i18n -->
+          <p id="settingsFilterStatus" class="settings-note filter-status" role="status"></p>
+        </div>
         <div class="drawer-body">
           <!-- 分组导航 = 标准 tablist/tab(竖向):选中态由 aria-selected 声明,
                面板经 aria-controls/aria-labelledby 双向关联。
-               ⚠ 切换时 aria-selected/roving tabindex 的同步在 settings-panel
-               initSettingsTabs()(本轮写入范围外),当前仅有初始态正确。 -->
+               切换时 aria-selected/roving tabindex 的同步 + ↑↓/Home/End 在 settings-panel
+               initSettingsTabs()(P2 已落);组名与命中数分两个 span 是有意的:applyStaticTexts
+               会把 [data-i18n] 节点的 textContent 整段重写,命中数若挂在带 data-i18n 的元素上
+               会在语言切换时被抹掉。
+               命中数 span 无 data-i18n(内容由 initSettingsSearch 按当前语言/查询重算)。 -->
           <nav class="settings-tabs" role="tablist" aria-orientation="vertical"
             data-i18n-aria-label="settings.title" aria-label="设置">
             <button type="button" class="settings-tab active" id="settingsTab-preset" role="tab"
               aria-selected="true" aria-controls="settingsPanel-preset" tabindex="0"
-              data-group="preset" data-i18n="settings.groupPreset">预设</button>
+              data-group="preset">
+              <span class="tab-name" data-i18n="settings.groupPreset">预设</span>
+              <span class="tab-count"></span>
+            </button>
             <button type="button" class="settings-tab" id="settingsTab-typography" role="tab"
               aria-selected="false" aria-controls="settingsPanel-typography" tabindex="-1"
-              data-group="typography" data-i18n="settings.groupTypography">排版</button>
+              data-group="typography">
+              <span class="tab-name" data-i18n="settings.groupTypography">排版</span>
+              <span class="tab-count"></span>
+            </button>
             <button type="button" class="settings-tab" id="settingsTab-headerwatermark" role="tab"
               aria-selected="false" aria-controls="settingsPanel-headerwatermark" tabindex="-1"
-              data-group="headerwatermark" data-i18n="settings.groupHeaderWatermark">页眉页脚与水印</button>
+              data-group="headerwatermark">
+              <span class="tab-name" data-i18n="settings.groupHeaderWatermark">页眉页脚与水印</span>
+              <span class="tab-count"></span>
+            </button>
             <button type="button" class="settings-tab" id="settingsTab-numbering" role="tab"
               aria-selected="false" aria-controls="settingsPanel-numbering" tabindex="-1"
-              data-group="numbering" data-i18n="settings.groupNumbering">编号与目录</button>
+              data-group="numbering">
+              <span class="tab-name" data-i18n="settings.groupNumbering">编号与目录</span>
+              <span class="tab-count"></span>
+            </button>
             <button type="button" class="settings-tab" id="settingsTab-convert" role="tab"
               aria-selected="false" aria-controls="settingsPanel-convert" tabindex="-1"
-              data-group="convert" data-i18n="settings.groupConvert">转换</button>
+              data-group="convert">
+              <span class="tab-name" data-i18n="settings.groupConvert">转换</span>
+              <span class="tab-count"></span>
+            </button>
             <button type="button" class="settings-tab" id="settingsTab-app" role="tab"
               aria-selected="false" aria-controls="settingsPanel-app" tabindex="-1"
-              data-group="app" data-i18n="settings.groupApp">应用</button>
+              data-group="app">
+              <span class="tab-name" data-i18n="settings.groupApp">应用</span>
+              <span class="tab-count"></span>
+            </button>
           </nav>
           <div class="settings-panels">
           <!-- ── 01 预设:风格起点与其管理(本体入预设) ── -->
@@ -526,6 +568,10 @@
           <section class="sec" id="settingsPanel-typography" role="tabpanel"
             aria-labelledby="settingsTab-typography" data-group="typography">
             <div class="sec-h"><span class="sec-num">02</span><span class="sec-title" data-i18n="settings.groupTypography">排版</span><span class="sec-rule"></span></div>
+            <!-- 段标签层(P2 · ADR-077):页面 = 组内第 1–3 项(纸张/方向/四边边距),
+                 紧随组头故不画发丝线(.sec-h + .sub-label)。只做视觉分段与检索落点,
+                 不是折叠层 —— 不引入第三种可见性形态,几何判定层不触碰 -->
+            <div class="sub-label" data-i18n="settings.sectionPage">页面</div>
             <!-- 枚举 ≤5 → seg 分段(guidelines §3.1 映射表);radio 语义保留,
                   name="paper"/name="orientation" 与 settings-bindings 的组绑定对应。
                   同名 radio 组在快速参数条中镜像一份(document 级同组成组),
@@ -568,6 +614,8 @@
             </div>
 
           <!-- ── 03 文字:字符与段落观感(合并入 02 排版) ── -->
+            <!-- 段标签层:文字 = 组内第 4–9 项(中/西文字体 → 标题间距档位) -->
+            <div class="sub-label" data-i18n="settings.sectionText">文字</div>
             <div class="row">
               <label class="row-l" for="fontEastAsia" data-i18n="settings.fontEastAsia">中文字体</label>
               <input type="text" id="fontEastAsia" class="tin tin-text" list="fontEastAsiaSuggestions" aria-describedby="fontEastAsiaError" aria-invalid="false" />
@@ -629,7 +677,8 @@
                 <label class="segment"><input type="radio" name="headingSpacing" value="spacious" /><span data-i18n="settings.tierSpacious">舒展</span></label>
               </span>
             </div>
-            <div class="sub-label" data-i18n="settings.sectionParagraph">段 落</div>
+            <!-- 段标签层:段落 = 组内第 10–11 项(首行缩进 / 对齐方式) -->
+            <div class="sub-label" data-i18n="settings.sectionParagraph">段落</div>
             <div class="sw-row">
               <span>
                 <span class="row-l" id="firstLineIndentLabel" data-i18n="settings.firstLineIndent">首行缩进</span>
@@ -705,6 +754,10 @@
               <p class="scope-note" data-i18n="settings.headerFooterDefaultNote">默认模式：页眉居中显示文档标题，页脚固定显示页码，不受开关控制。</p>
 
             <!-- ── 05 文字水印(合并入 03 页眉页脚与水印) ── -->
+            <!-- 段标签层:水印 = 组内第 4–7 项(水印文字 → 浅灰经典观感);
+                 1–3 项由组名「页眉页脚与水印」承载,不为它们另设标签。
+                 位置在条件块与默认模式说明行之后,故带顶部发丝线(非 .sec-h 直接后继) -->
+            <div class="sub-label" data-i18n="settings.sectionWatermark">水印</div>
             <div class="row block">
               <label class="row-l" for="watermarkText" data-i18n="settings.watermarkText">水印文字</label>
               <input type="text" id="watermarkText" class="tin" placeholder="" />
@@ -778,6 +831,9 @@
           <section class="sec" id="settingsPanel-convert" role="tabpanel"
             aria-labelledby="settingsTab-convert" data-group="convert">
             <div class="sec-h"><span class="sec-num">05</span><span class="sec-title" data-i18n="settings.groupConvert">转换</span><span class="scope-tag" data-i18n="settings.tagNotInPreset">不入预设</span><span class="sec-rule"></span></div>
+            <!-- 段标签层:清理 = 组内第 1–3 项(AI 清理 / Obsidian 兼容 / 附件子文件夹);
+                 紧随组头故不画发丝线 -->
+            <div class="sub-label" data-i18n="settings.sectionCleanup">清理</div>
             <div class="sw-row">
               <span>
                 <span class="row-l" id="aiCleanupLabel" data-i18n="settings.aiCleanup">AI 清理</span>
@@ -818,6 +874,8 @@
               <div class="row-sub" data-i18n="settings.obsidianAttachmentFolderDesc">用于解析 ![[图片]] 路径前缀（默认 Attachments）</div>
               <input type="text" id="obsidianAttachmentFolder" class="tin" />
             </div>
+            <!-- 段标签层:产物 = 组内第 4–5 项(输出目录 / 导出后行为) -->
+            <div class="sub-label" data-i18n="settings.sectionOutput">产物</div>
             <div class="row block">
               <div class="row-l" data-i18n="settings.outputDir">输出目录</div>
               <div class="row-sub" data-i18n="settings.outputDirHint">留空则保存到源文件所在目录</div>
@@ -849,6 +907,8 @@
                 </label>
               </span>
             </div>
+            <!-- 段标签层:PDF 样式 = 组内第 6 项(PDF 自定义 CSS) -->
+            <div class="sub-label" data-i18n="settings.sectionPdfStyle">PDF 样式</div>
             <div class="row block">
               <div class="row-l">
                 <span data-i18n="settings.pdfCssLabel">PDF 自定义 CSS</span>

@@ -24,6 +24,7 @@
  * 回填侧据此逐个调用,两条路径共用同一份登记。
  */
 import type { AppSettings } from "../../core/settings/settings-defaults.js";
+import type { I18nKey } from "../../core/i18n/index.js";
 
 /** 抽屉六组(= index.html 的 data-group;mirror = 抽屉外的镜像与顶栏控件,无 data-group)。 */
 export type ControlGroup =
@@ -112,6 +113,12 @@ export interface ValueEntry<F extends ValueForm, V, C, G extends ControlGroup = 
   readonly reset: ResetPolicy;
   readonly block: BlockKey;
   readonly locator: ControlLocator;
+  /**
+   * 控件行标签的字典键(跨组检索与段落落点定位的**单源**):标签键与控件键落在同一条
+   * 声明上,故 renderer 侧不存在第二份「控件 → 标签」清单(ADR-077 否决的正是那一份)。
+   * 抽屉内控件必填 —— 由设置控件段的判据逐个点名(漏一条即红);抽屉外的镜像 / 顶栏控件缺省。
+   */
+  readonly labelKey?: I18nKey;
   /** 设置取值:参数类型即 AppSettings,键路径的类型错误在这一步暴露。 */
   readonly read: (settings: AppSettings) => V;
   /** 写回设置:与 read 同一条键路径(两者由同一处声明生成,不可能指向不同字段)。 */
@@ -144,6 +151,8 @@ export interface ChipEntry<G extends ControlGroup = ControlGroup> {
   readonly write: readonly string[];
   /** 设置取值(供动态展示与显隐判据读)。 */
   readonly read: (settings: AppSettings) => string;
+  /** 控件行标签的字典键(单源同 ValueEntry.labelKey)。 */
+  readonly labelKey?: I18nKey;
 }
 
 /**
@@ -155,6 +164,8 @@ export interface DerivedEntry<G extends ControlGroup = ControlGroup> {
   readonly group: G;
   readonly reset: ResetPolicy;
   readonly locator: { readonly by: "id"; readonly id: string };
+  /** 控件行标签的字典键(单源同 ValueEntry.labelKey)。 */
+  readonly labelKey?: I18nKey;
 }
 
 /** 三类条目的并集(按 kind 判别)。 */
@@ -174,6 +185,7 @@ function valueEntry<F extends ValueForm, K extends BlockKey, P extends BlockFiel
     /** 控件回填值转换(数值转字符串等控件语义);缺省即恒等。 */
     readonly toControl?: (value: PathValue<K, P>) => C;
     readonly echo?: readonly string[];
+    readonly labelKey?: I18nKey;
   },
 ): ValueEntry<F, PathValue<K, P>, C, G> {
   const toControl =
@@ -188,6 +200,7 @@ function valueEntry<F extends ValueForm, K extends BlockKey, P extends BlockFiel
     block: spec.block,
     locator: spec.locator,
     echo: spec.echo,
+    labelKey: spec.labelKey,
     read,
     write: (settings, value) => {
       writePath(settings, spec.block, spec.path, value);
@@ -204,6 +217,7 @@ function chipEntry<G extends ControlGroup>(spec: {
   readonly mirrors: readonly string[];
   readonly write: readonly string[];
   readonly read: (settings: AppSettings) => string;
+  readonly labelKey?: I18nKey;
 }): ChipEntry<G> {
   return { kind: "chip", ...spec };
 }
@@ -211,6 +225,7 @@ function chipEntry<G extends ControlGroup>(spec: {
 function derivedEntry<G extends ControlGroup>(spec: {
   readonly group: G;
   readonly locator: { readonly by: "id"; readonly id: string };
+  readonly labelKey?: I18nKey;
 }): DerivedEntry<G> {
   return { kind: "derived", reset: "derived", ...spec };
 }
@@ -219,173 +234,217 @@ function derivedEntry<G extends ControlGroup>(spec: {
 
 export const CONTROL_ENTRIES = {
   // 01 预设
-  templatePreset: derivedEntry({ group: "preset", locator: { by: "id", id: "templatePreset" } }),
+  templatePreset: derivedEntry({
+    group: "preset", locator: { by: "id", id: "templatePreset" },
+    labelKey: "settings.presetLabel",
+  }),
   // 02 排版
   paper: valueEntry({
     form: "radio", group: "typography", reset: "reset", block: "pageSetup", path: "paper",
+    labelKey: "settings.paper",
     locator: { by: "radio", name: "paper" },
   }),
   orientation: valueEntry({
     form: "radio", group: "typography", reset: "reset", block: "pageSetup", path: "orientation",
+    labelKey: "settings.orientation",
     locator: { by: "radio", name: "orientation" },
   }),
+  // 四格边距是同一个视觉块(行标签「边距 (mm)」),故四条共用该行标签键:
+  // 各自「上/下/左/右」单字标签检索不到,而「边距」是用户会打的词
   marginTop: valueEntry({
     form: "number", group: "typography", reset: "reset", block: "pageSetup", path: "marginTop",
+    labelKey: "settings.margins",
     toControl: String, locator: { by: "id", id: "marginTop" },
   }),
   marginBottom: valueEntry({
     form: "number", group: "typography", reset: "reset", block: "pageSetup", path: "marginBottom",
+    labelKey: "settings.margins",
     toControl: String, locator: { by: "id", id: "marginBottom" },
   }),
   marginLeft: valueEntry({
     form: "number", group: "typography", reset: "reset", block: "pageSetup", path: "marginLeft",
+    labelKey: "settings.margins",
     toControl: String, locator: { by: "id", id: "marginLeft" },
   }),
   marginRight: valueEntry({
     form: "number", group: "typography", reset: "reset", block: "pageSetup", path: "marginRight",
+    labelKey: "settings.margins",
     toControl: String, locator: { by: "id", id: "marginRight" },
   }),
   fontEastAsia: valueEntry({
     form: "text", group: "typography", reset: "reset", block: "typography", path: "fontEastAsia",
+    labelKey: "settings.fontEastAsia",
     locator: { by: "id", id: "fontEastAsia" },
   }),
   fontAscii: valueEntry({
     form: "text", group: "typography", reset: "reset", block: "typography", path: "fontAscii",
+    labelKey: "settings.fontAscii",
     locator: { by: "id", id: "fontAscii" },
   }),
   bodySizePt: valueEntry({
     form: "number", group: "typography", reset: "reset", block: "typography", path: "bodySizePt",
+    labelKey: "settings.bodySize",
     toControl: String, locator: { by: "id", id: "bodySizePt" },
   }),
   lineSpacing: valueEntry({
     form: "number", group: "typography", reset: "reset", block: "typography", path: "lineSpacing",
+    labelKey: "settings.lineSpacing",
     toControl: String, locator: { by: "id", id: "lineSpacing" },
     echo: ["lineSpacingValue"],
   }),
   headingScale: valueEntry({
     form: "radio", group: "typography", reset: "reset", block: "typography", path: "headingScale",
+    labelKey: "settings.headingScaleTier",
     locator: { by: "radio", name: "headingScale" },
   }),
   headingSpacing: valueEntry({
     form: "radio", group: "typography", reset: "reset", block: "typography", path: "headingSpacing",
+    labelKey: "settings.headingSpacingTier",
     locator: { by: "radio", name: "headingSpacing" },
   }),
   firstLineIndent: valueEntry({
     form: "switch", group: "typography", reset: "reset", block: "typography", path: "firstLineIndent",
+    labelKey: "settings.firstLineIndent",
     locator: { by: "id", id: "firstLineIndent" },
   }),
   align: valueEntry({
     form: "radio", group: "typography", reset: "reset", block: "typography", path: "align",
+    labelKey: "settings.align",
     locator: { by: "radio", name: "align" },
   }),
   // 03 页眉页脚与水印
   headerMode: valueEntry({
     form: "radio", group: "headerwatermark", reset: "reset", block: "headerFooter", path: "headerMode",
+    labelKey: "settings.headerModeLabel",
     locator: { by: "radio", name: "headerMode" },
   }),
   headerText: valueEntry({
     form: "text", group: "headerwatermark", reset: "reset", block: "headerFooter", path: "headerText",
+    labelKey: "settings.headerText",
     locator: { by: "id", id: "headerText" },
   }),
   headerLogoPath: chipEntry({
     group: "headerwatermark", reset: "reset", block: "headerFooter",
+    labelKey: "settings.headerLogo",
     display: "headerLogoStatus", mirrors: [], write: ["headerLogoPick", "headerLogoClear"],
     read: (s) => s.headerFooter.headerLogoPath,
   }),
   headerLayout: valueEntry({
     form: "radio", group: "headerwatermark", reset: "reset", block: "headerFooter", path: "headerLayout",
+    labelKey: "settings.headerLayout",
     locator: { by: "radio", name: "headerLayout" },
   }),
   footerEnabled: valueEntry({
     form: "switch", group: "headerwatermark", reset: "reset", block: "headerFooter", path: "footerEnabled",
+    labelKey: "settings.footerEnabledLabel",
     locator: { by: "id", id: "footerEnabled" },
   }),
   watermarkText: valueEntry({
     form: "text", group: "headerwatermark", reset: "reset", block: "watermark", path: "text",
+    labelKey: "settings.watermarkText",
     locator: { by: "id", id: "watermarkText" },
   }),
   watermarkAngle: valueEntry({
     form: "number", group: "headerwatermark", reset: "reset", block: "watermark", path: "angle",
+    labelKey: "settings.watermarkAngle",
     toControl: String, locator: { by: "id", id: "watermarkAngle" },
   }),
   watermarkOpacity: valueEntry({
     form: "number", group: "headerwatermark", reset: "reset", block: "watermark", path: "opacity",
+    labelKey: "settings.watermarkOpacity",
     toControl: String, locator: { by: "id", id: "watermarkOpacity" },
   }),
   watermarkGray: valueEntry({
     form: "switch", group: "headerwatermark", reset: "reset", block: "watermark", path: "gray",
+    labelKey: "settings.watermarkGray",
     locator: { by: "id", id: "watermarkGray" },
   }),
   // 04 编号与目录
   headingNumbering: valueEntry({
     form: "switch", group: "numbering", reset: "reset", block: "typography", path: "headingNumbering",
+    labelKey: "settings.headingNumbering",
     locator: { by: "id", id: "headingNumbering" },
   }),
   captionNumbering: valueEntry({
     form: "switch", group: "numbering", reset: "reset", block: "typography", path: "captionNumbering",
+    labelKey: "settings.captionNumbering",
     locator: { by: "id", id: "captionNumbering" },
   }),
   equationNumbering: valueEntry({
     form: "switch", group: "numbering", reset: "reset", block: "equationNumbering",
+    labelKey: "settings.equationNumbering",
     locator: { by: "id", id: "equationNumbering" },
   }),
   toc: valueEntry({
     form: "switch", group: "numbering", reset: "reset", block: "toc",
+    labelKey: "settings.toc",
     locator: { by: "id", id: "toc" },
   }),
   tocMode: valueEntry({
     form: "select", group: "numbering", reset: "reset", block: "tocMode",
+    labelKey: "settings.tocMode",
     locator: { by: "id", id: "tocMode" },
   }),
   breakBeforeH1: valueEntry({
     form: "switch", group: "numbering", reset: "reset", block: "breakBeforeH1",
+    labelKey: "settings.breakBeforeH1Short",
     locator: { by: "id", id: "breakBeforeH1" },
   }),
   // 05 转换
   aiCleanup: valueEntry({
     form: "switch", group: "convert", reset: "reset", block: "aiCleanup", path: "enabled",
+    labelKey: "settings.aiCleanup",
     locator: { by: "id", id: "aiCleanup" },
   }),
   aiCleanupTidy: valueEntry({
     form: "switch", group: "convert", reset: "reset", block: "aiCleanup", path: "tidy",
+    labelKey: "settings.aiCleanupTidy",
     locator: { by: "id", id: "aiCleanupTidy" },
   }),
   aiCleanupRewrite: valueEntry({
     form: "switch", group: "convert", reset: "reset", block: "aiCleanup", path: "rewrite",
+    labelKey: "settings.aiCleanupRewrite",
     locator: { by: "id", id: "aiCleanupRewrite" },
   }),
   obsidianCompat: valueEntry({
     form: "switch", group: "convert", reset: "reset", block: "obsidian", path: "compat",
+    labelKey: "settings.obsidianCompat",
     locator: { by: "id", id: "obsidianCompat" },
   }),
   obsidianAttachmentFolder: valueEntry({
     form: "text", group: "convert", reset: "reset", block: "obsidian", path: "attachmentFolder",
+    labelKey: "settings.obsidianAttachmentFolder",
     locator: { by: "id", id: "obsidianAttachmentFolder" },
   }),
   outputDir: chipEntry({
     group: "convert", reset: "reset", block: "outputDir",
+    labelKey: "settings.outputDir",
     display: "outputDirValue", mirrors: ["quickOutputDir"],
     write: ["outputDirPick", "quickOutputPick", "outputDirReset"],
     read: (s) => s.outputDir,
   }),
   afterConvert: valueEntry({
     form: "radio", group: "convert", reset: "reset", block: "afterConvert",
+    labelKey: "settings.afterConvert",
     locator: { by: "radio", name: "afterConvert" },
   }),
   pdfCss: valueEntry({
     form: "text", group: "convert", reset: "reset", block: "pdfCss",
+    labelKey: "settings.pdfCssLabel",
     locator: { by: "id", id: "pdfCssText" },
   }),
   // 06 应用(theme / language 属刻意保留集,见 reset 字段)
   theme: valueEntry({
     form: "radio", group: "app", reset: "preserve", block: "theme",
+    labelKey: "settings.groupAppearance",
     locator: { by: "radio", name: "theme" },
   }),
   languageSelect: valueEntry({
     form: "select", group: "app", reset: "preserve", block: "language",
+    labelKey: "settings.groupLanguage",
     locator: { by: "id", id: "languageSelect" },
   }),
-  // 抽屉外:快速参数条的两处镜像 + 顶栏格式分段
+  // 抽屉外:快速参数条的两处镜像 + 顶栏格式分段(labelKey 缺省 —— 它们不参与抽屉内检索)
   quickPreset: derivedEntry({ group: "mirror", locator: { by: "id", id: "quickPreset" } }),
   format: valueEntry({
     form: "radio", group: "mirror", reset: "preserve", block: "format",
@@ -864,6 +923,11 @@ export interface ControlRow {
   readonly radioNames: readonly string[];
   /** 是否声明了写侧钩子(通用落值之外还有别的事要做)。 */
   readonly hooked: boolean;
+  /**
+   * 控件行标签的字典键(抽屉内控件的检索标签;抽屉外镜像 / 顶栏控件为 null)。
+   * 与 `key` 同源同条 —— 跨组检索按它取文案,不再另抄一份「控件 → 标签」映射。
+   */
+  readonly labelKey: I18nKey | null;
 }
 
 /**
@@ -887,6 +951,7 @@ export function controlTable(): readonly ControlRow[] {
           ids,
           radioNames: entry.locator.by === "radio" ? [entry.locator.name] : [],
           hooked: HOOKED_WRITE_KEY_SET.has(key),
+          labelKey: entry.labelKey ?? null,
         };
       }
       case "chip":
@@ -899,6 +964,7 @@ export function controlTable(): readonly ControlRow[] {
           ids: [entry.display, ...entry.mirrors, ...entry.write],
           radioNames: [],
           hooked: false,
+          labelKey: entry.labelKey ?? null,
         };
       case "derived":
         return {
@@ -910,6 +976,7 @@ export function controlTable(): readonly ControlRow[] {
           ids: [entry.locator.id],
           radioNames: [],
           hooked: false,
+          labelKey: entry.labelKey ?? null,
         };
     }
   });

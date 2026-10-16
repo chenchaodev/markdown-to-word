@@ -26,8 +26,9 @@ export function isSettingsDrawerOpen(): boolean {
 /** 抽屉初始焦点落点:当前激活的分组 Tab(roving tabindex 里 tabindex=0 的那枚)。
  *  取 Tab 而非关闭钮的理由:抽屉的主体结构就是左侧六组竖向导航,焦点落在
  *  导航上,方向键即可在组间走,Tab 直接进入当前组面板 —— 与 ARIA 对
- *  「以 tablist 开场的对话框」的落点约定一致。取 .active 类为准(aria-selected
- *  目前只有初始态正确,组切换只同步类名,见 settings-panel.initSettingsTabs)。
+ *  「以 tablist 开场的对话框」的落点约定一致。取 .active 类为准 —— 类名、aria-selected
+ *  与 roving tabindex 三者由 settings-panel.activateSettingsGroup 同刻同改,恒等价;
+ *  几何驱动也按 .sec.active 读,故类名是最稳的读法。
  *  导航缺失时退回关闭钮,保证焦点不丢。 */
 function focusDrawerEntry(): void {
   const activeTab = settingsDrawer.querySelector<HTMLElement>(".settings-tab.active");

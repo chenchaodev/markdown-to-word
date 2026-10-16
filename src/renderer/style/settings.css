@@ -88,6 +88,53 @@
   margin-left: auto;
 }
 
+/* ---------- 跨组检索框(抽屉头与主体之间;P2 · ADR-077) ---------- */
+/* 形态沿用 .tin(guidelines §2 filter-box),只补宽度与留白适配抽屉:
+   不新增控件外形,也不入声明表(它是瞬时检索入口,不是持久化设置项)。 */
+.drawer-search {
+  flex: none;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.drawer-search .filter-box {
+  width: 100%;
+}
+
+/* 检索状态行(命中数 / 无命中空态):文案由 settings-panel 按语言现算,空串时整行收掉 */
+.filter-status {
+  margin: 0;
+  font-size: var(--fs-base);
+  color: var(--mut);
+}
+
+.filter-status:empty {
+  display: none;
+}
+
+/* tab 名称与命中数分两行:命中数走 mono 弱色 —— 朱砂仅用于「付印」语义,
+   故命中数不得用 --acc(即便当前 tab 高亮,本行以更具体的选择器压住继承色) */
+.tab-name {
+  display: block;
+}
+
+.tab-count {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  letter-spacing: 0.05em;
+  color: var(--mut);
+}
+
+/* 未检索 / 该组零命中时计数位为空:整枚收掉,tab 高度与未加检索时一致 */
+.tab-count:empty {
+  display: none;
+}
+
 .drawer-body {
   flex: 1;
   min-height: 0;

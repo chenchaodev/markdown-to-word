@@ -31,8 +31,10 @@ import {
 } from "./settings-logic.js";
 import {
   CONTROL_ENTRIES,
+  controlTable,
   hydrateControls,
   type ControlDom,
+  type ControlGroup,
   type ControlHandle,
   type GateId,
   type WriteContext,
@@ -58,6 +60,8 @@ import {
   presetDeleteBtn,
   quickOutputDirChip,
   quickPresetSelect,
+  settingsFilterInput,
+  settingsFilterStatus,
   statusEl,
   templatePresetHint,
   templatePresetSelect,
@@ -314,6 +318,9 @@ export function refreshDynamicSettingsText(): void {
   syncOutputDirDisplay(CONTROL_ENTRIES.outputDir.read(state.settings));
   syncPdfCssState(CONTROL_ENTRIES.pdfCss.read(state.settings));
   syncHeaderLogoDisplay(CONTROL_ENTRIES.headerLogoPath.read(state.settings));
+  // 检索的计数与状态行文案按当前语言现算(label 与命中数文案都不是静态节点),
+  // 语言切换后须随静态文案一起重算,否则停留在旧语言(与上面三处同一理由)。
+  refreshSearchResults();
 }
 
 /**
@@ -497,20 +504,209 @@ export function setSuppressCompleteDialog(checked: boolean): void {
   });
 }
 
-/* ---------- 设置抽屉 Tab 导航(6 组切换) ---------- */
-/** 绑定左侧竖向 tab 与右侧面板:点击切换 active 组,默认激活 preset。
- *  仅控制显隐与高亮,不触碰任何设置控件的 id/name(绑定逻辑零改动)。 */
+/* ---------- 设置抽屉 Tab 导航(6 组切换)+ 跨组检索(P2 · ADR-077) ---------- */
+
+/** 竖向导航 tab 与右侧面板的选择器(两处配对读,组名是唯一键)。 */
+const SETTINGS_TAB_SELECTOR = ".settings-tab";
+const SETTINGS_PANEL_SELECTOR = ".settings-panels > .sec";
+
+/** 取当前 tab 与面板集合(按 DOM 顺序;空集合下各调用点自行容忍)。 */
+function collectSettingsTabs(): {
+  tabs: HTMLButtonElement[];
+  panels: HTMLElement[];
+} {
+  return {
+    tabs: Array.from(document.querySelectorAll<HTMLButtonElement>(SETTINGS_TAB_SELECTOR)),
+    panels: Array.from(document.querySelectorAll<HTMLElement>(SETTINGS_PANEL_SELECTOR)),
+  };
+}
+
+/**
+ * 激活某分组:显隐类名(几何驱动读 `.sec.active`)、`aria-selected`、roving tabindex
+ * 三处同改 —— 三者说的是同一件事,分开写必然漂移。
+ * `focus` 只在键盘导航时为真:点击与检索激活都不抢焦点(检索还要把焦点留在输入框,
+ * 否则用户打下一个字就断了)。
+ */
+function activateSettingsGroup(
+  tabs: readonly HTMLButtonElement[],
+  panels: readonly HTMLElement[],
+  group: string,
+  focus: boolean,
+): void {
+  for (const tab of tabs) {
+    const active = tab.dataset.group === group;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+    // roving tabindex:整组只有当前项可 Tab 到达,其余移出焦点序
+    tab.setAttribute("tabindex", active ? "0" : "-1");
+    if (active && focus) tab.focus();
+  }
+  for (const panel of panels) {
+    panel.classList.toggle("active", panel.dataset.group === group);
+  }
+}
+
+/**
+ * 竖向 tablist 的方向键导航:↑/↓ 环形移动,Home/End 跳首尾(ARIA 竖向 tablist 的必备
+ * 键位)。采用「自动激活」—— 焦点到哪一组就切到哪一组,与点击行为一致。
+ */
+function onSettingsTabKeydown(
+  event: KeyboardEvent,
+  index: number,
+  tabs: readonly HTMLButtonElement[],
+  panels: readonly HTMLElement[],
+): void {
+  const last = tabs.length - 1;
+  let next: number;
+  switch (event.key) {
+    case "ArrowUp":
+      next = index === 0 ? last : index - 1;
+      break;
+    case "ArrowDown":
+      next = index === last ? 0 : index + 1;
+      break;
+    case "Home":
+      next = 0;
+      break;
+    case "End":
+      next = last;
+      break;
+    default:
+      return;
+  }
+  event.preventDefault();
+  const group = tabs[next]?.dataset.group;
+  if (!group) return;
+  activateSettingsGroup(tabs, panels, group, true);
+}
+
+/**
+ * 一条可检索的控件行:本地化后的标签文案 + 命中后滚入视野的落点(二形态)。
+ * radio 分段按组名取组内首个成员(成员 id 集合为空),其余按 id 取。
+ */
+interface SettingsSearchHit {
+  readonly group: ControlGroup;
+  readonly label: string;
+  readonly elemId: string | null;
+  readonly radioName: string | null;
+}
+
+/**
+ * 可检索控件行的数据面:**只**取抽屉内(非 mirror)且有 `labelKey` 的条目,标签文案经
+ * `t(labelKey)` 现算。不取描述行(`row-sub`)文案 —— 那需要第二份「控件 → 描述」映射,
+ * 正是 ADR-077 否决的那一份;标签单源在声明表,这里不再另抄。
+ */
+function searchableSettingsRows(): SettingsSearchHit[] {
+  return controlTable()
+    .filter((row) => row.group !== "mirror" && row.labelKey !== null)
+    .map((row) => ({
+      group: row.group,
+      label: t(row.labelKey as I18nKey),
+      elemId: row.ids[0] ?? null,
+      radioName: row.radioNames[0] ?? null,
+    }));
+}
+
+/** 一次检索的结果:总命中数 + 首个命中行(供跳转)。 */
+interface SettingsSearchOutcome {
+  readonly total: number;
+  readonly firstHit: SettingsSearchHit | null;
+}
+
+/**
+ * 跨组检索的唯一读点:对六组全部控件标签做包含匹配(大小写不敏感)。三件事一处做完
+ * —— 每 tab 命中计数、状态行文案、首个命中落点;语言切换(经 refreshDynamicSettingsText)
+ * 与输入两条路径共用同一实现,故计数与文案不可能与查询漂移。
+ *
+ * **不隐藏任何控件**:几何规格只有两种可见性形态,本功能不入第三种,只做计数与跳转。
+ */
+function refreshSearchResults(): SettingsSearchOutcome {
+  const query = settingsFilterInput?.value.trim().toLowerCase() ?? "";
+  const tabs = document.querySelectorAll<HTMLButtonElement>(SETTINGS_TAB_SELECTOR);
+  // 空查询:清空计数与状态行(CSS :empty 收掉两处占位),不切组、不滚动
+  if (query === "") {
+    for (const tab of tabs) {
+      const countNode = tab.querySelector<HTMLElement>(".tab-count");
+      if (countNode) countNode.textContent = "";
+    }
+    if (settingsFilterStatus) settingsFilterStatus.textContent = "";
+    return { total: 0, firstHit: null };
+  }
+  const hitCounts = new Map<string, number>();
+  let total = 0;
+  let firstHit: SettingsSearchHit | null = null;
+  for (const row of searchableSettingsRows()) {
+    if (!row.label.toLowerCase().includes(query)) continue;
+    hitCounts.set(row.group, (hitCounts.get(row.group) ?? 0) + 1);
+    total += 1;
+    firstHit ??= row;
+  }
+  for (const tab of tabs) {
+    const group = tab.dataset.group;
+    const countNode = tab.querySelector<HTMLElement>(".tab-count");
+    if (!group || !countNode) continue;
+    const count = hitCounts.get(group) ?? 0;
+    countNode.textContent = count > 0 ? String(count) : "";
+  }
+  if (settingsFilterStatus) {
+    settingsFilterStatus.textContent =
+      total > 0
+        ? t("settings.searchHits", { count: total })
+        : t("settings.searchNoHits");
+  }
+  return { total, firstHit };
+}
+
+/** 首个命中控件的落点解析(radio 分段取组内首个成员,其余取 id 节点)。 */
+function settingsSearchHitElement(hit: SettingsSearchHit): HTMLElement | null {
+  if (hit.radioName) {
+    return document.querySelector<HTMLElement>(`input[name="${hit.radioName}"]`);
+  }
+  return hit.elemId ? document.getElementById(hit.elemId) : null;
+}
+
+/**
+ * 命中跳转:切到首个命中组并把该控件滚入视野。`scrollIntoView` 按能力探测调用
+ * (测试 stub 不提供它,缺失时只切组不滚动,不抛错)。
+ */
+function jumpToFirstSearchHit(hit: SettingsSearchHit): void {
+  const { tabs, panels } = collectSettingsTabs();
+  activateSettingsGroup(tabs, panels, hit.group, false);
+  const target = settingsSearchHitElement(hit);
+  if (target && typeof target.scrollIntoView === "function") {
+    target.scrollIntoView({ block: "nearest" });
+  }
+}
+
+/**
+ * 跨组检索接线:输入即算(计数 + 状态行 + 首个命中跳转)。导出供 initSettingsTabs 调用,
+ * 也供测试直测 —— 与 Tab 导航各自可测。
+ */
+export function initSettingsSearch(): void {
+  settingsFilterInput?.addEventListener("input", () => {
+    const outcome = refreshSearchResults();
+    if (outcome.firstHit) jumpToFirstSearchHit(outcome.firstHit);
+  });
+  // 初始算一次:清掉 HTML 里可能残留的占位(与「打开抽屉即见真实态」一致)
+  refreshSearchResults();
+}
+
+/**
+ * 绑定左侧竖向 tab 与右侧面板:点击切换 active 组,默认激活 preset。
+ * 仅控制显隐与高亮,不触碰任何设置控件的 id/name(绑定逻辑零改动)。
+ * P2 增补:`aria-selected` + roving tabindex + ↑/↓/Home/End 键盘导航,并接上跨组检索。
+ */
 export function initSettingsTabs(): void {
-  const tabs = document.querySelectorAll<HTMLButtonElement>(".settings-tab");
-  const panels = document.querySelectorAll<HTMLElement>(".settings-panels > .sec");
-  tabs.forEach((tab) => {
+  const { tabs, panels } = collectSettingsTabs();
+  tabs.forEach((tab, index) => {
     tab.addEventListener("click", () => {
       const group = tab.dataset.group;
       if (!group) return;
-      tabs.forEach((t) => t.classList.toggle("active", t === tab));
-      panels.forEach((p) =>
-        p.classList.toggle("active", p.dataset.group === group),
-      );
+      activateSettingsGroup(tabs, panels, group, false);
+    });
+    tab.addEventListener("keydown", (event) => {
+      onSettingsTabKeydown(event as KeyboardEvent, index, tabs, panels);
     });
   });
+  initSettingsSearch();
 }

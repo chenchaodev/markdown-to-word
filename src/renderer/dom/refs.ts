@@ -406,6 +406,15 @@ export const quickOutputDirChip = document.getElementById(
 export const quickOutputPickBtn = document.getElementById(
   "quickOutputPick",
 ) as HTMLButtonElement;
+// 跨组检索(P2 · ADR-077):过滤框本体 + 状态行(命中数 / 无命中空态)。
+// 二者非分组导航成员(不带 role=tab/tabpanel),也不入声明表(非持久化设置项);
+// 控件标签经声明表 ControlRow.labelKey 单源取,此处只引用 DOM 节点。
+export const settingsFilterInput = document.getElementById(
+  "settingsFilter",
+) as HTMLInputElement;
+export const settingsFilterStatus = document.getElementById(
+  "settingsFilterStatus",
+) as HTMLParagraphElement;
 
 /**
  * seg 分段(radio 组)当前选中值读取(无选中返回空串):
