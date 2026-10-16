@@ -244,6 +244,8 @@
   border-top: 1px solid var(--line);
 }
 
+/* 前向保护,当前无命中:全仓唯一段标签在 02 组中段(不在组头后)。
+ * P2 段标签落地后,紧随组头的那枚靠本规则去线 —— 是为 P2 预留的规则,勿当死代码删 */
 .sec-h + .sub-label {
   border-top: none;
   padding-top: 0;
@@ -343,6 +345,15 @@
 
 .cond-in > .sw-row:last-child {
   padding-bottom: 2px;
+}
+
+/* 凹陷容器左轨已承担「这一块是附注」的分隔职责,容器内说明行再挂 2px 轨
+ * 就是两条平行发丝线(轨间距 = cond-in 12px 缩进),读作描边瑕疵;
+ * 且自带轨会把说明行相对同容器 sw-row 标签右推 10px,破容器内左对齐轴。
+ * 故容器内退轨归零,只保留字号/行高/色阶的「附注」身份 */
+.cond-in > .scope-note {
+  border-left: none;
+  padding-left: 0;
 }
 
 /* 行内角标与主标签的间距 */
@@ -522,16 +533,15 @@
   min-width: 0;
 }
 
-/* 响应式:紧凑/窄窗档抽屉收窄(guidelines §5);宽度随 tab 栏(112px)同步预算,
- * 并用 calc(100vw - 48px) 兜底,避免窄屏溢出视口 */
+/* 响应式:仅紧凑一档收窄抽屉(guidelines §5.3);宽度随 tab 栏(112px)同步预算,
+ * 并用 calc(100vw - 48px) 兜底,避免窄屏溢出视口。
+ * 曾有 ≤900 档再收窄到 412px,已撤:该档面板内容列 263px 低于紧凑档经几何门禁
+ * 验证无溢出的 293px(clientWidth===scrollWidth,见 ui-geometry 报告),而 960px
+ * 固定视口使 ≤900 档无任何机器覆盖 ⇒ 收窄即引入未验证的裁切风险。
+ * 现由本档兜底(640px 窗下 100vw-48=592 > 452,抽屉仍取 452px);≤900 档仍无
+ * 机器覆盖,须真窗复核 */
 @media (max-width: 1080px) {
   .drawer {
     width: min(452px, calc(100vw - 48px));
-  }
-}
-
-@media (max-width: 900px) {
-  .drawer {
-    width: min(412px, calc(100vw - 48px));
   }
 }

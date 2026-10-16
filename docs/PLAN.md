@@ -37,8 +37,8 @@
 
 | 步 | 工作项 | 目标 | 可写文件（不重叠） | 退出条件 | 门禁 | 结果 |
 |---|---|---|---|---|---|---|
-| #01 | REQ-247 | P0 文档与字典清账 + 立 ADR-077 | `docs/adr/ADR-077-*` · `docs/design/settings-ia.md` · `docs/design/ui-guidelines.md` · `docs/USER-GUIDE.md` · `README.md` · `src/core/i18n/*.ts` · `src/renderer/index.html`（仅组名静态回退与 `obsidianAttachmentFolderDesc` 说明行两处） | 16 条孤儿键清零、两代组名键收敛为一代、组名三处统一为「应用」、zh 字间硬空格删净 | `npm run check:docs` · `npm run check:i18n-keys` | 待 |
-| #02 | REQ-247 | P1 视觉 token（零逻辑） | `src/renderer/style/settings.css` · `src/renderer/style/base.css` · `src/renderer/index.html`（行级 class / 内联宽度 / 「即时生效」节点位置） | 抽屉三档加宽、侧栏 112px、行改 grid、控件齐高 32px、`--fs-*` 与控件宽变量落位、13 处内联样式清零 | `npm run check:docs` · `npm run check:src-layout` | 待 |
+| #01 | REQ-247 | P0 文档与字典清账 + 立 ADR-077 | `docs/adr/ADR-077-*` · `docs/design/settings-ia.md` · `docs/design/ui-guidelines.md` · `docs/USER-GUIDE.md` · `README.md` · `src/core/i18n/*.ts` · `src/renderer/index.html`（仅组名静态回退与 `obsidianAttachmentFolderDesc` 说明行两处） | 16 条孤儿键清零、两代组名键收敛为一代、组名三处统一为「应用」、zh 字间硬空格删净 | `npm run check:docs` · `npm run check:i18n-keys` | 已完成（`5624eb2`） |
+| #02 | REQ-247 | P1 视觉 token（零逻辑） | `src/renderer/style/settings.css` · `src/renderer/style/base.css` · `src/renderer/index.html`（行级 class / 内联宽度 / 「即时生效」节点位置） | 抽屉三档加宽、侧栏 112px、行改 grid、控件齐高 32px、`--fs-*` 与控件宽变量落位、28 处内联样式清零 | `npm run check:docs` · `npm run check:src-layout` · `npm run check:geometry` | 进行中（`257553a` 已落；P1b 收尾在派） |
 | #03 | REQ-247 | P2 组内分段 + 可达性（键盘 + 检索） | `src/renderer/settings/settings-controls-table.ts` · `settings-panel.ts` · `settings-drawer.ts` · `src/renderer/dom/refs.ts` · `src/renderer/index.html` · `src/core/i18n/*.ts` · `test/renderer/*` | 五个段标签落位；`aria-selected` + roving tabindex + ↑↓/Home/End 有直测；搜索跨六组过滤且声明表新增 `labelKey` 字段为标签单源 | `npm run typecheck` · `npm test`（renderer 段） | 待 |
 | #04 | REQ-247 | P3 `tocMode` 改 seg | `src/renderer/index.html` · `settings-controls-table.ts` · `shared/geometry/geometry-spec.mjs` · `test/renderer/*` | 原生 select 换成两档 seg，无 `.toc-mode-select` 死类残留 | `npm run check:geometry` | 待 |
 | #05 | REQ-247 | P4 水印总闸（三档，第三档规划中） | `src/core/settings/*` · `settings-controls-table.ts` · `settings-panel.ts` · `settings-bindings-headerwatermark.ts` · `src/renderer/index.html` · `shared/geometry/geometry-spec.mjs` · `test/**` | 总闸与四字段的条件收起双向判据成立；持久化若新增键则 ADR-024 §一/§四两条兑现；存量 settings.json 读入后产物逐字节一致 | `npm run check:geometry` · `npm run verify:ci` | 待 |
@@ -49,7 +49,7 @@
 
 - [ ] 六个组名与组序在 `docs/design/settings-ia.md`、`docs/design/ui-guidelines.md`、`docs/USER-GUIDE.md`、`README.md`、三语字典、`presetCoveredGroupLabels()` 七处一致，`docs/design/ui-mockup.html` 不再是旧 9 段编号
 - [ ] 抽屉内任意控件可经搜索定位；搜索标签经声明表 `labelKey` 取，renderer 侧不存在第二份「控件 → 标签」清单
-- [ ] 最窄档（≤1080px）下 05 组「导出后行为」三档全部可点可见，宽度经真渲染量测复核而非按 CSS 字面量推算
+- [ ] 抽屉宽度各分档均经真渲染量测复核，而非按 CSS 字面量推算——≤1080px 档已有几何门禁覆盖（960 视口实测 `panels.clientWidth === scrollWidth`，无水平溢出）；**≤900px 及以下档无任何机器覆盖**（几何门禁固定 960 视口 · `ui:shots` 抽屉截图亦只在 960 基线），须真窗复核并留证据
 - [ ] 抽屉可用方向键换组，焦点落点与 ARIA 状态同步
 - [ ] 声明表三处条目工厂的 `G` 泛形参仍穿到 `group` 字段——以一条**负向探针**证明（故意写裸 `ControlGroup` 必须转红），不靠「没报错」判定
 - [ ] `settings.css` 注释里的组号与 `index.html` 的 `sec-num` 一致（现注释写「06 输出」而输出已归 05）
