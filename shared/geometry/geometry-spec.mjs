@@ -226,7 +226,7 @@ export const DRAWER_CONTROLS = {
     { id: "captionNumbering" },
     { id: "equationNumbering" },
     { id: "toc" },
-    { id: "tocMode" },
+    { name: "tocMode" }, // 两档 seg(REQ-247 P3):值载体是同名 radio 组,容器 #tocMode 只承载显隐
     { id: "breakBeforeH1" },
   ],
   convert: [
@@ -274,7 +274,7 @@ export const DRAWER_CONDITIONS = [
     master: "toc",
     masterKind: "switch",
     on: true,
-    why: "目录模式是 toc 的条件子行:toc 关时 .hidden 整块移除(不灰禁,摆一个选了也不生效的下拉是骗人)",
+    why: "目录模式是 toc 的条件子行:toc 关时 .hidden 整块移除(不灰禁,摆一个选了也不生效的档位是骗人)",
   },
   {
     control: "headerText",
@@ -340,8 +340,8 @@ export const DRAWER_MASTER_DEFAULTS = { toc: true, aiCleanup: false, headerMode:
  * 一行,实测顶沿**完全相同**;而相邻行的间距实测 ≥ 20px。故组内顺序按「视觉行 + 左沿」判,
  * 带宽只用来吸收亚像素与居中对齐抖动,取 4px —— 远小于行距,不会把相邻两行并成一行。
  *
- * 为什么不按 DOM 序判:04 组的 `tocMode` 下拉在 DOM 里排在 `toc` 开关**之前**(开关是
- * .sw-row 这条 flex 行的最后一个子元素、居右),但视觉上开关在上、下拉在下 —— 步 03 的退出
+ * 为什么不按 DOM 序判:04 组的 `tocMode` 档位分段在 DOM 里排在 `toc` 开关**之前**(开关是
+ * .sw-row 这条 flex 行的最后一个子元素、居右),但视觉上开关在上、档位分段在下 —— 步 03 的退出
  * 条件写的是「控件**位置**不得变化」,故判据是视觉位置,DOM 序是实现细节。
  */
 export const DRAWER_ROW_BAND_PX = 4;

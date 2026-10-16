@@ -381,9 +381,9 @@ export const CONTROL_ENTRIES = {
     locator: { by: "id", id: "toc" },
   }),
   tocMode: valueEntry({
-    form: "select", group: "numbering", reset: "reset", block: "tocMode",
+    form: "radio", group: "numbering", reset: "reset", block: "tocMode",
     labelKey: "settings.tocMode",
-    locator: { by: "id", id: "tocMode" },
+    locator: { by: "radio", name: "tocMode" },
   }),
   breakBeforeH1: valueEntry({
     form: "switch", group: "numbering", reset: "reset", block: "breakBeforeH1",

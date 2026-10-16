@@ -222,7 +222,7 @@ export const fixtures = null;
  *                     → 期望红在「顶层键既不在声明表的块里、也不在无控件键清单里」
  *                     (复位块覆盖判据)。
  *   - unregister-gate:把 tocModeVisibility 这条门控从 CONTROL_GATES 登记里摘掉
- *                     → 期望红在「关掉自动目录:change 路径应同步收起目录下拉」
+ *                     → 期望红在「关掉自动目录:change 路径应同步收起目录模式档位」
  *                     (门控的 change 侧接缝按登记反查,摘掉即静默不生效)。
  *   - factory-bare-generic:把 chipEntry 工厂的返回类型从 `ChipEntry<G>` 抹成裸 `ChipEntry`
  *                     → 期望红在「条目工厂把组泛型 G 穿到 group」(纯类型层失效,运行期不可见:
@@ -632,9 +632,9 @@ bindings.bindSettingsEvents({ renderSelection: () => {} });
   });
   add({
     name: "tocMode", group: "numbering",
-    get: () => el("tocMode").value,
+    get: () => checkedRadio("tocMode"),
     expect: (s) => s.tocMode,
-    drive: (v) => { el("tocMode").value = v; fireListener(el("tocMode"), "change"); },
+    drive: (v) => clickRadio("tocMode", v),
     bindValue: "static", statePath: ["tocMode"],
     patchKey: "tocMode", inReset: true, resetPath: ["tocMode"],
   });
@@ -999,13 +999,29 @@ bindings.bindSettingsEvents({ renderSelection: () => {} });
     // 5c) 目录模式 .hidden 整块移除(回填路径,双向)
     await s.case("门控 · 目录模式整块移除双向", async () => {
       rehydrate(); // toc=true
-      assert(!tocModeEl.classList.contains("hidden"), "自动目录开:目录下拉应可见");
+      assert(!tocModeEl.classList.contains("hidden"), "自动目录开:目录模式档位应可见");
+      // 收起必须**只**切显隐:先真点一次档位(并落到 state.settings),收起再展开后
+      // 选中态与设置值都应原样 —— 这条「收起不丢上次选择」原先在 ui-interaction-guards
+      // 段以 select.value 探针守护,形态改 seg 后那里已无从驱动 radio(该段无 selectorGroups),
+      // 故迁到本段按真驱动验等价性质。档位取 static(偏离基线设置的 field),
+      // 判据因此不是「回读刚回填的值」:任何在收起时清空/改写选中态的实现在这里即判红。
+      clickRadio("tocMode", "static");
+      const checkedStates = () => radioScope("tocMode").map((i) => i.checked);
+      const checkedBefore = checkedStates();
       state.settings.toc = false;
       panel.applySettingsToControls();
-      assert(tocModeEl.classList.contains("hidden"), "自动目录关:目录下拉应整块移除");
+      assert(tocModeEl.classList.contains("hidden"), "自动目录关:目录模式档位应整块移除");
+      assert(
+        deepEqual(checkedStates(), checkedBefore) && state.settings.tocMode === "static",
+        `收起只应切容器显隐,不得动选中态或设置值(实际选中=${JSON.stringify(checkedStates())},实际设置=${JSON.stringify(state.settings.tocMode)})`,
+      );
       state.settings.toc = true;
       panel.applySettingsToControls();
-      assert(!tocModeEl.classList.contains("hidden"), "自动目录回开:目录下拉应重新出现");
+      assert(!tocModeEl.classList.contains("hidden"), "自动目录回开:目录模式档位应重新出现");
+      assert(
+        checkedRadio("tocMode") === "static",
+        `展开后档位应仍是收起前那次选择(不重置),实际 ${JSON.stringify(checkedRadio("tocMode"))}`,
+      );
       // 5c-change) toc change 接线也重算显隐
       // 负探针 unregister-gate:把「目录模式可见性」这条门控**从登记里摘掉**(只改输入:
       // splice 掉 CONTROL_GATES 里的那一条,断言逻辑一行不动)—— 门控的 change 侧接缝
@@ -1018,9 +1034,9 @@ bindings.bindSettingsEvents({ renderSelection: () => {} });
       el("toc").checked = false;
       fireListener(el("toc"), "change");
       // 同 5b:当场判一次,不等落盘往返(否则落权威值回填的重算会掩盖 change 侧漏接线)
-      assert(tocModeEl.classList.contains("hidden"), "关掉自动目录:change 路径应**当场**收起目录下拉(未等落盘往返)");
+      assert(tocModeEl.classList.contains("hidden"), "关掉自动目录:change 路径应**当场**收起目录模式档位(未等落盘往返)");
       await flush();
-      assert(tocModeEl.classList.contains("hidden"), "关掉自动目录:change 路径应同步收起目录下拉");
+      assert(tocModeEl.classList.contains("hidden"), "关掉自动目录:change 路径应同步收起目录模式档位");
     });
   });
 

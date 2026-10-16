@@ -66,7 +66,7 @@ import {
   templatePresetHint,
   templatePresetSelect,
   tocInput,
-  tocModeSelect,
+  tocModeRoot,
 } from "../dom/refs.js";
 import { state } from "../state/state.js";
 import { setError, setStatus } from "../dom/dom-ops.js";
@@ -350,17 +350,20 @@ export function syncAiCleanupTierAvailability(): void {
 }
 
 /**
- * 目录模式下拉的显隐:仅 toc 开启时可见(设置抽屉 04 组),关闭时**整块移除**
- * 而非灰禁 —— 模式不满足就摆一个可点的下拉,用户能选一个不会生效的模式。
- * 走 .hidden 工具类而非直接切 style.display:index.html 给该 select 留了行内
+ * 目录模式(两档 seg)条件子行的显隐:仅 toc 开启时可见(设置抽屉 04 组),
+ * 关闭时**整块移除**而非灰禁 —— 模式不满足就摆一个可点的档位,用户能选一个
+ * 不会生效的模式。
+ * 收起/展开作用在**容器** #tocMode 上(值载体是容器内的 radio 组
+ * input[name="tocMode"],见 settings-controls-table 的 tocMode 条目)——
+ * 隐藏不动选中态,故 toc 重新打开时恢复上次选择(与分档灰禁同理由)。
+ * 走 .hidden 工具类而非直接切 style.display:index.html 给该容器留了行内
  * `display: block`,而 .hidden 带 !important(见 base.css 注释),压得住它;
  * 反过来在 TS 里写 display 字面量等于把展示决策复制一份到逻辑层,违反
  * 「走 CSS 单一来源」。display:none 已把控件移出焦点序与无障碍树,无需 inert。
- * 隐藏不动 select.value —— toc 重新打开时恢复上次选择(与分档灰禁同理由)。
  * 回填与总开关切换共用本函数(单一来源)。
  */
 export function syncTocModeVisibility(): void {
-  tocModeSelect.classList.toggle("hidden", !tocInput.checked);
+  tocModeRoot.classList.toggle("hidden", !tocInput.checked);
 }
 
 /** 抽屉副标题文案合成(DOM 单源:模板 select 选中项 + 纸张 seg 选中值)。

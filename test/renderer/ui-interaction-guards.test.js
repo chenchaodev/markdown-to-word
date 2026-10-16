@@ -29,9 +29,10 @@
  * (6) AI 清理两个分档(保守规整 / 结构改写):置灰跟随总开关 —— 关闭时控件
  *     disabled 且出现可见说明行(不只靠颜色),重新打开后恢复各自上次的选择;
  *     源契约侧锁定「分档落在 05 转换组、排在总开关之下、初始态即 disabled」。
- * (7) 目录模式下拉 tocMode:随自动目录开关整块移除(隐藏而非灰禁)—— 关闭时
- *     不可见也不可交互,重新打开恢复上次选择;源契约侧锁定总开关 change 与回填
- *     两条路径都重算显隐,且 .hidden 保住 !important(压得过行内 display:block)。
+ * (7) 目录模式档位 tocMode(两档 seg,REQ-247 P3 自原生 select 换形):随自动目录开关
+ *     整块移除(隐藏而非灰禁)—— 关闭时不可见也不可交互,重新打开即恢复;
+ *     源契约侧锁定「条件容器 #tocMode 仍带行内 display:block(压得住它的 .hidden 才
+ *     必须带 !important)」与容器/值载体分层(值在容器内的 radio 组上,故隐藏不丢选择)。
  *     (6)(7) 的「两条接线路径都重算」此前是源码正则,已改为行为断言并迁至
  *     settings-controls 段;本段保留对**同步函数本身**与 .hidden 契约的守护。
  *
@@ -63,7 +64,7 @@ import { loadConvertFlowDeps } from "./convert-flow-deps.js";
  * - `convert/file-list.ts` —— (1b) 可拖拽判定与悬停提示收敛为纯路径;
  * - `state/state.ts` —— 被驱动的状态单例;
  * - `settings/settings-panel.ts` —— (2) 动态节点不被 `applyStaticTexts` 覆盖、
- *   (6)(7) AI 清理分档与 tocMode 下拉的显隐重算;
+ *   (6)(7) AI 清理分档与 tocMode 档位的显隐重算;
  * - `settings/settings-bindings-app.ts` —— (2) 语言切换钩子 `appWriteHooks.languageSelect`
  *   与 `refreshDynamicSettingsText` 那条链;
  * - `dom/dom-ops.ts` —— (3) 复制反馈与读屏播报写入的那一侧;
@@ -879,42 +880,66 @@ export async function run() {
     // 已改为**行为断言**(真跑 change 事件与 applySettingsToControls 后读置灰态),
     // 落在 settings-controls 段(逐控件基线 + 3 个手写门控双向),正则本身不再作护栏。
 
-    // (7) 目录模式下拉 tocMode:随自动目录开关整块移除(行为)+ 两处接线齐全(源契约)
-    //     灰禁会留下一个可点、但不生效的下拉(用户能选一个不会生效的模式),
+    // (7) 目录模式档位(两档 seg)tocMode:随自动目录开关整块移除(行为)+ 容器/值载体分层(源契约)
+    //     灰禁会留下一个可点、但不生效的档位(用户能选一个不会生效的模式),
     //     故按 settings-ia §3 走「模式不满足即整块移除」那一路。
-    await suite.case("(7) settings-panel 导出 syncTocModeVisibility(目录下拉显隐单一来源)", () => {
+    //     收起作用在**容器** #tocMode 上,选中态落在容器内的 radio 组 —— 故隐藏不动选中态。
+    //     原「收起不得丢 select.value」的行为断言已迁到 settings-controls 段 5c(那里能真驱动
+    //     radio 组与 state.settings):本段 **不装 selectorGroups**,radio 在这里根本不可达,
+    //     对着 stub 上自设的字段断言「值还在」只是自证,没有判别力。
+    await suite.case("(7) settings-panel 导出 syncTocModeVisibility(目录模式显隐单一来源)", () => {
       assert(
         typeof panel.syncTocModeVisibility === "function",
-        "settings-panel 应导出 syncTocModeVisibility(目录下拉显隐单一来源)",
+        "settings-panel 应导出 syncTocModeVisibility(目录模式显隐单一来源)",
       );
     });
     const tocEl = dom.elementFor("toc");
     const tocModeEl = dom.elementFor("tocMode");
     // stub 元素的 classList 初值带 hidden,先摘掉以免正态断言测的是 stub 而非本函数
     tocModeEl.classList.remove("hidden");
-    tocModeEl.value = "field";
     tocEl.checked = false;
     panel.syncTocModeVisibility();
-    await suite.case("(7) 自动目录关闭:目录下拉整块移除,但不丢上次选的模式", () => {
+    await suite.case("(7) 自动目录关闭:目录模式档位整块移除(隐藏节点,不摘节点)", () => {
       assert(
         tocModeEl.classList.contains("hidden"),
-        "自动目录关闭时目录模式下拉应整块移除(display:none ⇒ 既不可见也不可聚焦/交互)",
+        "自动目录关闭时目录模式档位应整块移除(display:none ⇒ 既不可见也不可聚焦/交互)",
       );
       assert(
-        tocModeEl.value === "field",
-        "收起不得丢掉上次选的目录模式(重新打开自动目录即恢复)",
+        tocModeEl.isConnected === true,
+        "「整块移除」= 挂 .hidden 隐藏,不是把节点从文档里摘掉(摘掉会让重新打开无从恢复)",
       );
     });
     tocEl.checked = true;
     panel.syncTocModeVisibility();
-    await suite.case("(7) 自动目录开启:目录下拉重新出现,选择不重置", () => {
+    await suite.case("(7) 自动目录开启:目录模式档位重新出现,容器状态不粘", () => {
       assert(
         !tocModeEl.classList.contains("hidden"),
-        "自动目录开启后目录模式下拉应重新出现",
+        "自动目录开启后目录模式档位应重新出现",
+      );
+    });
+
+    // 结构断言(元素树):目录模式仍在 04 编号与目录组内、容器排在 toc 开关之前、值载体
+    // 是容器内的 radio 组 —— 这三条一起构成「收起不丢档位」的前提(隐藏的是容器,不是值),
+    // 也支撑几何规格 DRAWER_ROW_BAND_PX 注里那条「不按 DOM 序判」的理由(容器在 DOM 里
+    // 先于开关、视觉上却在开关下方)。
+    await suite.case("(7) 结构:#tocMode 是 04 组内的显隐容器,值载体是容器内的 radio 组", () => {
+      assert(tree.byId("tocMode") !== undefined, "index.html 未解析到 #tocMode(元素树构建有缺口)");
+      assert(
+        tree.groupOf("tocMode") === "numbering",
+        `#tocMode 应落在 04 编号与目录组内,实际 ${String(tree.groupOf("tocMode"))}`,
       );
       assert(
-        tocModeEl.value === "field",
-        "展开后目录模式应仍是收起前那次选择(不重置)",
+        tree.orderOf("tocMode") < tree.orderOf("toc"),
+        "条件子行的容器在 DOM 上仍排在 toc 开关之前(.sw-row 的末子元素居右)——" +
+          "几何门禁因此按视觉位置判序,不按 DOM 序",
+      );
+      assert(
+        !/<select[^>]*id="tocMode"/.test(indexHtml),
+        "目录模式不应再是原生 select(REQ-247 P3 已改两档 seg)",
+      );
+      assert(
+        indexHtml.includes('name="tocMode"'),
+        "目录模式的**值载体**应是容器内的 input[name=\"tocMode\"] radio 组(容器只承载显隐)",
       );
     });
 
@@ -927,8 +952,10 @@ export async function run() {
     // 行内 display:block 赢,收起门控静默失效(check:geometry 的 drawer-gate-inverted
     // 在真实窗口里量到 tocMode 仍可见即判红 —— 见 geometry-spec DRAWER_CONDITIONS
     // 的 tocMode 条目与 settings-panel.syncTocModeVisibility 的注)。
-    // 本段这条只守「被守护的机制真被用上了」:该 select 必须仍带行内 display,
+    // 本段这条只守「被守护的机制真被用上了」:#tocMode(条件容器)必须仍带行内 display,
     // 否则 !important 那一层压力根本不存在,几何门禁也就无从判红(压力源不能被悄悄拆掉)。
+    // 形态改 seg 后这条**原样成立**:内联 display:block 仍在容器上(它同时是 seg 换行的
+    // 那一层 —— inline-flex 的 seg 挂不上 margin-top,故容器必须是块级)。
     const tocModeTag = tagOf(indexHtml, "tocMode");
     await suite.case("(7) #tocMode 仍带行内 display:block —— .hidden 的 !important 是被它逼出来的", () => {
       assert(
@@ -1063,7 +1090,7 @@ export async function run() {
     // 失败两态的实际计算色比对),并在那里扩了 CSS 令牌恒等职责 —— 见该脚本文件头。
     // 本段不再有任何 dialogs.css 源文本断言。
 
-    console.log("[ok] ui-interaction-guards:队列行键盘边界与忙碌两态 / 模态关闭后动作按钮重算 / 动态节点不被覆盖 / 复制反馈复位与读屏播报 / 完成态收束重放 / 取消中性态与批量标题 / aria-busy / AI 清理分档置灰跟随总开关(行为 + 层级从属结构) / 目录模式下拉随总开关收起 / 语言切换后静态与动态节点同刷新语言 断言通过");
+    console.log("[ok] ui-interaction-guards:队列行键盘边界与忙碌两态 / 模态关闭后动作按钮重算 / 动态节点不被覆盖 / 复制反馈复位与读屏播报 / 完成态收束重放 / 取消中性态与批量标题 / aria-busy / AI 清理分档置灰跟随总开关(行为 + 层级从属结构) / 目录模式档位随总开关收起 / 语言切换后静态与动态节点同刷新语言 断言通过");
 
     return { cases: suite.results };
   } finally {

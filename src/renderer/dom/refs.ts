@@ -54,7 +54,12 @@ export const breakBeforeH1Input = document.getElementById(
   "breakBeforeH1",
 ) as HTMLInputElement;
 export const tocInput = document.getElementById("toc") as HTMLInputElement;
-export const tocModeSelect = document.getElementById("tocMode") as HTMLSelectElement;
+/**
+ * 目录模式的**可见性容器**(`<span>`;两档档位是它内部的 radio 组)。
+ * 类型刻意取 HTMLElement —— 它不再是 select,旧名 tocModeSelect 与
+ * `as HTMLSelectElement` 是 select 时代的残留断言(运行时只用 .classList,故失真不炸)。
+ */
+export const tocModeRoot = document.getElementById("tocMode") as HTMLElement;
 export const equationNumberingInput = document.getElementById(
   "equationNumbering",
 ) as HTMLInputElement;

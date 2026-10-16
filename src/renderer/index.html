@@ -810,11 +810,19 @@
               <span>
                 <span class="row-l" id="tocLabel" data-i18n="settings.toc">自动目录</span>
                 <span class="row-sub" id="tocDesc" data-i18n="settings.tocDesc">在文首生成目录页</span>
-                <label class="sr-only" for="tocMode" data-i18n="settings.tocMode">目录模式</label>
-                <select id="tocMode" class="toc-mode-select" style="display: block; margin-top: 6px">
-                  <option value="static" data-i18n="settings.tocModeStatic">静态目录(免更新)</option>
-                  <option value="field" data-i18n="settings.tocModeField">Word 域目录(带页码)</option>
-                </select>
+                <!-- 目录模式 = toc 的条件子行(IA §3 规则 1):条件节点 #tocMode(带 id)
+                     整块随 toc 收起(.hidden,不灰禁);**值载体**是组内 radio
+                     (input[name="tocMode"]),故收起只切容器的显隐、不清上次选的档位。
+                     内联 display:block 是 .hidden 必须靠 !important 压过的压力源,勿拆
+                     (判据见 test/renderer/ui-interaction-guards (7))。
+                     两档自原生下拉改 seg(REQ-247 P3):与抽屉内其余枚举控件同形态;
+                     id 落在容器上是为了显隐单一来源(settings-panel.syncTocModeVisibility)。 -->
+                <span id="tocMode" style="display: block; margin-top: 6px">
+                  <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.tocMode" aria-label="目录模式">
+                    <label class="segment"><input type="radio" name="tocMode" value="static" checked /><span data-i18n="settings.tocModeStatic">静态目录(免更新)</span></label>
+                    <label class="segment"><input type="radio" name="tocMode" value="field" /><span data-i18n="settings.tocModeField">Word 域目录(带页码)</span></label>
+                  </span>
+                </span>
               </span>
               <input type="checkbox" id="toc" class="switch-input" aria-labelledby="tocLabel" aria-describedby="tocDesc" />
             </div>
