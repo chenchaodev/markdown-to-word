@@ -530,7 +530,7 @@
                   name="paper"/name="orientation" 与 settings-bindings 的组绑定对应。
                   同名 radio 组在快速参数条中镜像一份(document 级同组成组),
                   点击任一侧即互斥同步,绑定与回填零改动 -->
-            <div class="row">
+            <div class="row row--pair">
               <span class="row-l" data-i18n="settings.paper">纸张</span>
               <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.paper" aria-label="纸张">
                 <label class="segment"><input type="radio" name="paper" value="A4" checked /><span>A4</span></label>
@@ -540,21 +540,21 @@
                 <label class="segment"><input type="radio" name="paper" value="Legal" /><span>Legal</span></label>
               </span>
             </div>
-            <div class="row">
+            <div class="row row--pair">
               <span class="row-l" data-i18n="settings.orientation">方向</span>
               <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.orientation" aria-label="方向">
                 <label class="segment">
                   <input type="radio" name="orientation" value="portrait" checked />
-                  <span><svg class="ic" style="width: 12px; height: 12px" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="4" width="10" height="16" rx="1.5"/></svg><span data-i18n="settings.portrait">纵向</span></span>
+                  <span><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="4" width="10" height="16" rx="1.5"/></svg><span data-i18n="settings.portrait">纵向</span></span>
                 </label>
                 <label class="segment">
                   <input type="radio" name="orientation" value="landscape" />
-                  <span><svg class="ic" style="width: 12px; height: 12px" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="7" width="16" height="10" rx="1.5"/></svg><span data-i18n="settings.landscape">横向</span></span>
+                  <span><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="7" width="16" height="10" rx="1.5"/></svg><span data-i18n="settings.landscape">横向</span></span>
                 </label>
               </span>
             </div>
             <div class="row block">
-              <div class="row-l" data-i18n="settings.margins" style="margin-bottom: 8px">四边边距（mm）</div>
+              <div class="row-l" data-i18n="settings.margins">四边边距（mm）</div>
               <div class="mm-grid">
                 <!-- max 与 settings-logic 校验上限对称(MARGIN_MAX_MM = 1000,core/settings-defaults.ts 单源) -->
                 <div class="mm-cell"><label for="marginTop" data-i18n="settings.marginTop">上</label><div class="mm-in"><input type="number" id="marginTop" class="tin" min="0" max="1000" step="0.5" aria-describedby="marginError" aria-invalid="false" /><span>mm</span></div></div>
@@ -570,7 +570,7 @@
           <!-- ── 03 文字:字符与段落观感(合并入 02 排版) ── -->
             <div class="row">
               <label class="row-l" for="fontEastAsia" data-i18n="settings.fontEastAsia">中文字体</label>
-              <input type="text" id="fontEastAsia" class="tin" style="width: 170px" list="fontEastAsiaSuggestions" aria-describedby="fontEastAsiaError" aria-invalid="false" />
+              <input type="text" id="fontEastAsia" class="tin tin-text" list="fontEastAsiaSuggestions" aria-describedby="fontEastAsiaError" aria-invalid="false" />
               <datalist id="fontEastAsiaSuggestions">
                 <option value="微软雅黑"></option>
                 <option value="宋体"></option>
@@ -583,7 +583,7 @@
             <p id="fontEastAsiaError" class="field-error hidden" role="alert" aria-controls="fontEastAsia"></p>
             <div class="row">
               <label class="row-l" for="fontAscii" data-i18n="settings.fontAscii">西文字体</label>
-              <input type="text" id="fontAscii" class="tin" style="width: 170px" list="fontAsciiSuggestions" aria-describedby="fontAsciiError" aria-invalid="false" />
+              <input type="text" id="fontAscii" class="tin tin-text" list="fontAsciiSuggestions" aria-describedby="fontAsciiError" aria-invalid="false" />
               <datalist id="fontAsciiSuggestions">
                 <option value="Calibri"></option>
                 <option value="Arial"></option>
@@ -595,7 +595,7 @@
             <p id="fontAsciiError" class="field-error hidden" role="alert" aria-controls="fontAscii"></p>
             <!-- 有界离散数值 → stepper(guidelines §3.1);input id 不变,
                   ± 按钮经 settings-bindings 步进并走既有 change 校验/持久化链路 -->
-            <div class="row">
+            <div class="row row--pair">
               <label class="row-l" for="bodySizePt"><span data-i18n="settings.bodySize">正文字号</span><span class="setting-label-hint" data-i18n="settings.bodySizeHint">(pt)</span></label>
               <span class="stepper">
                 <button type="button" id="bodySizeDecBtn" data-i18n-aria-label="settings.stepDecreaseAria" aria-label="减小字号">&minus;</button>
@@ -605,7 +605,7 @@
             </div>
             <p id="bodySizeError" class="field-error hidden" role="alert" aria-controls="bodySizePt"></p>
             <!-- 有界连续数值 → range 滑杆 + mono 实时回显(guidelines §3.1) -->
-            <div class="row">
+            <div class="row row--pair">
               <label class="row-l" for="lineSpacing"><span data-i18n="settings.lineSpacing">行距倍数</span><span class="setting-label-hint" data-i18n="settings.lineSpacingHint">(倍数)</span></label>
               <span class="row-r">
                 <input type="range" id="lineSpacing" min="1" max="2.5" step="0.05" data-i18n-aria-label="settings.lineSpacing" aria-label="行距倍数" aria-describedby="lineSpacingError" aria-invalid="false" />
@@ -613,7 +613,7 @@
               </span>
             </div>
             <p id="lineSpacingError" class="field-error hidden" role="alert" aria-controls="lineSpacing"></p>
-            <div class="row">
+            <div class="row row--pair">
               <span class="row-l" data-i18n="settings.headingScaleTier">标题字号档位</span>
               <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.headingScaleTier" aria-label="标题字号档位">
                 <label class="segment"><input type="radio" name="headingScale" value="compact" /><span data-i18n="settings.tierCompact">紧凑</span></label>
@@ -621,7 +621,7 @@
                 <label class="segment"><input type="radio" name="headingScale" value="spacious" /><span data-i18n="settings.tierSpacious">舒展</span></label>
               </span>
             </div>
-            <div class="row">
+            <div class="row row--pair">
               <span class="row-l" data-i18n="settings.headingSpacingTier">标题间距档位</span>
               <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.headingSpacingTier" aria-label="标题间距档位">
                 <label class="segment"><input type="radio" name="headingSpacing" value="compact" /><span data-i18n="settings.tierCompact">紧凑</span></label>
@@ -633,11 +633,11 @@
             <div class="sw-row">
               <span>
                 <span class="row-l" id="firstLineIndentLabel" data-i18n="settings.firstLineIndent">首行缩进</span>
-                <span class="row-sub" id="firstLineIndentDesc" style="display: block" data-i18n="settings.firstLineIndentDesc">正文段落首行缩进 2 字符</span>
+                <span class="row-sub" id="firstLineIndentDesc" data-i18n="settings.firstLineIndentDesc">正文段落首行缩进 2 字符</span>
               </span>
               <input type="checkbox" id="firstLineIndent" class="switch-input" aria-labelledby="firstLineIndentLabel" aria-describedby="firstLineIndentDesc" />
             </div>
-            <div class="row">
+            <div class="row row--pair">
               <span class="row-l" data-i18n="settings.align">对齐方式</span>
               <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.align" aria-label="对齐方式">
                 <label class="segment">
@@ -658,7 +658,7 @@
             <div class="sec-h"><span class="sec-num">03</span><span class="sec-title" data-i18n="settings.groupHeaderWatermark">页眉页脚与水印</span><span class="sec-rule"></span></div>
             <!-- 模式 + 条件字段(IA §3.1 抽屉唯一折叠形态):主控 seg 置首,
                  条件字段收入 .cond 凹陷容器,仅 custom 展开(settings-bindings 同步) -->
-            <div class="row">
+            <div class="row row--pair">
               <span class="row-l" data-i18n="settings.headerModeLabel">页眉模式</span>
               <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.headerModeLabel" aria-label="页眉模式">
                 <label class="segment"><input type="radio" name="headerMode" value="default" checked /><span data-i18n="settings.modeDefault">默认</span></label>
@@ -670,11 +670,11 @@
                  footerEnabled 在条件块内仅 custom 可见——隐藏不重置值,
                  后端存取链路(bindings/panel)不受显隐影响 -->
             <div id="headerCustomFields" class="cond" inert><div><div class="cond-in">
-              <div class="row block" style="padding-top: 2px">
-                <label class="row-l" for="headerText" data-i18n="settings.headerText" style="margin-bottom: 6px; display: block">页眉文字</label>
-                <input type="text" id="headerText" class="tin" style="width: 100%" />
+              <div class="row block">
+                <label class="row-l" for="headerText" data-i18n="settings.headerText">页眉文字</label>
+                <input type="text" id="headerText" class="tin" />
               </div>
-              <div class="row">
+              <div class="row row--pair">
                 <span class="row-l" data-i18n="settings.headerLogo">页眉图片</span>
                 <span class="row-r">
                   <!-- 动态状态节点:已选 Logo 的文件名由 settings-panel 回填,不带 data-i18n -->
@@ -687,17 +687,17 @@
                   </button>
                 </span>
               </div>
-              <div class="row">
+              <div class="row row--pair">
                 <span class="row-l" data-i18n="settings.headerLayout">页眉布局</span>
                 <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.headerLayout" aria-label="页眉布局">
                   <label class="segment"><input type="radio" name="headerLayout" value="center" checked /><span data-i18n="settings.headerLayoutCenter">居中</span></label>
                   <label class="segment"><input type="radio" name="headerLayout" value="leftRight" /><span data-i18n="settings.headerLayoutLeftRight">左右分栏</span></label>
                 </span>
               </div>
-              <div class="sw-row" style="padding-bottom: 2px">
+              <div class="sw-row">
                 <span>
                   <span class="row-l" id="footerEnabledLabel" data-i18n="settings.footerEnabledLabel">自定义页脚</span>
-                  <span class="row-sub" id="footerEnabledDesc" style="display: block" data-i18n="settings.footerEnabledDesc">显示「第 X 页 / 共 Y 页」；仅自定义模式生效</span>
+                  <span class="row-sub" id="footerEnabledDesc" data-i18n="settings.footerEnabledDesc">显示「第 X 页 / 共 Y 页」；仅自定义模式生效</span>
                 </span>
                 <input type="checkbox" id="footerEnabled" class="switch-input" aria-labelledby="footerEnabledLabel" aria-describedby="footerEnabledDesc" />
               </div>
@@ -707,21 +707,21 @@
             <!-- ── 05 文字水印(合并入 03 页眉页脚与水印) ── -->
             <div class="row block">
               <label class="row-l" for="watermarkText" data-i18n="settings.watermarkText">水印文字</label>
-              <input type="text" id="watermarkText" class="tin" style="width: 100%" placeholder="" />
+              <input type="text" id="watermarkText" class="tin" placeholder="" />
             </div>
             <div class="row">
               <span class="row-l" data-i18n="settings.watermarkAngle">旋转角度</span>
-              <input type="number" id="watermarkAngle" class="tin tin-num" min="0" max="360" step="1" style="width: 96px" />
+              <input type="number" id="watermarkAngle" class="tin tin-num" min="0" max="360" step="1" />
               <span class="row-unit" data-i18n="settings.degree">°</span>
             </div>
-            <div class="row">
+            <div class="row row--pair">
               <span class="row-l" data-i18n="settings.watermarkOpacity">不透明度</span>
-              <input type="number" id="watermarkOpacity" class="tin tin-num" min="0" max="1" step="0.05" style="width: 96px" />
+              <input type="number" id="watermarkOpacity" class="tin tin-num" min="0" max="1" step="0.05" />
             </div>
             <div class="sw-row">
               <span>
                 <span class="row-l" id="watermarkGrayLabel" data-i18n="settings.watermarkGray">浅灰经典观感</span>
-                <span class="row-sub" id="watermarkGrayDesc" style="display: block" data-i18n="settings.watermarkGrayDesc">关闭则沿用正文字色</span>
+                <span class="row-sub" id="watermarkGrayDesc" data-i18n="settings.watermarkGrayDesc">关闭则沿用正文字色</span>
               </span>
               <input type="checkbox" id="watermarkGray" class="switch-input" aria-labelledby="watermarkGrayLabel" aria-describedby="watermarkGrayDesc" />
             </div>
@@ -735,28 +735,28 @@
             <div class="sw-row">
               <span>
                 <span class="row-l" id="headingNumberingLabel" data-i18n="settings.headingNumbering">章节编号</span>
-                <span class="row-sub" id="headingNumberingDesc" style="display: block" data-i18n="settings.headingNumberingDesc">「第 1 章 / 1.1」自动编号</span>
+                <span class="row-sub" id="headingNumberingDesc" data-i18n="settings.headingNumberingDesc">「第 1 章 / 1.1」自动编号</span>
               </span>
               <input type="checkbox" id="headingNumbering" class="switch-input" aria-labelledby="headingNumberingLabel" aria-describedby="headingNumberingDesc" />
             </div>
             <div class="sw-row">
               <span>
                 <span class="row-l" id="captionNumberingLabel" data-i18n="settings.captionNumbering">题注编号</span>
-                <span class="row-sub" id="captionNumberingDesc" style="display: block" data-i18n="settings.captionNumberingDesc">图表下方「图 1.1」样式编号</span>
+                <span class="row-sub" id="captionNumberingDesc" data-i18n="settings.captionNumberingDesc">图表下方「图 1.1」样式编号</span>
               </span>
               <input type="checkbox" id="captionNumbering" class="switch-input" aria-labelledby="captionNumberingLabel" aria-describedby="captionNumberingDesc" />
             </div>
             <div class="sw-row">
               <span>
                 <span class="row-l" id="equationNumberingLabel" data-i18n="settings.equationNumbering">公式编号</span>
-                <span class="row-sub" id="equationNumberingDesc" style="display: block" data-i18n="settings.equationNumberingDesc">公式右侧「(1)」式编号</span>
+                <span class="row-sub" id="equationNumberingDesc" data-i18n="settings.equationNumberingDesc">公式右侧「(1)」式编号</span>
               </span>
               <input type="checkbox" id="equationNumbering" class="switch-input" aria-labelledby="equationNumberingLabel" aria-describedby="equationNumberingDesc" />
             </div>
             <div class="sw-row">
               <span>
                 <span class="row-l" id="tocLabel" data-i18n="settings.toc">自动目录</span>
-                <span class="row-sub" id="tocDesc" style="display: block" data-i18n="settings.tocDesc">在文首生成目录页</span>
+                <span class="row-sub" id="tocDesc" data-i18n="settings.tocDesc">在文首生成目录页</span>
                 <label class="sr-only" for="tocMode" data-i18n="settings.tocMode">目录模式</label>
                 <select id="tocMode" class="toc-mode-select" style="display: block; margin-top: 6px">
                   <option value="static" data-i18n="settings.tocModeStatic">静态目录(免更新)</option>
@@ -768,7 +768,7 @@
             <div class="sw-row">
               <span>
                 <span class="row-l" id="breakBeforeH1Label" data-i18n="settings.breakBeforeH1Short">H1 前分页</span>
-                <span class="row-sub" id="breakBeforeH1Desc" style="display: block" data-i18n="settings.breakBeforeH1Desc">每个一级标题另起一页</span>
+                <span class="row-sub" id="breakBeforeH1Desc" data-i18n="settings.breakBeforeH1Desc">每个一级标题另起一页</span>
               </span>
               <input type="checkbox" id="breakBeforeH1" class="switch-input" aria-labelledby="breakBeforeH1Label" aria-describedby="breakBeforeH1Desc" />
             </div>
@@ -781,7 +781,7 @@
             <div class="sw-row">
               <span>
                 <span class="row-l" id="aiCleanupLabel" data-i18n="settings.aiCleanup">AI 清理</span>
-                <span class="row-sub" id="aiCleanupDesc" style="display: block" data-i18n="settings.aiCleanupDesc">转换前自动规整 AI 生成的 Markdown（智能引号、破折号、列表、空行）</span>
+                <span class="row-sub" id="aiCleanupDesc" data-i18n="settings.aiCleanupDesc">转换前自动规整 AI 生成的 Markdown（智能引号、破折号、列表、空行）</span>
               </span>
               <input type="checkbox" id="aiCleanup" class="switch-input" aria-labelledby="aiCleanupLabel" aria-describedby="aiCleanupDesc" />
             </div>
@@ -793,14 +793,14 @@
               <div class="sw-row">
                 <span>
                   <span class="row-l" id="aiCleanupTidyLabel" data-i18n="settings.aiCleanupTidy">保守规整</span>
-                  <span class="row-sub" id="aiCleanupTidyDesc" style="display: block" data-i18n="settings.aiCleanupTidyDesc">统一引号与破折号、补齐列表标记后的空格、清理行尾空白与多余空行（不改内容）</span>
+                  <span class="row-sub" id="aiCleanupTidyDesc" data-i18n="settings.aiCleanupTidyDesc">统一引号与破折号、补齐列表标记后的空格、清理行尾空白与多余空行（不改内容）</span>
                 </span>
                 <input type="checkbox" id="aiCleanupTidy" class="switch-input" aria-labelledby="aiCleanupTidyLabel" aria-describedby="aiCleanupTidyDesc" disabled />
               </div>
               <div class="sw-row">
                 <span>
                   <span class="row-l" id="aiCleanupRewriteLabel" data-i18n="settings.aiCleanupRewrite">结构改写</span>
-                  <span class="row-sub" id="aiCleanupRewriteDesc" style="display: block" data-i18n="settings.aiCleanupRewriteDesc">删除 [1] 式引用标记与 emoji、统一标题层级（会改动正文内容）</span>
+                  <span class="row-sub" id="aiCleanupRewriteDesc" data-i18n="settings.aiCleanupRewriteDesc">删除 [1] 式引用标记与 emoji、统一标题层级（会改动正文内容）</span>
                 </span>
                 <input type="checkbox" id="aiCleanupRewrite" class="switch-input" aria-labelledby="aiCleanupRewriteLabel" aria-describedby="aiCleanupRewriteDesc" disabled />
               </div>
@@ -809,14 +809,14 @@
             <div class="sw-row">
               <span>
                 <span class="row-l" id="obsidianCompatLabel" data-i18n="settings.obsidianCompat">Obsidian 兼容</span>
-                <span class="row-sub" id="obsidianCompatDesc" style="display: block" data-i18n="settings.obsidianCompatDesc">将 [[双链]]、![[嵌入]] 转为标准 Markdown 链接</span>
+                <span class="row-sub" id="obsidianCompatDesc" data-i18n="settings.obsidianCompatDesc">将 [[双链]]、![[嵌入]] 转为标准 Markdown 链接</span>
               </span>
               <input type="checkbox" id="obsidianCompat" class="switch-input" aria-labelledby="obsidianCompatLabel" aria-describedby="obsidianCompatDesc" />
             </div>
             <div class="row block">
               <label class="row-l" for="obsidianAttachmentFolder" data-i18n="settings.obsidianAttachmentFolder">Obsidian 附件子文件夹</label>
               <div class="row-sub" data-i18n="settings.obsidianAttachmentFolderDesc">用于解析 ![[图片]] 路径前缀（默认 Attachments）</div>
-              <input type="text" id="obsidianAttachmentFolder" class="tin" style="width: 100%" />
+              <input type="text" id="obsidianAttachmentFolder" class="tin" />
             </div>
             <div class="row block">
               <div class="row-l" data-i18n="settings.outputDir">输出目录</div>
@@ -832,7 +832,7 @@
                 </button>
               </div>
             </div>
-            <div class="row">
+            <div class="row row--pair">
               <span class="row-l" data-i18n="settings.afterConvert">导出后行为</span>
               <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.afterConvert" aria-label="导出后行为">
                 <label class="segment">
@@ -850,9 +850,9 @@
               </span>
             </div>
             <div class="row block">
-              <div class="row-l" style="margin-bottom: 8px">
+              <div class="row-l">
                 <span data-i18n="settings.pdfCssLabel">PDF 自定义 CSS</span>
-                <span class="scope-tag" style="margin-left: 6px" data-i18n="settings.tagPdfOnly">仅 PDF</span>
+                <span class="scope-tag" data-i18n="settings.tagPdfOnly">仅 PDF</span>
               </div>
               <!-- IA 06 规定 textarea 形态(settings-ia §2/§3.1 路径类同构之外
                      的原始样式编辑位);与导入/清除按钮同写 settings.pdfCss -->
@@ -863,7 +863,7 @@
                 data-i18n-placeholder="settings.pdfCssPlaceholder"
                 placeholder="/* 仅作用于 PDF 输出 */"
               ></textarea>
-              <div class="mgmt" style="padding-top: 8px">
+              <div class="mgmt">
                 <button type="button" id="pdfCssImportBtn" class="btn btn-ghost sm"
                   data-i18n-title="settings.cssImportTitle"
                   title="导入 CSS 文件作为 PDF 样式模板(追加到默认样式之后覆盖)">
@@ -884,7 +884,7 @@
           <section class="sec" id="settingsPanel-app" role="tabpanel"
             aria-labelledby="settingsTab-app" data-group="app">
             <div class="sec-h"><span class="sec-num">06</span><span class="sec-title" data-i18n="settings.groupApp">应用</span><span class="scope-tag" data-i18n="settings.tagNotInPreset">不入预设</span><span class="sec-rule"></span></div>
-            <div class="row">
+            <div class="row row--pair">
               <span class="row-l" data-i18n="settings.groupAppearance">主题</span>
               <span class="segmented seg-sm" role="radiogroup" data-i18n-aria-label="settings.groupAppearance" aria-label="主题">
                 <label class="segment">
@@ -901,7 +901,7 @@
                 </label>
               </span>
             </div>
-            <div class="row">
+            <div class="row row--pair">
               <label class="row-l" for="languageSelect" data-i18n="settings.groupLanguage">界面语言</label>
               <!-- 选项由 settings-panel.rebuildLanguageOptions 按 LANGUAGES 注册表动态生成 -->
               <span class="sel-wrap">
@@ -909,10 +909,9 @@
               </span>
             </div>
           </section>
-
-          <p class="settings-note" data-i18n="settings.autoSaveNote">设置即时生效并自动保存</p>
           </div>
         </div>
+        <p class="settings-note drawer-autosave" data-i18n="settings.autoSaveNote">设置即时生效并自动保存</p>
         <footer class="drawer-foot">
           <!-- mockup 抽屉底栏左位「恢复默认」(转换相关各组复位;
                  07 应用偏好与自定义预设保留,语义见 settings-bindings 接线) -->

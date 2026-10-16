@@ -58,6 +58,21 @@
   --radius-btn-sm: 7px;
   --radius-in: 7px;
 
+  /* 字号档(settings 域字号收口:值与原字面量逐一对齐,只收口不改字号) */
+  --fs-2xs: 10px;
+  --fs-xs: 10.5px;
+  --fs-sm: 11px;
+  --fs-md: 11.5px;
+  --fs-base: 12px;
+  --fs-lg: 13px;
+  --fs-xl: 14px;
+  --fs-2xl: 16px;
+
+  /* 抽屉控件定宽三档:文本件 / 数值件 / 滑杆(原散在行内 style 与三条规则,单源收口) */
+  --ctl-text-w: 170px;
+  --ctl-num-w: 96px;
+  --ctl-range-w: 150px;
+
   /* 标题栏高度(矮窗档降为 40px,抽屉/遮罩 top 联动) */
   --tbh: 44px;
 
@@ -485,7 +500,7 @@ svg.ic {
 .rico {
   width: 34px;
   height: 34px;
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   background: var(--inset);
   color: var(--ink-2);
   display: grid;
@@ -1016,7 +1031,7 @@ svg.ic {
   background: var(--card);
   color: var(--ink);
   font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.09);
+  box-shadow: var(--shadow-card);
 }
 
 .segment input:focus-visible + span {
@@ -1043,6 +1058,8 @@ svg.ic {
   width: 36px;
   height: 20px;
   flex: none;
+  /* 胶囊档(guidelines §1.3 圆角档 999):radius 五枚 token 不含胶囊值,
+     换成 8px 会把开关压成方块毁形态,故此处保留 999 字面量 */
   border-radius: 999px;
   background: var(--line-2);
   position: relative;
@@ -1059,7 +1076,7 @@ svg.ic {
   height: 16px;
   border-radius: 50%;
   background: var(--switch-knob);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-card);
   transition: transform 0.16s ease;
 }
 
@@ -1100,9 +1117,14 @@ svg.ic {
   user-select: text;
 }
 
+/* 文本输入定宽(字体名等;与 .tin-num 同族,宽度走 --ctl-text-w) */
+.tin-text {
+  width: var(--ctl-text-w);
+}
+
 /* 数字输入(角度/不透明度等):定宽,与相邻单位符同行对齐 */
 .tin-num {
-  width: 96px;
+  width: var(--ctl-num-w);
   text-align: right;
 }
 
@@ -1197,7 +1219,7 @@ input[type="range"] {
   height: 4px;
   border-radius: 99px;
   background: var(--line-2);
-  width: 150px;
+  width: var(--ctl-range-w);
   cursor: pointer;
 }
 
@@ -1209,7 +1231,7 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 50%;
   background: var(--acc);
   border: 2.5px solid var(--card);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-card);
 }
 
 /* 滑杆右侧 mono 实时回显(行距倍数;guidelines §2 range 模式:不弹气泡) */
@@ -1289,7 +1311,7 @@ input[type="range"]::-webkit-slider-thumb {
   color: var(--ink-2);
   background: var(--inset);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-in);
   padding: 4px 9px;
   user-select: text;
 }

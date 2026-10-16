@@ -20,7 +20,8 @@
   right: 0;
   display: flex;
   flex-direction: column;
-  width: min(440px, calc(100vw - 48px));
+  /* 抽屉三档宽:496(舒适)/ 452(≤1080)/ 412(≤900),见文末响应式块 */
+  width: min(496px, calc(100vw - 48px));
   height: 100%;
   background: var(--canvas);
   border-left: 1px solid var(--line);
@@ -59,7 +60,7 @@
 .drawer-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 16px;
+  font-size: var(--fs-2xl);
   letter-spacing: 0.2em;
   font-weight: 600;
 }
@@ -74,7 +75,7 @@
  * settings-drawer.updateDrawerMeta 写入,:empty 隐藏 */
 .drawer-subtitle {
   margin: 2px 0 0;
-  font-size: 12px;
+  font-size: var(--fs-base);
   font-weight: 400;
   color: var(--mut);
 }
@@ -97,7 +98,7 @@
 /* ---------- 设置 Tab 导航(左侧竖向) + 右侧面板 ---------- */
 .settings-tabs {
   flex: none;
-  width: 96px;
+  width: 112px;
   padding: 10px 0;
   border-right: 1px solid var(--line);
   display: flex;
@@ -113,13 +114,12 @@
   border: none;
   text-align: center;
   white-space: normal;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  padding: 9px 8px 9px 8px;
+  padding: 9px 8px;
+  min-height: 44px;
   font-family: var(--font-display);
-  font-size: 12px;
+  font-size: var(--fs-base);
   letter-spacing: 0.1em;
-  line-height: 1.35;
+  line-height: 1.4;
   color: var(--mut);
   cursor: pointer;
   border-left: 2px solid transparent;
@@ -146,9 +146,9 @@
   padding: 2px 18px 20px;
 }
 
+/* 只接管显隐:上边距留给 .sec 的 24px 组间节奏(.sec:first-child 仍 10px) */
 .settings-panels > .sec {
   display: none;
-  margin-top: 10px;
 }
 
 .settings-panels > .sec.active {
@@ -188,13 +188,13 @@
 
 .sec-num {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: var(--acc);
 }
 
 .sec-title {
   font-family: var(--font-display);
-  font-size: 14px;
+  font-size: var(--fs-xl);
   letter-spacing: 0.24em;
   font-weight: 600;
 }
@@ -209,7 +209,7 @@
    故 03 不挂该角标;「仅 PDF」用于 pdfCss。两者复用最近列表 .tag 形态) */
 .scope-tag {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--fs-2xs);
   letter-spacing: 0.05em;
   color: var(--mut);
   border: 1px solid var(--line-2);
@@ -222,21 +222,31 @@
   margin-left: 2px;
 }
 
-/* 说明行(预设作用域声明 / 页眉默认模式说明等) */
+/* 说明行(预设作用域声明 / 页眉默认模式说明等):左侧发丝轨与正文分栏区隔 */
 .scope-note {
-  font-size: 11.5px;
+  font-size: var(--fs-md);
   line-height: 1.6;
   color: var(--mut);
-  margin: 8px 0 2px;
+  margin: 10px 0 4px;
+  padding-left: 10px;
+  border-left: 2px solid var(--line);
 }
 
-/* 小节标签(03 文字 · 段落) */
+/* 小节标签(02 排版 · 段落):顶部发丝线分段;紧随组头的首个段标签不加线
+   (组头自带 sec-rule 横线,再加即双线) */
 .sub-label {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   letter-spacing: 0.2em;
   color: var(--mut);
-  margin: 12px 0 0;
+  margin: 18px 0 2px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+
+.sec-h + .sub-label {
+  border-top: none;
+  padding-top: 0;
 }
 
 /* ---------- 行 ---------- */
@@ -252,17 +262,30 @@
   display: block;
 }
 
+/* 双元素行(标签 + 控件)→ grid 两列:控件列 auto 不被挤窄,标签列 minmax(0,1fr)
+   承担收缩;align-items 让 20px switch 与 32px 控件同行居中 */
+.row--pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 40px;
+}
+
 .row-l {
-  font-size: 13px;
+  font-size: var(--fs-lg);
   color: var(--ink);
 }
 
+/* 说明行:块级占满可用宽(原 max-width 收窄会在窄档折成碎行),与主标签同轴 */
 .row-sub {
-  font-size: 11.5px;
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--fs-md);
   color: var(--mut);
-  margin-top: 2px;
-  max-width: 240px;
-  line-height: 1.5;
+  margin-top: 3px;
+  line-height: 1.55;
 }
 
 .row-r {
@@ -285,6 +308,48 @@
   flex: none;
 }
 
+/* ---------- 抽屉内控件齐高与行内样式收口 ---------- */
+/* seg-sm 在抽屉内提到总高 32(26 内高 + 2×2 槽 + 2×1 描边,与输入件/stepper 齐高)。
+   quick-bar 也用 seg-sm,但与 qb-select 28px 成对——只在抽屉作用域提档,不动舞台域 */
+.settings-panels .seg-sm .segment > span {
+  height: 26px;
+}
+
+/* 段内方向图标 12px(原行内尺寸收口;quick-bar 图标不在此作用域,仍走 svg.ic 16px) */
+.settings-panels .segment > span > .ic {
+  width: 12px;
+  height: 12px;
+}
+
+/* block 行内标签:块级 + 与控件 8px 间距(原各行内 margin/display 收口) */
+.row.block > .row-l {
+  display: block;
+  margin-bottom: 8px;
+}
+
+/* block 行内的文本件撑满内容列(语义在 CSS,不在行内) */
+.row.block > .tin {
+  width: 100%;
+}
+
+.row.block > .mgmt {
+  padding-top: 8px;
+}
+
+/* 条件字段容器内的首行/末行微调(原行内 padding 收口) */
+.cond-in .row.block {
+  padding-top: 2px;
+}
+
+.cond-in > .sw-row:last-child {
+  padding-bottom: 2px;
+}
+
+/* 行内角标与主标签的间距 */
+.row-l .scope-tag {
+  margin-left: 6px;
+}
+
 /* ---------- 模式 + 条件字段容器(抽屉唯一折叠形态):
  * 主控 seg 置首,条件字段收入凹陷容器(--inset 底 + 左侧轨),
  * 模式不满足整块移除(grid-rows 0fr)而非灰禁 ---------- */
@@ -293,7 +358,7 @@
   grid-template-rows: 0fr;
   margin: 4px 0 8px;
   background: var(--inset);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   border-left: 2px solid var(--line-2);
   transition: grid-template-rows 0.22s ease;
 }
@@ -332,7 +397,7 @@
 
 .mm-cell label {
   display: block;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: var(--mut);
   margin-bottom: 4px;
 }
@@ -352,7 +417,7 @@
   top: 50%;
   transform: translateY(-50%);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: var(--mut);
 }
 
@@ -369,18 +434,18 @@
   align-self: center;
 }
 
-/* ---------- CSS 文本域(06 输出 · PDF 自定义 CSS) ---------- */
+/* ---------- CSS 文本域(05 转换 · PDF 自定义 CSS) ---------- */
 .ta {
   width: 100%;
   min-height: 86px;
   resize: vertical;
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--fs-md);
   line-height: 1.65;
   color: var(--ink-2);
   background: var(--inset);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-btn);
   padding: 9px 11px;
 }
 
@@ -399,20 +464,28 @@
 }
 
 .setting-label {
-  font-size: 13px;
+  font-size: var(--fs-lg);
   color: var(--ink);
 }
 
 .setting-label-hint {
   margin-left: 4px;
-  font-size: 12px;
+  font-size: var(--fs-base);
   color: var(--mut);
 }
 
 .settings-note {
   margin: 12px 0 0;
-  font-size: 12px;
+  font-size: var(--fs-base);
   color: var(--mut);
+}
+
+/* 「设置即时生效并自动保存」:常驻底栏上方一行居中(不再落进组面板滚动区) */
+.drawer-autosave {
+  flex: none;
+  margin: 0;
+  padding: 6px 18px;
+  text-align: center;
 }
 
 .preset-status {
@@ -422,7 +495,7 @@
 
 .field-error {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-base);
   color: var(--acc);
 }
 
@@ -449,16 +522,16 @@
   min-width: 0;
 }
 
-/* 响应式:紧凑档抽屉收窄(guidelines §5);宽度随 tab 栏(96px)同步加宽,
+/* 响应式:紧凑/窄窗档抽屉收窄(guidelines §5);宽度随 tab 栏(112px)同步预算,
  * 并用 calc(100vw - 48px) 兜底,避免窄屏溢出视口 */
 @media (max-width: 1080px) {
   .drawer {
-    width: min(416px, calc(100vw - 48px));
+    width: min(452px, calc(100vw - 48px));
   }
 }
 
 @media (max-width: 900px) {
   .drawer {
-    width: min(396px, calc(100vw - 48px));
+    width: min(412px, calc(100vw - 48px));
   }
 }
