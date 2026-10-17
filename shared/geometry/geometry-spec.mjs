@@ -216,6 +216,8 @@ export const DRAWER_CONTROLS = {
     { key: "headerLogoPath", id: "headerLogoStatus" }, // 值载体是 path-chip,不是选择按钮
     { name: "headerLayout" },
     { id: "footerEnabled" },
+    // 水印总闸(REQ-247 P4):值载体是同名 radio 组 —— 同 tocMode 形态
+    { name: "watermarkMode" },
     { id: "watermarkText" },
     { id: "watermarkAngle" },
     { id: "watermarkOpacity" },
@@ -304,6 +306,37 @@ export const DRAWER_CONDITIONS = [
     on: "custom",
     why: "自定义页脚开关在凹陷容器内且仅自定义模式生效(默认模式的固定页码页脚不受它控制)",
   },
+  // 水印总闸(REQ-247 P4):四字段同处一个 #watermarkFields 凹陷容器,仅 text 档展开。
+  // 取**收起**而非灰禁 —— 收起保留用户已输入的水印文字,切回「文字」档即恢复;
+  // 且四字段是一条连续的子列表,按「整块」处理比分四条形态更贴合 IA §3 规则 1。
+  {
+    control: "watermarkText",
+    master: "watermarkMode",
+    masterKind: "radio",
+    on: "text",
+    why: "水印文字随总闸收起;收起不清空该值(清空即丢用户输入)",
+  },
+  {
+    control: "watermarkAngle",
+    master: "watermarkMode",
+    masterKind: "radio",
+    on: "text",
+    why: "旋转角度与文字同处条件容器,随总闸一同展开",
+  },
+  {
+    control: "watermarkOpacity",
+    master: "watermarkMode",
+    masterKind: "radio",
+    on: "text",
+    why: "不透明度与文字同处条件容器,随总闸一同展开",
+  },
+  {
+    control: "watermarkGray",
+    master: "watermarkMode",
+    masterKind: "radio",
+    on: "text",
+    why: "浅灰开关与文字同处条件容器,随总闸一同展开",
+  },
 ];
 
 /**
@@ -327,13 +360,15 @@ export const DRAWER_DISABLED_TIERS = [
 ];
 
 /**
- * 抽屉三个主控的出厂默认档(core/settings/settings-defaults.ts 的镜像)。
+ * 抽屉四个主控的出厂默认档(core/settings/settings-defaults.ts 的镜像)。
  * 只服务于**合成样本**与阅读规格时的默认预期;判定层不读本表(见 Scenario.drawerMasters
  * 那条注:门禁的预期由样本实测反推)。
  * toc 的出厂值是**开**(见 settings-defaults 的 `toc: true`)—— 照直觉写成 false 会让
  * 「关态」场景的驱动步骤变成「再点一次打开」,于是关态与开态两场景拍到同一张脸。
+ * watermarkMode 的出厂值是**无**(见 settings-defaults 的 `mode: "none"`)—— 与 toc 同理,
+ * 基准场景要拍到「收起」态;开态另设场景驱动(见 drawer-headerwatermark-watermark-960)。
  */
-export const DRAWER_MASTER_DEFAULTS = { toc: true, aiCleanup: false, headerMode: "default" };
+export const DRAWER_MASTER_DEFAULTS = { toc: true, aiCleanup: false, headerMode: "default", watermarkMode: "none" };
 
 /**
  * 同一「视觉行」的判定带宽(px):抽屉里的多字段网格(四边边距的 mm-grid)把两个输入并排放在
@@ -452,8 +487,8 @@ function drawerScenario(id, group, masters, shot) {
 
 /**
  * 抽屉场景序列(接在主窗场景之后):六个分组各一态以覆盖全部控件的可见性,
- * 另加三组「门控开/关」对照 —— 页眉自定义折叠、AI 清理分档灰禁、目录模式收起各测两个方向,
- * 只测关闭侧等于放行「打开总开关后从属项仍然不出现」这种最常见的实现漏项。
+ * 另加四组「门控开/关」对照 —— 页眉自定义折叠、AI 清理分档灰禁、目录模式收起、
+ * 水印总闸收起各测两个方向,只测关闭侧等于放行「打开总开关后从属项仍然不出现」这种最常见的实现漏项。
  * 截图名用「8-drawer-<分组>」而不带序号:与 visual-check 的 ui:shots 同一命名,
  * 交叉核对两份产物时不必在序号与分组名之间做 mental map;门控专属的三态带档位后缀。
  */
@@ -466,6 +501,14 @@ const DRAWER_SCENARIOS = [
     "headerwatermark",
     { headerMode: "custom" },
     "8-drawer-headerwatermark-custom",
+  ),
+  // 水印总闸开态(REQ-247 P4):基准场景出厂是「无」(收起),故开态另设一场景驱动 ——
+  // 只测关闭侧会放过「切到文字档后四字段仍然不出现」这种最常见的实现漏项
+  drawerScenario(
+    "drawer-headerwatermark-watermark-960",
+    "headerwatermark",
+    { watermarkMode: "text" },
+    "8-drawer-headerwatermark-watermark",
   ),
   // 04 组:toc 出厂即开,故「关态」是基准场景、「开态」是点一次关掉
   drawerScenario("drawer-numbering-960", "numbering", {}, "8-drawer-numbering"),

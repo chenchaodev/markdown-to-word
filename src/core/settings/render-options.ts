@@ -76,7 +76,7 @@ export interface SharedRenderOptions {
   equationNumbering?: boolean;
   /** Mermaid 图表渲染回调(缺失时 mermaid 围栏按普通代码块渲染) */
   mermaidResolver?: MermaidResolver;
-  /** 文字水印(缺省 DEFAULT_WATERMARK;text 空串即关闭) */
+  /** 文字水印(缺省 DEFAULT_WATERMARK;是否出图由 mode 决定,本函数做归一) */
   watermark?: WatermarkSettings;
 }
 
@@ -100,7 +100,7 @@ export interface ResolvedRenderSwitches {
   toc: boolean;
   /** 公式编号开关(已解析默认:开) */
   equationNumbering: boolean;
-  /** 文字水印(已解析默认:text 空串即关闭) */
+  /** 文字水印(已解析默认:总闸非「文字」档时 text 已被归一清空) */
   watermark: WatermarkSettings;
 }
 
@@ -114,6 +114,11 @@ export interface ResolvedRenderSwitches {
  */
 export function resolveRenderSwitches(options: SharedRenderOptions): ResolvedRenderSwitches {
   const typography = options.typography ?? DEFAULT_TYPOGRAPHY;
+  // 渲染归一的**单点**:总闸不是「文字」档时一律按关闭出图(清空 text)。
+  // docx 与 PDF 两个渲染器判的是 `text.trim()`,零渲染条件一行不动 —— 把这条判定
+  // 复制进渲染器,等于把「什么算水印开启」的口径散成三份。
+  const watermark: WatermarkSettings = { ...DEFAULT_WATERMARK, ...options.watermark };
+  watermark.text = watermark.mode === "text" ? watermark.text : "";
   return {
     pageSetup: options.pageSetup ?? DEFAULT_PAGE_SETUP,
     typography,
@@ -122,7 +127,7 @@ export function resolveRenderSwitches(options: SharedRenderOptions): ResolvedRen
     captionNumbering: options.captionNumbering ?? typography.captionNumbering,
     toc: options.toc ?? true,
     equationNumbering: options.equationNumbering ?? true,
-    watermark: { ...DEFAULT_WATERMARK, ...options.watermark },
+    watermark,
   };
 }
 

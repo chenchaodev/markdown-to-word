@@ -13,6 +13,7 @@ import {
   MARGIN_MIN_MM,
   MAX_CUSTOM_PRESETS,
   correctPageSetup,
+  resolveWatermarkMode,
   type AppSettings,
   type CustomPreset,
   type PageSetup,
@@ -194,6 +195,13 @@ export function mergeSettingsWithDefaults(
   } else if (pageSetup.error) {
     onPageSetupError?.(pageSetup.error);
   }
+  // watermark 逐字段深合并(同 headerFooter 先例)—— 但 mode **不参与默认铺底**:
+  // `{...DEFAULT, ...source}` 会把 DEFAULT 的 "none" 铺进来,使「旧档缺 mode」与
+  // 「显式 none」不可分辨。故按 source 侧的候选 mode 与合并后的 text 显式派生,
+  // 与 main 侧 sanitizeWatermark 共用 resolveWatermarkMode(两侧语义一致)。
+  const watermark = { ...DEFAULT_SETTINGS.watermark, ...source.watermark };
+  watermark.mode = resolveWatermarkMode(source.watermark?.mode, watermark.text);
+
   const merged: AppSettings = {
     ...DEFAULT_SETTINGS,
     ...source,
@@ -203,8 +211,7 @@ export function mergeSettingsWithDefaults(
     // headerFooter 逐字段深合并——旧档缺整块或缺单字段均按默认兜底,
     // 与 main 侧 sanitizeHeaderFooter 语义一致(双侧防御)
     headerFooter: { ...DEFAULT_SETTINGS.headerFooter, ...source.headerFooter },
-    // watermark 逐字段深合并(同 headerFooter 先例)
-    watermark: { ...DEFAULT_SETTINGS.watermark, ...source.watermark },
+    watermark,
     customPresets: source.customPresets ?? DEFAULT_SETTINGS.customPresets,
     pdfCss: source.pdfCss ?? DEFAULT_SETTINGS.pdfCss,
     // theme 缺失(旧 settings.json)→ "system"(显式 null/undefined 同样兜底)

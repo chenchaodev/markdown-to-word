@@ -392,6 +392,118 @@ export async function run() {
       }
     }
 
+    // ---- 3d. 水印总闸 mode 迁移的产物等价(REQ-247 P4 / ADR-024 §四):存量 watermark
+    //     块缺 mode,经 loadSettings 派生后产物必须与显式 mode 的新形状完全一致;
+    //     并加**反向判据** —— mode:"none" + 非空 text 时产物不得含水印。
+    //     没有反向判据,这键可能根本没接进渲染链而前向用例照样绿(正向用例只比
+    //     「两种输入形状」的产物,两种形状都可能不带水印)。
+    {
+      const { restore: restoreSettingsFile } = await backupSettingsFile();
+      try {
+        const base = {
+          version: 1, format: "docx", afterConvert: "none", breakBeforeH1: false,
+          outputDir: "", toc: true, tocMode: "static", equationNumbering: true,
+          pageSetup: { ...DEFAULT_SETTINGS.pageSetup },
+          typography: { ...DEFAULT_SETTINGS.typography },
+          pdfCss: "", language: "zh", theme: "system", customPresets: [],
+          aiCleanup: { enabled: false, tidy: false, rewrite: false },
+          obsidian: { compat: false, attachmentFolder: "Attachments" },
+        };
+        // 存量形状:watermark 四字段齐全、**没有 mode**,text 非空(用户曾设过水印)
+        const legacyShape = { ...base, watermark: { text: "机密", angle: 315, opacity: 0.5, gray: false } };
+        await fs.mkdir(path.dirname(settingsJsonPath()), { recursive: true });
+        await fs.writeFile(settingsJsonPath(), JSON.stringify(legacyShape), "utf8");
+        const legacyModule = await freshSettingsModule("watermark-mode-migration");
+        const migrated = legacyModule.loadSettings();
+        assert(
+          migrated.watermark.mode === "text" && migrated.watermark.text === "机密",
+          `存量 watermark 应派生为 text 且不改文字,实际 ${JSON.stringify(migrated.watermark)}`,
+        );
+
+        const equivMd = path.join(dir, "watermark-migration.md");
+        await fs.writeFile(equivMd, "---\ntitle: 水印迁移\n---\n\n正文\n", "utf8");
+        const explicitShape = {
+          ...DEFAULT_SETTINGS,
+          aiCleanup: { enabled: false, tidy: false, rewrite: false },
+          obsidian: { compat: false, attachmentFolder: "Attachments" },
+          watermark: {
+            mode: /** @type {import("../../dist/core/settings/settings-defaults.js").WatermarkMode} */ ("text"),
+            text: "机密", angle: 315, opacity: 0.5, gray: false,
+          },
+        };
+        // 水印落在 **header 部件**(docx 头类型仅 default/first/even,水印作置底段并入
+        // default 头),**不在 word/document.xml** —— 比 document.xml 两边都看不到水印,
+        // 断言会退化成「比两份都不含水印的东西」的空转。
+        const watermarkHeadersOf = async (docxPath) => {
+          const zip = await JSZip.loadAsync(await fs.readFile(docxPath));
+          const names = Object.keys(zip.files)
+            .filter((n) => n.startsWith("word/header") && n.endsWith(".xml"))
+            .sort();
+          const texts = [];
+          for (const name of names) {
+            const entry = zip.file(name);
+            if (!entry) throw new Error(`header 部件缺失: ${name}`);
+            texts.push(await entry.async("string"));
+          }
+          return texts.join("\n");
+        };
+        const legacyDocx = await convertImpl(equivMd, "docx", undefined, undefined, undefined, migrated);
+        const explicitDocx = await convertImpl(equivMd, "docx", undefined, undefined, undefined, explicitShape);
+        const legacyHdr = await watermarkHeadersOf(legacyDocx.outputPath);
+        const explicitHdr = await watermarkHeadersOf(explicitDocx.outputPath);
+        assert(
+          explicitHdr.includes("机密"),
+          "总闸置「文字」时 header 部件应含水印文字(反向判据的前提:水印确实会被渲染)",
+        );
+        // 水印形状的 docPr 里嵌了**进程级递增序号**(chrome.ts 的 watermarkShapeSeq++),
+        // 同进程连转两次必然不同 —— 与 PDF 每次改 /Title 与时间戳同类(仓库既有约定是
+        // 不比整文件字节)。故比对前归一化该序号:**除它之外** header 部件必须逐字节一致。
+        const normalizeWatermarkSeq = (xml) =>
+          xml.replace(/watermark-\d+/g, "watermark-N").replace(/Watermark\d+/g, "WatermarkN");
+        assertBytes(
+          Buffer.from(normalizeWatermarkSeq(legacyHdr), "utf8"),
+          Buffer.from(normalizeWatermarkSeq(explicitHdr), "utf8"),
+          "水印 mode 迁移前后 docx 的 header 部件(归一化形状序号后)",
+        );
+        const legacyPdf = await convertImpl(equivMd, "pdf", undefined, undefined, undefined, migrated);
+        const explicitPdf = await convertImpl(equivMd, "pdf", undefined, undefined, undefined, explicitShape);
+        const legacyStreams = await pageContentStreams(await fs.readFile(legacyPdf.outputPath));
+        const explicitStreams = await pageContentStreams(await fs.readFile(explicitPdf.outputPath));
+        assert(
+          legacyStreams.length > 0 && legacyStreams.length === explicitStreams.length,
+          `迁移前后 pdf 页数应一致,实际 ${legacyStreams.length}/${explicitStreams.length}`,
+        );
+        for (const [i, streams] of legacyStreams.entries()) {
+          assertBytes(
+            Buffer.from(streams, "base64"),
+            Buffer.from(explicitStreams[i] ?? "", "base64"),
+            `水印 mode 迁移前后 pdf 第 ${i + 1} 页内容流`,
+          );
+        }
+
+        // 反向判据:总闸置「无」+ 同样的非空 text ⇒ 产物不得含水印
+        const offDocx = await convertImpl(
+          equivMd,
+          "docx",
+          undefined,
+          undefined,
+          undefined,
+          {
+            ...DEFAULT_SETTINGS,
+            watermark: {
+              mode: /** @type {import("../../dist/core/settings/settings-defaults.js").WatermarkMode} */ ("none"),
+              text: "机密", angle: 315, opacity: 0.5, gray: false,
+            },
+          },
+        );
+        const offHdr = await watermarkHeadersOf(offDocx.outputPath);
+        assert(!offHdr.includes("机密"), "总闸置「无」时 header 部件不得含水印文字(否则总闸没接进渲染链)");
+        console.log("[ok] converter:水印 mode 迁移前后产物一致,且总闸置无时确实不出水印");
+      } finally {
+        await restoreSettingsFile();
+      }
+    }
+
     const boundaryInput = path.join(crossRootA, "boundary.md");
     const outsideImage = path.join(dir, "outside.png");
     await fs.writeFile(outsideImage, png1px);

@@ -965,6 +965,41 @@ export async function run() {
       );
     });
 
+    // (7-水印) 水印总闸的第三档:静态 disabled + 常显说明行。
+    //      灰禁**不靠裸 disabled** —— settings-ia §3 规则 1 要求配可见文字(AI 清理
+    //      两个分档的既有做法)。判据落在本段而非几何判定层:后者只对
+    //      DRAWER_DISABLED_TIERS 词条判 disabled↔master,而那张表的判定层**硬编码
+    //      masterKind:"switch"**,语义是「独立从属控件随开关式主控关闭」—— 第三档是
+    //      主控 seg 内部的一个成员、disabled 是无条件的,几何层永远采不到它。
+    await suite.case("(7) 结构:水印「图片」档静态 disabled 且配一行常显说明", () => {
+      assert(
+        /<input[^>]*name="watermarkMode"[^>]*value="image"[^>]*disabled/.test(indexHtml) ||
+          /<input[^>]*name="watermarkMode"[^>]*disabled[^>]*value="image"/.test(indexHtml),
+        "「图片」档应在**静态 HTML** 即带 disabled(不靠 JS 补 —— 回填路径不装 selectorGroups," +
+          "JS 补不出来)",
+      );
+      assert(
+        tree.byId("watermarkImagePlanned") !== undefined,
+        "灰禁档必须配一行可见说明(settings-ia §3 规则 1:不得裸 disabled)",
+      );
+      assert(
+        tree.groupOf("watermarkImagePlanned") === "headerwatermark",
+        `说明行应落在 03 页眉页脚与水印组内,实际 ${String(tree.groupOf("watermarkImagePlanned"))}`,
+      );
+      assert(
+        tree.orderOf("watermarkImagePlanned") > tree.orderOf("watermarkMode"),
+        "说明行应排在总闸 seg 之后(它解释的是档位,不是总开关)",
+      );
+      assert(
+        !/id="watermarkImagePlanned"[^>]*hidden/.test(indexHtml),
+        "说明行必须**常显** —— 它没有状态可切(第三档恒灰禁),不是条件从属项",
+      );
+      assert(
+        indexHtml.includes('name="watermarkMode"'),
+        "水印总闸的值载体应是 input[name=\"watermarkMode\"] radio 组(与 tocMode 同款形态)",
+      );
+    });
+
     // ======================================================================
     // (8) 语言切换:静态文案与动态节点**都**必须落到新语言(行为断言)
     // ======================================================================

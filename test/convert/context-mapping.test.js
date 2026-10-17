@@ -68,7 +68,7 @@ const settings = {
     headerLayout: "center",
     footerEnabled: true,
   },
-  watermark: { text: "", angle: 315, opacity: 0.15, gray: true },
+  watermark: { mode: "none", text: "", angle: 315, opacity: 0.15, gray: true },
   aiCleanup: { enabled: false, tidy: true, rewrite: true },
   obsidian: { compat: false, attachmentFolder: "Attachments" },
 };

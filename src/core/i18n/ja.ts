@@ -216,6 +216,13 @@ const dict = {
     "settings.watermarkGray": "クラシック薄灰",
     "settings.watermarkGrayDesc": "オフの場合は本文の文字色を使用",
     "settings.watermarkNote": "文字列ウォーターマークは各ページに重ねて表示(回転・背面)。PDF と Word 両対応。",
+    // 透かし総スイッチ(3 段):「画像」段は本期グレーアウトで選択不可
+    "settings.watermarkMode": "透かし",
+    "settings.watermarkModeNone": "なし",
+    "settings.watermarkModeText": "文字列",
+    "settings.watermarkModeImage": "画像",
+    "settings.watermarkModeImagePlanned": "予定",
+    "settings.watermarkImagePlanned": "画像透かしは画像を選んで各ページに自動で重ねます。今回はプレースホルダーとして枠を確保します。",
     "settings.degree": "度",
     "settings.groupApp": "アプリ",
     "settings.groupLanguage": "表示言語",

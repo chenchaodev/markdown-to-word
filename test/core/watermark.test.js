@@ -122,7 +122,14 @@ export async function run() {
   });
 
   // ---- 1. docx:水印文字进入 header XML(gray=true → #999999) ----
-  const wmGray = { ...DEFAULT_WATERMARK, text: "机密文档", angle: DEFAULT_WATERMARK_ANGLE, opacity: 0.15, gray: true };
+  const wmGray = {
+    ...DEFAULT_WATERMARK,
+    mode: "text", // REQ-247 P4:mode 是开关;沿用「text 非空即启用」会让新形状下静默不出水印
+    text: "机密文档",
+    angle: DEFAULT_WATERMARK_ANGLE,
+    opacity: 0.15,
+    gray: true,
+  };
   // 转换与解包是昂贵前置,放 case 外一次做完(下列多个 case 引用同一份 header XML)
   const grayDocx = await convertWithFs(md, "docx", {
     baseDir: FIXTURES_DIR,
@@ -202,7 +209,7 @@ export async function run() {
 
   // ---- 2. docx:gray=false → 正文字色 #1F2328 ----
   await suite.case("docx:gray=false 取共享常量正文字色", async () => {
-    const wmColor = { ...DEFAULT_WATERMARK, text: "彩色水印", gray: false };
+    const wmColor = { ...DEFAULT_WATERMARK, mode: "text", text: "彩色水印", gray: false };
     const colorDocx = await convertWithFs(md, "docx", {
       baseDir: FIXTURES_DIR,
       warnings: [],
@@ -222,6 +229,23 @@ export async function run() {
       watermark: { ...DEFAULT_WATERMARK, text: "" },
     });
     assert((await headerXmls(docxBufferOf(emptyDocx))).names.length === 0, "空 text 不应生成任何 header part");
+  });
+
+  // ---- 3b. docx:总闸置「无」+ 非空 text ⇒ 不渲染水印(REQ-247 P4:mode 才是开关) ----
+  // 新形状下「text 非空」不再等于「启用」—— mode 是开关、text 只是内容。这条守的是
+  // **反向**:只断言「空 text 不渲染」会放行「mode 与 text 脱钩」的实现在非空档静默失效。
+  await suite.case("docx:总闸置「无」时即使 text 非空也不渲染水印", async () => {
+    const offDocx = await convertWithFs(md, "docx", {
+      baseDir: FIXTURES_DIR,
+      warnings: [],
+      headerFooter: { ...DEFAULT_HEADER_FOOTER, headerMode: "none" },
+      watermark: { ...DEFAULT_WATERMARK, text: "应当消失" },
+    });
+    const offHeaders = await headerXmls(docxBufferOf(offDocx));
+    assert(
+      offHeaders.names.length === 0 || !offHeaders.texts.join("\n").includes("应当消失"),
+      "总闸置「无」时即使 text 非空也不应渲染水印(mode 是开关,text 只是内容)",
+    );
   });
 
   // ---- 4. docx:默认配置 text 为空(零渲染) ----
@@ -257,7 +281,7 @@ export async function run() {
   // 所以「只断言中点」在结构上就查不出语义反转 —— 上一版反转 bug 正是这样漏过去的
   // (断言写死 50000,而按字面读法实现也产出 50000,测试永远绿)。
   // 方向只能由 5c 的两个**端点**锁死。
-  const wmHalf = { ...DEFAULT_WATERMARK, text: "半透明", angle: DEFAULT_WATERMARK_ANGLE, opacity: 0.5, gray: true };
+  const wmHalf = { ...DEFAULT_WATERMARK, mode: "text", text: "半透明", angle: DEFAULT_WATERMARK_ANGLE, opacity: 0.5, gray: true };
   const halfDocx = await convertWithFs(md, "docx", {
     baseDir: FIXTURES_DIR,
     warnings: [],
@@ -292,7 +316,7 @@ export async function run() {
       baseDir: FIXTURES_DIR,
       warnings: [],
       headerFooter: { ...DEFAULT_HEADER_FOOTER, headerMode: "none" },
-      watermark: { ...DEFAULT_WATERMARK, text, angle: DEFAULT_WATERMARK_ANGLE, opacity, gray: true },
+      watermark: { ...DEFAULT_WATERMARK, mode: "text", text, angle: DEFAULT_WATERMARK_ANGLE, opacity, gray: true },
     });
     return (await headerXmls(docxBufferOf(artifact))).texts.join("\n");
   };

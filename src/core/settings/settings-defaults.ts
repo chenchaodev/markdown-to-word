@@ -170,13 +170,26 @@ export function watermarkDmlRotation(angle: number): number {
  * 内置 TEMPLATE_PRESETS 现可携带 watermark,作为「选预设即完整交付链」的一部分
  * (预设目录与其比较逻辑见同目录 presets.ts,它在 preset 定义时消费本对象);
  * 用户预设(CustomPreset)有意保持仅 typography+pageSetup 不变。
- * - text 空串 = 不启用(零渲染)
- * - angle 旋转角度(度,0–360),口径与取值见 {@link WATERMARK_ANGLE_SIGN}
+ * 文字水印设置:与页眉页脚同组,文档外壳层装饰。
+ * 内置 TEMPLATE_PRESETS 现可携带 watermark,作为「选预设即完整交付链」的一部分
+ * (预设目录与其比较逻辑见同目录 presets.ts,它在 preset 定义时消费本对象);
+ * 用户预设(CustomPreset)有意保持仅 typography+pageSetup 不变。
+ * - mode 水印总闸档位(无 / 文字);是否启用由它定,text 非空本身不等于启用
+ * - text 水印文字;「文字」档下叠加渲染,「无」档下经渲染归一清空
+ * - angle 旋转角度(度,0–360),口径与取值见 WATERMARK_ANGLE_SIGN
  * - opacity 不透明度(0–1),浅色不干扰正文;**双管线两侧均真消费**
  * - gray 浅灰经典观感(否则沿用正文字色)
+ *
+ * 「image」档本期在界面上灰禁不可选中,故**取值域不含它** —— 持久化只会出现
+ * none / text,这是 ADR-077 裁决(后果节)的直接后果,不是漏写。
  */
+/** 水印总闸档位。 */
+export type WatermarkMode = "none" | "text";
+
 export interface WatermarkSettings {
-  /** 水印文字(空串 = 不启用) */
+  /** 水印总闸档位:无 = 收起四个水印字段且渲染归一清空 text;文字 = 展开。 */
+  mode: WatermarkMode;
+  /** 水印文字(本档可无内容;切回「文字」时原样恢复,故收起不清空它) */
   text: string;
   /** 旋转角度(度,0–360;正 = 顺时针,见 WATERMARK_ANGLE_SIGN) */
   angle: number;
@@ -187,11 +200,27 @@ export interface WatermarkSettings {
 }
 
 export const DEFAULT_WATERMARK: WatermarkSettings = {
+  mode: "none",
   text: "",
   angle: DEFAULT_WATERMARK_ANGLE,
   opacity: 0.15,
   gray: true,
 };
+
+/**
+ * 水印档位的**共用派生规则**(main 侧 sanitize 与 renderer 侧 merge 都经它 ——
+ * 两侧兜底必须语义一致,见 `src/main/persist/settings.ts` 的「双源显式化」注释)。
+ *
+ * 规则 = 合法值原样保留;缺失或非法按 text 派生(text 非空 ⇒ "text",否则 "none")。
+ * 这同时是 ADR-024 §四「迁移让存量用户产物逐字节一致」的落点:存量 settings.json
+ * 的 watermark 块没有 mode,经本函数补出的档位与今日行为等价,故产物不变。
+ *
+ * ⚠ 入参必须是**候选 mode 与合并后的 text**,不能先 `{...DEFAULT, ...source}` 铺底再调 ——
+ * 那会把 DEFAULT 的 "none" 铺进来,使「旧档缺 mode」与「显式 none」不可分辨。
+ */
+export function resolveWatermarkMode(mode: unknown, text: string): WatermarkMode {
+  return mode === "none" || mode === "text" ? mode : text !== "" ? "text" : "none";
+}
 
 /* ---------- 渲染前变换(分组,不参与预设) ---------- */
 /**

@@ -339,6 +339,13 @@ export const CONTROL_ENTRIES = {
     labelKey: "settings.footerEnabledLabel",
     locator: { by: "id", id: "footerEnabled" },
   }),
+  // 水印总闸(三档):block 取 watermark 而非独立块 —— mode 就住在 watermark 里,
+  // 与 tocMode 独立成块不同(它有自己顶层块)。locator 走 radio 组名,与 tocMode 同款。
+  watermarkMode: valueEntry({
+    form: "radio", group: "headerwatermark", reset: "reset", block: "watermark", path: "mode",
+    labelKey: "settings.watermarkMode",
+    locator: { by: "radio", name: "watermarkMode" },
+  }),
   watermarkText: valueEntry({
     form: "text", group: "headerwatermark", reset: "reset", block: "watermark", path: "text",
     labelKey: "settings.watermarkText",
@@ -832,6 +839,15 @@ export const CONTROL_GATES = [
     dependents: ["tocMode"],
     form: "collapse",
     where: "settings-panel.syncTocModeVisibility",
+  },
+  // 水印总闸 → 四字段的收起。form 取 collapse(整块收起而非灰禁):收起保留用户
+  // 已输入的水印文字,切回「文字」即恢复(同 tocModeVisibility 取向)。
+  {
+    id: "watermarkFieldVisibility",
+    master: "watermarkMode",
+    dependents: ["watermarkText", "watermarkAngle", "watermarkOpacity", "watermarkGray"],
+    form: "collapse",
+    where: "settings-panel.syncWatermarkFieldVisibility",
   },
 ] as const satisfies readonly ControlGate[];
 

@@ -222,6 +222,13 @@ const dict = {
     "settings.watermarkGray": "浅灰经典观感",
     "settings.watermarkGrayDesc": "关闭则沿用正文字色",
     "settings.watermarkNote": "文字水印叠加于每页(旋转置底)；PDF 与 Word 双格式通用。",
+    // 水印总闸(三档):第三档「图片」本期灰禁不可选,故「置图片」这一状态不可达
+    "settings.watermarkMode": "水印方式",
+    "settings.watermarkModeNone": "无",
+    "settings.watermarkModeText": "文字水印",
+    "settings.watermarkModeImage": "图片水印",
+    "settings.watermarkModeImagePlanned": "规划中",
+    "settings.watermarkImagePlanned": "图片水印开放后可选定图片并自动叠加到每页；本期仅占位，档位与位置先保留。",
     "settings.degree": "度",
     "settings.groupApp": "应用",
     "settings.groupLanguage": "界面语言",

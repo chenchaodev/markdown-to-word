@@ -217,6 +217,13 @@ const dict = {
     "settings.watermarkGray": "Classic light-gray look",
     "settings.watermarkGrayDesc": "Off uses the body text color",
     "settings.watermarkNote": "Text watermark overlays every page (rotated, behind text); applies to both PDF and Word.",
+    // Watermark master switch (3 tiers): the "image" tier is greyed out and unreachable
+    "settings.watermarkMode": "Watermark",
+    "settings.watermarkModeNone": "None",
+    "settings.watermarkModeText": "Text",
+    "settings.watermarkModeImage": "Image",
+    "settings.watermarkModeImagePlanned": "Planned",
+    "settings.watermarkImagePlanned": "The image tier will let you pick an image and stamp it on every page; it is a placeholder for now and the slot is kept.",
     "settings.degree": "deg",
     "settings.groupApp": "App",
     "settings.groupLanguage": "Interface language",

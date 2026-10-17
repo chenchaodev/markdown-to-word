@@ -16,7 +16,7 @@
  * 控件的 HTML 初值(checked/value)刻意与基线 settings 不同 —— 断言因此是「回填把
  * 控件改成了设置值」而非「控件本来就是这个值」,回填漏一个字段即判红。
  *
- * 3 个手写门控(页眉自定义折叠 + inert / AI 清理分档灰禁 / 目录模式 .hidden)在本段
+ * 4 个手写门控(页眉自定义折叠 + inert / AI 清理分档灰禁 / 目录模式 .hidden / 水印总闸收起)在本段
  * 做**关闭态与开启态双向**行为断言,且同时覆盖 change 接线与回填两条路径(取代
  * ui-interaction-guards 里针对这两处的源文本正则)。
  *
@@ -193,7 +193,7 @@ const BASE = {
     headerMode: "custom", headerText: "Header", headerLogoPath: "C:\\img\\logo.png",
     headerLayout: "leftRight", footerEnabled: true,
   },
-  watermark: { text: "W", angle: 45, opacity: 0.5, gray: true },
+  watermark: { mode: "text", text: "W", angle: 45, opacity: 0.5, gray: true },
   aiCleanup: { enabled: true, tidy: true, rewrite: true },
   obsidian: { compat: true, attachmentFolder: "att" },
 };
@@ -563,6 +563,14 @@ bindings.bindSettingsEvents({ renderSelection: () => {} });
     drive: (v) => { el("footerEnabled").checked = v; fireListener(el("footerEnabled"), "change"); },
     bindValue: false, statePath: ["headerFooter", "footerEnabled"],
     patchKey: "headerFooter", patchField: "footerEnabled", inReset: true, resetPath: ["headerFooter", "footerEnabled"],
+  });
+  add({
+    name: "watermarkMode", group: "headerwatermark",
+    get: () => checkedRadio("watermarkMode"),
+    expect: (s) => s.watermark.mode,
+    drive: (v) => clickRadio("watermarkMode", v),
+    bindValue: "none", statePath: ["watermark", "mode"],
+    patchKey: "watermark", patchField: "mode", inReset: true, resetPath: ["watermark", "mode"],
   });
   add({
     name: "watermarkText", group: "headerwatermark",
@@ -946,7 +954,7 @@ bindings.bindSettingsEvents({ renderSelection: () => {} });
   });
 
   // =========================================================================
-  /* ---------- 5) 3 个手写门控:关闭态/开启态双向 + change/回填两条路径 ---------- */
+  /* ---------- 5) 4 个手写门控:关闭态/开启态双向 + change/回填两条路径 ---------- */
   // =========================================================================
   const headerFields = el("headerCustomFields");
   const tidyEl = el("aiCleanupTidy");
@@ -1038,6 +1046,40 @@ bindings.bindSettingsEvents({ renderSelection: () => {} });
       await flush();
       assert(tocModeEl.classList.contains("hidden"), "关掉自动目录:change 路径应同步收起目录模式档位");
     });
+
+    // 5d) 水印总闸收起双向(回填路径 + change 路径)
+    await s.case("门控 · 水印总闸收起双向(收起不丢水印文字)", async () => {
+      rehydrate(); // BASE.watermark.mode = "text"
+      assert(el("watermarkFields").classList.contains("show"), "文字档:四个水印字段应展开");
+      // 收起必须**只**切显隐:先真把水印文字改成哨兵值(经 change 落进 state.settings),
+      // 收起再展开后该值应原样 —— 清空即等于在用户切档时丢数据(裁决 1 的核心判据)。
+      const sentinel = "机密-收起不丢";
+      el("watermarkText").value = sentinel;
+      fireListener(el("watermarkText"), "change");
+      state.settings.watermark.mode = "none";
+      panel.applySettingsToControls();
+      assert(!el("watermarkFields").classList.contains("show"), "总闸置无:四个水印字段应整块收起");
+      assert(
+        el("watermarkText").value === sentinel && state.settings.watermark.text === sentinel,
+        `收起只应切容器显隐,不得清空水印文字(实际输入=${JSON.stringify(el("watermarkText").value)},实际设置=${JSON.stringify(state.settings.watermark.text)})`,
+      );
+      state.settings.watermark.mode = "text";
+      panel.applySettingsToControls();
+      assert(el("watermarkFields").classList.contains("show"), "总闸回文字:四个水印字段应重新出现");
+      assert(
+        el("watermarkText").value === sentinel,
+        `展开后水印文字应仍是收起前那次输入(不重置),实际 ${JSON.stringify(el("watermarkText").value)}`,
+      );
+      // 5d-change) change 侧切档同样重算显隐,且**当场**生效(不等落盘往返)
+      clickRadio("watermarkMode", "none");
+      assert(
+        !el("watermarkFields").classList.contains("show"),
+        "change 侧点「无」应**当场**收起(未等落盘往返)",
+      );
+      assert(state.settings.watermark.text === sentinel, "change 侧切档同样不得清空水印文字");
+      clickRadio("watermarkMode", "text");
+      assert(el("watermarkFields").classList.contains("show"), "change 侧切回「文字」应**当场**展开");
+    });
   });
 
   // =========================================================================
@@ -1100,7 +1142,7 @@ bindings.bindSettingsEvents({ renderSelection: () => {} });
 
   dom.restore();
   console.log(
-    `[ok] settings-controls:${controls.length} 个控件逐条 hydrate/bind/reset 通过 + 3 个手写门控双向(change/回填,change 侧当场判)通过 + 控件 id 交叉校验与 radio 组零命中守护通过 + 声明表与几何规格交叉校验通过 + 声明表写侧对称(每个可写条目都被 drive 过)与钩子/门控/效果登记覆盖通过`,
+    `[ok] settings-controls:${controls.length} 个控件逐条 hydrate/bind/reset 通过 + 4 个手写门控双向(change/回填,change 侧当场判)通过 + 控件 id 交叉校验与 radio 组零命中守护通过 + 声明表与几何规格交叉校验通过 + 声明表写侧对称(每个可写条目都被 drive 过)与钩子/门控/效果登记覆盖通过`,
   );
   return { cases: suite.results };
 }
@@ -1326,7 +1368,7 @@ async function assertTableContract(check, table, controls, indexHtml, defaults, 
   });
 
   // 依赖登记:门控与「设置值驱动的显隐」两处都不得漏,且引用的 id 必须真实存在。
-  // 3 个手写门控逐个点名(IA 拍板的三种形态:条件字段整块移除 ×2 + 分档灰禁 ×1)。
+  // 4 个手写门控逐个点名(IA 拍板的四种形态:条件字段整块移除 ×3 + 分档灰禁 ×1)。
   await check("契约 · 门控主控可写且从属项都在表内", () => {
     for (const gate of table.CONTROL_GATES) {
       assert(
@@ -1343,8 +1385,13 @@ async function assertTableContract(check, table, controls, indexHtml, defaults, 
       }
     }
   });
-  await check("契约 · 三个手写门控都登记在 CONTROL_GATES", () => {
-    for (const gateId of ["headerCustomVisibility", "aiCleanupTierAvailability", "tocModeVisibility"]) {
+  await check("契约 · 四个手写门控都登记在 CONTROL_GATES", () => {
+    for (const gateId of [
+      "headerCustomVisibility",
+      "aiCleanupTierAvailability",
+      "tocModeVisibility",
+      "watermarkFieldVisibility",
+    ]) {
       assert(
         table.CONTROL_GATES.some((/** @type {{ id: string }} */ g) => g.id === gateId),
         `手写门控 ${gateId} 未登记在 CONTROL_GATES 里(新增门控必须登记,否则同步函数无处挂载)`,

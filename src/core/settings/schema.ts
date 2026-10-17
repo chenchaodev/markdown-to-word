@@ -211,10 +211,23 @@ export const SETTINGS_SCHEMA = [
     role: "persisted",
     optional: true,
     // 同 headerFooter 先例。
+    // ⚠ 此档**刻意不进整文件形状校验**:watermark 现状即 `fallback-field` 块,
+    // 本就只由 sanitizer 逐字段兜底、不在整文件形状校验的覆盖内;把它升级为
+    // 「整文件拒绝」是**行为变更** —— 存量半坏文件会从「字段级兜底」恶化成
+    // 「整文件回退」。ADR-024 §一 防的本质是「校验口径不得静默变化」,对
+    // fallback-field 块由字段级兜底等价兑现,故此处不补整文件校验。
     invalid: "fallback-field",
     domain: {
       kind: "object",
-      fields: { text: "string", angle: "number", opacity: "number", gray: "boolean" },
+      // mode 是 P4 新增的水印总闸档位(无 / 文字)。声明侧如实登记 —— 本块不参与
+      // 形状判定,漏登只会在日后把它纳入判定时少一份口径。
+      fields: {
+        mode: "string",
+        text: "string",
+        angle: "number",
+        opacity: "number",
+        gray: "boolean",
+      },
     },
     fallback: "watermark",
     defaultSource: "default-settings",

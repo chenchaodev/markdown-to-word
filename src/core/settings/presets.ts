@@ -257,7 +257,7 @@ const PRESET_COMPARE_FIELDS = {
   ],
   pageSetup: ["paper", "orientation", "marginTop", "marginBottom", "marginLeft", "marginRight"],
   headerFooter: ["headerMode", "headerText", "headerLogoPath", "headerLayout", "footerEnabled"],
-  watermark: ["text", "angle", "opacity", "gray"],
+  watermark: ["mode", "text", "angle", "opacity", "gray"],
 } as const;
 
 /**

@@ -34,7 +34,7 @@ import type {
   PageSetupCorrectionResult,
   SettingsMigrationNotice,
 } from "../../core/settings/settings-defaults.js";
-import { correctPageSetup } from "../../core/settings/settings-defaults.js";
+import { correctPageSetup, resolveWatermarkMode } from "../../core/settings/settings-defaults.js";
 import type { SettingsMergePatch } from "../../core/settings/merge-patch.js";
 import {
   DEFAULT_SETTINGS,
@@ -482,6 +482,9 @@ function sanitizeWatermark(value: unknown): WatermarkSettings {
   if (isFiniteNumber(src.angle)) out.angle = Math.min(360, Math.max(0, src.angle));
   if (isFiniteNumber(src.opacity)) out.opacity = Math.min(1, Math.max(0, src.opacity));
   if (typeof src.gray === "boolean") out.gray = src.gray;
+  // 档位经共用派生:旧档整块缺 mode 时按 text 补(ADR-024 §四 的迁移落点);
+  // 合法值原样保留,非法值(如手改的 "image")同样退回派生,故不会写进取值域。
+  out.mode = resolveWatermarkMode(src.mode, out.text);
   return out;
 }
 

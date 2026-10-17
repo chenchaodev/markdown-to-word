@@ -891,6 +891,45 @@ export async function run() {
     await mFallback.whenSettingsIdle();
     console.log(`[ok] settings:逐键语义表 ${KEY_SEMANTICS.length} 键 × 三轴(角色/缺失合法/处置档)+ version 参数断言通过`);
 
+    // ---- 7e) watermark 块的 mode 迁移:旧档整块缺 mode → 按 text 派生 ----
+    // ADR-024 §四 的落点:P4 之前写出的 watermark 块没有 mode,加载时必须补出与今日
+    // 等价的档位(有文字 ⇒ "text",无文字 ⇒ "none"),存量用户产物才逐字节一致。
+    await fs.writeFile(
+      settingsFile,
+      JSON.stringify({
+        ...validSettings,
+        watermark: { text: "机密", angle: 315, opacity: 0.15, gray: true }, // 存量形状:无 mode
+      }),
+      "utf8",
+    );
+    const mLegacy = await freshModule("settings-watermark-mode-migration");
+    const legacy = mLegacy.loadSettings();
+    await suite.case("7e 旧档 watermark 缺 mode:按 text 派生为 text,且不改写水印文字", () => {
+      assert(
+        legacy.watermark.mode === "text",
+        `存量文件 watermark 有文字时应派生为 "text",实际 ${legacy.watermark.mode}`,
+      );
+      assert(legacy.watermark.text === "机密", "迁移不得改动水印文字本身");
+    });
+    await fs.writeFile(
+      settingsFile,
+      JSON.stringify({
+        ...validSettings,
+        watermark: { text: "", angle: 315, opacity: 0.15, gray: true },
+      }),
+      "utf8",
+    );
+    const mLegacyEmpty = await freshModule("settings-watermark-mode-migration-empty");
+    const legacyEmpty = mLegacyEmpty.loadSettings();
+    await suite.case("7e 旧档 watermark 缺 mode 且文字为空:派生为 none", () => {
+      assert(
+        legacyEmpty.watermark.mode === "none",
+        `存量文件 watermark 无文字时应派生为 "none",实际 ${legacyEmpty.watermark.mode}`,
+      );
+    });
+    await mLegacy.whenSettingsIdle();
+    await mLegacyEmpty.whenSettingsIdle();
+
     // ---- 8. 旧 settings.json 兼容(缺 toc/outputDir/typography)→ 其余保留 + 兜底默认 ----
     await fs.writeFile(
       settingsFile,

@@ -128,7 +128,7 @@ export async function run() {
     captionNumbering: true,
     toc: false,
     equationNumbering: false,
-    watermark: { ...DEFAULT_WATERMARK, text: "机密" },
+    watermark: { ...DEFAULT_WATERMARK, mode: "text", text: "机密" },
   });
   await suite.case("3. 显式值逐键原样透传(数值/对象类)", () => {
     assert(explicit.pageSetup.paper === "A5", "pageSetup 显式值应原样透传");
@@ -152,7 +152,7 @@ export async function run() {
   // 处置沿用本文件下方 resolveHeaderFooter 同一口径(never 中转):只放宽这一个
   // 「局部缺字段」事实,不打穿其他检查。
   const partial = resolveRenderSwitches({
-    watermark: /** @type {never} */ ({ text: "仅文字" }),
+    watermark: /** @type {never} */ ({ mode: "text", text: "仅文字" }),
   });
   await suite.case("4. 水印给定字段保留、缺省字段补默认", () => {
     assert(partial.watermark.text === "仅文字", "水印给定字段应保留");

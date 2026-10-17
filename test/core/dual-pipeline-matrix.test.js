@@ -1618,7 +1618,9 @@ async function buildExtendedCtx() {
 
   // ---- 水印:显式角度/不透明度/配色,以及空 text 的零渲染对照 ----
   const wmMd = "# 水印样例\n\n正文一段。\n";
-  const wmSettings = { ...DEFAULT_WATERMARK, text: "机密", angle: 30, opacity: 0.4, gray: true };
+  // REQ-247 P4:mode 是开关(默认 "none")—— 不显式给 mode:"text",watermark 会
+  // 沿用默认档被渲染归一清空 text,本段的四要素断言就全在测「没有水印」。
+  const wmSettings = { ...DEFAULT_WATERMARK, mode: "text", text: "机密", angle: 30, opacity: 0.4, gray: true };
   const wmDocx = asDocxArtifact(await convertTyped(wmMd, "docx", { baseDir: B, warnings: [], watermark: wmSettings }));
   const wmPdf = asPdfArtifact(await convertTyped(wmMd, "pdf", { baseDir: B, title: "t", warnings: [], watermark: wmSettings }));
   const wmNoTextDocx = asDocxArtifact(

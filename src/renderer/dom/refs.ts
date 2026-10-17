@@ -130,6 +130,10 @@ export const headerModeInputs = document.querySelectorAll<HTMLInputElement>(
 export const headerCustomFields = document.getElementById(
   "headerCustomFields",
 ) as HTMLDivElement;
+// 水印总闸的条件字段容器(仅「文字」档展开;显隐见 settings-panel.syncWatermarkFieldVisibility)
+export const watermarkFields = document.getElementById(
+  "watermarkFields",
+) as HTMLDivElement;
 export const headerTextInput = document.getElementById(
   "headerText",
 ) as HTMLInputElement;

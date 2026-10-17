@@ -67,6 +67,7 @@ import {
   templatePresetSelect,
   tocInput,
   tocModeRoot,
+  watermarkFields,
 } from "../dom/refs.js";
 import { state } from "../state/state.js";
 import { setError, setStatus } from "../dom/dom-ops.js";
@@ -225,6 +226,7 @@ export const GATE_SYNCERS: Record<GateId, () => void> = {
   headerCustomVisibility: syncHeaderCustomVisibility,
   aiCleanupTierAvailability: syncAiCleanupTierAvailability,
   tocModeVisibility: syncTocModeVisibility,
+  watermarkFieldVisibility: syncWatermarkFieldVisibility,
 };
 
 /** 写侧落值通道(声明表不 import state / persist —— 由本模块注入,依赖方向保持单向)。
@@ -364,6 +366,19 @@ export function syncAiCleanupTierAvailability(): void {
  */
 export function syncTocModeVisibility(): void {
   tocModeRoot.classList.toggle("hidden", !tocInput.checked);
+}
+
+/**
+ * 水印总闸 → 四个水印字段的收起:「文字」档展开、其余(含非法值)整块收起。
+ * 走 .cond 的 show 态 + inert —— 收起时字段不可聚焦(键盘/焦点陷阱不落入不可见区)。
+ * 🔴 **收起不重置值**:水印文字保留、切回「文字」档即恢复(同 tocMode 收起保留
+ * 上次选择的取向 —— 若清空,等于在用户切档时丢掉他输入的水印文字)。
+ * 回填与总闸切换共用本函数(单一来源)。
+ */
+export function syncWatermarkFieldVisibility(): void {
+  const expanded = state.settings.watermark.mode === "text";
+  watermarkFields.classList.toggle("show", expanded);
+  watermarkFields.inert = !expanded;
 }
 
 /** 抽屉副标题文案合成(DOM 单源:模板 select 选中项 + 纸张 seg 选中值)。
