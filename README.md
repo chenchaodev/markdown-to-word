@@ -62,7 +62,7 @@ Markdown 转 Word / PDF 的 Windows 桌面应用。转换在本地完成，文�
 1. **模板/预设**：选择内置预设或导入 Word 模板
 2. **封面页**：从 frontmatter 或向导输入取标题/作者，生成独立封面
 3. **页眉页脚**：默认/自定义/无三种模式，支持 logo 和分栏
-4. **水印**：文字/角度/不透明度/浅灰经典观感
+4. **水印**：文字/角度/不透明度/浅灰经典观感（文字置空即不输出）
 5. **合并源**：多选 Markdown + 排序，以 page-break 拼接
 6. **目录/页码**：开 TOC + 选择模式
 7. **输出**：单个 docx/pdf，含封面页和完整目录
@@ -110,7 +110,7 @@ Markdown 转 Word / PDF 的 Windows 桌面应用。转换在本地完成，文�
 <p align="center">
   <img src="docs/images/ui-empty.jpg" alt="空态主界面" width="48%">&nbsp;
   <img src="docs/images/ui-settings.jpg" alt="设置面板" width="48%"><br>
-  <em>左：空态主界面　右：设置面板（6 组标签页）</em>
+  <em>左：空态主界面　右：设置面板（6 组标签页 + 跨组搜索）</em>
 </p>
 <p align="center">
   <img src="docs/images/ui-complete.jpg" alt="转换完成弹窗" width="48%">&nbsp;
