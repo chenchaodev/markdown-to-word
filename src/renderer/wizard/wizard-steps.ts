@@ -396,6 +396,12 @@ export function buildStepWatermark(deps: WizardStepsDeps): HTMLElement {
 
   text.addEventListener("change", () => {
     state.settings.watermark.text = text.value;
+    // 总闸跟随文字:本步骤**没有独立开关**,它的既有口径是「置空则不显示水印」
+    // (USER-GUIDE「文字水印」一节),而 REQ-247 P4 之后渲染侧真正的开关是
+    // watermark.mode —— 不带上它,用户在向导里设好的水印会**静默不渲染**
+    // (存量用户是靠迁移按 text 派生出的档位才幸免)。故此处按同一口径补齐:
+    // 非空 ⇒ 文字档,空 ⇒ 无档。
+    state.settings.watermark.mode = text.value.trim() !== "" ? "text" : "none";
     deps.persistSettings({ watermark: { ...state.settings.watermark } });
   });
   angle.addEventListener("change", () => {

@@ -434,6 +434,7 @@ export async function run() {
         // 水印落在 **header 部件**(docx 头类型仅 default/first/even,水印作置底段并入
         // default 头),**不在 word/document.xml** —— 比 document.xml 两边都看不到水印,
         // 断言会退化成「比两份都不含水印的东西」的空转。
+        /** @param {string} docxPath */
         const watermarkHeadersOf = async (docxPath) => {
           const zip = await JSZip.loadAsync(await fs.readFile(docxPath));
           const names = Object.keys(zip.files)
@@ -458,6 +459,7 @@ export async function run() {
         // 水印形状的 docPr 里嵌了**进程级递增序号**(chrome.ts 的 watermarkShapeSeq++),
         // 同进程连转两次必然不同 —— 与 PDF 每次改 /Title 与时间戳同类(仓库既有约定是
         // 不比整文件字节)。故比对前归一化该序号:**除它之外** header 部件必须逐字节一致。
+        /** @param {string} xml */
         const normalizeWatermarkSeq = (xml) =>
           xml.replace(/watermark-\d+/g, "watermark-N").replace(/Watermark\d+/g, "WatermarkN");
         assertBytes(

@@ -1620,6 +1620,7 @@ async function buildExtendedCtx() {
   const wmMd = "# 水印样例\n\n正文一段。\n";
   // REQ-247 P4:mode 是开关(默认 "none")—— 不显式给 mode:"text",watermark 会
   // 沿用默认档被渲染归一清空 text,本段的四要素断言就全在测「没有水印」。
+  /** @type {import("../../dist/core/settings/settings-defaults.js").WatermarkSettings} */
   const wmSettings = { ...DEFAULT_WATERMARK, mode: "text", text: "机密", angle: 30, opacity: 0.4, gray: true };
   const wmDocx = asDocxArtifact(await convertTyped(wmMd, "docx", { baseDir: B, warnings: [], watermark: wmSettings }));
   const wmPdf = asPdfArtifact(await convertTyped(wmMd, "pdf", { baseDir: B, title: "t", warnings: [], watermark: wmSettings }));

@@ -187,6 +187,11 @@
       "segment": "test/renderer/wizard-open-sync.test.js",
       "specifier": "dist/core/settings/settings-defaults.js",
       "reason": "DEFAULT_SETTINGS 只作夹具基线,用于构造被同步进去的设置快照;被测主体是向导打开时的同步,不是默认值。"
+    },
+    {
+      "segment": "test/renderer/settings-search.test.js",
+      "specifier": "dist/core/i18n/index.js",
+      "reason": "setLanguage 作夹具输入(把页面钉在中文),t() 提供状态行文案的期望值(字典即规格);被测主体是 renderer 的检索过滤与计数落位,断言对象是 DOM 上的计数位、状态行与激活组。"
     }
   ]
 }

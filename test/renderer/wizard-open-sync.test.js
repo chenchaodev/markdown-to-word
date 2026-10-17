@@ -196,6 +196,29 @@ export async function run() {
       );
     });
 
+    // ---- 水印总闸跟随向导里的文字编辑(REQ-247 P4 回归守护) ----
+    // 向导这一步**没有独立开关**,它的既有口径是「文字置空即不输出水印」;而 P4 之后
+    // 渲染侧真正的开关是 watermark.mode。总闸不跟上,用户在向导里设好的水印会
+    // **静默不渲染** —— 存量用户靠迁移按 text 派生出的档位幸免,新设的不会。
+    const wmInputEl = /** @type {import("./dom-stub.js").StubElement} */ (wmInput);
+    // 比对走 String(...) :change 处理器改的是 state 里的同一个属性对象,TS 的控制流
+    // 分析看不见事件回调,会把刚赋过 "none" 的字面量类型窄化掉、直报 TS2367。
+    await suite.case("向导改水印文字:总闸跟随(非空⇒文字档,清空⇒无档)", () => {
+      state.settings.watermark.mode = "none";
+      wmInputEl.value = "向导设的水印";
+      fireListener(wmInputEl, "change");
+      assert(
+        String(state.settings.watermark.mode) === "text",
+        `向导里写入非空水印文字时应切到「文字」档,实际 ${state.settings.watermark.mode}`,
+      );
+      wmInputEl.value = "";
+      fireListener(wmInputEl, "change");
+      assert(
+        String(state.settings.watermark.mode) === "none",
+        `向导里清空水印文字时应切到「无」档,实际 ${state.settings.watermark.mode}`,
+      );
+    });
+
     // ---- 目录模式下拉门控:关掉自动目录后整块移除(回填路径 + change 路径双向) ----
     // 与设置抽屉 04 组同源(settings-ia §3 规则 1):模式不满足就摆一个可点的下拉,
     // 用户能选一个不生效的模式,故整块 .hidden 收起而非灰禁。
