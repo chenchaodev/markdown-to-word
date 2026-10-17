@@ -1039,6 +1039,18 @@ svg.ic {
   outline-offset: -1px;
 }
 
+/* 灰禁档位:光有 disabled 不够 —— 档位看上去与可点档完全同色,用户会反复去点它。
+   灰禁必须**可见**(settings-ia §3 规则 1:可用性不只靠行为表达,还要看得见)。
+   input 是 span 的前一个兄弟、且绝对定位铺满整档(见上),所以指针落在档上时命中的是
+   input,光标态得同时给 input 与 span —— 只给 span 会出现「标签灰了但指针还是手型」。 */
+.segment input:disabled + span {
+  opacity: 0.45;
+}
+.segment input:disabled,
+.segment input:disabled + span {
+  cursor: not-allowed;
+}
+
 /* 抽屉内小号分段 */
 .seg-sm.segmented,
 .segmented.seg-sm {

@@ -462,12 +462,15 @@ export function drawerProbeSpec() {
  * @param {string} group 激活分组
  * @param {Record<string, boolean | string>} masters 主控档位(空对象 = 全部保持出厂默认)
  * @param {string} shot 截图名后缀
+ * @param {Viewport} [viewport] 场景视口,缺省 {@link VIEWPORT_BASE}。窄档须显式传入 ——
+ *   抽屉宽度走媒体查询分档,不覆盖窄视口就等于把「窄窗下最窄那一档」永久留在
+ *   机器视野之外(§5.3 的窄窗档此前只由人工目测,而目测不可复跑、也不判越界)。
  * @returns {Scenario} 场景表项
  */
-function drawerScenario(id, group, masters, shot) {
+function drawerScenario(id, group, masters, shot, viewport = VIEWPORT_BASE) {
   return {
     id,
-    viewport: VIEWPORT_BASE,
+    viewport,
     expectStage: "empty",
     shot,
     drawerTab: group,
@@ -516,6 +519,14 @@ const DRAWER_SCENARIOS = [
   drawerScenario("drawer-convert-960", "convert", {}, "8-drawer-convert"),
   drawerScenario("drawer-convert-ai-960", "convert", { aiCleanup: true }, "8-drawer-convert-ai-on"),
   drawerScenario("drawer-app-960", "app", {}, "8-drawer-app"),
+  // ---- 窄视口(880×620)下的抽屉:补上此前完全无机器覆盖的那一档 ----
+  // 为什么这两条不能省:抽屉宽度按媒体查询分档,基准 960 只量得到 ≤1080 档;
+  // ≤900 档此前**没有任何场景**,仅靠人工目测 —— 而目测不可复跑、也不判越界
+  // (`viewport-overflow` 逐控件判 right ≤ vw+tol 正是越界的机器判据)。
+  // 选 02 排版与 05 转换:前者是组内最长的一列,后者含「导出后行为」那行三档
+  // (本轮最早就窄窗下被裁的那一行)。
+  drawerScenario("drawer-typography-compact-880", "typography", {}, "8-drawer-typography-compact", VIEWPORT_COMPACT),
+  drawerScenario("drawer-convert-compact-880", "convert", {}, "8-drawer-convert-compact", VIEWPORT_COMPACT),
 ];
 
 /**

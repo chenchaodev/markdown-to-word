@@ -9,6 +9,16 @@
     4) 历史/消息/动作栏内容对齐 760 统一内容列；minWidth 880 → 640（≤720 参数条折两行）
     5) 设置抽屉已由 9 段收敛为 6 组 + 左侧竖向 Tab；预设作用域见下方「预设作用域」注记
   ------------------------------------------------------------
+  ⚠ 设置抽屉（2026-10-17 与实现同步，settings-ia.md §2 为项序单源）：
+    · 六组组名与组序：01 预设 · 02 排版 · 03 页眉页脚与水印 · 04 编号与目录 · 05 转换 · 06 应用；
+      编号落在右侧面板组头 .sec-num（不落在左侧 Tab 上）
+    · 组内段标签 7 枚（ADR-077）：02 页面/文字/段落 · 03 水印 · 05 清理/产物/PDF 样式；
+      段标签只做视觉分段定位，不是折叠层 —— 不引入第三种可见性形态
+    · 抽屉标题下加跨组检索行：搜索框 + 状态行，左侧各 Tab 带命中计数位（本稿画静态形态）
+    · 03 组水印总闸三档：无 / 文字 / 图片；第三档「图片」灰禁占位、旁标「规划中」，
+      其下一行常显说明（灰禁不裸 disabled）；四个水印字段收在一个凹陷容器 .cond 里，
+      随总闸收起且保留已输入的水印文字
+  ------------------------------------------------------------
   ⚠ 预设作用域（2026-09-25 与实现口径对齐，settings-ia.md §1.5 为单源）：
      · 内置预设 = 完整交付链：排版 · 编号与目录 · 页眉页脚 · 水印 · 公式编号 · H1 分页
      · 自定义预设 = 只存排版 + 页面设置（不含页眉页脚/水印/公式编号/H1 分页）
@@ -16,7 +26,8 @@
      · 组头「不入预设」角标只标注两种预设都不含的组；页眉页脚与水印组不挂该角标
   ------------------------------------------------------------
   实现基准以 docs/design/ui-guidelines.md §2/§5 与 docs/design/settings-ia.md 为准；
-  样稿的分组编号仍为 v3 七段写法，仅作视觉基线，不代表当前信息架构；样稿重绘记 ROADMAP。
+  抽屉已按六组 + 组内段标签 + 跨组检索同步（检索行与命中计数为静态示意，不参与运行时）；
+  稿中「模板预设卡」等早期提案形态保留为视觉基线，取舍记 ROADMAP。
   ------------------------------------------------------------
   设计方向：印刷付梓（冷纸白 × 油墨黑 × 朱砂钤印红）
   签名元素：空态投放区 = 一张带四角裁切线的「待印文稿」，
@@ -212,6 +223,10 @@ svg.ic{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7;str
 .seg>button:hover{color:var(--ink-2)}
 .seg>button.on{background:var(--card);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.09)}
 .seg.sm>button{height:22px;padding:0 9px;font-size:11.5px}
+/* 灰禁档（03 组水印「图片」）：与 .btn.primary:disabled 同一套禁用语汇，
+   不另开色板；可用性另有同行角标「规划中」与下一行常显说明承担 */
+.seg>button:disabled{opacity:.5;cursor:not-allowed}
+.seg>button:disabled:hover{color:var(--mut)}
 
 /* 开关 */
 .switch{
@@ -225,6 +240,7 @@ svg.ic{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7;str
 html[data-theme="dark"] .switch::after{background:#eef0f2}
 .switch[aria-checked="true"]{background:var(--acc)}
 .switch[aria-checked="true"]::after{transform:translateX(16px)}
+.switch:disabled{opacity:.55;cursor:not-allowed}
 
 /* 输入件 */
 .tin{
@@ -454,7 +470,7 @@ input[type=range]::-webkit-slider-thumb{
 }
 .dscr.open{opacity:1;pointer-events:auto}
 .drawer{
-  position:absolute;top:var(--tbh);right:0;bottom:0;width:402px;z-index:45;
+  position:absolute;top:var(--tbh);right:0;bottom:0;width:496px;z-index:45;
   background:var(--canvas);border-left:1px solid var(--line);
   box-shadow:-20px 0 50px rgba(10,11,14,.2);
   transform:translateX(103%);transition:transform .26s cubic-bezier(.32,.72,.24,1);
@@ -467,7 +483,33 @@ input[type=range]::-webkit-slider-thumb{
 }
 .dw-title{font-family:var(--font-display);font-size:16px;letter-spacing:.2em;font-weight:600}
 .dw-head .icon-btn{margin-left:auto}
-.dw-scroll{flex:1;overflow-y:auto;padding:2px 18px 20px}
+/* 跨组检索行：抽屉标题与主体之间。搜索框沿用 .tin（不新增控件外形），
+   下方状态行报命中数；左侧各 Tab 的命中计数位在 .tab-count */
+.dw-search{flex:none;padding:10px 18px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:4px}
+.dw-search .dw-filter{width:100%}
+.dw-filter-status{margin:0;font-size:12px;color:var(--mut)}
+/* 主体：左侧竖向 Tab（112px）+ 右侧面板滚动 */
+.dw-body{flex:1;min-height:0;display:flex;flex-direction:row}
+.dw-tabs{
+  flex:none;width:112px;padding:10px 0;border-right:1px solid var(--line);
+  display:flex;flex-direction:column;gap:2px;overflow-y:auto;overflow-x:hidden;
+}
+.tab{
+  appearance:none;background:none;border:none;text-align:center;white-space:normal;
+  padding:9px 8px;min-height:44px;font-family:var(--font-display);font-size:13px;
+  letter-spacing:.1em;line-height:1.4;color:var(--mut);cursor:pointer;
+  border-left:2px solid transparent;
+  transition:color .15s ease,background .15s ease,border-color .15s ease;
+}
+.tab:hover{color:var(--ink);background:var(--inset)}
+.tab.on{color:var(--acc);border-left-color:var(--acc);background:var(--inset)}
+.tab-name{display:block}
+/* 命中计数位：mono 弱色 —— 朱砂只留给「付印」语义，故选中 Tab 内这行也不吃 --acc */
+.tab-count{display:block;margin-top:2px;font-family:var(--font-mono);font-size:10px;letter-spacing:.05em;color:var(--mut)}
+.tab-count:empty{display:none}
+.dw-panels{flex:1;min-width:0;min-height:0;overflow-y:auto;overflow-x:hidden;padding:2px 18px 20px}
+.dw-panels>.sec{display:none}
+.dw-panels>.sec.on{display:block}
 .dw-foot{
   flex:none;height:56px;padding:0 18px;display:flex;align-items:center;gap:10px;
   border-top:1px solid var(--line);background:var(--tb);
@@ -507,8 +549,14 @@ input[type=range]::-webkit-slider-thumb{
 .cond>div{overflow:hidden}
 .cond.show{grid-template-rows:1fr}
 .cond-in{padding:8px 12px 4px}
-/* 小节标签 / 作用域标注 / 说明行 */
-.sub-label{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.2em;color:var(--mut);margin:12px 0 0}
+/* 段标签（ADR-077）：顶部发丝线分段；紧随组头的首枚段标签不加线
+   （组头自带 .sec-rule 横线，再加即双线）。只做视觉分段与检索落点，不是折叠层 */
+.sub-label{
+  font-family:var(--font-mono);font-size:10.5px;letter-spacing:.2em;color:var(--mut);
+  margin:18px 0 2px;padding-top:6px;border-top:1px solid var(--line);
+}
+.sec-h + .sub-label{border-top:none;padding-top:0}
+/* 作用域标注 / 说明行 */
 .scope-tag{
   font-family:var(--font-mono);font-size:10px;letter-spacing:.05em;color:var(--mut);
   border:1px solid var(--line-2);border-radius:99px;padding:1px 8px;white-space:nowrap;
@@ -523,6 +571,8 @@ input[type=range]::-webkit-slider-thumb{
 .mm-in span{position:absolute;right:9px;top:50%;transform:translateY(-50%);font-family:var(--font-mono);font-size:11px;color:var(--mut)}
 /* 开关行 */
 .sw-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:8px 0}
+/* 数值行单位（° 等）：与 .mm-in 的后缀同族，走 mono 弱色 */
+.row-unit{font-family:var(--font-mono);font-size:11px;color:var(--mut)}
 /* 模板管理按钮组 */
 .mgmt{display:flex;gap:8px;flex-wrap:wrap;padding:4px 0 8px}
 /* CSS 文本域 */
@@ -610,7 +660,7 @@ input[type=range]::-webkit-slider-thumb{
   .actionbar{padding:0 16px}
   .btn.lg{padding:0 18px}
   .seg-format{margin-left:14px}
-  .drawer{width:372px}
+  .drawer{width:452px}
 }
 
 /* —— 窄窗档：窗框 ≤900 —— */
@@ -635,7 +685,7 @@ input[type=range]::-webkit-slider-thumb{
   .actionbar{height:58px}
   .btn.lg{height:38px;padding:0 16px}
   #btnMerge{padding:0 10px;font-size:12.5px}
-  .drawer{width:min(402px,100%)}
+  .drawer{width:min(452px,100%)}
   .modal{width:min(482px,calc(100% - 28px));padding:18px 18px 15px}
   .history{padding:0 18px}
 }
@@ -937,11 +987,44 @@ input[type=range]::-webkit-slider-thumb{
           <svg class="ic" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
         </button>
       </div>
-      <div class="dw-scroll">
+      <!-- 跨组检索行（ADR-077）：抽屉标题与主体之间。
+           静态示意 —— 输入跨六组匹配控件标签，只做「计数 + 跳到首个命中组」，不隐藏任何控件。
+           稿中预置查询「水印」，故命中 2 项（水印方式 / 水印文字，同属 03 组），
+           03 Tab 带计数位、面板停在首个命中组；实现里抽屉默认打开在 01 预设。 -->
+      <div class="dw-search">
+        <input type="search" class="tin dw-filter" value="水印" placeholder="搜索设置项…" aria-label="搜索设置项" autocomplete="off" spellcheck="false">
+        <p class="dw-filter-status">匹配 2 项</p>
+      </div>
+
+      <div class="dw-body">
+        <!-- 左侧竖向 Tab（六组）：组名与命中计数分两个元素，计数位空时整枚收掉。
+             编号 01–06 不落在 Tab 上，落在右侧面板的组头 .sec-num -->
+        <nav class="dw-tabs" role="tablist" aria-orientation="vertical" aria-label="设置">
+          <button class="tab" type="button" id="tabPreset" data-group="preset" role="tab" aria-selected="false" aria-controls="panelPreset">
+            <span class="tab-name">预设</span><span class="tab-count"></span>
+          </button>
+          <button class="tab" type="button" id="tabTypography" data-group="typography" role="tab" aria-selected="false" aria-controls="panelTypography">
+            <span class="tab-name">排版</span><span class="tab-count"></span>
+          </button>
+          <button class="tab" type="button" id="tabHeaderWatermark" data-group="headerwatermark" role="tab" aria-selected="true" aria-controls="panelHeaderWatermark">
+            <span class="tab-name">页眉页脚与水印</span><span class="tab-count">2</span>
+          </button>
+          <button class="tab" type="button" id="tabNumbering" data-group="numbering" role="tab" aria-selected="false" aria-controls="panelNumbering">
+            <span class="tab-name">编号与目录</span><span class="tab-count"></span>
+          </button>
+          <button class="tab" type="button" id="tabConvert" data-group="convert" role="tab" aria-selected="false" aria-controls="panelConvert">
+            <span class="tab-name">转换</span><span class="tab-count"></span>
+          </button>
+          <button class="tab" type="button" id="tabApp" data-group="app" role="tab" aria-selected="false" aria-controls="panelApp">
+            <span class="tab-name">应用</span><span class="tab-count"></span>
+          </button>
+        </nav>
+
+        <div class="dw-panels">
 
         <!-- 01 预设 -->
-        <div class="sec">
-          <div class="sec-h"><span class="sec-num">01</span><span class="sec-title">预 设</span><span class="sec-rule"></span></div>
+        <div class="sec" id="panelPreset" role="tabpanel" aria-labelledby="tabPreset" data-group="preset">
+          <div class="sec-h"><span class="sec-num">01</span><span class="sec-title">预设</span><span class="sec-rule"></span></div>
 
           <div class="row" style="display:block">
             <div class="row-l" style="margin-bottom:2px">模板预设</div>
@@ -989,9 +1072,11 @@ input[type=range]::-webkit-slider-thumb{
           </div>
         </div>
 
-        <!-- 02 页面 -->
-        <div class="sec">
-          <div class="sec-h"><span class="sec-num">02</span><span class="sec-title">页 面</span><span class="sec-rule"></span></div>
+        <!-- 02 排版（原 02 页面 + 03 文字合并；两种预设均含） -->
+        <div class="sec" id="panelTypography" role="tabpanel" aria-labelledby="tabTypography" data-group="typography">
+          <div class="sec-h"><span class="sec-num">02</span><span class="sec-title">排版</span><span class="sec-rule"></span></div>
+          <!-- 段标签：页面 = 组内 1–3（纸张 / 方向 / 四边边距）；紧随组头，首枚不加发丝线 -->
+          <div class="sub-label">页面</div>
           <div class="row">
             <span class="row-l">纸张</span>
             <span class="seg sm" role="group" aria-label="纸张">
@@ -1018,11 +1103,9 @@ input[type=range]::-webkit-slider-thumb{
               <div class="mm-cell"><label>右</label><div class="mm-in"><input class="tin" type="number" value="32"><span>mm</span></div></div>
             </div>
           </div>
-        </div>
 
-        <!-- 03 文字 -->
-        <div class="sec">
-          <div class="sec-h"><span class="sec-num">03</span><span class="sec-title">文 字</span><span class="sec-rule"></span></div>
+          <!-- 段标签：文字 = 组内 4–9（中/西文字体 → 标题间距档位） -->
+          <div class="sub-label">文字</div>
           <div class="row">
             <span class="row-l">中文字体</span>
             <input class="tin" list="dl-font-ea" value="微软雅黑" style="width:150px" aria-label="中文字体">
@@ -1064,7 +1147,8 @@ input[type=range]::-webkit-slider-thumb{
               <button>紧凑</button><button class="on">标准</button><button>舒展</button>
             </span>
           </div>
-          <div class="sub-label">段 落</div>
+          <!-- 段标签：段落 = 组内 10–11（首行缩进 / 对齐方式） -->
+          <div class="sub-label">段落</div>
           <div class="sw-row"><span><div class="row-l">首行缩进</div><div class="row-sub">正文段落首行缩进 2 字符</div></span><button class="switch" role="switch" aria-checked="true" aria-label="首行缩进"></button></div>
           <div class="row">
             <span class="row-l">对齐方式</span>
@@ -1074,9 +1158,9 @@ input[type=range]::-webkit-slider-thumb{
           </div>
         </div>
 
-        <!-- 04 页眉 · 页脚（内置预设含；自定义预设不含） -->
-        <div class="sec">
-          <div class="sec-h"><span class="sec-num">04</span><span class="sec-title">页眉 · 页脚</span><span class="scope-tag">内置预设可含</span><span class="sec-rule"></span></div>
+        <!-- 03 页眉页脚与水印（内置预设含；自定义预设不含；组头不挂「不入预设」角标） -->
+        <div class="sec on" id="panelHeaderWatermark" role="tabpanel" aria-labelledby="tabHeaderWatermark" data-group="headerwatermark">
+          <div class="sec-h"><span class="sec-num">03</span><span class="sec-title">页眉页脚与水印</span><span class="sec-rule"></span></div>
           <div class="row">
             <span class="row-l">页眉模式</span>
             <span class="seg sm" role="group" aria-label="页眉模式" data-cond="#hfCond">
@@ -1104,11 +1188,44 @@ input[type=range]::-webkit-slider-thumb{
             <div class="sw-row" style="padding-bottom:2px"><span><div class="row-l">自定义页脚</div><div class="row-sub">显示「第 X 页 / 共 Y 页」；仅自定义模式生效</div></span><button class="switch" role="switch" aria-checked="true" aria-label="自定义页脚"></button></div>
           </div></div></div>
           <p class="scope-note">默认模式：页眉居中显示文档标题，页脚固定显示页码，不受开关控制。</p>
+
+          <!-- 段标签：水印 = 组内 4–7（水印文字 → 浅灰经典观感）；
+               1–3 项由组名「页眉页脚与水印」承载，不为它们另设标签。
+               位置在条件块与默认模式说明行之后，非组头直接后继，故带顶部发丝线 -->
+          <div class="sub-label">水印</div>
+          <!-- 水印总闸（三档）：置「无」收起下方四字段、置「文字」展开；
+               第三档「图片」本期灰禁占位（不可选中）——灰禁不裸 disabled，
+               同行挂「规划中」角标 + 下一行常显说明承担可用性表达 -->
+          <div class="row">
+            <span class="row-l">水印方式</span>
+            <span class="seg sm" role="group" aria-label="水印方式" data-cond="#wmCond" data-show-val="text">
+              <button data-val="none">无</button><button class="on" data-val="text">文字水印</button><button data-val="image" disabled>图片水印 <span class="scope-tag">规划中</span></button>
+            </span>
+          </div>
+          <p class="scope-note">图片水印开放后可选定图片并自动叠加到每页；本期仅占位，档位与位置先保留。</p>
+          <!-- 四个水印字段收在唯一的凹陷容器里（与页眉条件块同一形态）；
+               收起是整块移除而非灰禁，且保留已输入的水印文字（切档不清空） -->
+          <div class="cond show" id="wmCond"><div><div class="cond-in">
+            <div class="row" style="display:block;padding-top:2px">
+              <div class="row-l" style="margin-bottom:6px">水印文字</div>
+              <input class="tin" style="width:100%" value="青崖大学 · 内部资料" placeholder="显示在每页中央的水印文字">
+            </div>
+            <div class="row">
+              <span class="row-l">旋转角度</span>
+              <span class="row-r"><input class="tin" type="number" value="30" style="width:74px"><span class="row-unit">°</span></span>
+            </div>
+            <div class="row">
+              <span class="row-l">不透明度</span>
+              <input class="tin" type="number" value="0.18" step="0.05" style="width:74px">
+            </div>
+            <div class="sw-row" style="padding-bottom:2px"><span><div class="row-l">浅灰经典观感</div><div class="row-sub">关闭则沿用正文字色</div></span><button class="switch" role="switch" aria-checked="true" aria-label="浅灰经典观感"></button></div>
+          </div></div></div>
+          <p class="scope-note">文字水印叠加于每页（旋转置底）；PDF 与 Word 双格式通用。</p>
         </div>
 
-        <!-- 05 编号与目录 -->
-        <div class="sec">
-          <div class="sec-h"><span class="sec-num">05</span><span class="sec-title">编号与目录</span><span class="sec-rule"></span></div>
+        <!-- 04 编号与目录（内置预设含章节/题注/公式编号 + H1 分页；自动目录两种预设都不含） -->
+        <div class="sec" id="panelNumbering" role="tabpanel" aria-labelledby="tabNumbering" data-group="numbering">
+          <div class="sec-h"><span class="sec-num">04</span><span class="sec-title">编号与目录</span><span class="sec-rule"></span></div>
           <div class="sw-row"><span><div class="row-l">章节编号</div><div class="row-sub">「第 1 章 / 1.1」自动编号</div></span><button class="switch" role="switch" aria-checked="true" aria-label="章节编号"></button></div>
           <div class="sw-row"><span><div class="row-l">题注编号</div><div class="row-sub">图表下方「图 1.1」样式编号</div></span><button class="switch" role="switch" aria-checked="false" aria-label="题注编号"></button></div>
           <div class="sw-row"><span><div class="row-l">公式编号</div><div class="row-sub">公式右侧「(1)」式编号</div></span><button class="switch" role="switch" aria-checked="false" aria-label="公式编号"></button></div>
@@ -1116,9 +1233,28 @@ input[type=range]::-webkit-slider-thumb{
           <div class="sw-row"><span><div class="row-l">H1 前分页</div><div class="row-sub">每个一级标题另起一页</div></span><button class="switch" role="switch" aria-checked="false" aria-label="H1 前分页"></button></div>
         </div>
 
-        <!-- 06 输出 -->
-        <div class="sec">
-          <div class="sec-h"><span class="sec-num">06</span><span class="sec-title">输 出</span><span class="sec-rule"></span></div>
+        <!-- 05 转换（原 09 AI/Obsidian + 07 输出合并；两种预设都不含，组头挂「不入预设」） -->
+        <div class="sec" id="panelConvert" role="tabpanel" aria-labelledby="tabConvert" data-group="convert">
+          <div class="sec-h"><span class="sec-num">05</span><span class="sec-title">转换</span><span class="scope-tag">不入预设</span><span class="sec-rule"></span></div>
+          <!-- 段标签：清理 = 组内 1–3（AI 清理 / Obsidian 兼容 / 附件子文件夹）；首枚不加发丝线 -->
+          <div class="sub-label">清理</div>
+          <div class="sw-row"><span><div class="row-l">AI 清理</div><div class="row-sub">转换前自动规整 AI 生成的 Markdown（智能引号、破折号、列表、空行）</div></span><button class="switch" role="switch" aria-checked="false" aria-label="AI 清理" data-tiers="#aiTiers"></button></div>
+          <!-- AI 清理的两个分档：分档类从属项是「灰禁」的唯一例外 ——
+               移除会丢上次选择且每次开关都造成布局位移；凹陷容器恒展开，
+               禁用语汇之外必须配一行可见说明，不能只靠 disabled -->
+          <div class="cond show" id="aiTiers"><div><div class="cond-in">
+            <div class="sw-row"><span><div class="row-l">保守规整</div><div class="row-sub">统一引号与破折号、补齐列表标记后的空格、清理行尾空白与多余空行（不改内容）</div></span><button class="switch" role="switch" aria-checked="false" aria-label="保守规整" disabled></button></div>
+            <div class="sw-row"><span><div class="row-l">结构改写</div><div class="row-sub">删除 [1] 式引用标记与 emoji、统一标题层级（会改动正文内容）</div></span><button class="switch" role="switch" aria-checked="false" aria-label="结构改写" disabled></button></div>
+            <p class="scope-note" id="aiTiersLocked">两个分档需先开启上方「AI 清理」才生效</p>
+          </div></div></div>
+          <div class="sw-row"><span><div class="row-l">Obsidian 兼容</div><div class="row-sub">将 [[双链]]、![[嵌入]] 转为标准 Markdown 链接</div></span><button class="switch" role="switch" aria-checked="true" aria-label="Obsidian 兼容"></button></div>
+          <div class="row" style="display:block">
+            <div class="row-l" style="margin-bottom:6px">Obsidian 附件子文件夹</div>
+            <div class="row-sub" style="max-width:none;margin:0 0 6px">用于解析 ![[图片]] 路径前缀（默认 Attachments）</div>
+            <input class="tin" style="width:100%" value="Attachments">
+          </div>
+          <!-- 段标签：产物 = 组内 4–5（输出目录 / 导出后行为） -->
+          <div class="sub-label">产物</div>
           <div class="row">
             <span><div class="row-l">输出目录</div><div class="row-sub">留空则保存到源文件所在目录</div></span>
             <span class="row-r">
@@ -1132,6 +1268,8 @@ input[type=range]::-webkit-slider-thumb{
               <button>无操作</button><button class="on">打开所在文件夹</button><button>打开文件</button>
             </span>
           </div>
+          <!-- 段标签：PDF 样式 = 组内 6（PDF 自定义 CSS） -->
+          <div class="sub-label">PDF 样式</div>
           <div class="row" style="display:block">
             <div class="row-l" style="margin-bottom:8px">PDF 自定义 CSS <span class="scope-tag">仅 PDF</span></div>
             <textarea class="ta" spellcheck="false">/* 仅作用于 PDF 输出 */
@@ -1140,9 +1278,9 @@ h1 { page-break-before: auto; }</textarea>
           </div>
         </div>
 
-        <!-- 07 应用 -->
-        <div class="sec">
-          <div class="sec-h"><span class="sec-num">07</span><span class="sec-title">应 用</span><span class="sec-rule"></span></div>
+        <!-- 06 应用（两种预设都不含，组头挂「不入预设」） -->
+        <div class="sec" id="panelApp" role="tabpanel" aria-labelledby="tabApp" data-group="app">
+          <div class="sec-h"><span class="sec-num">06</span><span class="sec-title">应用</span><span class="scope-tag">不入预设</span><span class="sec-rule"></span></div>
           <div class="row">
             <span class="row-l">主题</span>
             <span class="seg sm" data-bind="theme" role="group" aria-label="主题">
@@ -1157,9 +1295,11 @@ h1 { page-break-before: auto; }</textarea>
               <button class="on">中文</button><button>EN</button><button>日</button>
             </span>
           </div>
-        </div>
+        </div><!-- /.sec（06 应用） -->
 
-      </div>
+        </div><!-- /.dw-panels -->
+      </div><!-- /.dw-body -->
+
       <div class="dw-foot">
         <button class="btn txt sm">恢复默认</button>
         <span style="flex:1"></span>
@@ -1322,26 +1462,48 @@ h1 { page-break-before: auto; }</textarea>
     this.classList.toggle('on',on);
   });
 
+  /* ---------- 设置抽屉 · 六组 Tab 切换 ---------- */
+  var tabs=$$('.dw-tabs .tab');
+  function showGroup(g){
+    tabs.forEach(function(t){
+      var on=(t.dataset.group===g);
+      t.classList.toggle('on',on);
+      t.setAttribute('aria-selected',on?'true':'false');
+    });
+    $$('.dw-panels>.sec').forEach(function(p){p.classList.toggle('on',p.dataset.group===g)});
+  }
+  tabs.forEach(function(t){
+    t.addEventListener('click',function(){showGroup(t.dataset.group)});
+  });
+
   /* ---------- 分段选择器（通用） ---------- */
   document.addEventListener('click',function(e){
     var b=e.target.closest('.seg>button');
-    if(!b)return;
+    if(!b||b.disabled)return;   /* 灰禁档（如水印「图片」）保持不可选中 */
     var seg=b.parentElement;
     Array.prototype.forEach.call(seg.children,function(c){c.classList.remove('on')});
     b.classList.add('on');
     if(seg.dataset.bind==='theme'&&b.dataset.themeVal&&b.dataset.themeVal!=='system'){
       applyTheme(b.dataset.themeVal);
     }
-    /* 模式 + 条件字段：data-cond 指向条件容器，仅 data-val="custom" 时展开 */
+    /* 模式 + 条件字段：data-cond 指向条件容器，data-show-val 为展开档（缺省 custom）。
+       收起是整块移除而非灰禁，且不清空容器内的值 —— 水印切「无」保留已输入文字 */
     if(seg.dataset.cond){
-      $(seg.dataset.cond).classList.toggle('show',b.dataset.val==='custom');
+      $(seg.dataset.cond).classList.toggle('show',b.dataset.val===(seg.dataset.showVal||'custom'));
     }
   });
 
   /* ---------- 开关 ---------- */
   $$('.switch').forEach(function(sw){
     sw.addEventListener('click',function(){
-      sw.setAttribute('aria-checked',sw.getAttribute('aria-checked')==='true'?'false':'true');
+      if(sw.disabled)return;   /* 灰禁开关（AI 清理两个分档）保持不可拨 */
+      var next=(sw.getAttribute('aria-checked')==='true')?'false':'true';
+      sw.setAttribute('aria-checked',next);
+      /* 总开关 → 分档可用性：灰禁两分档 + 收掉那行说明（开启后即恢复原选择，不丢值） */
+      if(sw.dataset.tiers){
+        $$('#'+sw.dataset.tiers.slice(1)+' .switch').forEach(function(t){t.disabled=(next==='false')});
+        $('#aiTiersLocked').hidden=(next==='true');
+      }
     });
   });
 
