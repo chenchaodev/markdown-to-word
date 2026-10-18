@@ -16,7 +16,10 @@
  *     - index.html 中输出目录双 chip / Logo / PDF CSS / 预设提示一律不带
  *       data-i18n(带了就等于被字典默认值覆盖真实值);
  *     - 仍保留 data-i18n 的节点,静态回退文案与 zh 字典逐字一致;
- *     - settings-panel 导出 refreshDynamicSettingsText(语言切换后的重算入口)。
+ *     - settings-panel 导出 refreshDynamicSettingsText(语言切换后的重算入口);
+ *     - 预设说明行(同为动态节点)的静态回退不承担范围声明,等于「默认预设被选中」时
+ *       JS 会写进去的那句(zh 字典 preset.hintDefault);两处预设选择器必须仍是原生
+ *       `<select>`(预设卡化已于 2026-10-18 复核后否决)。
  * (3) 复制反馈
  *     - 标签与「已复制」是两个独立节点,反馈只切显隐,不改写标签文案;
  *     - 单实例复位:弹窗打开即复位,反馈不跨弹窗残留;
@@ -297,6 +300,33 @@ export async function run() {
       );
     });
   }
+
+  // 01 组预设说明行是**动态节点**(不得挂 data-i18n,见上),故它进不了 STATIC_KEYS 那组;
+  // 但「静态回退 = JS 首帧会写进去的那句」这条口径仍要守。它写在 HTML 里的字面量就是
+  // 「默认预设被选中」时的那句说明(= zh 字典 preset.hintDefault):回退若写成别的
+  // (典型是「切换预设会覆盖什么」那段范围声明),首帧与 JS 跑完后说的就不是同一件事,
+  // 且 index.html 里会多出第二个范围文案点(§1.5 约定 3:范围文案唯一落在 scope-note)。
+  await suite.case("源契约:预设说明行的静态回退等于 zh 字典 preset.hintDefault", () => {
+    const m = /id="templatePresetHint"[^>]*>([^<]*)</.exec(indexHtml);
+    assert(m, "index.html 应保留 #templatePresetHint 静态回退节点");
+    assert(
+      capture(m, 1).trim() === i18n.DICT.zh["preset.hintDefault"],
+      `预设说明行静态回退应为「默认预设被选中」时的说明(zh preset.hintDefault),实际 ${JSON.stringify(capture(m, 1).trim())}`,
+    );
+  });
+
+  // 形态契约:预设卡化于 2026-10-18 复核后否决(理由见 ui-guidelines §3.1 的注),
+  // 本轮只升级「当前选中预设说明」的展示 ⇒ 两处预设选择器必须**仍是原生 select**。
+  // 与 (7) 那条 #tocMode 的判据同型、方向相反:那条守「改走的形态不许回来」,这条守
+  // 「现有的形态不许被换走」。抽屉外那枚是快速参数条(同一概念的镜像,同受此约束)。
+  await suite.case("源契约:抽屉与快速参数条的预设选择器仍是原生 select", () => {
+    for (const id of ["templatePreset", "quickPreset"]) {
+      assert(
+        new RegExp(`<select[^>]*id="${id}"`).test(indexHtml),
+        `#${id} 应仍是原生 <select>(预设卡化已否决;说明展示的升级不动控件形态)`,
+      );
+    }
+  });
 
   // ---------- DOM 行为 ----------
   let openMarkdownsCalls = 0;

@@ -525,16 +525,21 @@
             <div class="setting-field">
               <label class="setting-label" for="templatePreset" data-i18n="settings.presetLabel">模板预设</label>
               <!-- sel-wrap:原生 select + 自绘箭头(guidelines §2 sel 模式;自定义预设可达
-                   10 项,枚举 >5 → sel 形态合规)。选项由 rebuildPresetOptions 动态维护 -->
+                   10 项,枚举 >5 → sel 形态合规)。选项由 rebuildPresetOptions 动态维护。
+                   aria-describedby 把下方说明行绑到本控件上:预设说明是「选中项是什么」的
+                   从属文案,故绑定落进无障碍树,不只靠相邻位置;形态同 #settingsFilter →
+                   #settingsFilterStatus -->
               <span class="sel-wrap">
-                <select id="templatePreset" class="setting-select">
+                <select id="templatePreset" class="setting-select" aria-describedby="templatePresetHint">
                 </select>
               </span>
-              <!-- 动态状态节点:提示正文由当前预设决定并由 settings-panel 回填,
-                   故不带 data-i18n(否则语言切换会被重写成通用标题) -->
-              <span id="templatePresetHint" class="settings-note" title="切换预设会覆盖对应设置:内置预设含页眉页脚与水印,自定义预设仅排版与页面">
-                切换预设会覆盖对应设置:内置预设含页眉页脚与水印,自定义预设仅排版与页面
-              </span>
+              <!-- 当前预设说明:正文由 settings-panel 按当前选中预设回填,故不带 data-i18n
+                   (否则会被 applyStaticTexts 覆写成通用标题)。层级由 preset-desc 覆盖为
+                   「紧贴控件的次级文」(见 settings.css),绑定靠邻近而非加线——下方 scope-note
+                   自带发丝轨,再给本行加轨即两条平行线。静态回退不承担范围声明(那是下面
+                   scope-note 的唯一职责),而与其余动态节点同口径:等于「默认预设被选中」时
+                   JS 会写进去的那句(zh 字典 preset.hintDefault 逐字) -->
+              <span id="templatePresetHint" class="settings-note preset-desc">常规文档:微软雅黑正文、两端对齐、行距 1.5</span>
             </div>
             <!-- 预设作用域唯一文档点(与 core/i18n zh settings.presetScopeNote 逐字一致):
                  内置预设含「排版 · 编号与目录 · 页眉页脚 · 水印」;自定义预设仅存排版 + 页面 -->

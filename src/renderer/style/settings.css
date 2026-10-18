@@ -557,6 +557,20 @@
   color: var(--acc);
 }
 
+/* 当前预设说明(01 组):紧贴选中控件(取 .setting-field 的 6px gap,不再叠 12px 顶距),
+   绑定靠邻近而非加线 —— 紧随其后的 .scope-note 自带 2px 发丝轨,再给本行加轨就是两条
+   平行线(同 .cond-in > .scope-note 的退轨理由)。层级取「次级文 12px / 行高 1.55」,
+   比面板级注脚(.scope-note 11.5px + --mut)高一档:说明行是**动态**的「当前选中的是
+   什么」,注脚是静态的「切预设会覆盖什么」,后者不该压住前者。默认换行、不截断,故不必
+   再挂 title。字重留在常规档 —— 重音只给「已微调」态(.template-hint--custom,在下方,
+   靠源码序压过本规则)。 */
+.preset-desc {
+  margin: 0;
+  font-size: var(--fs-base);
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
 .template-hint--custom {
   color: var(--warn);
   font-weight: 600;

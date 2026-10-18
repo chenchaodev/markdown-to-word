@@ -23,6 +23,10 @@
  * 另含 refs↔index.html 的控件 id 交叉校验(拼错即红)与 radio 组零命中守护 ——
  * 两者与逐控件断言同属「控件 id 拼错能在测试期暴露」的判据,放本段便于共用同一
  * 份 index.html 解析。
+ *
+ * 01 组「当前预设说明」的展示(PLAN #04)也在此段:文案随 select 当前值现算(含无匹配
+ * 时回退 default 的那条路径)、层级类 preset-desc 与「回填不再写 title 回声」。判的是
+ * 回填后的可观察结果,不是「CSS 里写了什么」—— 后者是源文本形态(恒真,且守不住实际呈现)。
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -1083,7 +1087,73 @@ bindings.bindSettingsEvents({ renderSelection: () => {} });
   });
 
   // =========================================================================
-  /* ---------- 6) 控件 id 交叉校验 + radio 组零命中守护 ---------- */
+  /* ---------- 6) 01 组「当前预设说明」:文案随 select 当前值 + 展示层级类 ---------- */
+  // =========================================================================
+  // 说明行的展示升级分两半:① 文案由回填按**当前选中预设**现算 —— 绑定关系即
+  // 「select 显示哪个名,这行就说哪个预设」(含无匹配时回退 default 的那条路径);
+  // ② 节点带 preset-desc 类走 settings.css 的层级规则(紧贴控件 + 次级文一档,
+  // 压过紧随其后的 .scope-note 注脚档)。
+  // 这里判两者的**可观察结果**(真回填后的文案 / 类名 / 不再写 title),不判
+  // 「CSS 里写了什么」—— 那是源文本形态,恒真且守不住实际呈现。
+  await suite.describe("01 组当前预设说明", async (s) => {
+    /** 把交付链四块也对齐到某内置预设(只对齐排版 + 页面时 matchesPreset 仍为假)。 */
+    const alignToPreset = (/** @type {any} */ preset) => {
+      state.settings.typography = structuredClone(preset.typography);
+      state.settings.pageSetup = structuredClone(preset.pageSetup);
+      state.settings.headerFooter = structuredClone(preset.headerFooter ?? DEFAULT_SETTINGS.headerFooter);
+      state.settings.watermark = structuredClone(preset.watermark ?? DEFAULT_SETTINGS.watermark);
+      state.settings.equationNumbering = preset.equationNumbering ?? true;
+      state.settings.breakBeforeH1 = preset.breakBeforeH1 ?? false;
+      panel.applySettingsToControls();
+    };
+
+    await s.case("无匹配预设:说明行跟着 select 的回退值走(回退态下绑定同样成立)", () => {
+      rehydrate(); // BASE 是刻意偏离各内置预设的基线 ⇒ 无匹配
+      // ⚠ 无匹配时 resolvePresetSelection 的回退值是 "default"(不是空),故说明行说的是
+      // **default 预设**的说明 —— 即「说明行 ⇄ select 当前值」这条绑定在回退态也成立。
+      // 顺带登记一条现状:`resolvePresetHint` 的「选中项不存在 → 已微调」分支在
+      // refreshDynamicSettingsText 这条链路上取不到(上面的回退保证了 matchedPresetId
+      // 恒对应一个真实预设),故 template-hint--custom 这个重音态当前不可达 —— 这条
+      // 是**既有接线的事实**,不是本次展示升级引入的(升级不动这条接线)。
+      assert(
+        el("templatePreset").value === "default",
+        `无匹配预设时 select 应回退到 default,实际 ${JSON.stringify(el("templatePreset").value)}`,
+      );
+      assert(
+        el("templatePresetHint").textContent === i18n.t("preset.hintDefault"),
+        `回退到 default 时说明行应说 default 的话,实际 ${JSON.stringify(el("templatePresetHint").textContent)}`,
+      );
+    });
+
+    await s.case("说明行与 select 当前值同指一个预设(命中即换文案)", () => {
+      const paper = TEMPLATE_PRESETS.find((/** @type {any} */ p) => p.id === "paper");
+      assert(paper, "内置预设目录缺 paper(本条绑定判据依赖它)");
+      alignToPreset(paper);
+      assert(
+        el("templatePreset").value === "paper",
+        `对齐到 paper 预设后 select 应选中 paper,实际 ${JSON.stringify(el("templatePreset").value)}`,
+      );
+      assert(
+        el("templatePresetHint").textContent === i18n.t(paper.hintI18nKey),
+        `说明行应说 select 当前选中预设的话(paper),实际 ${JSON.stringify(el("templatePresetHint").textContent)}`,
+      );
+    });
+
+    await s.case("说明行带展示层级类 preset-desc,且回填不再写 title 回声", () => {
+      rehydrate();
+      assert(
+        el("templatePresetHint").className.split(/\s+/).includes("preset-desc"),
+        `说明行应带 preset-desc(层级规则的落点,与 index.html 静态类一致),实际 ${JSON.stringify(el("templatePresetHint").className)}`,
+      );
+      assert(
+        el("templatePresetHint").title === "",
+        "说明行默认换行、不截断,回填不应再写 title(那只是把同一句话再挂一次悬浮提示)",
+      );
+    });
+  });
+
+  // =========================================================================
+  /* ---------- 7) 控件 id 交叉校验 + radio 组零命中守护 ---------- */
   // =========================================================================
   // 负探针:只改坏 refs 源码(断言逻辑不动),用来自证下面这条护栏真会变红
   let refsSource = fs.readFileSync(path.join(ROOT, "src", "renderer", "dom", "refs.ts"), "utf8");
@@ -1142,7 +1212,7 @@ bindings.bindSettingsEvents({ renderSelection: () => {} });
 
   dom.restore();
   console.log(
-    `[ok] settings-controls:${controls.length} 个控件逐条 hydrate/bind/reset 通过 + 4 个手写门控双向(change/回填,change 侧当场判)通过 + 控件 id 交叉校验与 radio 组零命中守护通过 + 声明表与几何规格交叉校验通过 + 声明表写侧对称(每个可写条目都被 drive 过)与钩子/门控/效果登记覆盖通过`,
+    `[ok] settings-controls:${controls.length} 个控件逐条 hydrate/bind/reset 通过 + 4 个手写门控双向(change/回填,change 侧当场判)通过 + 01 组预设说明(文案随选中项 / 层级类 / 不写 title 回声)通过 + 控件 id 交叉校验与 radio 组零命中守护通过 + 声明表与几何规格交叉校验通过 + 声明表写侧对称(每个可写条目都被 drive 过)与钩子/门控/效果登记覆盖通过`,
   );
   return { cases: suite.results };
 }

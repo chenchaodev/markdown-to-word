@@ -313,8 +313,7 @@ export function refreshDynamicSettingsText(): void {
     matchedPresetId,
   );
   templatePresetHint.textContent = hint;
-  // 单行省略时完整文案经 title 悬浮可见(与 textContent 同步)
-  templatePresetHint.title = hint;
+  // 说明行默认换行(不截断),故不再另写 title —— 那只是把同一句话再挂一次悬浮提示
   templatePresetHint.classList.toggle("template-hint--custom", isCustom);
   // 三处动态展示位取各自声明条目的读侧(键路径单源在声明表,不在这里重述)
   syncOutputDirDisplay(CONTROL_ENTRIES.outputDir.read(state.settings));

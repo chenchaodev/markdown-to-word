@@ -10,6 +10,8 @@
  *   ③ 有命中时激活首个命中组并把首个命中控件滚入视野。**不隐藏任何控件**
  *   (几何规格只有两种可见性形态,本功能不入第三种)。语言切换经
  *   `refreshDynamicSettingsText` 复算同一处,故计数文案不会停留在旧语言。
+ *   命中集里另有一条**具体落点**断言:「模板预设」恰 1 条且落在 01 预设组
+ *   (PLAN #04 的退出条件 —— 01 组的展示升级不许动检索面)。
  *
  * 二、**Tab roving tabindex + 方向键**:`aria-selected` / `tabindex` / `.active` 类
  *   三者同刻同改;↑/↓ 环形移动、Home/End 跳首尾,且键盘激活会抢焦点(自动激活)。
@@ -278,6 +280,25 @@ export async function run() {
       assertEq(activePanelGroup(panels), expected.firstGroup, "应激活首个命中组");
     });
 
+    await suite.case("检索:「模板预设」命中 01 组(预设说明的展示升级不动检索落点)", () => {
+      // 01 组唯一控件行标签就是「模板预设」(settings.presetLabel);快速参数条那枚是
+      // mirror 条目(labelKey=null),不进检索 ⇒ 命中恰 1 条、落在 preset 组。
+      /** @type {HitExpectation} */
+      const expected = { total: 1, byGroup: { preset: 1 }, firstGroup: "preset" };
+      filter.value = "模板预设";
+      fireListener(filter, "input");
+      for (const { group, count } of tabs) {
+        const want = expected.byGroup[group] ?? 0;
+        assertEq(count.textContent, want > 0 ? String(want) : "", `${group} 组的命中计数位`);
+      }
+      assertEq(
+        filterStatus.textContent,
+        i18n.t("settings.searchHits", { count: expected.total }),
+        "状态行应报「模板预设」的总命中数",
+      );
+      assertEq(activePanelGroup(panels), "preset", "「模板预设」应命中并跳到 01 预设组");
+    });
+
     await suite.case("检索:无命中写空态文案、计数位清零,且不改动当前激活组", () => {
       const before = activePanelGroup(panels);
       filter.value = "zzz-无此设置项";
@@ -341,7 +362,7 @@ export async function run() {
     console.log(
       "[ok] settings-search:6 组 tab 与面板配对 + 点击/↑↓/Home/End 键盘导航(类名/aria-selected/"
         + "roving tabindex/焦点四处同变)+ 跨组检索(分组计数 / 状态行 / 首个命中跳转 / 无命中空态 / "
-        + "清空回收)+ 检索不新增可见性形态,全部通过",
+        + "清空回收 / 「模板预设」落 01 组)+ 检索不新增可见性形态,全部通过",
     );
     return { cases: suite.results };
   } finally {
