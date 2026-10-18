@@ -4,9 +4,9 @@
  * 实现事实(已知 key 守卫):
  * - 仅当 md 首行(可带前后空格)为 `---` 才解析,到下一个 `---` 行(可带尾随空格/行尾)结束;
  *   `---` 不闭合 / 首行非 --- → 空 metadata + 原 md 为 body(不抛错、不丢内容)
- * - **已知 key 守卫**:块内未命中任何已知 key(title/author/date/keywords)→ 不视为 frontmatter,
+ * - **已知 key 守卫**:块内未命中任何已知 key(title/author/date/keywords/organization)→ 不视为 frontmatter,
  *   原 md 原样为 body——防「以 --- 分隔线开头的普通文档」中间内容被误吞
- * - 块内逐行:trim 后空行与 `#` 注释跳过;无冒号行忽略;key 转小写,仅 title/author/date/keywords 生效
+ * - 块内逐行:trim 后空行与 `#` 注释跳过;无冒号行忽略;key 转小写,仅 title/author/date/keywords/organization 生效
  * - value:取首个冒号后内容 trim;首尾成对单/双引号则剥离(未闭合引号原样保留);
  *   空值(含 `""` 剥离后)→ 不写入
  * - body = md.slice(match[0].length)(frontmatter 块整体剥除,含其后的换行)
@@ -124,6 +124,15 @@ keywords: 排版, 归档
       /<(?:\w+:)?creator>作者乙<\/(?:\w+:)?creator>/.test(coreXml),
       `docx core.xml 缺 creator 或值不符:${coreXml.slice(0, 400)}`,
     );
+  });
+
+  // ---- 6d. 行为变更:只有 organization 的单键块由「当正文保留」变为「被剥除」 ----
+  // 与 6b 同款:加键前 organization 属未认键 ⇒ 零已知 key ⇒ 整块当正文;加键后同一输入
+  // 识别为 frontmatter 并剥除(见 adr-078 决定第 4 条:加键即扩大判定面)。
+  await suite.case("6d. 只有 organization 的单键块被识别为 frontmatter 并剥除", () => {
+    const r7d = parseFrontmatter("---\norganization: 示例机构\n---\n正文");
+    assert(r7d.metadata.organization === "示例机构", "organization 应原样解析为字符串(标量原文)");
+    assert(r7d.body === "正文", "单键 organization 块应被剥除(加键前该块整体当正文)");
   });
 
   // ---- 7. 空值跳过(title: / author: "") ----

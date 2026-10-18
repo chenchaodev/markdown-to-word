@@ -517,6 +517,7 @@ const dict = {
     "wizard.template.import": "Import Word template…",
     "wizard.template.hint": "Selecting a template overrides typography and page settings; you can also import styles and page size from a Word document.",
     "wizard.cover.fieldTitle": "Title",
+    "wizard.cover.fieldOrganization": "Organization",
     "wizard.cover.fieldAuthor": "Author",
     "wizard.cover.fieldDate": "Date",
     "wizard.cover.fromFrontmatter": "Prefilled from the first source file's frontmatter; editable.",

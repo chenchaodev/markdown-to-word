@@ -509,6 +509,7 @@ const dict = {
     "wizard.template.import": "Word テンプレートをインポート…",
     "wizard.template.hint": "テンプレートを選ぶと組版とページ設定が上書きされます。Word 文書からスタイルと用紙サイズを取り込むこともできます。",
     "wizard.cover.fieldTitle": "書名 / タイトル",
+    "wizard.cover.fieldOrganization": "所属",
     "wizard.cover.fieldAuthor": "著者",
     "wizard.cover.fieldDate": "日付",
     "wizard.cover.fromFrontmatter": "最初のソースファイルの frontmatter から自動入力しました。編集可。",

@@ -1,7 +1,7 @@
 /**
  * YAML frontmatter 手写解析(零依赖,不引 gray-matter)。
  * 仅支持最简子集:文档开头 `---` 块内的 `key: value` 行,
- * key 只取 title/author/date/keywords,其余忽略;value 支持单/双引号包裹;date 原样字符串。
+ * key 只取 title/author/date/keywords/organization,其余忽略;value 支持单/双引号包裹;date 原样字符串。
  * 任何格式异常(首行非 --- / 缺结束 ---)→ 返回空 metadata + 原 md 为 body,
  * 不报错、不丢弃内容。
  */
@@ -12,10 +12,12 @@ export interface DocMetadata {
   date?: string;
   /** 关键词(标量原文,不解析 YAML 列表;docx 取字符串、pdf 取单元素数组) */
   keywords?: string;
+  /** 单位 / 机构(标量原文;仅进封面,不进产物属性——docx 封面段与 pdf metaLine 两侧同语义) */
+  organization?: string;
 }
 
 /** 关注的 frontmatter key(其余 key 忽略,不参与封面) */
-const FRONTMATTER_KEYS = new Set(["title", "author", "date", "keywords"]);
+const FRONTMATTER_KEYS = new Set(["title", "author", "date", "keywords", "organization"]);
 
 interface SourceLine {
   text: string;

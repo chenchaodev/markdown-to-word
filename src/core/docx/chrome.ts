@@ -58,8 +58,10 @@ export interface TocEntry {
 
 /**
  * 封面页:标题居中加粗(44 half-points = 22pt,与 pdf 封面标题字号一致)+
- * 下方 author/date 居中灰色小字;末尾 PageBreak 独占一页。
+ * 下方 单位/organization、author/date 居中灰色小字;末尾 PageBreak 独占一页。
  * 用普通 Paragraph(不用 HeadingLevel),不进导航窗格/标题层级/书签。
+ * 顺序与 pdf 侧 `buildCoverHtml` 的 metaLine 一致(单位 · 作者 · 日期)——
+ * 两侧只差分段方式(本侧一段一段、pdf 侧拼成一行),不是两套语义。
  */
 export function renderCoverPage(metadata: DocMetadata): Paragraph[] {
   const paragraphs: Paragraph[] = [];
@@ -73,6 +75,17 @@ export function renderCoverPage(metadata: DocMetadata): Paragraph[] {
       children: [new TextRun({ text: metadata.title ?? "", bold: true, size: COVER_TITLE_SIZE })],
     }),
   );
+  if (metadata.organization) {
+    paragraphs.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 0, after: 120 },
+        children: [
+          new TextRun({ text: metadata.organization, color: SECONDARY_TEXT_GRAY, size: COVER_META_SIZE }),
+        ],
+      }),
+    );
+  }
   if (metadata.author) {
     paragraphs.push(
       new Paragraph({

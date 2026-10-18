@@ -171,12 +171,14 @@ ${bodyHtml}
 }
 
 /**
- * 封面 HTML:metadata.title 存在时生成。居中大标题(28pt)+ 作者/日期灰色小字,
+ * 封面 HTML:metadata.title 存在时生成。居中大标题(28pt)+ 单位/作者/日期灰色小字,
  * 末尾 <div class="page-break"></div> 复用现有分页样式,封面独占一页。
+ * metaLine 的项序与 docx 侧 `renderCoverPage` 的段落序一致(单位 · 作者 · 日期);
+ * 两侧差异只在分段方式(本侧合成一行 `·` 分隔),零新增样式。
  */
 export function buildCoverHtml(metadata: DocMetadata | undefined): string {
   if (!metadata?.title) return "";
-  const metaLine = [metadata.author, metadata.date].filter(Boolean).join(" · ");
+  const metaLine = [metadata.organization, metadata.author, metadata.date].filter(Boolean).join(" · ");
   return (
     '<div class="cover">' +
     `<div class="cover-title">${escapeHtml(metadata.title)}</div>` +

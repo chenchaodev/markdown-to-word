@@ -520,6 +520,7 @@ const dict = {
     "wizard.template.import": "导入 Word 模板…",
     "wizard.template.hint": "选择模板将覆盖排版与页面设置;也可从 Word 文档导入样式与页面尺寸。",
     "wizard.cover.fieldTitle": "书名 / 标题",
+    "wizard.cover.fieldOrganization": "单位",
     "wizard.cover.fieldAuthor": "作者",
     "wizard.cover.fieldDate": "日期",
     "wizard.cover.fromFrontmatter": "已按首个源文件 frontmatter 预填,可修改。",

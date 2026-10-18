@@ -9,6 +9,7 @@
 - 新增：文档开头 frontmatter 里的 `keywords:` 现在会写进产物属性 —— Word 的文档属性与 PDF 的属性栏都能读到。
 - 修复：Word 产物的作者属性此前恒为占位值（`Un-named`），现在取 frontmatter 的 `author`。
 - 注意：只写 `keywords:` 的那一段此前会被当成正文原样输出，现在会被识别为文档属性并从正文中剥除。
+- 新增：frontmatter 里的 `organization:` 现在会出现在封面（单位），位置在作者上方；Word 与 PDF 两条交付线一致。
 
 ## [4.2.0] - 2026-10-17
 
