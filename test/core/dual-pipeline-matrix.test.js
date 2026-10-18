@@ -246,9 +246,9 @@ const MATRIX = [
     pdfExtract: "HTML 无 `title:`/`author:` 原文行;metadata.title 走封面",
     anchors: [
       { at: "src/core/convert.ts:254(渲染只吃 md.body)", has: "md.body" },
-      { at: "src/core/pipeline/frontmatter.ts:53(parseFrontmatter 单源)", has: "parseFrontmatter" },
+      { at: "src/core/pipeline/frontmatter.ts:57(parseFrontmatter 单源)", has: "parseFrontmatter" },
       { at: "src/core/docx/render.ts:191(封面页插入)", has: "renderCoverPage" },
-      { at: "src/core/pdf/template.ts:177(封面 HTML;末尾 page-break)", has: "buildCoverHtml" },
+      { at: "src/core/pdf/template.ts:179(封面 HTML;末尾 page-break)", has: "buildCoverHtml" },
     ],
     verify: async ({ docxXmlText, pdfHtml }) => {
       must(!docxXmlText.includes("title: 矩阵样例文档"), "frontmatter-strip", "docx 正文泄漏 frontmatter 原文行");
@@ -312,7 +312,7 @@ const MATRIX = [
     docxExtract: "count(<w:br w:type=\"page\"/>)",
     pdfExtract: "count(<div class=\"page-break\">) 与 <hr>",
     anchors: [
-      { at: "src/core/docx/render.ts:329(trim 后精确匹配 → PageBreak)", has: "page-break" },
+      { at: "src/core/docx/render.ts:333(trim 后精确匹配 → PageBreak)", has: "page-break" },
       { at: "src/core/docx/handlers/fallback.ts:63(行内 html 路径同判定)", has: "PageBreak" },
       { at: "src/core/pdf/rules/html.ts:75(注释 → 分页 div)", has: "page-break" },
       { at: "src/core/pdf/template-css.ts:69(break-before: page)", has: "break-before: page" },
@@ -756,7 +756,7 @@ const MATRIX = [
     docxExtract: "word/footnotes.xml 部件 + w:footnoteReference",
     pdfExtract: "section.footnotes + li.footnote-item + 回链锚点",
     anchors: [
-      { at: "src/core/docx/render.ts:237(footnotes 部件,空则不生成)", has: "ctx.footnote.notes" },
+      { at: "src/core/docx/render.ts:241(footnotes 部件,空则不生成)", has: "ctx.footnote.notes" },
       { at: "src/core/pdf/render.ts:180(@mdit/plugin-footnote)", has: "md.use(footnote)" },
       { at: "src/core/pdf/template-css.ts:160(脚注区样式;Chromium 无 float: footnote)", has: ".footnotes" },
     ],
@@ -865,7 +865,7 @@ const MATRIX = [
     pdfExtract: "同法统计(与文档规模无关的常数)",
     anchors: [
       { at: "src/core/docx/render.ts:199(块级循环内逐块复查;has 钉住那个块级循环)", has: "for (const node of ast.children)" },
-      { at: "src/core/docx/render.ts:267(打包前最后一道)", has: "Packer.toBuffer" },
+      { at: "src/core/docx/render.ts:271(打包前最后一道)", has: "Packer.toBuffer" },
       { at: "src/core/pdf/render.ts:276(入口:闸门取得后立即复查)", has: "createCancellationGuard" },
       { at: "src/core/pdf/render.ts:320(阶段边界复查)", has: "throwIfCanceled" },
     ],
@@ -1163,7 +1163,7 @@ const MATRIX = [
     anchors: [
       { at: "src/core/settings/settings-defaults.ts:164(角度 → DML rot 换算单点)", has: "watermarkDmlRotation" },
       { at: "src/core/docx/chrome.ts:384(rot 取自 watermarkDmlRotation)", has: "watermarkDmlRotation" },
-      { at: "src/core/docx/chrome.ts:360(不透明度经 w14:textFill 真消费)", has: "w14:textFill" },
+      { at: "src/core/docx/chrome.ts:373(不透明度经 w14:textFill 真消费)", has: "w14:textFill" },
       { at: "src/core/pdf/template.ts:124(水印 CSS 的角度与不透明度)", has: "buildWatermarkCss" },
     ],
     verify: async ({ watermark: wm }) => {
