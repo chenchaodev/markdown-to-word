@@ -10,6 +10,7 @@ Markdown 转换工具是一款 Windows 桌面应用，把 Markdown 文件转换�
 
 - **安装**：双击 `MarkdownToWord-Setup-<版本>.exe`，按向导下一步即可（可选择安装目录）
 - **卸载**：Windows「设置 → 应用」中找到 `MarkdownToWord` 卸载即可（列表里显示的是安装包产品名，「Markdown 转换工具」只是窗口标题）
+- **便携版（免安装）**：下载 `MarkdownToWord-Portable-<版本>.zip` 解压后直接运行其中的 `MarkdownToWord.exe`，无需安装、无需管理员权限。设置保存在本机用户数据目录，如需带走可连目录一起拷贝。
 
 ## 快速上手
 

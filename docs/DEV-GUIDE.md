@@ -22,7 +22,7 @@
 | `npm run build` | 构建 core 到 `dist/`(`tsc` + copy-renderer) |
 | `npm run dev` | 开发启动 = `build` 后**直接**起 Electron,**不带**构建新鲜度守卫 |
 | `npm run start` | 启动 Electron,但**先跑 `gates/smoke/check-build-fresh.mjs` 校验构建新鲜度** —— 只改了源码没重建时,守卫先拦下(`test:smoke` 用的是同一个守卫) |
-| `npm run dist` | electron-builder 打包 NSIS 安装包(输出 `release/`;链内含产物核对,见「门禁接入点」) |
+| `npm run dist` | electron-builder 打包 Windows 安装包与免安装压缩包(输出 `release/`;链内含产物核对,见「门禁接入点」) |
 | `npm run test` | 验收全部测试段(`electron test/acceptance.mjs`;段目录集合取自 `shared/test-common-surface.js` 的 `SEGMENT_DIRS`,共 **10 个** —— `core` `main` `renderer` `gates` `convert` `cli` `mcp` `shared` `behavior` `harness`,该导出即验收入口发现面的唯一单源;需先 build;新增测试=新建段文件零注册) |
 | `npm run test:smoke` | 冒烟自测(`electron . --smoke`,前置构建新鲜度守卫) |
 | `npm run test:coverage` | c8 覆盖率报告(扫描面 = `dist/` 下**全部 `.js` 产物**,**含 renderer 层**;`declaration: true` 产出的 `.d.ts` **不进扫描面** —— 收窄理由与那条被否掉的替代写法见 `gates/repo/coverage-baseline.json` 的 `note` 里「`--include` 为什么收成 `dist/**/*.js`」那条,ADR-073 记裁决)。结构性不可测的 Electron 入口 / preload / 纯类型模块 / 关于窗三件套按 `gates/repo/coverage-baseline.json` 的豁免清单逐文件登记并排除。豁免清单与 `--exclude` 是**严格双射**,任一侧多出一条未登记的即判红。**改 `--include` / `--exclude` 就是改分母,`measured` 四项必须在干净树手工重测**(本门禁不核对 `measured` 与真实覆盖率,这是唯一靠人守的一环) |

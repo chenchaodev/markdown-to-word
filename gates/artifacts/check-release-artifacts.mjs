@@ -154,12 +154,16 @@ export async function main(argv = []) {
   const version = typeof pkg.version === 'string' ? pkg.version : '';
   const productName = typeof pkg.build?.productName === 'string' ? pkg.build.productName : '';
   const artifactTemplate = pkg.build?.nsis?.artifactName;
+  const winArtifactTemplate = pkg.build?.win?.artifactName;
   const outputDir = pkg.build?.directories?.output ?? DEFAULT_RELEASE_DIR;
   const releaseDir = path.resolve(projectRoot, options.release ?? outputDir);
   const problems = [];
   if (version === '') problems.push('package.json 缺少 version(发布目标无从确定)');
   if (typeof artifactTemplate !== 'string' || artifactTemplate === '') {
     problems.push('package.json build.nsis.artifactName 缺失(安装包名无从确定)');
+  }
+  if (typeof winArtifactTemplate !== 'string' || winArtifactTemplate === '') {
+    problems.push('package.json build.win.artifactName 缺失(免安装档名无从确定)');
   }
 
   let installerName = '';
@@ -171,10 +175,19 @@ export async function main(argv = []) {
     }
   }
 
-  const blockmapName = installerName === '' ? '' : `${installerName}.blockmap`;
-  const expectedNames = new Set([installerName, blockmapName, LATEST_YML].filter((name) => name !== ''));
+  let portableName = '';
+  if (version !== '' && typeof winArtifactTemplate === 'string' && winArtifactTemplate !== '') {
+    try {
+      portableName = expandArtifactName(winArtifactTemplate, { productName, version, ext: 'zip' });
+    } catch (error) {
+      problems.push(error.message);
+    }
+  }
 
-  if (problems.length > 0 || installerName === '') {
+  const blockmapName = installerName === '' ? '' : `${installerName}.blockmap`;
+  const expectedNames = new Set([installerName, blockmapName, portableName, LATEST_YML].filter((name) => name !== ''));
+
+  if (problems.length > 0 || installerName === '' || portableName === '') {
     for (const problem of problems) console.error(`[release:fail] ${problem}`);
     console.error('[release:fail] 发布目标定义不完整,无法核对产物');
     return 1;
@@ -197,6 +210,12 @@ export async function main(argv = []) {
     problems.push(`缺少安装包差分索引:${blockmapName}(自动更新通道依赖)`);
   } else if (statSync(blockmapPath).size === 0) {
     problems.push(`差分索引为空文件:${blockmapName}`);
+  }
+  const portablePath = path.join(releaseDir, portableName);
+  if (!existsSync(portablePath)) {
+    problems.push(`缺少当前版本免安装档:${portableName}(期望版本 ${version})`);
+  } else if (statSync(portablePath).size === 0) {
+    problems.push(`免安装档为空文件:${portableName}(打包中断?)`);
   }
 
   // ---- 3. 历史/非预期产物 ----

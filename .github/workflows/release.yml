@@ -187,7 +187,8 @@ jobs:
             process.stdout.write(extractNotes(readFileSync('docs/CHANGELOG.md', 'utf8'), pkg.version));
           ")
           INSTALLER=$(node -e 'const p = require("./package.json"); process.stdout.write(p.build.nsis.artifactName.replace("${productName}", p.build.productName).replace("${version}", p.version).replace("${ext}", "exe"))')
-          ASSETS="release/${INSTALLER} release/${INSTALLER}.blockmap release/latest.yml"
+          PORTABLE=$(node -e 'const p = require("./package.json"); process.stdout.write(p.build.win.artifactName.replace("${productName}", p.build.productName).replace("${version}", p.version).replace("${ext}", "zip"))')
+          ASSETS="release/${INSTALLER} release/${INSTALLER}.blockmap release/${PORTABLE} release/latest.yml"
           for asset in $ASSETS; do
             if [ ! -f "$asset" ]; then
               echo "::error::缺少当前版本发布资产 ${asset}(产物核对应已在 verify:release 拦截,此处兜底)"
