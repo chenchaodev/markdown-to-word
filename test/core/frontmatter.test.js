@@ -4,14 +4,17 @@
  * 实现事实(已知 key 守卫):
  * - 仅当 md 首行(可带前后空格)为 `---` 才解析,到下一个 `---` 行(可带尾随空格/行尾)结束;
  *   `---` 不闭合 / 首行非 --- → 空 metadata + 原 md 为 body(不抛错、不丢内容)
- * - **已知 key 守卫**:块内未命中任何已知 key(title/author/date)→ 不视为 frontmatter,
+ * - **已知 key 守卫**:块内未命中任何已知 key(title/author/date/keywords)→ 不视为 frontmatter,
  *   原 md 原样为 body——防「以 --- 分隔线开头的普通文档」中间内容被误吞
- * - 块内逐行:trim 后空行与 `#` 注释跳过;无冒号行忽略;key 转小写,仅 title/author/date 生效
+ * - 块内逐行:trim 后空行与 `#` 注释跳过;无冒号行忽略;key 转小写,仅 title/author/date/keywords 生效
  * - value:取首个冒号后内容 trim;首尾成对单/双引号则剥离(未闭合引号原样保留);
  *   空值(含 `""` 剥离后)→ 不写入
  * - body = md.slice(match[0].length)(frontmatter 块整体剥除,含其后的换行)
  */
 import { parseFrontmatter as parseFrontmatterRaw } from "../../dist/core/pipeline/frontmatter.js";
+import { asDocxArtifact, convertWithFs } from "../harness/convert-helpers.js";
+import { unzipPart } from "../harness/docx-utils.js";
+import { FIXTURES_DIR } from "../harness/paths.js";
 import { createAsserter } from "../harness/assert.js";
 import { createCaseSuite } from "../harness/case.js";
 
@@ -77,13 +80,49 @@ author: 作者
   });
 
   // ---- 6. 非白名单 key / 无冒号行忽略 + 已知 key 守卫 ----
+  // `abstract` 是**真正未被识别**的键(keywords 已进白名单,不能再拿它当反例)
   await suite.case("6. 非白名单 key 与无冒号行忽略;未知 key 块整体保留为 body", () => {
-    const r7 = parseFrontmatter("---\ntags: a,b\nplain line\nkeywords: [x]\n---\n");
+    const r7 = parseFrontmatter("---\ntags: a,b\nplain line\nabstract: [x]\n---\n");
     assert(Object.keys(r7.metadata).length === 0, "非白名单 key 与无冒号行应忽略");
     // 已知 key 守卫:块内未命中已知 key → 不视为 frontmatter,原样保留为正文(不吞内容)
     assert(
-      r7.body === "---\ntags: a,b\nplain line\nkeywords: [x]\n---\n",
+      r7.body === "---\ntags: a,b\nplain line\nabstract: [x]\n---\n",
       "未知 key 块应整体保留为 body(守卫)",
+    );
+  });
+
+  // ---- 6b. 行为变更:只有 keywords 的单键块由「当正文保留」变为「被剥除」 ----
+  // 加键前 keywords 属未认键 ⇒ 零已知 key ⇒ 整块当正文;加键后同一输入识别为
+  // frontmatter 并剥除。这是加键的隐性行为变更,由本条锁住(勿改成「保留」)。
+  await suite.case("6b. 只有 keywords 的单键块被识别为 frontmatter 并剥除", () => {
+    const r7b = parseFrontmatter("---\nkeywords: 排版, 归档\n---\n正文");
+    assert(r7b.metadata.keywords === "排版, 归档", "keywords 应原样解析为字符串(不解析 YAML 列表)");
+    assert(r7b.body === "正文", "单键 keywords 块应被剥除(加键前该块整体当正文)");
+  });
+
+  // ---- 6c. docx 产物属性:keywords 与 creator 落进 docProps/core.xml ----
+  // 现状缺口:docx 侧从未传 creator/keywords ⇒ 产物无作者属性也无关键词
+  await suite.case("6c. docx 产物 core.xml 的 keywords/creator 与 frontmatter 一致", async () => {
+    const source = `---
+title: 元数据验收
+author: 作者乙
+keywords: 排版, 归档
+---
+
+# 正文标题
+`;
+    const docx = asDocxArtifact(
+      await convertWithFs(source, "docx", { baseDir: FIXTURES_DIR, warnings: [] }),
+    );
+    const coreXml = await unzipPart(docx.buffer, "docProps/core.xml");
+    // 去掉可能的命名空间前缀差异:按「元素名 + 文本」判值,不钉死 cp:/dc: 前缀书写
+    assert(
+      /<(?:\w+:)?keywords>排版, 归档<\/(?:\w+:)?keywords>/.test(coreXml),
+      `docx core.xml 缺 keywords 或值不符:${coreXml.slice(0, 400)}`,
+    );
+    assert(
+      /<(?:\w+:)?creator>作者乙<\/(?:\w+:)?creator>/.test(coreXml),
+      `docx core.xml 缺 creator 或值不符:${coreXml.slice(0, 400)}`,
     );
   });
 

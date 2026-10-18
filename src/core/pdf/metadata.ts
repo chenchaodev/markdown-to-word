@@ -29,6 +29,11 @@ export async function setPdfMetadata(pdf: Uint8Array, metadata: DocMetadata | un
     doc.setAuthor(metadata.author);
     touched = true;
   }
+  if (metadata.keywords) {
+    // 单元素数组:pdf-lib 的 getKeywords() 原样读回该字符串,与 frontmatter 一致
+    doc.setKeywords([metadata.keywords]);
+    touched = true;
+  }
   if (metadata.date) {
     const created = parseDate(metadata.date);
     if (created) {

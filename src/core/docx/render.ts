@@ -216,6 +216,10 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     right: mmToTwips(pageSetup.marginRight),
   };
   const doc = new Document({
+    // 产物属性(frontmatter → docProps/core.xml):creator 补上既有缺口(frontmatter
+    // author 此前只进封面,core.xml 的 creator 恒为库默认 Un-named);keywords 原样写入
+    creator: options.metadata?.author,
+    keywords: options.metadata?.keywords,
     styles: {
       default: {
         document: {

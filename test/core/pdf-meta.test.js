@@ -2,11 +2,15 @@
 /**
  * PDF 章节编号 + 元数据验收:
  * 自建小 md(frontmatter title/author 沿用原样例,正文仅需触发 h1 + 分页)→ pdf;
- * 断言章节编号 counter CSS;setPdfMetadata 后 PDFDocument 回读 title/author 一致。
+ * 断言章节编号 counter CSS;setPdfMetadata 后 PDFDocument 回读 title/author/keywords 一致,
+ * 且「书签 → 元数据」顺序下书签未丢。
  * 本段不落盘产物(与原段 4 一致)。
  */
 import { setPdfMetadata } from "../../dist/core/pdf/metadata.js";
-import { PDFDocument } from "pdf-lib";
+import { parseFrontmatter } from "../../dist/core/pipeline/frontmatter.js";
+import { buildBookmarkTree, injectBookmarks } from "../../dist/core/pdf/bookmarks.js";
+import { extractHeadings } from "../../dist/core/pdf/postprocess.js";
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRef } from "pdf-lib";
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { htmlToPdf } from "../harness/pdf-utils.js";
 import { asPdfArtifact, convertWithFs } from "../harness/convert-helpers.js";
@@ -66,6 +70,41 @@ export async function run() {
   });
   // 打印逐字沿用原样(打印的是读回值,不是入参;取数在 case 内,故此处不重复回读)
   console.log('[ok] PDF 元数据:title="脚注与页眉页脚验收" author="测试" 读回一致');
+
+  // 关键词:frontmatter 单值 → pdf-lib setKeywords([...]) → Info /Keywords 原样读回。
+  // 不走 pdfMetaMd 夹具:夹具内容与 samples/docs/pdf-meta.md 绑定(改夹具要重生成样例),
+  // 故此处以同一解析入口(frontmatter.ts)喂一份带 keywords 的最小源,断言解析值与读回一致。
+  await suite.case("PDF Info 的 keywords 与 frontmatter 一致(读回验证)", async () => {
+    const parsed = parseFrontmatter("---\ntitle: 关键词验收\nkeywords: 排版, 归档\n---\n正文");
+    const pdfWithMeta = await setPdfMetadata(new Uint8Array(pdf), parsed.metadata);
+    const pdfDoc = await PDFDocument.load(pdfWithMeta);
+    const pdfKeywords = pdfDoc.getKeywords();
+    if (!parsed.metadata.keywords || pdfKeywords !== parsed.metadata.keywords) {
+      throw new Error(`PDF 元数据断言失败: keywords=${pdfKeywords}`);
+    }
+  });
+  console.log('[ok] PDF 元数据:keywords="排版, 归档" 读回一致');
+
+  // 回归:setPdfMetadata 经 pdf-lib 整体重存,调用方必须在其之前注入书签。
+  // 本段按生产顺序(书签 → 元数据)走一遍,断言 Outlines 与首条 Dest 未丢。
+  await suite.case("setPdfMetadata 重存后书签未丢(书签 → 元数据的生产顺序)", async () => {
+    const headings = extractHeadings(pdfArtifact.html);
+    if (headings.length === 0) throw new Error("PDF 元数据断言失败:未提取到标题,书签回归前提不成立");
+    const bookmarked = await injectBookmarks(new Uint8Array(pdf), buildBookmarkTree(headings));
+    const withMeta = await setPdfMetadata(bookmarked, pdfArtifact.metadata);
+    const doc = await PDFDocument.load(withMeta);
+    const outlinesRef = doc.catalog.get(PDFName.of("Outlines"));
+    if (!outlinesRef) throw new Error("PDF 元数据断言失败:重存后 Outlines 大纲丢失");
+    const outlinesDict = doc.context.lookup(outlinesRef, PDFDict);
+    const firstRef = outlinesDict?.get(PDFName.of("First"));
+    if (!firstRef) throw new Error("PDF 元数据断言失败:重存后大纲缺少 First 条目");
+    const firstDict = doc.context.lookup(firstRef, PDFDict);
+    const dest = firstDict?.get(PDFName.of("Dest"));
+    if (!(dest instanceof PDFArray) || !(dest.asArray()[0] instanceof PDFRef)) {
+      throw new Error(`PDF 元数据断言失败:重存后书签 Dest 异常: ${dest?.toString()}`);
+    }
+  });
+  console.log("[ok] PDF 元数据:书签经 pdf-lib 重存后仍在(Outlines + Dest 页面引用)");
 
   // ---------- 无元数据原样返回(metadata.ts) ----------
   // 依据(dist/core/pdf/metadata.ts):metadata 缺省或空对象无 title/author/date
