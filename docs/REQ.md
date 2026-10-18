@@ -48,7 +48,6 @@
 
 | 号 | 标题 | 状态 | 为什么停在这 | 什么条件下重看 | 分析在哪 |
 |---|---|---|---|---|---|
-| REQ-249 | frontmatter 单位字段 | 在办 | 2026-10-18 由 REQ-008 拆出并拍板要做,尚未排期。纯字段扩展:白名单加键 + 封面消费(docx chrome.ts:76 / pdf template.ts:179 的 metaLine),9 文件 + 1 键×3 语。⚠ 必须同步处理向导 cleanMetadata 的整对象替换语义,否则「只填单位会吃掉 frontmatter 的 title」是真 bug。曾被显式推迟一次,理由是不扩展核心而非不要 | 排期即开工 | docs/evidence/20261017-091039-三条待拍板工作项取证与建议.md |
 
 ## 已完成
 
@@ -255,6 +254,7 @@
 | REQ-246 | 仓库级 EOL 策略：检出也统一 LF | 已完成 | 首条改 text=auto eol=lf,四条定点 pin 退役(binary 七条保留,那不是行尾策略)。交付时确认:形态分布取 git ls-files --eol 已归零 crlf/mixed、与 HEAD 零 diff、全链 verify:ci exit 0。 | 有人把 eol=lf 放宽,或 CRLF 再从仓外溜进来时 | 决策与实测依据在 .gitattributes 首条注释(旧裁决为何不成立、三形态拼布) |
 | REQ-247 | 设置抽屉组内分段、视觉与检索重构 | 已完成 | 已闭合：六组边界不动；组内加段标签（02 页面/文字/段落 · 03 水印 · 05 清理/产物/PDF 样式）；tocMode 改两档 seg；抽屉内加跨组搜索（标签经声明表 labelKey 单源）；水印总闸三档（图片档规划中灰禁）。窄窗「导出后行为」不再被裁。交付时确认全链绿。 | 落地后若 02/05 仍难找，再评估八组制；图片水印实现后第三档解除灰禁。 | docs/adr/ADR-077-设置抽屉组内分段与检索.md · docs/evidence/20261017-091039-REQ247工作载体原文归档.md |
 | REQ-248 | frontmatter 关键词元数据 | 已完成 | `keywords` 进白名单；docx 写 `docProps/core.xml` 的 `cp:keywords` 与 `dc:creator`（补恒为 `Un-named` 的作者属性），pdf 写 Info 的 Keywords；只写 `keywords:` 的块由当正文变剥除 | frontmatter 要扩键、或要支持 YAML 列表时 | docs/adr/ADR-078-frontmatter元数据契约与产物属性落点.md |
+| REQ-249 | frontmatter 单位字段 | 已完成 | `organization` 进白名单;frontmatter→封面两侧同序(docx 封面段 + pdf metaLine,单位 · 作者 · 日期);向导封面步加第四个输入并**预填**,草稿→付印 metadata 带上它。整对象替换缺口按 ADR-078 不修 | 单位要像排版那样记住上次(那时才需落盘);或封面上单位的版式要另定 | docs/adr/ADR-078-frontmatter元数据契约与产物属性落点.md · docs/evidence/20261017-091039-三条待拍板工作项取证与建议.md |
 ## 已作废
 
 = 需求被**终审否决**，行**永久保留**、**号永不复用**。否决理由与复活条件在本行；长篇依据在「分析在哪」。

@@ -17,7 +17,7 @@
  * 生成),close 仅隐藏——下次 open 走 dispose + build,不复用旧控件快照。
  *
  * 状态归属(设计 §3.6):向导内改的模板/页眉/水印/目录直接写 `state.settings` +
- * `persistSettings`(与设置抽屉同源,实时落盘);封面元数据(标题/作者/日期)走
+ * `persistSettings`(与设置抽屉同源,实时落盘);封面元数据(标题/单位/作者/日期)走
  * `wizardDraft.cover`,付印时随 `runMerge` 传入,不写 settings。
  *
  * 依赖方向单向:本模块 → wizard-runtime/fields/steps/steps-delivery(渲染)/
@@ -218,13 +218,22 @@ function isWizardCommandBlocked(deps: BookWizardDeps): boolean {
 }
 
 /* ---------- 付印提交 ---------- */
-/* 封面元数据清洗:全空则不传(回落 frontmatter) */
+/* 封面元数据清洗:全空则不传(回落 frontmatter)。
+ * ⚠ 非全空时**整对象替换** frontmatter 解析结果(convert 侧 `context.metadata ?? md.metadata`),
+ * 故每个封面字段都必须在这里带上 —— 漏一个就等于「用户在向导里没填的字段被清掉」。
+ * 该覆盖语义本身是 ADR-078 明写的已知缺口(本条不授权改)。 */
 function cleanMetadata(cover: WizardDraft["cover"]): DocMetadata | undefined {
   const title = cover.title.trim();
+  const organization = cover.organization.trim();
   const author = cover.author.trim();
   const date = cover.date.trim();
-  if (!title && !author && !date) return undefined;
-  return { title: title || undefined, author: author || undefined, date: date || undefined };
+  if (!title && !organization && !author && !date) return undefined;
+  return {
+    title: title || undefined,
+    organization: organization || undefined,
+    author: author || undefined,
+    date: date || undefined,
+  };
 }
 
 /**
@@ -271,6 +280,7 @@ export function openBookWizard(deps: BookWizardDeps): void {
   document.body.appendChild(el);
   // 重置瞬时字段(草稿与控件同源,避免上次输入残留)
   coverRefs.titleInput.value = "";
+  coverRefs.organizationInput.value = "";
   coverRefs.authorInput.value = "";
   coverRefs.dateInput.value = "";
   coverRefs.fromFm.classList.add("hidden");

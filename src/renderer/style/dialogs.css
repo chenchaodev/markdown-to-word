@@ -722,7 +722,7 @@
   color: var(--mut);
 }
 
-/* 封面实时预览卡:标题衬线 / 作者 UI / 日期 mono */
+/* 封面实时预览卡:标题衬线 / 单位·作者·日期 UI 与 mono(项序同产物封面) */
 .wz-preview-wrap {
   margin-top: 6px;
   padding: 14px 16px;

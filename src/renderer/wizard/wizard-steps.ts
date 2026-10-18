@@ -6,7 +6,7 @@
  * wizard-fields.ts,外壳/导航/付印提交见 book-wizard.ts。
  * 封面控件引用在本模块赋值(buildStepCover),外壳打开重置与交付步预填经
  * import 读取。**不越界的读也不再给可重绑定出口**(同 wizard-runtime):
- * 五个 `let` 是模块私有可变绑定,经 `coverRefs` 只读门面出口,import 方拿到的
+ * 六个 `let` 是模块私有可变绑定,经 `coverRefs` 只读门面出口,import 方拿到的
  * 始终是当次构建的最新元素,且无法重绑。
  * 依赖方向:本模块 → wizard-fields、wizard-runtime、core / state(单向),
  * 不反向引用外壳。对 settings 的协作(套用预设 / 导入模板 / 落盘 / 预设与展示名)
@@ -69,6 +69,7 @@ export interface WizardStepsDeps extends WizardFieldsDeps {
  * 私有 let + 只读门面出口,而非可变绑定导出:后者允许任何 import 方重绑,
  * 而赋值必须留在 buildStepCover(与「每次打开重建控件」的生命周期同源)。 */
 let coverTitleInput: HTMLInputElement;
+let coverOrganizationInput: HTMLInputElement;
 let coverAuthorInput: HTMLInputElement;
 let coverDateInput: HTMLInputElement;
 let coverPreview: HTMLElement;
@@ -78,6 +79,9 @@ let coverFromFm: HTMLElement;
 export const coverRefs = {
   get titleInput(): HTMLInputElement {
     return coverTitleInput;
+  },
+  get organizationInput(): HTMLInputElement {
+    return coverOrganizationInput;
   },
   get authorInput(): HTMLInputElement {
     return coverAuthorInput;
@@ -244,6 +248,7 @@ export function buildStepTemplate(deps: WizardStepsDeps): HTMLElement {
 /* ---------- 步骤 2:封面 ---------- */
 export function buildStepCover(): HTMLElement {
   coverTitleInput = h("input", { type: "text", class: "tin", id: "wizardCoverTitle" }) as HTMLInputElement;
+  coverOrganizationInput = h("input", { type: "text", class: "tin", id: "wizardCoverOrganization" }) as HTMLInputElement;
   coverAuthorInput = h("input", { type: "text", class: "tin", id: "wizardCoverAuthor" }) as HTMLInputElement;
   coverDateInput = h("input", { type: "text", class: "tin", id: "wizardCoverDate" }) as HTMLInputElement;
   coverPreview = h("div", { class: "wz-cover-preview" });
@@ -251,16 +256,20 @@ export function buildStepCover(): HTMLElement {
 
   const onInput = (): void => {
     runtime.draft.cover.title = coverTitleInput.value;
+    runtime.draft.cover.organization = coverOrganizationInput.value;
     runtime.draft.cover.author = coverAuthorInput.value;
     runtime.draft.cover.date = coverDateInput.value;
     renderCoverPreview();
   };
   coverTitleInput.addEventListener("input", onInput);
+  coverOrganizationInput.addEventListener("input", onInput);
   coverAuthorInput.addEventListener("input", onInput);
   coverDateInput.addEventListener("input", onInput);
 
+  // 输入件序与产物封面同序(单位在书名之后、作者之前),见 chrome.ts 封面段与 pdf metaLine
   return h("section", { class: "wz-pane", dataset: { step: "2" } }, [
     fieldRow("wizard.cover.fieldTitle", coverTitleInput),
+    fieldRow("wizard.cover.fieldOrganization", coverOrganizationInput),
     fieldRow("wizard.cover.fieldAuthor", coverAuthorInput),
     fieldRow("wizard.cover.fieldDate", coverDateInput),
     coverFromFm,
@@ -272,9 +281,10 @@ export function buildStepCover(): HTMLElement {
   ]);
 }
 
-/** 封面实时预览(右侧卡;标题衬线 / 作者 UI / 日期 mono) */
+/** 封面实时预览(右侧卡;标题衬线 / 单位·作者·日期 UI 与 mono;项序同产物封面) */
 export function renderCoverPreview(): void {
   const title = runtime.draft.cover.title.trim();
+  const organization = runtime.draft.cover.organization.trim();
   const author = runtime.draft.cover.author.trim();
   const date = runtime.draft.cover.date.trim();
   coverPreview.replaceChildren();
@@ -283,8 +293,8 @@ export function renderCoverPreview(): void {
     return;
   }
   coverPreview.appendChild(h("p", { class: "wz-cover-title", text: title }));
-  if (author || date) {
-    coverPreview.appendChild(h("p", { class: "wz-cover-meta", text: [author, date].filter(Boolean).join(" · ") }));
+  if (organization || author || date) {
+    coverPreview.appendChild(h("p", { class: "wz-cover-meta", text: [organization, author, date].filter(Boolean).join(" · ") }));
   }
 }
 

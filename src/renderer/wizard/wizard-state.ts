@@ -7,9 +7,14 @@
 /** 向导总步数(设计 §3.3) */
 export const WIZARD_TOTAL_STEPS = 7;
 
-/** 封面元数据草稿(标题/作者/日期;与核心 DocMetadata 同形,不含单位字段) */
+/**
+ * 封面元数据草稿(标题/单位/作者/日期)。
+ * 字段取核心 `DocMetadata` 的同名项(`src/core/pipeline/frontmatter.ts`),不含
+ * `keywords` —— 那个进产物属性,不是封面内容。
+ */
 export interface WizardCover {
   title: string;
+  organization: string;
   author: string;
   date: string;
 }
@@ -25,7 +30,7 @@ export interface WizardDraft {
 
 /** 新建空白草稿 */
 export function createDraft(): WizardDraft {
-  return { cover: { title: "", author: "", date: "" }, sources: [], format: "docx" };
+  return { cover: { title: "", organization: "", author: "", date: "" }, sources: [], format: "docx" };
 }
 
 /** 下一步(钳制在 [1, TOTAL]) */

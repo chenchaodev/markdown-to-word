@@ -90,7 +90,13 @@ async function addSources(deps: WizardStepsDeliveryDeps): Promise<void> {
     runtime.draft.sources.push(...paths);
     syncSources(deps);
     // 选完首文件后预填封面(设计 §4.2 / §4.5)
-    if (runtime.draft.sources.length >= 1 && !runtime.draft.cover.title && !runtime.draft.cover.author && !runtime.draft.cover.date) {
+    if (
+      runtime.draft.sources.length >= 1
+      && !runtime.draft.cover.title
+      && !runtime.draft.cover.organization
+      && !runtime.draft.cover.author
+      && !runtime.draft.cover.date
+    ) {
       await prefillCoverFromFirstSource();
     }
   } catch {
@@ -145,9 +151,12 @@ async function prefillCoverFromFirstSource(): Promise<void> {
   try {
     const fm = await window.api.readFrontmatter(first);
     if (fm.title) coverRefs.titleInput.value = runtime.draft.cover.title = fm.title;
+    // 单位与其余封面字段同批带上:frontmatter 那条路径已通,漏掉它会让「只填了别的字段」
+    // 的向导提交经整对象替换把单位吃掉(ADR-078 的已知缺口面,此处只能不漏)
+    if (fm.organization) coverRefs.organizationInput.value = runtime.draft.cover.organization = fm.organization;
     if (fm.author) coverRefs.authorInput.value = runtime.draft.cover.author = fm.author;
     if (fm.date) coverRefs.dateInput.value = runtime.draft.cover.date = fm.date;
-    if (fm.title || fm.author || fm.date) coverRefs.fromFm.classList.remove("hidden");
+    if (fm.title || fm.organization || fm.author || fm.date) coverRefs.fromFm.classList.remove("hidden");
     renderCoverPreview();
   } catch {
     /* 忽略:预填失败不阻断 */
