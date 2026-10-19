@@ -121,7 +121,7 @@ export async function run() {
   // case 名逐字复用 assertEq 的 label 形参:失败文案与 case 名同源,不必两份清单同步维护
   // ---------- 预设数量与 id 唯一性(模板下拉按 id 定位) ----------
   await suite.case("预设数量", () => {
-    assertEq(TEMPLATE_PRESETS.length, 6, "预设数量");
+    assertEq(TEMPLATE_PRESETS.length, 5, "预设数量");
   });
   const ids = new Set(TEMPLATE_PRESETS.map((p) => p.id));
   await suite.case("预设 id 唯一", () => {

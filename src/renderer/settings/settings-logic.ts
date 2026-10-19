@@ -299,18 +299,22 @@ export function mergePendingSavePatch(
 }
 
 /**
- * 模板预设 hint 计算(applySettingsToControls 回填):选中项为自定义/不存在 →
- * 「已微调」提示文案 + isCustom=true;否则返回该预设的当前语言说明 + isCustom=false。
- * 纯函数,故两个方向都无残留:命中预设 → 预设说明(可从「已微调」复位回预设),
- * 微调后(选中项不存在)→「已微调」;语言切换后重算即得对应语言文案。
+ * 模板预设 hint 计算(applySettingsToControls 回填):返回选中预设的当前语言说明。
+ *
+ * 选中项由设置反查派生(`resolvePresetSelection`),无匹配时回落 "default",故
+ * matchedPresetId 正常恒对应真实预设;未知/已删 id 仅作防御性兜底 —— 同样回落
+ * default 预设的说明,与 `resolvePresetSelection` 的回落值一致(不存在「已微调」态)。
+ * 语言切换后重算即得对应语言文案。
  */
 export function resolvePresetHint(
   customPresets: readonly CustomPreset[],
   matchedPresetId: string,
-): { hint: string; isCustom: boolean } {
-  const matchedPreset = allPresets(customPresets).find((p) => p.id === matchedPresetId);
-  if (!matchedPreset) return { hint: t("preset.modifiedHint"), isCustom: true };
-  return { hint: presetHintText(matchedPreset), isCustom: false };
+): string {
+  const presets = allPresets(customPresets);
+  const matchedPreset = presets.find((p) => p.id === matchedPresetId)
+    ?? presets.find((p) => p.id === "default");
+  // TEMPLATE_PRESETS 恒含 default(契约单测钉住),故正常必命中;空串分支只为类型收敛。
+  return matchedPreset ? presetHintText(matchedPreset) : "";
 }
 
 /** 输出目录显示文案:空串 = 「与源文件相同目录」(回填与恢复默认共用)。 */

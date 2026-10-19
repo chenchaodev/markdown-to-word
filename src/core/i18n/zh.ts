@@ -358,14 +358,12 @@ const dict = {
     "preset.business": "商务简报",
     "preset.officialCn": "中文公文",
     "preset.cnReader": "中文长文",
-    "preset.cnMinimal": "中文极简",
     // 预设说明(值与 TEMPLATE_PRESETS[].hint 逐字一致:内置预设名与说明的本地化来源)
     "preset.hintDefault": "常规文档:微软雅黑正文、两端对齐、行距 1.5",
     "preset.hintPaper": "论文常用:宋体正文 + Times New Roman 西文、两端对齐、标准页边距",
     "preset.hintBusiness": "简报常用:微软雅黑正文、左对齐、行距 1.15、页边距更紧凑",
     "preset.hintOfficialCn": "仿宋正文 + Times New Roman 西文、两端对齐、GB 标准页边距",
     "preset.hintCnReader": "宋体正文、1.75 倍行距、首行缩进，适合阅读型长文档",
-    "preset.hintCnMinimal": "微软雅黑正文、左对齐、无首行缩进、紧凑行距，适合随手笔记",
     "preset.saveAs": "另存为预设…",
     "preset.saveAsTitle": "另存为预设",
     "preset.saveDesc": "将当前排版与页面设置保存为自定义预设(不含页眉页脚与水印)",
@@ -380,8 +378,6 @@ const dict = {
     "preset.nameDuplicate": "已存在同名预设,请换一个名称",
     "preset.nameLimit": "已达 ${max} 个上限,请先删除",
     "preset.customHint": "自定义预设 · 仅排版与页面",
-    "preset.modifiedHint": "已微调,与模板预设不一致",
-    "preset.hintTitle": "切换预设会覆盖对应设置:内置预设含页眉页脚与水印,自定义预设仅排版与页面",
     // 切换预设后的 toast 反馈(行为契约键,renderer 用)
     "toast.presetSwitched": "已切换到预设「${name}」,覆盖:${groups}",
     // 抽屉「恢复默认」后的 toast 反馈(只陈述事实)

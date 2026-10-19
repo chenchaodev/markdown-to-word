@@ -352,14 +352,12 @@ const dict = {
     "preset.business": "Business brief",
     "preset.officialCn": "Chinese official document",
     "preset.cnReader": "Chinese long-form",
-    "preset.cnMinimal": "Chinese minimal",
     // 预设说明(字体用拉丁名,避免 en 文案里混中文;宋体/仿宋_GB2312 分别对应 SimSun/FangSong_GB2312)
     "preset.hintDefault": "Everyday documents: Microsoft YaHei body, justified, 1.5 line spacing",
     "preset.hintPaper": "Thesis-ready: SimSun body with Times New Roman for Latin, justified, standard margins",
     "preset.hintBusiness": "Briefing-ready: Microsoft YaHei body, left aligned, 1.15 line spacing, tighter margins",
     "preset.hintOfficialCn": "FangSong_GB2312 body with Times New Roman for Latin, justified, GB standard margins",
     "preset.hintCnReader": "SimSun body, 1.75 line spacing, first-line indent; made for long reading pieces",
-    "preset.hintCnMinimal": "Microsoft YaHei body, left aligned, no first-line indent, tight spacing; made for quick notes",
     "preset.saveAs": "Save as preset…",
     "preset.saveAsTitle": "Save as preset",
     "preset.saveDesc": "Save current typography and page settings as a custom preset (header/footer and watermark are not included)",
@@ -374,8 +372,6 @@ const dict = {
     "preset.nameDuplicate": "A preset with this name already exists, please choose another",
     "preset.nameLimit": "Reached the limit of ${max}, please delete one first",
     "preset.customHint": "Custom preset · typography + page only",
-    "preset.modifiedHint": "Modified, no longer matches a template preset",
-    "preset.hintTitle": "Switching presets overrides the matching settings: built-in presets also cover header/footer and watermark; custom presets cover typography and page settings only",
     // toast feedback after switching presets (behavior contract key)
     "toast.presetSwitched": "Preset \"${name}\" applied (overrode: ${groups})",
     // toast feedback after drawer "restore defaults" (facts only)

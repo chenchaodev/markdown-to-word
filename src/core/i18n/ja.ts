@@ -348,14 +348,12 @@ const dict = {
     "preset.business": "ビジネス資料",
     "preset.officialCn": "中国語公文",
     "preset.cnReader": "中国語長文",
-    "preset.cnMinimal": "中国語ミニマル",
     // プリセット説明(フォント名は中国語の正式名ではなく通称表記。写植値 宋体/仿宋_GB2312 は SimSun/FangSong_GB2312)
     "preset.hintDefault": "一般的な文書:本文は Microsoft YaHei、両端揃え、行送り 1.5",
     "preset.hintPaper": "論文向け:本文は SimSun、西文は Times New Roman、両端揃え、標準余白",
     "preset.hintBusiness": "資料向け:本文は Microsoft YaHei、左揃え、行送り 1.15、余白は詰める",
     "preset.hintOfficialCn": "本文は FangSong_GB2312、西文は Times New Roman、両端揃え、GB 標準余白",
     "preset.hintCnReader": "本文は SimSun、行送り 1.75、字下げあり。読み物向けの長文に",
-    "preset.hintCnMinimal": "本文は Microsoft YaHei、左揃え、字下げなし、行送りを詰める。書き留め向きに",
     "preset.saveAs": "プリセットとして保存…",
     "preset.saveAsTitle": "プリセットとして保存",
     "preset.saveDesc": "現在の組版とページ設定をカスタムプリセットとして保存します(ヘッダー/フッターとウォーターマークは含みません)",
@@ -370,8 +368,6 @@ const dict = {
     "preset.nameDuplicate": "同名のプリセットが既に存在します。別の名前を指定してください",
     "preset.nameLimit": "上限 ${max} 件に達しました。先に削除してください",
     "preset.customHint": "カスタムプリセット · 組版とページのみ",
-    "preset.modifiedHint": "調整済み(テンプレートプリセットと一致しません)",
-    "preset.hintTitle": "プリセットの切替で該当設定が上書きされます:組み込みプリセットはヘッダー/フッターとウォーターマークも対象、カスタムプリセットは組版とページ設定のみ",
     // プリセット切り替え後のトースト表示(動作契約キー)
     "toast.presetSwitched": "プリセット「${name}」を適用しました(上書き:${groups})",
     "toast.settingsReset": "設定をデフォルトに戻しました",

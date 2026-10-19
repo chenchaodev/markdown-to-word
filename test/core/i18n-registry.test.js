@@ -301,9 +301,8 @@ export async function run() {
     "preset.hintBusiness",
     "preset.hintOfficialCn",
     "preset.hintCnReader",
-    "preset.hintCnMinimal",
   ];
-  // 逐键一个 case:某一键缺翻译/带占位符不该掩盖其余五键的同类问题
+  // 逐键一个 case:某一键缺翻译/带占位符不该掩盖其余四键的同类问题
   for (const key of presetHintKeys) {
     await suite.case(`(g) ${key} 三语非空且无插值占位符`, () => {
       for (const { code } of LANGUAGES) {

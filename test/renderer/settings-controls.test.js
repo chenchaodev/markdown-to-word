@@ -1109,12 +1109,9 @@ bindings.bindSettingsEvents({ renderSelection: () => {} });
 
     await s.case("无匹配预设:说明行跟着 select 的回退值走(回退态下绑定同样成立)", () => {
       rehydrate(); // BASE 是刻意偏离各内置预设的基线 ⇒ 无匹配
-      // ⚠ 无匹配时 resolvePresetSelection 的回退值是 "default"(不是空),故说明行说的是
-      // **default 预设**的说明 —— 即「说明行 ⇄ select 当前值」这条绑定在回退态也成立。
-      // 顺带登记一条现状:`resolvePresetHint` 的「选中项不存在 → 已微调」分支在
-      // refreshDynamicSettingsText 这条链路上取不到(上面的回退保证了 matchedPresetId
-      // 恒对应一个真实预设),故 template-hint--custom 这个重音态当前不可达 —— 这条
-      // 是**既有接线的事实**,不是本次展示升级引入的(升级不动这条接线)。
+      // 无匹配时 resolvePresetSelection 的回退值是 "default"(不是空),说明行随之取
+      // default 预设的说明 —— 即「说明行 ⇄ select 当前值」这条绑定在回退态也成立;
+      // resolvePresetHint 对未知 id 的防御性兜底同样是 default 说明。
       assert(
         el("templatePreset").value === "default",
         `无匹配预设时 select 应回退到 default,实际 ${JSON.stringify(el("templatePreset").value)}`,

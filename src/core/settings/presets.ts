@@ -1,7 +1,7 @@
 /**
  * 内置模板预设目录:排版 + 页面设置 + 完整交付链(页眉页脚/水印/编号)的快照。
  *
- * 从 settings-defaults.ts 拆出的理由:本块是**纯数据目录**(6 个预设的字面量)加一个
+ * 从 settings-defaults.ts 拆出的理由:本块是**纯数据目录**(5 个预设的字面量)加一个
  * 纯比较函数,与「设置默认值 / 页面设置校验」不同质 —— 前者是用户可选的成品方案,
  * 后者是所有方案的公共底座与约束。此前 255 行(占该文件三分之一)混在默认值文件里,
  * 使「默认值」这一职责被目录数据淹没。
@@ -30,7 +30,7 @@ export interface TemplatePreset {
   /** i18n 键(硬编码预设本地化用;自定义预设留空,回退 name) */
   i18nKey?: string;
   /**
-   * hint 的 i18n 键(预设说明三语化;内置 6 预设必填)。
+   * hint 的 i18n 键(预设说明三语化;内置 5 预设必填)。
    * 显示层一律经 presetHintText 取值:字典命中→当前语言说明,未配键或缺键→回退 hint 原文,
    * 因此中文 hint 字段不可删除(它是缺键时的兜底,勿清空/勿改写)。
    */
@@ -47,7 +47,11 @@ export interface TemplatePreset {
   breakBeforeH1?: boolean;
 }
 
-/** 预设值已定稿,勿改。 */
+/**
+ * 预设值已定稿,勿改。
+ * 2026-10-19 例外:删去与 business 逐字段重合的「中文极简」条目 —— 选中项由设置反查派生,
+ * 两条重合会让用户的「中文极简」选择在重启后显示成「商务简报」,故只保留 business。
+ */
 export const TEMPLATE_PRESETS: TemplatePreset[] = [
   {
     id: "default",
@@ -177,37 +181,6 @@ export const TEMPLATE_PRESETS: TemplatePreset[] = [
     headerFooter: { ...DEFAULT_HEADER_FOOTER },
     watermark: { ...DEFAULT_WATERMARK },
     equationNumbering: true,
-    breakBeforeH1: false,
-  },
-  {
-    id: "cn-minimal",
-    i18nKey: "preset.cnMinimal",
-    hintI18nKey: "preset.hintCnMinimal",
-    name: "中文极简",
-    hint: "微软雅黑正文、左对齐、无首行缩进、紧凑行距，适合随手笔记",
-    typography: {
-      fontAscii: "Calibri",
-      fontEastAsia: "微软雅黑",
-      bodySizePt: 11,
-      lineSpacing: 1.15,
-      firstLineIndent: false,
-      align: "left",
-      headingNumbering: false,
-      captionNumbering: false,
-      headingScale: "standard",
-      headingSpacing: "standard",
-    },
-    pageSetup: {
-      paper: "A4",
-      orientation: "portrait",
-      marginTop: 19.1,
-      marginBottom: 19.1,
-      marginLeft: 25.4,
-      marginRight: 25.4,
-    },
-    headerFooter: { ...DEFAULT_HEADER_FOOTER },
-    watermark: { ...DEFAULT_WATERMARK },
-    equationNumbering: false,
     breakBeforeH1: false,
   },
 ];

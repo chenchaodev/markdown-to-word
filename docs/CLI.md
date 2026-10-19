@@ -69,7 +69,6 @@ node dist/cli/index.js <输入路径...> [选项]
 | `business` | 商务简报 |
 | `official-cn` | 中文公文 |
 | `cn-reader` | 中文长文 |
-| `cn-minimal` | 中文极简 |
 
 预设与图形界面里的模板预设是同一套，产出的排版一致。
 

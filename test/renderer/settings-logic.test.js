@@ -24,7 +24,7 @@
  *     的返回类型即映射值的类型),此段另加一条键集断言兜住"漏登记一条"。
  * - 预设名/说明三语化:presetHintText(内置走 hintI18nKey 字典,缺键/未配键回退 hint 原文)、
  *   presetDisplayName(内置走 i18nKey,自定义走 name,缺键回退 name)、
- *   resolvePresetHint 三语命中 + 自定义/「已微调」分支可达与复位、
+ *   resolvePresetHint 三语命中 + 自定义分支、未知 id 回落 default、
  *   套用 toast 用本地化名(en/ja 下不中英混排)
  * - reconcileSettingsSave(保存协调):失败保留草稿不调用 apply(控件不回滚到 main
  *   cache)、过期请求让位(不报失败)、成功以 main 权威值回填
@@ -713,7 +713,7 @@ const againView = indexedView(again);
   });
   console.log("[ok] applySettingsRuntimeEffects:selectedFormat/语言/主题副作用断言通过");
 
-  // ---------- resolvePresetHint(回填 hint 计算;三语 + 分支可达与复位) ----------
+  // ---------- resolvePresetHint(回填 hint 计算;三语 + 未知 id 回落 default) ----------
   // 语言为 i18n 模块级状态:本段内切语言,段末复位 zh(后续断言依赖中文文案)
   const paperPreset = TEMPLATE_PRESETS.find((p) => p.id === "paper");
   // 段级前置守卫(不进 case):下面三组 presetHintText / presetDisplayName 的判定都以
@@ -725,16 +725,16 @@ const againView = indexedView(again);
   // 这条证的是「中文」那一项 —— 非 zh 分支成立与否与当前 code 无关。
   const zhPaperDictName = DICT.zh["preset.paper"];
   assert(zhPaperDictName !== undefined, "zh 字典应注册 preset.paper 键(套用 toast 的混排判定依赖它)");
-  // 取数留在 case 外:zh 下 paper 的提示值被下面两处引用(命中判定 + 分支复位判定)
+  // 取数留在 case 外:zh 下 paper 的提示值在「命中判定」处引用
   const zhPaperHint = resolvePresetHint([], "paper");
-  await suite.case("resolvePresetHint:zh 下内置预设命中 → 取 hintI18nKey 字典值 + isCustom=false", () => {
-    // zh(默认):内置预设命中 → 字典值(= hint 兜底原文)+ isCustom=false
+  await suite.case("resolvePresetHint:zh 下内置预设命中 → 取 hintI18nKey 字典值", () => {
+    // zh(默认):内置预设命中 → 字典值(= hint 兜底原文)
     assert(
-      zhPaperHint.isCustom === false && zhPaperHint.hint === paperPreset.hint,
-      "zh:内置预设命中 → 其 hint + isCustom=false",
+      zhPaperHint === paperPreset.hint,
+      "zh:内置预设命中 → 其 hint",
     );
     assert(
-      zhPaperHint.hint === dictText("zh", paperPreset.hintI18nKey),
+      zhPaperHint === dictText("zh", paperPreset.hintI18nKey),
       "zh:提示应取自 hintI18nKey 字典值(与 hint 兜底原文同源)",
     );
   });
@@ -744,13 +744,12 @@ const againView = indexedView(again);
       setLanguage(code);
       const localized = resolvePresetHint([], "paper");
       assert(
-        localized.isCustom === false &&
-          localized.hint === dictText(code, paperPreset.hintI18nKey) &&
-          localized.hint !== paperPreset.hint,
+        localized === dictText(code, paperPreset.hintI18nKey) &&
+          localized !== paperPreset.hint,
         `${code}:内置预设提示应走 hintI18nKey 字典(不得回落中文原文)`,
       );
       assert(
-        localized.hint !== paperPreset.hintI18nKey,
+        localized !== paperPreset.hintI18nKey,
         `${code}:字典缺键时不得把裸键当提示显示`,
       );
     }
@@ -764,7 +763,7 @@ const againView = indexedView(again);
         setLanguage(code);
         const hit = resolvePresetHint([], p.id);
         assert(
-          hit.isCustom === false && hit.hint === dictText(code, p.hintI18nKey),
+          hit === dictText(code, p.hintI18nKey),
           `${code}:预设 ${p.id} 提示应等于 ${code}.${p.hintI18nKey}`,
         );
       });
@@ -783,7 +782,7 @@ const againView = indexedView(again);
       "未声明 hintI18nKey(如自定义预设)→ hint 原文",
     );
     assert(
-      resolvePresetHint([], "default").hint !== "default" &&
+      resolvePresetHint([], "default") !== "default" &&
         presetHintText({ ...paperPreset, hintI18nKey: "preset.hintNoSuchKey" }) !== "preset.hintNoSuchKey",
       "回退后不得把裸键暴露给用户",
     );
@@ -792,36 +791,41 @@ const againView = indexedView(again);
     // 自定义预设分支(customHint 随语言)
     const customHintZh = resolvePresetHint([preset("我的模板")], `${CUSTOM_PRESET_ID_PREFIX}我的模板`);
     assert(
-      customHintZh.isCustom === false && customHintZh.hint === DICT.zh["preset.customHint"],
-      "自定义预设命中(allPresets 含 custom 项)→ 其 hint(仅排版与页面,与内置完整交付链不同)+ isCustom=false",
+      customHintZh === DICT.zh["preset.customHint"],
+      "自定义预设命中(allPresets 含 custom 项)→ 其 hint(仅排版与页面,与内置完整交付链不同)",
     );
     setLanguage("en");
     const customHintEn = resolvePresetHint([preset("我的模板")], `${CUSTOM_PRESET_ID_PREFIX}我的模板`);
     assert(
-      customHintEn.isCustom === false && customHintEn.hint === DICT.en["preset.customHint"],
+      customHintEn === DICT.en["preset.customHint"],
       "en:自定义预设提示应随语言切换",
     );
     setLanguage("zh");
   });
-  await suite.case("resolvePresetHint:未知 id → 「已微调」文案,分支可复位、自定义已删也落此支", () => {
-    const unknownHint = resolvePresetHint([], "不存在的id");
+  await suite.case("resolvePresetHint:未知 id 回落 default 预设说明,且随语言切换", () => {
+    // 防御性兜底:未知 / 已删除的自定义预设 id 与 resolvePresetSelection 的回落值一致,
+    // 取 default 预设说明 —— 「已微调」语义已不存在。
+    const defaultPreset = TEMPLATE_PRESETS.find((p) => p.id === "default");
+    if (!defaultPreset) throw new Error("TEMPLATE_PRESETS 应含 default 预设");
     assert(
-      unknownHint.isCustom === true && unknownHint.hint === DICT.zh["preset.modifiedHint"],
-      "未知 id → 「已微调」提示文案 + isCustom=true",
+      resolvePresetHint([], "不存在的id") === defaultPreset.hint,
+      "未知 id → default 预设说明",
     );
-    // 分支复位:「已微调」状态回到合法预设 id → 恢复预设说明(不留上一分支残留)
     assert(
-      resolvePresetHint([], "paper").hint === zhPaperHint.hint &&
-        resolvePresetHint([], "paper").isCustom === false,
-      "从「已微调」复位到内置预设 → 恢复该预设说明(纯函数,无状态残留)",
+      resolvePresetHint([], `${CUSTOM_PRESET_ID_PREFIX}已删`) === defaultPreset.hint,
+      "自定义预设已删除(选中项不存在)→ default 预设说明",
     );
-    // 自定义预设删除后其 id 不再可达 → 落回「已微调」(已删选中项的既有语义)
-    assert(
-      resolvePresetHint([], `${CUSTOM_PRESET_ID_PREFIX}已删`).isCustom === true,
-      "自定义预设已删除(选中项不存在)→ 「已微调」分支",
-    );
+    for (const { code } of LANGUAGES.filter((l) => l.code !== "zh")) {
+      setLanguage(code);
+      assert(
+        resolvePresetHint([], "不存在的id") === dictText(code, defaultPreset.hintI18nKey) &&
+          resolvePresetHint([], "不存在的id") !== defaultPreset.hint,
+        `${code}:未知 id 回落 default 说明并随语言切换`,
+      );
+    }
+    setLanguage("zh");
   });
-  console.log("[ok] resolvePresetHint:三语命中全部内置预设/自定义/未知 id 分支与复位/缺键回退 hint 原文 断言通过");
+  console.log("[ok] resolvePresetHint:三语命中全部内置预设/自定义分支/未知 id 回落 default/缺键回退 hint 原文 断言通过");
 
   // ---------- presetDisplayName(预设名本地化:下拉/向导/toast 共用单一口径) ----------
   await suite.case("presetDisplayName:zh 下内置预设名取字典值;en / ja 取本语言字典值", () => {

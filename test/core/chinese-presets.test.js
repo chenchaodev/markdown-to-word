@@ -21,12 +21,12 @@ export async function run() {
   const ids = TEMPLATE_PRESETS.map((p) => p.id);
   // case 名逐字复用报错里的 id:原先三种缺预设的报错文本以 id 区分,拆成 case 后沿用同一名字,
   // 避免「名字一处、报错另一处」两份清单漂移
-  for (const id of ["official-cn", "cn-reader", "cn-minimal"]) {
+  for (const id of ["official-cn", "cn-reader"]) {
     await suite.case(`中文场景预设 ${id} 存在`, () => {
       if (!ids.includes(id)) throw new Error(`缺少中文场景预设: ${id}`);
     });
   }
-  console.log("[ok] chinese-presets: 三个中文场景预设存在");
+  console.log("[ok] chinese-presets: 两个中文场景预设存在");
 
   await suite.case("公文预设 official-cn 字段正确（仿宋 + GB 页边距）", () => {
     // 上方已逐个断言 id 存在,presetById 缺失即抛(等价断言,附可定位信息)
@@ -45,11 +45,11 @@ export async function run() {
   });
   console.log("[ok] chinese-presets: 长文预设字段正确（宋体 + 1.75 行距）");
 
-  await suite.case("极简预设 cn-minimal 字段正确（无缩进 + 左对齐）", () => {
-    const minimal = presetById("cn-minimal");
-    if (minimal.typography.firstLineIndent !== false) throw new Error("极简首行缩进错误");
-    if (minimal.typography.align !== "left") throw new Error("极简对齐错误");
+  await suite.case("商务简报预设 business 字段正确（无缩进 + 左对齐）", () => {
+    const business = presetById("business");
+    if (business.typography.firstLineIndent !== false) throw new Error("商务简报首行缩进错误");
+    if (business.typography.align !== "left") throw new Error("商务简报对齐错误");
   });
-  console.log("[ok] chinese-presets: 极简预设字段正确（无缩进 + 左对齐）");
+  console.log("[ok] chinese-presets: 商务简报预设字段正确（无缩进 + 左对齐）");
   return { cases: suite.results };
 }
