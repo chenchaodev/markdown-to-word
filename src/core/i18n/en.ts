@@ -214,7 +214,7 @@ const dict = {
     "settings.headerLayoutLeftRight": "Left / right",
     "settings.footerEnabledLabel": "Custom footer",
     "settings.footerEnabledDesc": "Show \"Page X of Y\"; only effective in custom mode",
-    "settings.headerFooterDefaultNote": "Default mode: the header shows the document title centered and the footer always shows the page number; not controlled by these toggles.",
+    "settings.headerFooterDefaultNote": "Default mode: the header shows the document title and organization centered and the footer always shows the page number; not controlled by these toggles.",
     // text watermark (same "not in preset" group as header/footer)
     "settings.watermarkText": "Watermark text",
     "settings.watermarkAngle": "Rotation angle",

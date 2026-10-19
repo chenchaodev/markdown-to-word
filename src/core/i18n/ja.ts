@@ -213,7 +213,7 @@ const dict = {
     "settings.headerLayoutLeftRight": "左右分割",
     "settings.footerEnabledLabel": "カスタムフッター",
     "settings.footerEnabledDesc": "「X ページ / Y ページ」を表示。カスタムモード時のみ有効",
-    "settings.headerFooterDefaultNote": "デフォルトモード:ヘッダー中央に文書タイトル、フッターにページ番号を常に表示します。これらのスイッチでは制御されません",
+    "settings.headerFooterDefaultNote": "デフォルトモード:ヘッダー中央に文書タイトルと所属、フッターにページ番号を常に表示します。これらのスイッチでは制御されません",
     // 文字列ウォーターマーク(ヘッダー/フッターと同じ「プリセット非対象」グループ)
     "settings.watermarkText": "ウォーターマーク文字",
     "settings.watermarkAngle": "回転角度",

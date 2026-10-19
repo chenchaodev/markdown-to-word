@@ -140,7 +140,7 @@ export function renderTocPage(
   ];
 }
 
-/** 页眉:文档标题居中灰色小字(HEADER_FOOTER_SIZE = 7pt,颜色 MUTED_TEXT_GRAY);无标题时不调用 */
+/** 页眉:身份行(标题 · 单位)居中灰色小字(HEADER_FOOTER_SIZE = 7pt,颜色 MUTED_TEXT_GRAY);身份行为空时不调用 */
 
 /**
  * 页眉 logo 已读数据:core 层零 IO——文件读取在 main 层,此处只收字节+类型。
@@ -151,7 +151,7 @@ export interface HeaderLogoData {
   extension: "png" | "jpg" | "gif" | "webp" | null;
 }
 
-/** 页眉内容:title=现状行为(标题居中)/custom=自定义文字+logo */
+/** 页眉内容:title=身份行(标题 · 单位,居中)/custom=自定义文字+logo */
 export type HeaderContent =
   | { kind: "title"; title: string }
   | {

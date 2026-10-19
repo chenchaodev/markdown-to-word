@@ -220,7 +220,7 @@ const dict = {
     "settings.headerLayoutLeftRight": "左右分栏",
     "settings.footerEnabledLabel": "自定义页脚",
     "settings.footerEnabledDesc": "显示「第 X 页 / 共 Y 页」；仅自定义模式生效",
-    "settings.headerFooterDefaultNote": "默认模式：页眉居中显示文档标题，页脚固定显示页码，不受开关控制。",
+    "settings.headerFooterDefaultNote": "默认模式：页眉居中显示文档标题与单位，页脚固定显示页码，不受开关控制。",
     "settings.watermarkText": "水印文字",
     "settings.watermarkAngle": "旋转角度",
     "settings.watermarkOpacity": "不透明度",
