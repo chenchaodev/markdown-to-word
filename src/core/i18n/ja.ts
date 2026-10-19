@@ -98,6 +98,11 @@ const dict = {
     "file.skippedListToggle": "スキップされた非 Markdown ファイル ${count} 件",
     "file.dblclickPreview": "${path}\nダブルクリックでこの行をプレビュー",
     "file.removeAria": "${name} を削除",
+    "file.copyToClipboard": "クリップボードにコピー",
+    "file.copyAria": "${name} をクリップボードにコピー",
+    "file.copied": "クリップボードにコピーしました:${name}",
+    "file.copiedWithWarnings": "クリップボードにコピーしました:${name}(${count} 件の通知)",
+    "file.copyFailed": "コピーに失敗しました:${reason}",
     "file.clearList": "リストをクリア",
     "file.areaLabel": "ファイル選択",
     // プレースホルダー状態の単一ファイル文言 + 一括/結合の説明接尾辞

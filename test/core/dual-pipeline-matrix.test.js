@@ -245,7 +245,7 @@ const MATRIX = [
     docxExtract: "document.xml 无 `title:`/`author:` 原文行;metadata.title 走封面",
     pdfExtract: "HTML 无 `title:`/`author:` 原文行;metadata.title 走封面",
     anchors: [
-      { at: "src/core/convert.ts:254(渲染只吃 md.body)", has: "md.body" },
+      { at: "src/core/convert.ts:255(渲染只吃 md.body)", has: "md.body" },
       { at: "src/core/pipeline/frontmatter.ts:57(parseFrontmatter 单源)", has: "parseFrontmatter" },
       { at: "src/core/docx/render.ts:191(封面页插入)", has: "renderCoverPage" },
       { at: "src/core/pdf/template.ts:179(封面 HTML;末尾 page-break)", has: "buildCoverHtml" },
@@ -388,7 +388,7 @@ const MATRIX = [
       { at: "src/core/docx/handlers/captions.ts:115(captionNumberText 单源)", has: "captionNumberText" },
       { at: "src/core/pdf/template-css.ts:202(fig counter-increment)", has: "counter-increment: figc" },
       { at: "src/core/pdf/template-css.ts:205(h1c 重置)", has: "counter-reset: h1c" },
-      { at: "src/core/pdf/rules/xref.ts:144(编号文本与 CSS counter 同源)", has: "stripTrailingLabel" },
+      { at: "src/core/pdf/rules/xref.ts:148(编号文本与 CSS counter 同源)", has: "stripTrailingLabel" },
     ],
     verify: async ({ capDocxXml, capPdfHtml }) => {
       for (const needle of [
@@ -425,7 +425,7 @@ const MATRIX = [
     pdfExtract: "锚点 <span id=\"fig:label\"> + 文本无 `{#fig:` 残留;开关关闭 → 无锚点、无编号 CSS",
     anchors: [
       { at: "src/core/docx/handlers/captions.ts:92(尾部 label 剥离)", has: "labelMatch" },
-      { at: "src/core/pdf/rules/xref.ts:144(stripTrailingLabel 剥离)", has: "stripTrailingLabel" },
+      { at: "src/core/pdf/rules/xref.ts:148(stripTrailingLabel 剥离)", has: "stripTrailingLabel" },
       { at: "src/core/markdown/cross-ref.ts:95(kindLabelRegex 单源)", has: "kindLabelRegex" },
     ],
     verify: async ({ capDocxXml, capPdfHtml, labelOff }) => {
@@ -515,7 +515,7 @@ const MATRIX = [
     anchors: [
       { at: "src/core/resource-limits.ts:34(DEFAULT_KATEX_RESOURCE_LIMITS 单源)", has: "DEFAULT_KATEX_RESOURCE_LIMITS" },
       { at: "src/core/docx/handlers/math.ts:90(转发同一份边界)", has: "DEFAULT_KATEX_RESOURCE_LIMITS" },
-      { at: "src/core/pdf/render.ts:185(插件转发同一份边界)", has: "DEFAULT_KATEX_RESOURCE_LIMITS" },
+      { at: "src/core/markdown/markdown-it-factory.ts:44(插件转发同一份边界)", has: "DEFAULT_KATEX_RESOURCE_LIMITS" },
     ],
     verify: async ({ katex }) => {
       must(
@@ -558,7 +558,7 @@ const MATRIX = [
     pdfExtract: "已知语言 → pre.hljs + language-* class;未知/失败 → 无高亮 span + 同文案警告",
     anchors: [
       { at: "src/core/docx/handlers/code-highlight.ts:48(highlightCodeRuns,失败走 onFallback)", has: "highlightCodeRuns" },
-      { at: "src/core/pdf/render.ts:173(highlight 回调,抛错回退转义 + 同 key 警告)", has: "pushWarningOnce" },
+      { at: "src/core/pdf/render.ts:152(highlight 回调,抛错回退转义 + 同 key 警告)", has: "pushWarningOnce" },
       { at: "src/core/style/hljs-palette.ts:22(色板单源)", has: "HLJS_PALETTE" },
     ],
     verify: async ({ code }) => {
@@ -698,7 +698,7 @@ const MATRIX = [
     anchors: [
       { at: "src/core/docx/handlers/math.ts:83(信任闸门)", has: "hasUntrustedTexCommand" },
       { at: "src/core/docx/handlers/math.ts:99(未覆盖节点 → 整式降级)", has: "components.length === 0" },
-      { at: "src/core/pdf/render.ts:186(guardUntrustedMath 预拦截)", has: "guardUntrustedMath" },
+      { at: "src/core/pdf/render.ts:196(guardUntrustedMath 预拦截)", has: "guardUntrustedMath" },
       { at: "src/core/resource-limits.ts:86(UNTRUSTED_TEX_COMMAND_RE 单源)", has: "UNTRUSTED_TEX_COMMAND_RE" },
     ],
     verify: async ({ degrade }) => {
@@ -757,7 +757,7 @@ const MATRIX = [
     pdfExtract: "section.footnotes + li.footnote-item + 回链锚点",
     anchors: [
       { at: "src/core/docx/render.ts:241(footnotes 部件,空则不生成)", has: "ctx.footnote.notes" },
-      { at: "src/core/pdf/render.ts:180(@mdit/plugin-footnote)", has: "md.use(footnote)" },
+      { at: "src/core/markdown/markdown-it-factory.ts:43(@mdit/plugin-footnote)", has: "md.use(footnote)" },
       { at: "src/core/pdf/template-css.ts:160(脚注区样式;Chromium 无 float: footnote)", has: ".footnotes" },
     ],
     verify: async ({ footnote }) => {
@@ -780,7 +780,7 @@ const MATRIX = [
     pdfExtract: "li.task-list-item + ☑/☐ 字符,无 input/label 残留",
     anchors: [
       { at: "src/core/pipeline/parse.ts:55(remark-gfm 任务列表按普通列表处理)", has: "remarkGfm" },
-      { at: "src/core/pdf/render.ts:123(replaceTaskCheckboxes)", has: "replaceTaskCheckboxes" },
+      { at: "src/core/pdf/render.ts:290(replaceTaskCheckboxes)", has: "replaceTaskCheckboxes" },
     ],
     verify: async ({ task }) => {
       must(task.docxHasList, "tasklist-rendering", "docx 应按普通列表项渲染(ListParagraph)");
@@ -866,7 +866,7 @@ const MATRIX = [
     anchors: [
       { at: "src/core/docx/render.ts:199(块级循环内逐块复查;has 钉住那个块级循环)", has: "for (const node of ast.children)" },
       { at: "src/core/docx/render.ts:271(打包前最后一道)", has: "Packer.toBuffer" },
-      { at: "src/core/pdf/render.ts:276(入口:闸门取得后立即复查)", has: "createCancellationGuard" },
+      { at: "src/core/pdf/render.ts:247(入口:闸门取得后立即复查)", has: "createCancellationGuard" },
       { at: "src/core/pdf/render.ts:320(阶段边界复查)", has: "throwIfCanceled" },
     ],
     verify: async ({ cancel }) => {
@@ -1131,7 +1131,7 @@ const MATRIX = [
     anchors: [
       { at: "src/core/docx/headers.ts:25(三模式分流)", has: "buildHeaderForSection" },
       { at: "src/core/pdf/template.ts:59(default 出文档标题居中页眉)", has: "buildPdfHeaderTemplate" },
-      { at: "src/core/convert.ts:318(页眉模板按配置构造)", has: "buildPdfHeaderTemplate" },
+      { at: "src/core/convert.ts:319(页眉模板按配置构造)", has: "buildPdfHeaderTemplate" },
     ],
     verify: async ({ chromeDocx, chromePdf }) => {
       // default 模式:两侧同出「文档标题居中」(adr-030 6-B3 关闭的失效点)

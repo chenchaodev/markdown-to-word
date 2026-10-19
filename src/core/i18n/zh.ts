@@ -104,6 +104,11 @@ const dict = {
     "file.skippedListToggle": "已跳过的 ${count} 个非 Markdown 文件",
     "file.dblclickPreview": "${path}\n双击预览该行",
     "file.removeAria": "移除 ${name}",
+    "file.copyToClipboard": "复制到剪贴板",
+    "file.copyAria": "复制 ${name} 到剪贴板",
+    "file.copied": "已复制到剪贴板:${name}",
+    "file.copiedWithWarnings": "已复制到剪贴板:${name}(${count} 条提示)",
+    "file.copyFailed": "复制失败:${reason}",
     "file.clearList": "清空列表",
     "file.areaLabel": "文件选择",
     // 占位态单文件文案 + 底部批量/合并说明后缀

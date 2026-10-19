@@ -13,6 +13,8 @@ import type {
   BatchOperationBusyResult,
   BatchProgressInfo,
   BatchResult,
+  ClipboardCopyPayload,
+  ClipboardCopyResult,
   ClipboardReadResult,
   ConvertProgressPayload,
   ConvertResult,
@@ -44,6 +46,7 @@ const CH = {
   convertBatch: "convert:batch",
   convertMerge: "convert:merge",
   clipboardRead: "clipboard:read",
+  clipboardCopy: "clipboard:copy",
   convertCancel: "convert:cancel",
   convertProgress: "convert:progress",
   convertBatchProgress: "convert:batchProgress",
@@ -106,6 +109,9 @@ const api: PreloadApi = {
     ipcRenderer.invoke(CH.readFrontmatter, filePath),
   /** 读取系统剪贴板:文本写临时 md 返回路径,或返回文件路径,或 empty */
   clipboardRead: (): Promise<ClipboardReadResult> => ipcRenderer.invoke(CH.clipboardRead),
+  /** 复制为富文本剪贴板:renderer 只传源路径,main 读取+渲染+单点写入 */
+  clipboardCopy: (payload: ClipboardCopyPayload): Promise<ClipboardCopyResult> =>
+    ipcRenderer.invoke(CH.clipboardCopy, payload),
   // 转换前静态预检:main 读文件 + 解析 + 扫描,返回 ConvertWarning[]
   precheck: (filePath: string): Promise<PrecheckResult> => ipcRenderer.invoke(CH.convertPrecheck, filePath),
   // payload 带 mode 标识(single/batch/merge),renderer 直接消费归属

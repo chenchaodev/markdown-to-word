@@ -59,6 +59,7 @@ import { isThemePreference, syncTitleBarOverlay } from "../windows/title-bar-ove
 import { buildAppMenu } from "../menu.js";
 import { IPC_CHANNELS as CH } from "./channels.js";
 import { createOutputAllowlist } from "../services/output-allowlist.js";
+import { copyFileToClipboard } from "../converter/clipboard.js";
 import {
   clipboardTempDir,
   clipboardTempSources,
@@ -541,6 +542,11 @@ export function registerIpc(): void {
     }
     return { type: "empty" };
   });
+
+  // 复制为富文本剪贴板(输出侧):renderer 只传源路径,读取/渲染在主进程装配层完成,
+  // 写入点收在 services/clipboard-write.ts(Electron 44 ClipboardItem 迁移的唯一触点);
+  // payload 在运行期校验,不信任跨进程类型。
+  ipcMain.handle(CH.clipboardCopy, (_event, payload: unknown) => copyFileToClipboard(payload));
 
   ipcMain.handle(CH.settingsGet, (): AppSettings => loadSettings());
   // 界面版本信息:与「关于」对话框同源 app.getVersion

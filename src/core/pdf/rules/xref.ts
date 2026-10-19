@@ -19,6 +19,12 @@ import {
   chapterNumberFromCounters,
   createHeadingCounters,
 } from "../../markdown/heading-numbering.js";
+import {
+  bumpCaptionCounter,
+  captionNumberText,
+  createCaptionCounters,
+  resetCaptionCounters,
+} from "../../markdown/caption-numbering.js";
 import { crossRefNotFoundWarning, pushWarningOnce, type ConvertWarning } from "../../i18n/index.js";
 import { attrDel, createDepthTracker, forEachRefLink, stripTrailingLabel, type LinkScanToken } from "./shared.js";
 
@@ -91,7 +97,7 @@ function scanXrefDefinitions(
   hasH1: boolean,
 ): XrefLabelTables {
   const headingCounters = createHeadingCounters();
-  const captionCounters = { fig: 0, tab: 0 };
+  const captionCounters = createCaptionCounters();
   const captionLabels = new Map<string, string>();
   const headingLabels = new Map<string, string>(); // label → 章节号文本
   const depth = createDepthTracker();
@@ -107,8 +113,7 @@ function scanXrefDefinitions(
         bumpHeadingCounter(headingCounters, Number(token.tag[1]));
         // 图/表序在 h1 处重置仅当 hasH1(镜像 template.ts 两分支)
         if (token.tag === "h1" && hasH1) {
-          captionCounters.fig = 0;
-          captionCounters.tab = 0;
+          resetCaptionCounters(captionCounters);
         }
       }
       const inline = tokens[i + 1];
@@ -139,16 +144,16 @@ function scanXrefDefinitions(
       // 前缀剥除为 caption_recognize 的既有行为,不在此改)
       if (!opts.captionNumbering) continue;
       const kind = cls === "fig-caption" ? "fig" : "tab";
-      if (kind === "fig") captionCounters.fig++;
-      else captionCounters.tab++;
+      const seq = bumpCaptionCounter(captionCounters, kind);
       const label = stripTrailingLabel(inline.children, kind);
       if (label === undefined) continue;
-      // 编号文本镜像 CSS ::before 显示(两分支:章节号+序数 / 纯序数)
-      const seq = kind === "fig" ? captionCounters.fig : captionCounters.tab;
-      const numberText =
-        opts.headingNumbering && hasH1
-          ? `${kind === "fig" ? "图" : "表"} ${headingCounters.h1}.${seq}`
-          : `${kind === "fig" ? "图" : "表"} ${seq}`;
+      // 编号文本镜像 CSS ::before 显示(两分支:章节号+序数 / 纯序数);
+      // 拼接与剪贴板字面编号同源 caption-numbering.ts
+      const numberText = captionNumberText(kind, seq, {
+        headingNumbering: opts.headingNumbering,
+        hasH1,
+        chapterNumber: headingCounters.h1,
+      });
       // 键按 kind 分命名空间(captionLabelKey 单源,与 docx 侧同一函数):同名
       // label 的 fig/tab 题注各登记各的,互不覆盖;同一 kind 内重名后写覆盖
       captionLabels.set(captionLabelKey(kind, label), numberText);

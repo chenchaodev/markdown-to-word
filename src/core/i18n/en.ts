@@ -98,6 +98,11 @@ const dict = {
     "file.skippedListToggle": "${count} skipped non-Markdown files",
     "file.dblclickPreview": "${path}\nDouble-click to preview this row",
     "file.removeAria": "Remove ${name}",
+    "file.copyToClipboard": "Copy to clipboard",
+    "file.copyAria": "Copy ${name} to clipboard",
+    "file.copied": "Copied to clipboard: ${name}",
+    "file.copiedWithWarnings": "Copied to clipboard: ${name} (${count} notices)",
+    "file.copyFailed": "Copy failed: ${reason}",
     "file.clearList": "Clear list",
     "file.areaLabel": "File selection",
     // placeholder single-file copy + batch/merge footer suffixes

@@ -556,6 +556,50 @@
   justify-content: flex-end;
 }
 
+/* 行内动作间距:只落在含复制按钮的行上 —— 向导合并源列表复用同一个
+ * .multi-actions(↑ / ↓ / 移除 三个 .btn 自带内边距),不该被这里的间距改写。 */
+.multi-actions:has(> .multi-copy) {
+  gap: 2px;
+}
+
+/* 行内复制 = 队列行的主操作(非破坏性):与 .multi-remove 同尺寸(28×28)、
+ * 同描边重量,但默认存在感高一档 —— 墨二级文字色 + 0.72 不透明度(移除为
+ * --mut + 0.55),让人先看到「复制」而不是「删掉」。仍属普通动作:不借朱砂、
+ * 不出底色块。显形规则与移除同源(行悬停 / 键盘聚焦时完全显形),只动
+ * opacity,行内布局与行高不动。 */
+.multi-copy {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-btn-sm);
+  display: grid;
+  place-items: center;
+  color: var(--ink-2);
+  opacity: 0.72;
+  transition: background-color 0.13s ease, color 0.13s ease, opacity 0.13s ease;
+  flex: none;
+}
+
+.multi-copy svg {
+  width: 14px;
+  height: 14px;
+}
+
+.multi-copy:hover {
+  background: var(--card-2);
+  color: var(--ink);
+  opacity: 1;
+}
+
+.multi-item:hover .multi-copy,
+.multi-item:focus-within .multi-copy {
+  opacity: 1;
+}
+
+.multi-copy:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
 /* 行内移除:破坏性操作红线 —— 墨色描边系,不用红。
  * 常驻可见但压低存在感,行被指向(悬停 / 键盘聚焦)时才完全显形:与最近列表
  * .rops 的「靠近才浮现」同一套交互语汇,又不学它把动作整个藏起来 ——
@@ -622,6 +666,17 @@
 .mlist--busy .multi-item:hover .multi-remove,
 .mlist--busy .multi-item:focus-within .multi-remove {
   opacity: 0.55; /* 忙碌态不再有「完全显形」档:行内动作此刻一律不可用 */
+}
+
+/* 复制沿用同一套禁用语汇:默认档压到 0.3,行被指向时停在 0.55(仍低于常态 0.72),
+ * 读起来是「灰了」而不是「换了个按钮」 */
+.mlist--busy .multi-copy {
+  opacity: 0.3;
+}
+
+.mlist--busy .multi-item:hover .multi-copy,
+.mlist--busy .multi-item:focus-within .multi-copy {
+  opacity: 0.55;
 }
 
 /* 批量/合并语义脚注:纸面上的凹陷条(--inset),仅 n≥2 显示 */

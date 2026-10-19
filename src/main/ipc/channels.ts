@@ -34,6 +34,8 @@ export const IPC_CHANNELS = {
   convertMerge: "convert:merge",
   /** 读取系统剪贴板:文本写临时 md 返回路径,或返回文件路径,或 empty */
   clipboardRead: "clipboard:read",
+  /** 复制为富文本剪贴板(输出侧:renderer 只传源路径,main 读取+渲染+写入) */
+  clipboardCopy: "clipboard:copy",
   /** 取消当前窗口的转换(单文件/批量/合并通用) */
   convertCancel: "convert:cancel",
   /** 单文件/合并转换进度推送(payload 见 ConvertProgressPayload) */

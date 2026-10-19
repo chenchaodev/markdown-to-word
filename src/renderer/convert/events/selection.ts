@@ -38,6 +38,9 @@ import { t } from "../../../core/i18n/index.js";
 /** 列表边缘自动滚动步长(px/次,dragover 事件粒度)。 */
 const EDGE_SCROLL_STEP_PX = 14;
 
+/** 正在复制的文件路径(单飞标记:主进程现渲染是异步的,连点只允许一个在途)。 */
+let copyingPath: string | null = null;
+
 /**
  * 容器内自带行为的交互元素选择器(事件边界):祖先容器只对自身目标响应,
  * 内部控件的 click / Enter / Space 冒泡不得再叠加第二个动作。
@@ -217,11 +220,45 @@ export function bindSelectionEvents(deps: SelectionEventsDeps): void {
   });
 
   // 多文件列表:点击列表本身不触发换文件(避免误开对话框);
-  // 行内唯一常驻控件为「移除」,走事件委托按行内 data-index 定位。
+  // 行内常驻控件为「复制到剪贴板」与「移除」,走事件委托按行内 data-index 定位。
   // (排序 = 整行拖拽 / 行聚焦后 Alt+↑↓,见下方 keydown;预览 = 行双击)
   multiList.addEventListener("click", (event) => {
     event.stopPropagation();
     if (state.mode !== null) return;
+    const copyBtn = (event.target as HTMLElement).closest<HTMLButtonElement>(".multi-copy");
+    if (copyBtn) {
+      const copyItem = copyBtn.closest<HTMLLIElement>(".multi-item");
+      const copyPath = copyItem ? state.selectedFiles[Number(copyItem.dataset.index)] : undefined;
+      if (!copyPath || copyingPath !== null) return;
+      // 复制是异步的(主进程现渲染),用模块级单飞标记挡住连点;
+      // 按钮本身置灰只是视觉反馈,守卫靠 copyingPath(重渲染后按钮节点会换)。
+      copyingPath = copyPath;
+      copyBtn.disabled = true;
+      void window.api.clipboardCopy({ path: copyPath }).then(
+        (result) => {
+          copyingPath = null;
+          copyBtn.disabled = false;
+          if (result.ok) {
+            const name = baseName(copyPath);
+            setStatus(
+              result.warnings.length > 0
+                ? t("file.copiedWithWarnings", { name, count: result.warnings.length })
+                : t("file.copied", { name }),
+              false,
+              result.warnings.length > 0,
+            );
+          } else {
+            setError(t("file.copyFailed", { reason: result.message ?? result.reason }));
+          }
+        },
+        (err: unknown) => {
+          copyingPath = null;
+          copyBtn.disabled = false;
+          setError(t("file.copyFailed", { reason: errorMessage(err) }));
+        },
+      );
+      return;
+    }
     const btn = (event.target as HTMLElement).closest<HTMLButtonElement>(".multi-remove");
     if (!btn) return;
     const li = btn.closest<HTMLLIElement>(".multi-item");

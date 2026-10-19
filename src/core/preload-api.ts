@@ -23,6 +23,8 @@ import type {
   BatchOperationBusyResult,
   BatchProgressInfo,
   BatchResult,
+  ClipboardCopyPayload,
+  ClipboardCopyResult,
   ClipboardReadResult,
   ConvertProgressPayload,
   ConvertResult,
@@ -63,6 +65,8 @@ export type PreloadApi = {
   readFrontmatter: (filePath: string) => Promise<DocMetadata>;
   /** 读取系统剪贴板:文本写临时 md 返回路径,或返回文件路径,或 empty */
   clipboardRead: () => Promise<ClipboardReadResult>;
+  /** 复制为富文本剪贴板:renderer 只传源路径,main 读取+渲染+单点写入 */
+  clipboardCopy: (payload: ClipboardCopyPayload) => Promise<ClipboardCopyResult>;
   /** 转换前静态预检:main 读文件 + 解析 + 扫描,返回 ConvertWarning[] */
   precheck: (filePath: string) => Promise<PrecheckResult>;
   /** 订阅转换进度;payload 带 mode 标识(single/batch/merge);返回退订函数 */

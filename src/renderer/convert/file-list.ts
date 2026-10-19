@@ -1,6 +1,6 @@
 /**
- * 文件选择与列表:拖放区三态渲染、统一队列卡构建与排序、移除按钮工厂、
- * 选择应用/追加、操作按钮可用性。只经 state.ts 读写状态;跨功能面只有「舞台有无文件
+ * 文件选择与列表:拖放区三态渲染、统一队列卡构建与排序、行内动作按钮工厂
+ * (复制 / 移除)、选择应用/追加、操作按钮可用性。只经 state.ts 读写状态;跨功能面只有「舞台有无文件
  * 跃迁通知」一个端口(`FileListDeps`,组合根注入),本模块零静态 import 其他 feature。
  *
  * 不变量:data-stage(empty/single/multi)驱动 CSS 切换同一 .pane-files;
@@ -64,7 +64,7 @@ export function renderSelection(deps: FileListDeps): void {
 
 /** 重建队列列表(移除/键盘排序/拖拽排序后重排,不经 renderSelection 的快捷入口)。
  *  行结构契约见 renderQueue:n=1 单行(无 grip/序号,draggable=false,双击仍可预览);
- *  n≥2 完整队列行(手柄 + 序号 + 文件名 + 移除),严格按 selectedFiles 顺序。 */
+ *  n≥2 完整队列行(手柄 + 序号 + 文件名 + 复制/移除),严格按 selectedFiles 顺序。 */
 export function renderMultiList(): void {
   renderQueue();
 }
@@ -109,7 +109,8 @@ function renderQueue(): void {
 
       const actions = document.createElement("span");
       actions.className = "multi-actions";
-      actions.append(makeRemoveButton(baseName(filePath)));
+      // 复制在前(行内主操作)、移除在后:常用动作与破坏性动作分开,减少误触
+      actions.append(makeCopyButton(baseName(filePath)), makeRemoveButton(baseName(filePath)));
 
       li.append(name, actions);
       return li;
@@ -142,6 +143,40 @@ export function persistSessionFiles(): void {
       setError(t("preset.saveFailed"));
     },
   );
+}
+
+/** 该文件的「复制到剪贴板」图标按钮(行内主操作,非破坏性)。
+ *  视觉上与移除按钮同尺寸同线重、默认存在感略高;点击行为由行级委托按
+ *  dataset.dir 分派,本工厂只管结构与可访问名。 */
+export function makeCopyButton(fileName: string): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "multi-copy";
+  btn.dataset.dir = "copy";
+  btn.title = t("file.copyToClipboard");
+  btn.setAttribute("aria-label", t("file.copyAria", { name: fileName }));
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  // 两张重叠的圆角纸:后一张只画露在外面的轮廓段 —— 画整只矩形会让两条描边
+  // 在前一张内部交叉成一团,14px 尺寸下尤其脏
+  const back = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  back.setAttribute("d", "M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2");
+  const front = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  front.setAttribute("x", "8");
+  front.setAttribute("y", "8");
+  front.setAttribute("width", "12");
+  front.setAttribute("height", "12");
+  front.setAttribute("rx", "2");
+  svg.append(back, front);
+  btn.appendChild(svg);
+  return btn;
 }
 
 /** 移除该文件的图标按钮。 */

@@ -20,10 +20,7 @@
  * mermaidResolver/watermark)语义与默认值须与 docx 侧 RenderOptions 对齐——
  * 修改任一侧须同步核对 src/core/docx/render.ts 对应项。
  */
-import MarkdownIt from "markdown-it";
-import { footnote } from "@mdit/plugin-footnote";
-import { tasklist } from "@mdit/plugin-tasklist";
-import { katex } from "@mdit/plugin-katex";
+import type MarkdownIt from "markdown-it";
 import hljs from "highlight.js/lib/common";
 // 页面设置契约单源(settings-defaults;原经 convert.js 导入形成 convert⇄render 环,此处解环)
 import { mmToPx, validatePageSetup } from "../settings/settings-defaults.js";
@@ -51,11 +48,15 @@ import { overrideTableWidthRule } from "./rules/table.js";
 import { overrideHeadingIdRule } from "./rules/heading-id.js";
 import { replaceMermaidPlaceholders } from "./mermaid.js";
 import { MERMAID_LANG } from "../markdown/mermaid.js";
+// markdown-it 解析底座与任务列表替换双管线共用(剪贴板路径不得 import 本文件,
+// 这两件是「语法识别」而非「pdf 输出形态」);本文件只在其上追加 pdf 专属渲染规则。
+import { createBaseMarkdownIt } from "../markdown/markdown-it-factory.js";
+import { replaceTaskCheckboxes } from "../markdown/task-list.js";
+import { escapeHtml } from "../text/text-escape.js";
 // 取消与资源预算:守卫由 convert 层构造并注入(signal/deadline 单源),
 // 各阶段边界设检查点;公式与图片预算取值单源 core/resource-limits.ts。
 import { createCancellationGuard } from "../cancel.js";
 import {
-  DEFAULT_KATEX_RESOURCE_LIMITS,
   hasUntrustedTexCommand,
   resolveImageBudget,
 } from "../resource-limits.js";
@@ -110,25 +111,6 @@ export interface RenderPdfHtmlOptions extends SharedRenderOptions {
 }
 
 /**
- * 任务列表 checkbox → 字符(markdown-it 渲染后替换,规避 Chromium 打印 checkbox bug)。
- * 插件(@mdit/plugin-tasklist,label 默认开)实际输出形态(实证):
- *   <input type="checkbox" class="task-list-item-checkbox" id="task-item-N"
- *          checked="checked" disabled="disabled"><label class="task-list-item-label"
- *          for="task-item-N"> 文本</label>
- * - 属性顺序 type 在前、含 id、布尔属性序列化为 ="…" → 不能用「class 在前 + 裸布尔
- *   属性」正则,改为以 class 定位 input、\schecked 判断选中态;
- * - input 移除后 label 的 for 悬空(指向已删除的 id),属多余结构一并解包(保留文本);
- *   label 文本自带前导空格,故字符后不加空格,输出形如「☑ 已完成」。
- */
-function replaceTaskCheckboxes(html: string): string {
-  return html
-    .replace(/<input[^>]*class="task-list-item-checkbox"[^>]*>/g, (tag) =>
-      /\schecked/.test(tag) ? "☑" : "☐",
-    )
-    .replace(/<label[^>]*class="task-list-item-label"[^>]*>([\s\S]*?)<\/label>/g, "$1");
-}
-
-/**
  * 组装 markdown-it 实例。
  *
  * `warnedKeys` 是**本次渲染的去重键集合**(生命周期 = 一次 renderPdfDocument),
@@ -147,10 +129,7 @@ function buildMarkdownIt(
   warnings: ConvertWarning[],
   warnedKeys: Set<string>,
 ): MarkdownIt {
-  const md = new MarkdownIt({
-    html: true,
-    linkify: true,
-    typographer: false,
+  const md = createBaseMarkdownIt({
     highlight(str: string, lang?: string): string {
       // Mermaid 围栏(且有 resolver 注入时):不经过 hljs,输出占位 div——
       // 内容是 escapeHtml 后的代码文本(占位内不可能出现原生 </div>,替换正则
@@ -158,7 +137,7 @@ function buildMarkdownIt(
       // 内联 SVG(mermaid-svg)/失败降级代码块(mermaid-fallback)。
       // 无 resolver 时不产占位,走原代码块渲染(行为不变)。
       if (lang === MERMAID_LANG && hasMermaidResolver) {
-        return `<div class="mermaid">${md.utils.escapeHtml(str)}</div>`;
+        return `<div class="mermaid">${escapeHtml(str)}</div>`;
       }
       if (lang && hljs.getLanguage(lang)) {
         try {
@@ -173,16 +152,9 @@ function buildMarkdownIt(
           pushWarningOnce(warnedKeys, warnings, highlightFallbackWarning(lang));
         }
       }
-      return `<pre class="hljs"><code>${md.utils.escapeHtml(str)}</code></pre>`;
+      return `<pre class="hljs"><code>${escapeHtml(str)}</code></pre>`;
     },
   });
-  md.use(tasklist);
-  md.use(footnote);
-  // 公式插件($..$ / $$..$$ / \(..\) / \[..\] / ```math 围栏)。资源边界与错误模式
-  // 转发 core/resource-limits.ts 单源取值(throwOnError=false → 渲染失败输出
-  // katex-error 标记不抛;trust=false 拒绝外部引用指令;maxExpand/maxSize 挡住
-  // 宏展开失控)——与 docx 侧 texToDocxMath 同一份边界,勿单侧调整。
-  md.use(katex, DEFAULT_KATEX_RESOURCE_LIMITS);
   guardUntrustedMath(md);
   // ---- 以下 override 的注册顺序即执行顺序(改动本块必读)----
   //
@@ -223,7 +195,7 @@ function buildMarkdownIt(
  */
 function guardUntrustedMath(md: MarkdownIt): void {
   const reject = (tex: string): string =>
-    `<span class="katex-error" title="公式含不受信任的外部引用指令,已按源码显示">${md.utils.escapeHtml(tex)}</span>`;
+    `<span class="katex-error" title="公式含不受信任的外部引用指令,已按源码显示">${escapeHtml(tex)}</span>`;
   const inlineRule = md.renderer.rules.math_inline;
   md.renderer.rules.math_inline = (tokens, idx, options, env, self) => {
     const token = tokens[idx]!; // 渲染器契约:idx 必为有效下标

@@ -142,6 +142,18 @@ export type ClipboardReadResult =
   | { type: "files"; paths: string[] }
   | { type: "empty" };
 
+/* ---------- 剪贴板复制(clipboard:copy 的入参/结果) ---------- */
+
+/** 剪贴板复制请求(clipboard:copy):主进程负责读取、渲染与写入 */
+export interface ClipboardCopyPayload {
+  path: string;
+}
+
+/** 剪贴板复制结果;warnings 与转换结果同源,供界面提示图片缺失等降级 */
+export type ClipboardCopyResult =
+  | { ok: true; warnings: ConvertWarning[] }
+  | { ok: false; reason: "invalid" | "read-failed" | "too-large" | "failed"; message?: string };
+
 /* ---------- UI 状态(uiStateGet/uiStateSet 往返 + userData/ui-state.json 持久化形状) ---------- */
 
 /** 最近成功转换的文件条目(≤10,按 ts 降序,path 去重)。 */

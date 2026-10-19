@@ -59,7 +59,7 @@ export const dialog = {
 export const nativeImage = {
   createFromPath: () => ({ toPNG: () => Buffer.alloc(0), resize: () => ({ toPNG: () => Buffer.alloc(0) }) }),
 };
-export const clipboard = { writeText: () => {}, readText: () => "" };
+export const clipboard = { write: () => {}, writeText: () => {}, readText: () => "", readHTML: () => "" };
 export const screen = {
   getPrimaryDisplay: () => ({ size: { width: 1920, height: 1080 }, workAreaSize: { width: 1920, height: 1080 } }),
 };

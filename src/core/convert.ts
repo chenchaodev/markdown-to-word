@@ -33,6 +33,7 @@
  *   本层只透传显式项,两侧 render 按 `options.X ?? typography.X` 解析(见两字段 JSDoc);
  *   实际生效的只有 typography.X 与 render 构造默认两档。
  * - 脚注:docx 写 footnotes.xml 部件;pdf 渲染为 HTML 脚注。→ footnotes.test.js
+ * - 剪贴板:第三条独立输出路径(src/core/clipboard/render-fragment.ts,不 import core/pdf/**),产出全内联 style 的可粘贴片段,不经本入口(CF_HTML 复制路径专用)。
  */
 import { parseMarkdown } from "./pipeline/parse.js";
 import type { DocMetadata } from "./pipeline/frontmatter.js";
