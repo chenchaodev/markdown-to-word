@@ -14,6 +14,7 @@ import {
   PDF_FOOTER_TEMPLATE,
 } from "../../dist/core/pdf/template.js";
 import { headerLogoLoadFailedWarning } from "../../dist/core/image/image-warning.js";
+import { headerIdentityText } from "../../dist/core/pipeline/header-identity.js";
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { asPdfArtifact, convertWithFs, docxBufferOf } from "../harness/convert-helpers.js";
 import { createAsserter } from "../harness/assert.js";
@@ -194,6 +195,29 @@ export async function run() {
     assert((await footerNames(docxBufferOf(defDocx))).length > 0, "默认应有页码页脚 part");
   });
 
+  // ---- 6b. default 身份行:标题 · 单位(adr-030 6-B3 双侧同口径) ----
+  const identityMetadata = { title: "回归标题", organization: "某某大学" };
+  await suite.case("docx default 身份行:整串「回归标题 · 某某大学」居中入 header XML", async () => {
+    const identityDocx = await convertWithFs(md, "docx", {
+      baseDir: FIXTURES_DIR,
+      warnings: [],
+      metadata: identityMetadata,
+    });
+    const identityXml = (await headerXmls(docxBufferOf(identityDocx))).texts.join("\n");
+    assert(identityXml.includes("回归标题 · 某某大学"), "页眉应同含标题与单位并以 ` · ` 连接");
+    assert(identityXml.includes('w:jc w:val="center"'), "身份行页眉应居中");
+  });
+  await suite.case("docx default 仅单位:仍生成 header part 且含单位", async () => {
+    const orgOnlyDocx = await convertWithFs(md, "docx", {
+      baseDir: FIXTURES_DIR,
+      warnings: [],
+      metadata: { organization: "某某大学" },
+    });
+    const orgOnlyHeaders = await headerXmls(docxBufferOf(orgOnlyDocx));
+    assert(orgOnlyHeaders.names.length > 0, "只有单位(无标题)也应装配页眉");
+    assert(orgOnlyHeaders.texts.join("\n").includes("某某大学"), "页眉应含单位");
+  });
+
   // ---- 7. pdf 模板:custom 渲染文字/logo/布局,default 与 none 空模板 ----
   const customPdf = (await convertWithFs(md, "pdf", {
     baseDir: FIXTURES_DIR,
@@ -224,6 +248,25 @@ export async function run() {
     assert(defHf.includes("回归标题"), "default 模式 PDF 页眉应含文档标题(与 docx 侧同口径)");
     assert(defHf.includes("text-align:center"), "default 模式 PDF 页眉应居中");
     assert(defHf.includes("font-size:7pt"), "default 模式 PDF 页眉字号应与 docx 对齐(7pt)");
+  });
+  await suite.case("pdf default 身份行:headerTemplate 含「回归标题 · 某某大学」、居中、7pt", async () => {
+    const identityPdf = asPdfArtifact(await convertWithFs(md, "pdf", {
+      baseDir: FIXTURES_DIR,
+      warnings: [],
+      metadata: identityMetadata,
+    }));
+    assert(identityPdf.headerTemplate.includes("回归标题 · 某某大学"), "PDF 页眉应同含标题与单位并以 ` · ` 连接");
+    assert(identityPdf.headerTemplate.includes("text-align:center"), "身份行页眉应居中");
+    assert(identityPdf.headerTemplate.includes("font-size:7pt"), "身份行页眉字号应与 docx 对齐(7pt)");
+  });
+  await suite.case("headerIdentityText:标题 · 单位拼接、空项丢弃、metadata.title 空串不回退", () => {
+    assert(headerIdentityText({ title: "标题", organization: "单位" }, undefined) === "标题 · 单位", "两者齐备应拼接");
+    assert(headerIdentityText({ title: "标题" }, "兜底") === "标题", "无单位时只出标题");
+    assert(headerIdentityText({ organization: "单位" }, undefined) === "单位", "只有单位时只出单位");
+    assert(headerIdentityText(undefined, "兜底") === "兜底", "无 metadata 时取兜底标题");
+    assert(headerIdentityText({ title: "  ", organization: " 单位 " }, "兜底") === "单位", "空白项应丢弃且各项 trim");
+    // metadata.title 存在(哪怕空串)即不再取 fallbackTitle —— `??` 而非 `||`
+    assert(headerIdentityText({ title: "" }, "兜底") === "", "metadata.title 空串应压住兜底标题");
   });
   await suite.case("pdf 空模板:无标题 / 纯空白标题 / none 模式", () => {
     const defNoTitle = buildPdfHeaderTemplate(DEFAULT_HEADER_FOOTER, undefined);

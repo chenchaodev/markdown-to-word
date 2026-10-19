@@ -35,6 +35,7 @@ import { type Ctx } from "./ctx.js";
 import { prescanDocument } from "./prescan.js";
 import { renderCoverPage, renderTocPage, renderFooter, type HeaderLogoData } from "./chrome.js";
 import { buildHeaders } from "./headers.js";
+import { headerIdentityText } from "../pipeline/header-identity.js";
 import { renderPhrasing, renderList, renderBlockquote, renderThematicBreak } from "./handlers/content.js";
 import { renderCode } from "./handlers/code-block.js";
 import { renderBodyParagraph, renderInlineHtmlParagraph, normalizeInlineHtml } from "./handlers/inline-html.js";
@@ -164,8 +165,8 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     },
     mermaidResolver: options.mermaidResolver,
   };
-  // 页眉标题:metadata.title 优先,其次 options.title(无标题时不渲染页眉)
-  const title = options.metadata?.title ?? options.title;
+  // 页眉身份 = 标题 · 单位(单源 headerIdentityText);两者皆空则不出页眉
+  const identityText = headerIdentityText(options.metadata, options.title);
   // 页眉页脚与水印的默认字段补全也在单源(convert 层此前另有一份,两处会漂移)
   const headerFooter = resolveHeaderFooter(options.headerFooter);
   const watermark = switches.watermark;
@@ -256,9 +257,9 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
     sections: [
       {
         properties: { page: { size, margin } },
-        // 页眉分流 + 水印合并:default=标题居中/custom=文字+logo/none=无页眉;
+        // 页眉分流 + 水印合并:default=身份行(标题 · 单位)居中/custom=文字+logo/none=无页眉;
         // 水印(text 非空)与页眉共存于同一 default 头(置底),互不覆盖
-        headers: buildHeaders(headerFooter, title, headerLogo, textWidthTwips, watermark),
+        headers: buildHeaders(headerFooter, identityText, headerLogo, textWidthTwips, watermark),
         // 页脚开关:false 时不装配 footers(docx 不生成 footer part)
         footers: headerFooter.footerEnabled ? { default: renderFooter() } : undefined,
         children,

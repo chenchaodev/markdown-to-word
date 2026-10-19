@@ -10,7 +10,7 @@
  * 或开关须同步核对 src/core/docx/chrome.ts。
  * 水印与页眉的默认模式两侧已对齐(adr-030 6-B1/6-B2/6-B3):角度口径单源在
  * settings-defaults 的 WATERMARK_ANGLE_SIGN;不透明度两侧均真消费;页眉
- * default 模式两侧同出「文档标题居中」。
+ * default 模式两侧同出「标题 · 单位居中」。
  */
 import type { DocMetadata } from "../pipeline/frontmatter.js";
 import type { HeaderFooterSettings, WatermarkSettings } from "../settings/settings-defaults.js";
@@ -40,30 +40,30 @@ const PDF_HEADER_BASE_STYLE =
 
 /**
   * 页眉模板(printToPDF headerTemplate 用):
-  * - custom:自定义文字(+ 可选 logo);default:文档标题居中;none:空模板
+  * - custom:自定义文字(+ 可选 logo);default:身份行(标题 · 单位)居中;none:空模板
   * - Chromium header/footer 模板限制:内联样式 + 显式 font-size,禁止外部资源——
   *   logo 经 base64 data URI 内嵌(mimeFromBuffer 魔数判定,不可识别则省略 logo)
   * - 字号/灰度与 docx 侧对齐(7pt / #888888 = theme.MUTED_TEXT_GRAY)
   * - leftRight 布局用 float(模板渲染上下文对 flex 支持不稳,float 为保守选择):
   *   logo 左 + 文字右;无 logo 时文字靠左
   *
-  * default 出「文档标题居中」而非空模板是 adr-030 6-B3 的裁决:此前本函数对
+  * default 出「身份行居中」而非空模板是 adr-030 6-B3 的裁决:此前本函数对
   * default 返回空模板(标题只进页面 title),与 docx 侧的标题页眉不一致 ——
   * 页眉的定位是承载身份信息,在 pdf 侧那样等于整个功能静默失效。取 docx 侧为准。
   *
   * @param headerFooter 页眉页脚设置
-  * @param title 文档标题(metadata.title ?? options.title);为空时 default 模式退回
-  *   空模板,与 docx 侧「无标题不装配页眉」同口径
+  * @param identityText 身份行 = 标题 · 单位(拼接单源 pipeline/header-identity);
+  *   为空时 default 模式退回空模板,与 docx 侧「无身份行不装配页眉」同口径
   * @param headerLogo 页眉 logo 已读数据
   */
 export function buildPdfHeaderTemplate(
   headerFooter: HeaderFooterSettings,
-  title: string | undefined,
+  identityText: string | undefined,
   headerLogo?: HeaderLogoData,
 ): string {
   if (headerFooter.headerMode === "none") return PDF_EMPTY_CHROME_TEMPLATE;
   if (headerFooter.headerMode === "default") {
-    const text = (title ?? "").trim();
+    const text = (identityText ?? "").trim();
     if (!text) return PDF_EMPTY_CHROME_TEMPLATE;
     return `<div style="${PDF_HEADER_BASE_STYLE}text-align:center;">${escapeHtml(text)}</div>`;
   }

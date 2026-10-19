@@ -245,9 +245,9 @@ const MATRIX = [
     docxExtract: "document.xml 无 `title:`/`author:` 原文行;metadata.title 走封面",
     pdfExtract: "HTML 无 `title:`/`author:` 原文行;metadata.title 走封面",
     anchors: [
-      { at: "src/core/convert.ts:255(渲染只吃 md.body)", has: "md.body" },
+      { at: "src/core/convert.ts:256(渲染只吃 md.body)", has: "md.body" },
       { at: "src/core/pipeline/frontmatter.ts:57(parseFrontmatter 单源)", has: "parseFrontmatter" },
-      { at: "src/core/docx/render.ts:191(封面页插入)", has: "renderCoverPage" },
+      { at: "src/core/docx/render.ts:192(封面页插入)", has: "renderCoverPage" },
       { at: "src/core/pdf/template.ts:179(封面 HTML;末尾 page-break)", has: "buildCoverHtml" },
     ],
     verify: async ({ docxXmlText, pdfHtml }) => {
@@ -269,7 +269,7 @@ const MATRIX = [
     docxExtract: "w:pgSz(w/h/orient) + w:pgMar(top/right/bottom/left)",
     pdfExtract: "模板 CSS `@page { size: …; margin: …mm …mm …mm …mm }`",
     anchors: [
-      { at: "src/core/docx/render.ts:208(纸张 twips;四边距在同函数 margin 对象)", has: "mmToTwips" },
+      { at: "src/core/docx/render.ts:209(纸张 twips;四边距在同函数 margin 对象)", has: "mmToTwips" },
       { at: "src/core/pdf/template-css.ts:68(@page size/margin)", has: "@page" },
       { at: "src/core/settings/settings-defaults.ts:399(validatePageSetup 几何门禁,两侧共用)", has: "validatePageSetup" },
     ],
@@ -312,7 +312,7 @@ const MATRIX = [
     docxExtract: "count(<w:br w:type=\"page\"/>)",
     pdfExtract: "count(<div class=\"page-break\">) 与 <hr>",
     anchors: [
-      { at: "src/core/docx/render.ts:333(trim 后精确匹配 → PageBreak)", has: "page-break" },
+      { at: "src/core/docx/render.ts:334(trim 后精确匹配 → PageBreak)", has: "page-break" },
       { at: "src/core/docx/handlers/fallback.ts:63(行内 html 路径同判定)", has: "PageBreak" },
       { at: "src/core/pdf/rules/html.ts:75(注释 → 分页 div)", has: "page-break" },
       { at: "src/core/pdf/template-css.ts:69(break-before: page)", has: "break-before: page" },
@@ -756,7 +756,7 @@ const MATRIX = [
     docxExtract: "word/footnotes.xml 部件 + w:footnoteReference",
     pdfExtract: "section.footnotes + li.footnote-item + 回链锚点",
     anchors: [
-      { at: "src/core/docx/render.ts:241(footnotes 部件,空则不生成)", has: "ctx.footnote.notes" },
+      { at: "src/core/docx/render.ts:242(footnotes 部件,空则不生成)", has: "ctx.footnote.notes" },
       { at: "src/core/markdown/markdown-it-factory.ts:43(@mdit/plugin-footnote)", has: "md.use(footnote)" },
       { at: "src/core/pdf/template-css.ts:160(脚注区样式;Chromium 无 float: footnote)", has: ".footnotes" },
     ],
@@ -864,8 +864,8 @@ const MATRIX = [
     docxExtract: "注入计数守卫统计 throwIfCanceled 次数(随块数增长)",
     pdfExtract: "同法统计(与文档规模无关的常数)",
     anchors: [
-      { at: "src/core/docx/render.ts:199(块级循环内逐块复查;has 钉住那个块级循环)", has: "for (const node of ast.children)" },
-      { at: "src/core/docx/render.ts:271(打包前最后一道)", has: "Packer.toBuffer" },
+      { at: "src/core/docx/render.ts:198(块级循环内逐块复查;has 钉住那个块级循环)", has: "for (const node of ast.children)" },
+      { at: "src/core/docx/render.ts:272(打包前最后一道)", has: "Packer.toBuffer" },
       { at: "src/core/pdf/render.ts:247(入口:闸门取得后立即复查)", has: "createCancellationGuard" },
       { at: "src/core/pdf/render.ts:320(阶段边界复查)", has: "throwIfCanceled" },
     ],
@@ -934,7 +934,7 @@ const MATRIX = [
     pdfExtract: "模板 CSS body font-family/font-size/line-height;`p { text-indent: 2em }` / `p { text-align: justify }`",
     anchors: [
       { at: "src/core/settings/typography.ts:177(DEFAULT_TYPOGRAPHY 单源)", has: "DEFAULT_TYPOGRAPHY" },
-      { at: "src/core/docx/render.ts:230(排版注入 docDefaults run)", has: "typography.bodySizePt" },
+      { at: "src/core/docx/render.ts:235(排版注入 docDefaults run)", has: "typography.bodySizePt" },
       { at: "src/core/docx/handlers/inline-html.ts:26(正文段 jc/spacing/indent)", has: "renderBodyParagraph" },
       { at: "src/core/pdf/template-css.ts:79(body 字体/字号/行距)", has: "typography.fontEastAsia" },
     ],
@@ -1125,13 +1125,13 @@ const MATRIX = [
     mode: "mustMatch",
     covers: ["headerFooter"],
     dimension:
-      "页眉页脚三模式(default=文档标题居中 / custom=自定义文字(+logo) / none=无页眉;页脚=第 X 页/共 X 页,受 footerEnabled 开关)",
+      "页眉页脚三模式(default=标题 · 单位居中 / custom=自定义文字(+logo) / none=无页眉;页脚=第 X 页/共 X 页,受 footerEnabled 开关)",
     docxExtract: "word/header*.xml 的文字与 w:jc;word/footer*.xml 的页码域",
     pdfExtract: "headerTemplate 的文字与 text-align;footerTemplate 的页码占位",
     anchors: [
       { at: "src/core/docx/headers.ts:25(三模式分流)", has: "buildHeaderForSection" },
-      { at: "src/core/pdf/template.ts:59(default 出文档标题居中页眉)", has: "buildPdfHeaderTemplate" },
-      { at: "src/core/convert.ts:319(页眉模板按配置构造)", has: "buildPdfHeaderTemplate" },
+      { at: "src/core/pdf/template.ts:59(default 出身份行居中页眉)", has: "buildPdfHeaderTemplate" },
+      { at: "src/core/convert.ts:321(页眉模板按配置构造)", has: "buildPdfHeaderTemplate" },
     ],
     verify: async ({ chromeDocx, chromePdf }) => {
       // default 模式:两侧同出「文档标题居中」(adr-030 6-B3 关闭的失效点)

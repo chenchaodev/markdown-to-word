@@ -42,6 +42,7 @@ import type { ConvertWarning } from "./i18n/index.js";
 // 阶段键联合单源 core/ipc-contract.ts(与跨进程 payload 契约同源,避免契约与发射面各留一份)
 import type { ConvertStage } from "./ipc-contract.js";
 import { renderDocx } from "./docx/render.js";
+import { headerIdentityText } from "./pipeline/header-identity.js";
 import { renderPdfDocument, type PdfFsCapabilities } from "./pdf/render.js";
 // PdfHeading 契约单源在 pdf/bookmarks.ts(docx 侧无对应物:目录由 Word 域生成)
 import type { PdfHeading } from "./pdf/bookmarks.js";
@@ -218,7 +219,7 @@ export interface PdfArtifact {
   kind: "pdf";
   /** 完整 HTML 文档,落盘临时文件后 loadFile + printToPDF */
   html: string;
-  /** printToPDF 的 headerTemplate(default=文档标题居中 / custom=文字 + logo / none=空模板) */
+  /** printToPDF 的 headerTemplate(default=身份行「标题 · 单位」居中 / custom=文字 + logo / none=空模板) */
   headerTemplate: string;
   /** printToPDF 的 footerTemplate(页码;footerEnabled=false 时为空模板) */
   footerTemplate: string;
@@ -313,10 +314,11 @@ export async function convert(
         headings,
         // 页眉模板按配置构造(logo data URI 内嵌);页脚开关关闭时空模板占位
         // (displayHeaderFooter 常开,机制不变,见 PDF_EMPTY_CHROME_TEMPLATE 注释)
-        // 页眉标题与 renderPdfDocument 的 <title> 同源(frontmatter metadata.title
-        // 优先、其次文件名),default 模式据此出「文档标题居中页眉」——与 docx 侧
-        // headers.ts 的 default 分支同口径(adr-030 6-B3)
-        headerTemplate: buildPdfHeaderTemplate(headerFooter, metadata?.title ?? context.title, context.headerLogo),
+        // 页眉身份行与 renderPdfDocument 的 <title> 同源(frontmatter metadata.title
+        // 优先、其次文件名),default 模式据此出「标题 · 单位居中页眉」——身份行的
+        // 拼接单源 headerIdentityText,与 docx 侧 headers.ts 的 default 分支同口径
+        // (adr-030 6-B3);单位取 metadata.organization,缺项自动跳过
+        headerTemplate: buildPdfHeaderTemplate(headerFooter, headerIdentityText(metadata, context.title), context.headerLogo),
         footerTemplate: headerFooter.footerEnabled ? PDF_FOOTER_TEMPLATE : PDF_EMPTY_CHROME_TEMPLATE,
         tocMode: resolveTocMode(context.tocMode),
         metadata,

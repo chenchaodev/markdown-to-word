@@ -91,7 +91,7 @@ export interface SettingsMigrationNotice {
   *   core 渲染层收已读好的图片数据(docx/chrome.ts HeaderLogoData)
   */
 export interface HeaderFooterSettings {
-  /** 页眉模式:default=文档标题居中(现状行为)/custom=自定义文字+logo/none=无页眉 */
+  /** 页眉模式:default=身份行(标题 · 单位)居中/custom=自定义文字+logo/none=无页眉 */
   headerMode: "default" | "custom" | "none";
   /** 自定义页眉文字(headerMode=custom 且非空时生效) */
   headerText: string;
