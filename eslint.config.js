@@ -12,8 +12,15 @@ import tseslint from "typescript-eslint";
 // 失败模式保持显式不静默:文件不在 tsconfig program 又无 glob 匹配 → lint 时
 // ts-eslint 报「not found by the project service」;匹配文件数超上限(100)→ 同样报错。
 const NON_PROGRAM_EXTS = new Set([".js", ".mjs", ".cjs"]);
-function defaultProjectGlobs(roots) {
+/**
+ * 扫描出 allowDefaultProject 的逐目录 glob,并统计会被这些 glob 匹配的文件数。
+ * 计数与 glob 出自同一趟 walk,二者不可能对不上。
+ * @param {string[]} roots
+ * @returns {{ globs: string[], fileCount: number }}
+ */
+function scanDefaultProject(roots) {
   const globs = new Set();
+  let fileCount = 0;
   const walk = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) {
@@ -21,12 +28,15 @@ function defaultProjectGlobs(roots) {
         walk(join(dir, entry.name));
       } else if (NON_PROGRAM_EXTS.has(extname(entry.name))) {
         globs.add(`${dir.replaceAll("\\", "/")}/*${extname(entry.name)}`);
+        fileCount += 1;
       }
     }
   };
   roots.forEach(walk);
-  return [...globs].sort();
+  return { globs: [...globs].sort(), fileCount };
 }
+
+const defaultProject = scanDefaultProject(["src", "test", "gates", "tools", "shared"]);
 
 export default tseslint.config(
   {
@@ -39,17 +49,17 @@ export default tseslint.config(
         // 批次 15 第 5 项:lint 范围扩到 test/门禁树。tsconfig.json 无 allowJs,
         // .js/.mjs 不进 TS program(projectService 报「not found by the project service」),
         // 经 allowDefaultProject 放行(typescript-eslint 官方方案,不改 tsconfig 结构)。
-        // 清单来源:defaultProjectGlobs 运行时扫描(文件头注释),新目录零登记。
+        // 清单来源:scanDefaultProject 运行时扫描(文件头注释),新目录零登记。
         projectService: {
-          allowDefaultProject: defaultProjectGlobs(["src", "test", "gates", "tools", "shared"]),
-          // 阶段 0 新增几何/产物/指纹脚本与测试后默认项目文件数超过 100；
-          // 提高上限是为保持零登记 lint 覆盖，不是放宽类型门禁。
-          // 2026-09 续提:阶段 5-7 拆分与新增脚本后该数已达 200(恰好等于旧上限,
-          // 零余量) —— 再加任何一个 .js/.mjs 就会整体报 "Too many files (>200)"
-          // 把 lint 打成一片红。清单是 defaultProjectGlobs 运行时扫描得出的,
-          // 不存在「登记遗漏」,故按当前实际规模留出余量;此值只影响 lint 的性能护栏,
-          // **不放宽任何类型或规则门禁**。
-          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING: 300,
+          allowDefaultProject: defaultProject.globs,
+          // 上限 = 实际匹配文件数 + 50 余量,由同一趟扫描得出。
+          // 历史上这里是硬编码的 100 → 200 → 300:每加几个测试文件就整体报
+          // "Too many files",而测试树增长是常态 ⇒ 每逢新增段就要改这一格。
+          // 数字与扫描面同源后,增长不再触发;护栏仍在原处 —— 库对 `**` 通配直接
+          // throw,且本清单按「真实目录 × 实际扩展名」生成,不存在失控匹配形态。
+          // 此值只影响 lint 的性能护栏,**不放宽任何类型或规则门禁**。
+          maximumDefaultProjectFileMatchCount_THIS_WILL_SLOW_DOWN_LINTING:
+            defaultProject.fileCount + 50,
         },
         tsconfigRootDir: import.meta.dirname,
       },
