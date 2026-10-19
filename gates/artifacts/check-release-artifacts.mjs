@@ -4,7 +4,7 @@
 // 安装包与 latest.yml。若直接发布,「发出去的是不是刚构建的那一份」没有任何断言,
 // 自动更新通道读到的 latest.yml 也可能指向旧包。本脚本只接受**当前 package
 // 版本**对应的目标,并核对四件事:
-//   1. 当前版本目标齐全:NSIS 安装包、其 .blockmap(自动更新差分用)、latest.yml;
+//   1. 当前版本目标齐全:NSIS 安装包、其 .blockmap(自动更新差分用)、免安装档 zip、latest.yml;
 //   2. latest.yml 与实际安装包一致:version / path / size / sha512 全部对齐
 //      (sha512 逐字节重算,不是抄写 yml 里的值);
 //   3. 目录内无其他版本的历史产物(旧安装包/旧 yml/旧 target 压缩包一律视为污染);
@@ -290,7 +290,7 @@ export async function main(argv = []) {
     console.log(`[ok] SHA-256 报告:${toPosix(path.relative(projectRoot, reportPath))}`);
   }
   console.log(
-    `[ok] 发布产物核对通过:${version} 目标 ${installerName} + ${blockmapName} + ${LATEST_YML};` +
+    `[ok] 发布产物核对通过:${version} 目标 ${installerName} + ${blockmapName} + ${portableName} + ${LATEST_YML};` +
       `无历史产物残留;latest.yml version/path/size/sha512 与安装包一致`,
   );
   return 0;

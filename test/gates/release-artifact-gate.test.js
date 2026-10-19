@@ -46,6 +46,8 @@ const FIXTURE_PRODUCT = "FixtureApp";
  * @property {string} releaseDir 发布目录
  * @property {string} installerPath 安装包路径
  * @property {string} installerName 安装包文件名
+ * @property {string} portablePath 免安装档路径
+ * @property {string} portableName 免安装档文件名
  * @property {string} latestYml latest.yml 文本
  * @property {string} version 夹具版本
  */
@@ -56,8 +58,11 @@ const FIXTURE_PRODUCT = "FixtureApp";
  * @property {string} releaseDir 发布目录
  * @property {string} installerPath 安装包路径
  * @property {string} installerName 安装包文件名
+ * @property {string} portablePath 免安装档路径
+ * @property {string} portableName 免安装档文件名
  * @property {string} pkgPath 夹具 package.json 路径
  * @property {string} installerSha256 安装包 SHA-256
+ * @property {string} portableSha256 免安装档 SHA-256
  */
 
 /**
@@ -165,7 +170,7 @@ function independentManifest(distDir) {
 /**
  * 夹具 package.json:版本 + 目标名模板(发布检查据此推导期望文件名)。
  * @param {string} [version] 夹具版本
- * @returns {{name: string, version: string, main: string, build: {productName: string, directories: {output: string}, nsis: {artifactName: string}}}} 夹具 package.json
+ * @returns {{name: string, version: string, main: string, build: {productName: string, directories: {output: string}, nsis: {artifactName: string}, win?: {artifactName: string}}}} 夹具 package.json
  */
 function fixturePackageJson(version = FIXTURE_VERSION) {
   return {
@@ -176,6 +181,7 @@ function fixturePackageJson(version = FIXTURE_VERSION) {
       productName: FIXTURE_PRODUCT,
       directories: { output: "release" },
       nsis: { artifactName: "${productName}-Setup-${version}.${ext}" },
+      win: { artifactName: "${productName}-Portable-${version}.${ext}" },
     },
   };
 }
@@ -259,6 +265,10 @@ function makeReleaseFixture(tmp, { version = FIXTURE_VERSION, mutate } = {}) {
   const installerPath = path.join(releaseDir, installerName);
   fs.writeFileSync(installerPath, "FAKE-INSTALLER-BYTES\n", "utf8");
   fs.writeFileSync(path.join(releaseDir, `${installerName}.blockmap`), "FAKE-BLOCKMAP\n", "utf8");
+  const portableName = `${FIXTURE_PRODUCT}-Portable-${version}.zip`;
+  const portablePath = path.join(releaseDir, portableName);
+  const portableContent = Buffer.from("FAKE-PORTABLE-ZIP-BYTES\n", "utf8");
+  fs.writeFileSync(portablePath, portableContent);
   const content = fs.readFileSync(installerPath);
   const sha512 = createHash("sha512").update(content).digest("base64");
   const latestYml = [
@@ -275,8 +285,17 @@ function makeReleaseFixture(tmp, { version = FIXTURE_VERSION, mutate } = {}) {
   fs.writeFileSync(path.join(releaseDir, "latest.yml"), latestYml, "utf8");
   const pkgPath = path.join(tmp, "package.json");
   writeJson(pkgPath, fixturePackageJson(version));
-  if (mutate) mutate({ releaseDir, installerPath, installerName, latestYml, version });
-  return { releaseDir, installerPath, installerName, pkgPath, installerSha256: createHash("sha256").update(content).digest("hex") };
+  if (mutate) mutate({ releaseDir, installerPath, installerName, portablePath, portableName, latestYml, version });
+  return {
+    releaseDir,
+    installerPath,
+    installerName,
+    portablePath,
+    portableName,
+    pkgPath,
+    installerSha256: createHash("sha256").update(content).digest("hex"),
+    portableSha256: createHash("sha256").update(portableContent).digest("hex"),
+  };
 }
 
 // 显式声明本段无验收样例(契约见 gates/fixtures/gen-fixtures.mjs 文件头)
@@ -457,6 +476,12 @@ export async function run() {
           report.artifacts.some((entry) => entry.name === `${fixture.installerName}.blockmap`),
         "报告应覆盖安装包/blockmap/latest.yml 三件产物",
       );
+      const portableEntry = report.artifacts.find((entry) => entry.name === fixture.portableName);
+      assert(portableEntry !== undefined, "报告应含免安装档条目");
+      assert(
+        portableEntry.sha256 === fixture.portableSha256,
+        `免安装档 SHA-256 应为测试侧独立计算值,实际 ${portableEntry.sha256}`,
+      );
     }),
   );
   await suite.case("4. release 正向:报告可复现(重跑逐字节一致)", () =>
@@ -495,6 +520,16 @@ export async function run() {
       name: "安装包为空文件",
       mutate: ({ installerPath }) => fs.writeFileSync(installerPath, "", "utf8"),
       expect: /安装包为空文件/,
+    },
+    {
+      name: "缺当前版本免安装档",
+      mutate: ({ portablePath }) => removeFile(portablePath),
+      expect: /缺少当前版本免安装档/,
+    },
+    {
+      name: "免安装档为空文件",
+      mutate: ({ portablePath }) => fs.writeFileSync(portablePath, "", "utf8"),
+      expect: /免安装档为空文件/,
     },
     {
       name: "缺 blockmap(自动更新通道依赖)",
@@ -593,6 +628,22 @@ export async function run() {
         releaseMain(["--release", path.join(tmp, "r"), "--pkg", badTemplate, "--report", path.join(tmp, "r.json")]),
       );
       assert(badName.result === 1 && /不支持的占位符/.test(badName.output), `模板占位符不受支持应失败,实际 ${badName.result}\n${badName.output}`);
+    }),
+  );
+  await suite.case("6. 缺少 build.win.artifactName 应报错(免安装档名无从确定)", () =>
+    withTempDir(async (tmp) => {
+      // 缺失不是「跳过免安装档核对」而是硬失败:否则门禁会静默放行一个只发了安装包的版本
+      const noWin = path.join(tmp, "no-win.json");
+      const pkg = fixturePackageJson();
+      delete pkg.build.win;
+      writeJson(noWin, pkg);
+      const result = await runChecker(() =>
+        releaseMain(["--release", path.join(tmp, "r"), "--pkg", noWin, "--report", path.join(tmp, "r.json")]),
+      );
+      assert(
+        result.result === 1 && /build\.win\.artifactName 缺失/.test(result.output),
+        `缺少 win.artifactName 应失败,实际 ${result.result}\n${result.output}`,
+      );
     }),
   );
   console.log("[ok] release-artifact-gate:发布目录缺失/参数写错/模板占位符不受支持均非零退出");
