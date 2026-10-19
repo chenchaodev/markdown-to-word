@@ -4,7 +4,7 @@
 // 安装包与 latest.yml。若直接发布,「发出去的是不是刚构建的那一份」没有任何断言,
 // 自动更新通道读到的 latest.yml 也可能指向旧包。本脚本只接受**当前 package
 // 版本**对应的目标,并核对四件事:
-//   1. 当前版本目标齐全:NSIS 安装包、其 .blockmap(自动更新差分用)、免安装档 zip、latest.yml;
+//   1. 当前版本目标齐全:NSIS 安装包、其 .blockmap(自动更新差分用)、免安装档 zip 与 7z、latest.yml;
 //   2. latest.yml 与实际安装包一致:version / path / size / sha512 全部对齐
 //      (sha512 逐字节重算,不是抄写 yml 里的值);
 //   3. 目录内无其他版本的历史产物(旧安装包/旧 yml/旧 target 压缩包一律视为污染);
@@ -27,6 +27,13 @@ export const REPORT_SCHEMA = 'm2w/release-artifacts@1';
 export const LATEST_YML = 'latest.yml';
 export const DEFAULT_RELEASE_DIR = 'release';
 export const DEFAULT_REPORT_PATH = path.join('output', 'artifacts', 'release-artifacts.json');
+
+/**
+ * 免安装档的归档格式清单(zip 无需额外工具即可解压;7z 体积更小,需 7-Zip / WinRAR)。
+ * 与之对应的另一侧是 `package.json` 的 `build.win.target`(含 `zip` / `7z` 两个条目)——
+ * 两处同改;本检查按这份清单展开期望文件名,漏掉任一格式即判红。
+ */
+const PORTABLE_EXTS = ['zip', '7z'];
 
 /** electron-builder 产物之外允许留在 release 根的构建期副产物(无版本号) */
 const NON_ARTIFACT_FILES = new Set(['builder-debug.yml', 'builder-effective-config.yaml']);
@@ -175,19 +182,21 @@ export async function main(argv = []) {
     }
   }
 
-  let portableName = '';
+  let portableNames = [];
   if (version !== '' && typeof winArtifactTemplate === 'string' && winArtifactTemplate !== '') {
-    try {
-      portableName = expandArtifactName(winArtifactTemplate, { productName, version, ext: 'zip' });
-    } catch (error) {
-      problems.push(error.message);
+    for (const ext of PORTABLE_EXTS) {
+      try {
+        portableNames.push(expandArtifactName(winArtifactTemplate, { productName, version, ext }));
+      } catch (error) {
+        problems.push(error.message);
+      }
     }
   }
 
   const blockmapName = installerName === '' ? '' : `${installerName}.blockmap`;
-  const expectedNames = new Set([installerName, blockmapName, portableName, LATEST_YML].filter((name) => name !== ''));
+  const expectedNames = new Set([installerName, blockmapName, ...portableNames, LATEST_YML].filter((name) => name !== ''));
 
-  if (problems.length > 0 || installerName === '' || portableName === '') {
+  if (problems.length > 0 || installerName === '' || portableNames.length === 0) {
     for (const problem of problems) console.error(`[release:fail] ${problem}`);
     console.error('[release:fail] 发布目标定义不完整,无法核对产物');
     return 1;
@@ -211,11 +220,13 @@ export async function main(argv = []) {
   } else if (statSync(blockmapPath).size === 0) {
     problems.push(`差分索引为空文件:${blockmapName}`);
   }
-  const portablePath = path.join(releaseDir, portableName);
-  if (!existsSync(portablePath)) {
-    problems.push(`缺少当前版本免安装档:${portableName}(期望版本 ${version})`);
-  } else if (statSync(portablePath).size === 0) {
-    problems.push(`免安装档为空文件:${portableName}(打包中断?)`);
+  for (const name of portableNames) {
+    const portablePath = path.join(releaseDir, name);
+    if (!existsSync(portablePath)) {
+      problems.push(`缺少当前版本免安装档:${name}(期望版本 ${version})`);
+    } else if (statSync(portablePath).size === 0) {
+      problems.push(`免安装档为空文件:${name}(打包中断?)`);
+    }
   }
 
   // ---- 3. 历史/非预期产物 ----
@@ -290,7 +301,7 @@ export async function main(argv = []) {
     console.log(`[ok] SHA-256 报告:${toPosix(path.relative(projectRoot, reportPath))}`);
   }
   console.log(
-    `[ok] 发布产物核对通过:${version} 目标 ${installerName} + ${blockmapName} + ${portableName} + ${LATEST_YML};` +
+    `[ok] 发布产物核对通过:${version} 目标 ${installerName} + ${blockmapName} + ${portableNames.join(' + ')} + ${LATEST_YML};` +
       `无历史产物残留;latest.yml version/path/size/sha512 与安装包一致`,
   );
   return 0;

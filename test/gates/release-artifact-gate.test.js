@@ -48,6 +48,8 @@ const FIXTURE_PRODUCT = "FixtureApp";
  * @property {string} installerName 安装包文件名
  * @property {string} portablePath 免安装档路径
  * @property {string} portableName 免安装档文件名
+ * @property {string} portable7zPath 免安装档(.7z)路径
+ * @property {string} portable7zName 免安装档(.7z)文件名
  * @property {string} latestYml latest.yml 文本
  * @property {string} version 夹具版本
  */
@@ -60,9 +62,12 @@ const FIXTURE_PRODUCT = "FixtureApp";
  * @property {string} installerName 安装包文件名
  * @property {string} portablePath 免安装档路径
  * @property {string} portableName 免安装档文件名
+ * @property {string} portable7zPath 免安装档(.7z)路径
+ * @property {string} portable7zName 免安装档(.7z)文件名
  * @property {string} pkgPath 夹具 package.json 路径
  * @property {string} installerSha256 安装包 SHA-256
  * @property {string} portableSha256 免安装档 SHA-256
+ * @property {string} portable7zSha256 免安装档(.7z) SHA-256
  */
 
 /**
@@ -269,6 +274,11 @@ function makeReleaseFixture(tmp, { version = FIXTURE_VERSION, mutate } = {}) {
   const portablePath = path.join(releaseDir, portableName);
   const portableContent = Buffer.from("FAKE-PORTABLE-ZIP-BYTES\n", "utf8");
   fs.writeFileSync(portablePath, portableContent);
+  // 双格式:zip 与 7z 都必须存在(缺任一即发布产物不完整)
+  const portable7zName = `${FIXTURE_PRODUCT}-Portable-${version}.7z`;
+  const portable7zPath = path.join(releaseDir, portable7zName);
+  const portable7zContent = Buffer.from("FAKE-PORTABLE-7Z-BYTES\n", "utf8");
+  fs.writeFileSync(portable7zPath, portable7zContent);
   const content = fs.readFileSync(installerPath);
   const sha512 = createHash("sha512").update(content).digest("base64");
   const latestYml = [
@@ -285,16 +295,19 @@ function makeReleaseFixture(tmp, { version = FIXTURE_VERSION, mutate } = {}) {
   fs.writeFileSync(path.join(releaseDir, "latest.yml"), latestYml, "utf8");
   const pkgPath = path.join(tmp, "package.json");
   writeJson(pkgPath, fixturePackageJson(version));
-  if (mutate) mutate({ releaseDir, installerPath, installerName, portablePath, portableName, latestYml, version });
+  if (mutate) mutate({ releaseDir, installerPath, installerName, portablePath, portableName, portable7zPath, portable7zName, latestYml, version });
   return {
     releaseDir,
     installerPath,
     installerName,
     portablePath,
     portableName,
+    portable7zPath,
+    portable7zName,
     pkgPath,
     installerSha256: createHash("sha256").update(content).digest("hex"),
     portableSha256: createHash("sha256").update(portableContent).digest("hex"),
+    portable7zSha256: createHash("sha256").update(portable7zContent).digest("hex"),
   };
 }
 
@@ -477,10 +490,16 @@ export async function run() {
         "报告应覆盖安装包/blockmap/latest.yml 三件产物",
       );
       const portableEntry = report.artifacts.find((entry) => entry.name === fixture.portableName);
-      assert(portableEntry !== undefined, "报告应含免安装档条目");
+      assert(portableEntry !== undefined, "报告应含免安装档(zip)条目");
       assert(
         portableEntry.sha256 === fixture.portableSha256,
-        `免安装档 SHA-256 应为测试侧独立计算值,实际 ${portableEntry.sha256}`,
+        `免安装档(zip) SHA-256 应为测试侧独立计算值,实际 ${portableEntry.sha256}`,
+      );
+      const portable7zEntry = report.artifacts.find((entry) => entry.name === fixture.portable7zName);
+      assert(portable7zEntry !== undefined, "报告应含免安装档(7z)条目");
+      assert(
+        portable7zEntry.sha256 === fixture.portable7zSha256,
+        `免安装档(7z) SHA-256 应为测试侧独立计算值,实际 ${portable7zEntry.sha256}`,
       );
     }),
   );
@@ -529,6 +548,16 @@ export async function run() {
     {
       name: "免安装档为空文件",
       mutate: ({ portablePath }) => fs.writeFileSync(portablePath, "", "utf8"),
+      expect: /免安装档为空文件/,
+    },
+    {
+      name: "缺当前版本免安装档(7z)",
+      mutate: ({ portable7zPath }) => removeFile(portable7zPath),
+      expect: /缺少当前版本免安装档/,
+    },
+    {
+      name: "免安装档为空文件(7z)",
+      mutate: ({ portable7zPath }) => fs.writeFileSync(portable7zPath, "", "utf8"),
       expect: /免安装档为空文件/,
     },
     {

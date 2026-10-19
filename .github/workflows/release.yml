@@ -187,8 +187,9 @@ jobs:
             process.stdout.write(extractNotes(readFileSync('docs/CHANGELOG.md', 'utf8'), pkg.version));
           ")
           INSTALLER=$(node -e 'const p = require("./package.json"); process.stdout.write(p.build.nsis.artifactName.replace("${productName}", p.build.productName).replace("${version}", p.version).replace("${ext}", "exe"))')
-          PORTABLE=$(node -e 'const p = require("./package.json"); process.stdout.write(p.build.win.artifactName.replace("${productName}", p.build.productName).replace("${version}", p.version).replace("${ext}", "zip"))')
-          ASSETS="release/${INSTALLER} release/${INSTALLER}.blockmap release/${PORTABLE} release/latest.yml"
+          PORTABLE_ZIP=$(node -e 'const p = require("./package.json"); process.stdout.write(p.build.win.artifactName.replace("${productName}", p.build.productName).replace("${version}", p.version).replace("${ext}", "zip"))')
+          PORTABLE_7Z=$(node -e 'const p = require("./package.json"); process.stdout.write(p.build.win.artifactName.replace("${productName}", p.build.productName).replace("${version}", p.version).replace("${ext}", "7z"))')
+          ASSETS="release/${INSTALLER} release/${INSTALLER}.blockmap release/${PORTABLE_ZIP} release/${PORTABLE_7Z} release/latest.yml"
           for asset in $ASSETS; do
             if [ ! -f "$asset" ]; then
               echo "::error::缺少当前版本发布资产 ${asset}(产物核对应已在 verify:release 拦截,此处兜底)"
