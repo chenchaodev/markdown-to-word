@@ -471,6 +471,27 @@ export function locateEntryRegion(lines) {
 }
 
 /**
+ * 锚点位置判据:`## [待发版]` 必须是正文第一个二级标题。
+ * 条目区从锚点起算;锚点上方若已有版本标题,那个版本落在扫描区之外 —— 门禁对它零检查,
+ * 而输出仍是「通过」。2026-10-20 的 4.7.1 就是这样漏掉的:发版条目被插在锚点上方,
+ * 门禁只扫到了旧版本。
+ * @param {string[]} lines 全文按行切分
+ * @returns {{ code: string, message: string }[]} 违规结论(空数组 = 通过)
+ */
+export function auditAnchorPosition(lines) {
+  const firstHeadingIndex = lines.findIndex((line) => /^##[ \t]/.test(line));
+  if (firstHeadingIndex === -1) return []; // 锚点缺失由 auditScanSurface 判红,此处不重复报
+  if (ANCHOR_RE.test(lines[firstHeadingIndex])) return [];
+  return [{
+    code: 'anchor-not-first',
+    message: `${CHANGELOG_REL} 的 \`## [待发版]\` 不是正文第一个二级标题:`
+      + `第 ${firstHeadingIndex + 1} 行是「${lines[firstHeadingIndex].trim()}」,它上方的版本条目落在`
+      + '扫描区之外(条目区自锚点起)⇒ 那些版本一条都没被查。'
+      + '把锚点移到正文最前,发版条目放在它下方。',
+  }];
+}
+
+/**
  * 表面判据:条目区是否真的被扫到了(防「扫不到任何东西所以恒绿」)。
  * 这组判据与内容判据分工:内容判据只看「扫到的东西里有没有违规」,扫空了它只会报 0 项,于是
  * 「锚点被改名」「条目区被清空」这类漂移会静默变成通过 —— 而恒绿是纯文本门禁最危险的失效形态
@@ -645,7 +666,7 @@ export async function main(argv = []) {
   }
 
   const { problems, allowHits, allowCold, staleAllow, region } = judgeChangelog(text);
-  const surfaceProblems = auditScanSurface(region);
+  const surfaceProblems = [...auditAnchorPosition(text.split(/\r?\n/)), ...auditScanSurface(region)];
   if (surfaceProblems.length > 0) {
     for (const item of surfaceProblems) console.error(`[changelog:fail] ${item.message}`);
     return 1;
