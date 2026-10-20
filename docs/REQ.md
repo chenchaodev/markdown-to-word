@@ -44,7 +44,6 @@
 
 | 号 | 标题 | 状态 | 为什么停在这 | 什么条件下重看 | 分析在哪 |
 |---|---|---|---|---|---|
-| REQ-257 | Release 复用 CI 结论与脚本分层 | 在办 | 已拍板方案 A 并落地:verify:ci 拆 static/build/test;Release gate 等同 SHA 的 CI 绿后只跑 dist;CI 清单随 ci-diagnostics 留档,重建后逐字节比对;双 job 并行押后。4.8.0 发版验证前不转完成 | 4.8.0 发版验证通过后转已完成;CI 双 job 并行或可复用构建制品时重看 | docs/adr/ADR-085-Release复用CI结论与验证脚本分层.md |
 
 ## 已完成
 
@@ -262,6 +261,7 @@
 | REQ-005 | 交叉引用与题注深化 | 已完成 | 派生开关(toc 且 captionNumbering,零新配置键);docx 纯段落+超链接(不写域,F9/打印更新不会清空)、pdf 复用 toc 容器;全部题注补锚点,无 label 用 cap-序号,toc 关时不生成;顺序 目录→图目录→表目录 | 排期即开工;或改判要做带页码的 Word 域清单时 | docs/evidence/20261017-091039-三条待拍板工作项取证与建议.md |
 | REQ-009 | HTML 白名单扩展 | 已完成 | 已完成 A 档：div/p + align 容器在 docx/PDF 两侧按对齐渲染；白名单外标签剥壳留文本（脚本/样式整段丢弃）；预检改标签+属性两级告警。依据 ADR-083，表格与受控属性集留待真实样例。 | 出现 HTML 表格（合并单元格）或 span style 类真实需求时 | docs/adr/ADR-083-HTML白名单A档容器与未知标签降级.md |
 | REQ-256 | 打包提速:zip 压缩档降为 normal | 已完成 | 实测 dist 866s→334s:zip 降 normal 后 155,200,638 B(+0.23%),7z/NSIS 保持 maximum,7z 96,922,022 B 不变;dist 拆两次 electron-builder 调用,门禁与资产清单不变 | electron-builder 支持按目标单独设压缩档,或 zip 体积涨幅超过 3% 时 | docs/adr/ADR-084-免安装档zip压缩档降为normal.md |
+| REQ-257 | Release 复用 CI 结论与脚本分层 | 已完成 | 4.7.1 实发验证：gate 4s 复用同 SHA CI；dist 重建与 CI 清单逐字节一致；5 个资产与 notes 正常；CI 双 job 并行未做。 | CI 双 job 并行或可复用构建制品时；发布链再现 flake 或 artifact 同名冲突时 | docs/adr/ADR-085-Release复用CI结论与验证脚本分层.md |
 ## 已作废
 
 = 需求被**终审否决**，行**永久保留**、**号永不复用**。否决理由与复活条件在本行；长篇依据在「分析在哪」。
