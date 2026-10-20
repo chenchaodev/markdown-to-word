@@ -12,8 +12,8 @@
 
 | 项 | 值 |
 |---|---|
-| 已用最大号 | REQ-258 |
-| 下一个可用号 | REQ-259 |
+| 已用最大号 | REQ-259 |
+| 下一个可用号 | REQ-260 |
 
 「已用最大号」= 下方四节里出现过的最大号，**含待拍板与未开工的行** —— 那些需求已经占号，不因尚未开工而退回池子。
 
@@ -263,6 +263,7 @@
 | REQ-256 | 打包提速:zip 压缩档降为 normal | 已完成 | 实测 dist 866s→334s:zip 降 normal 后 155,200,638 B(+0.23%),7z/NSIS 保持 maximum,7z 96,922,022 B 不变;dist 拆两次 electron-builder 调用,门禁与资产清单不变 | electron-builder 支持按目标单独设压缩档,或 zip 体积涨幅超过 3% 时 | docs/adr/ADR-084-免安装档zip压缩档降为normal.md |
 | REQ-257 | Release 复用 CI 结论与脚本分层 | 已完成 | 4.7.1 实发验证：gate 4s 复用同 SHA CI；dist 重建与 CI 清单逐字节一致；5 个资产与 notes 正常；CI 双 job 并行未做。 | CI 双 job 并行或可复用构建制品时；发布链再现 flake 或 artifact 同名冲突时 | docs/adr/ADR-085-Release复用CI结论与验证脚本分层.md |
 | REQ-258 | 有界等待锚点耗尽仍阻塞发版 | 已完成 | REQ-136 残留:删掉本段最后一个调 cleanupWithinBudget() 的阻塞点(其余三处已降级诊断)。夹具先 await 退出后该 case 已无法区分「等待正常」与「第一次就成功」,只剩环境性红。覆盖由「Windows 真实占用」成功分支 + 退避锚点 + 1ms 负向锚点承担。 | 该段出现阻塞性有界等待调用点(新增 cleanupWithinBudget 直调)或段末残留判红时 | docs/evidence/20261001-160000-test-common-helpers-EPERM现场取证.md |
+| REQ-259 | Release gate 生产级加固 | 已完成 | 五项已落地：gate 只认 master push CI；master 不取消在途；artifact overwrite；tag/CI/checkout 三方 SHA 校验 + Release 去重；artifact 过期提示。verify:static 通过。 | gate 再误判、artifact 保留期或 tag 移动成为常发故障时 | docs/adr/ADR-085-Release复用CI结论与验证脚本分层.md |
 
 ## 已作废
 

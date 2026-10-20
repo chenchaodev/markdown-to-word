@@ -23,10 +23,12 @@ on:
 permissions:
   contents: read
 
-# 同引用新推送取消在途旧构建(PR 场景避免过时构建排队浪费资源)
+# 同引用新推送取消在途旧构建(仅 PR:PR 场景避免过时构建排队浪费资源)。
+# master 不取消:Release gate 可能正在等同 SHA 的 CI 结论,取消会让发版失败关闭;
+# 代价是新 master push 后旧 run 仍会跑完,消耗少量 Windows runner 分钟。
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   ci:
@@ -149,6 +151,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ci-diagnostics
+          overwrite: true
           path: |
             output/artifacts/env-fingerprint.txt
             output/artifacts/ui-geometry/
@@ -241,6 +244,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: supply-artifacts
+          overwrite: true
           path: output/artifacts/supply/
           if-no-files-found: ignore
           retention-days: 14

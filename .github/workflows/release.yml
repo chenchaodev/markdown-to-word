@@ -45,6 +45,7 @@ jobs:
       contents: read
     outputs:
       run_id: ${{ steps.wait.outputs.run_id }}
+      sha: ${{ steps.wait.outputs.sha }}
     steps:
       - name: Wait for CI on the same SHA
         id: wait
@@ -52,19 +53,27 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          # tag 可能是 annotated(轻量 tag 的 github.sha 已是 commit;annotated tag 的
+          # github.sha 可能指向 tag object)。先统一解析到 commit,后续查询/校验都用它。
+          if [ "${REF_TYPE}" = "tag" ]; then
+            SHA=$(gh api "repos/${REPO}/commits/${REF_NAME}" --jq .sha)
+          fi
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
           # CI run 可能还没创建(两个 workflow 同时排队):先等它出现,最多 2 分钟。
           run_id=""
           for _ in $(seq 1 24); do
-            run_id=$(gh api "repos/${REPO}/actions/workflows/ci.yml/runs?head_sha=${SHA}&per_page=20" \
-              --jq '[.workflow_runs[] | select(.head_sha == "'"${SHA}"'")] | sort_by(.created_at) | last | .id // empty')
+            run_id=$(gh api "repos/${REPO}/actions/workflows/ci.yml/runs?head_sha=${SHA}&event=push&branch=master&per_page=100" \
+              --jq '[.workflow_runs[] | select(.head_sha == "'"${SHA}"'" and .event == "push" and .head_branch == "master")] | sort_by(.created_at) | last | .id // empty')
             if [ -n "$run_id" ]; then break; fi
             sleep 5
           done
           if [ -z "$run_id" ]; then
-            echo "::error::找不到 ${SHA} 的 CI run(等待 2 分钟);拒绝在未验证的提交上发布"
+            echo "::error::找不到 ${SHA} 的 master push CI run(等待 2 分钟);拒绝在未验证的提交上发布"
             exit 1
           fi
           echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
@@ -107,6 +116,37 @@ jobs:
         with:
           persist-credentials: false
 
+      # tag 在触发后仍可能被移动;checkout 的 HEAD、tag 的远端指向、gate 记录的 CI
+      # head_sha 三方必须一致,否则拒绝发版。这里不依赖 github.sha 对 annotated tag
+      # 的解析口径,直接读远端 ref 与 CI run 的事实。
+      - name: Verify tag and CI SHA match checked-out commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+          EXPECTED_SHA: ${{ needs.gate.outputs.sha }}
+          RUN_ID: ${{ needs.gate.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          HEAD_SHA=$(git rev-parse HEAD)
+          TAG_SHA=$(gh api "repos/${REPO}/commits/${REF_NAME}" --jq .sha)
+          if [ "$TAG_SHA" != "$HEAD_SHA" ]; then
+            echo "::error::tag ${REF_NAME} 当前指向 ${TAG_SHA},与 checkout ${HEAD_SHA} 不一致(可能被移动),拒绝发版"
+            exit 1
+          fi
+          if [ -n "$EXPECTED_SHA" ] && [ "$HEAD_SHA" != "$EXPECTED_SHA" ]; then
+            echo "::error::checkout ${HEAD_SHA} 与 gate 记录的 CI SHA ${EXPECTED_SHA} 不一致,拒绝发版"
+            exit 1
+          fi
+          if [ -n "$RUN_ID" ]; then
+            CI_SHA=$(gh api "repos/${REPO}/actions/runs/${RUN_ID}" --jq .head_sha)
+            if [ "$CI_SHA" != "$HEAD_SHA" ]; then
+              echo "::error::CI run ${RUN_ID} 的 head_sha ${CI_SHA} 与 checkout ${HEAD_SHA} 不一致,拒绝发版"
+              exit 1
+            fi
+          fi
+
       # 版本一致性守卫(审计 ENG-2):tag 名(vX.Y.Z)必须与 package.json、package-lock.json
       # 的 version 一致(版本号四源统一,CHANGELOG 由发版 checklist 人工核对),不一致
       # fail fast,防止版本号错位(曾发生 lockfile 漏同步)。放在 install 之前,失败不浪费安装时间。
@@ -122,6 +162,20 @@ jobs:
           fi
           if [ "$TAG_VERSION" != "$LOCK_VERSION" ]; then
             echo "::error::tag ${GITHUB_REF_NAME} 与 package-lock.json version ${LOCK_VERSION} 不一致,拒绝发版"
+            exit 1
+          fi
+
+      # 同一 tag 的 Release 只允许创建一次:重跑若发现已存在,明确失败而不是覆盖资产。
+      # 放在 install 之前,避免已经存在时还浪费一轮依赖安装。
+      - name: Refuse to overwrite an existing Release
+        if: github.event_name == 'push' || inputs.dry_run != true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            echo "::error::Release ${TAG_NAME} 已存在,拒绝覆盖。若需重发,请先删除现有 Release,或改用新 tag。"
             exit 1
           fi
 
@@ -221,7 +275,13 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh run download "${{ needs.gate.outputs.run_id }}" -n ci-diagnostics -D ci-artifacts
+          RUN_ID: ${{ needs.gate.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          if ! gh run download "${RUN_ID}" -n ci-diagnostics -D ci-artifacts; then
+            echo "::error::无法下载 CI ${RUN_ID} 的 ci-diagnostics。可能已过 7 天保留期,或 artifact 已被清理;请重跑 CI,或用 workflow_dispatch --ref <tag> -f full_verify=true。"
+            exit 1
+          fi
 
       - name: Compare rebuilt dist with CI manifest
         if: github.event_name == 'push' || inputs.full_verify != true
@@ -244,6 +304,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: failure-artifacts
+          overwrite: true
           path: release/
           if-no-files-found: ignore
           retention-days: 7
@@ -255,6 +316,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-diagnostics
+          overwrite: true
           path: |
             output/artifacts/env-fingerprint.txt
             output/artifacts/ui-geometry/
@@ -271,6 +333,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: supply-artifacts
+          overwrite: true
           path: output/artifacts/supply/
           if-no-files-found: ignore
           retention-days: 14
