@@ -6,6 +6,22 @@ on:
   push:
     tags:
       - "v*"
+  # 兜底/演练入口:必须先 checkout 到目标 tag 再触发(gh workflow run release.yml --ref vX.Y.Z),
+  # github.sha 与 ref_name 才指向 tag 提交。
+  # - full_verify=true:跳过 CI 复用,跑完整 verify:release(离线/CI 不可用时的退路)
+  # - dry_run=true:只验证到打包与清单比对,不创建 Release
+  workflow_dispatch:
+    inputs:
+      full_verify:
+        description: 跳过 CI 结论复用，运行完整 verify:release
+        required: false
+        default: false
+        type: boolean
+      dry_run:
+        description: 只验证到打包与清单比对，不创建 Release
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: write
@@ -16,8 +32,69 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 发布前只做一件事:确认同一 SHA 的 CI 已经绿。不在 Release 里重跑 verify:ci ——
+  # 同一份提交验证一次就够,重复执行既拖长发布又占用 runner。
+  # 等待语义:tag 与 master 同步推时 CI 可能尚未创建/仍在跑,本 job 会等;
+  # CI 红、被取消、查不到(非 master 提交)一律失败关闭。
+  gate:
+    if: github.event_name == 'push' || inputs.full_verify != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      run_id: ${{ steps.wait.outputs.run_id }}
+    steps:
+      - name: Wait for CI on the same SHA
+        id: wait
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # CI run 可能还没创建(两个 workflow 同时排队):先等它出现,最多 2 分钟。
+          run_id=""
+          for _ in $(seq 1 24); do
+            run_id=$(gh api "repos/${REPO}/actions/workflows/ci.yml/runs?head_sha=${SHA}&per_page=20" \
+              --jq '[.workflow_runs[] | select(.head_sha == "'"${SHA}"'")] | sort_by(.created_at) | last | .id // empty')
+            if [ -n "$run_id" ]; then break; fi
+            sleep 5
+          done
+          if [ -z "$run_id" ]; then
+            echo "::error::找不到 ${SHA} 的 CI run(等待 2 分钟);拒绝在未验证的提交上发布"
+            exit 1
+          fi
+          echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
+          # 同 SHA 有多次 run(重跑)时上面已取最新一条;这里只等它完成并判结论。
+          for _ in $(seq 1 100); do
+            line=$(gh api "repos/${REPO}/actions/runs/${run_id}" --jq '.status + " " + (.conclusion // "-")')
+            status=${line%% *}
+            conclusion=${line##* }
+            if [ "$status" = "completed" ]; then
+              if [ "$conclusion" = "success" ]; then
+                echo "CI ${run_id} success: https://github.com/${REPO}/actions/runs/${run_id}"
+                exit 0
+              fi
+              echo "::error::CI ${run_id} 结论 ${conclusion};先 gh run rerun ${run_id},再重跑本 workflow"
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "::error::等待 CI ${run_id} 超时(25 分钟)"
+          exit 1
+
   release:
+    needs: gate
+    if: always() && (needs.gate.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.full_verify == true))
     runs-on: windows-latest
+    permissions:
+      contents: write
+      # 下载上游 CI 的 ci-diagnostics(内含 dist 清单)需要 actions: read;
+      # 顶层只给了 contents: write,未列出的权限一律 none。
+      actions: read
     # 含全量门禁(与 CI 同链)、NSIS 打包与打包后产物核对(清单/ASAR/发布目标)、
     # 约 10-15 分钟,正常约 40-50 分钟;90 分钟为正常耗时的约 2 倍余量,防挂死占用 runner
     timeout-minutes: 90
@@ -122,10 +199,44 @@ jobs:
       # 链形态由 gates/repo/check-ci-contract.mjs 断言(勿把清理扩散到其它目录)。
       # electron-builder 打包 NSIS 安装包(产物 release/MarkdownToWord-Setup-<版本>.exe
       # + .blockmap + latest.yml;确切文件名由 package.json build.nsis.artifactName 展开)
-      - name: Verify & package (verify:release)
-        run: npm run verify:release
+      # 默认只打包:验证结论由 gate job 复用的同 SHA CI 提供,dist 内部仍是
+      # clean → build → 清单 → electron-builder → 产物核对,与 CI 用同一份构建代码。
+      # full_verify=true(兜底/离线演练)才回到 verify:release 全链。
+      - name: Package (dist)
+        shell: bash
+        run: |
+          if [ "${{ inputs.full_verify }}" = "true" ]; then
+            npm run verify:release
+          else
+            npm run dist
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 复用结论的可信度锚:CI 已把那次构建的 dist 规范化清单留档,这里取回并与
+      # 本次重建的清单逐字节比较。清单含每个文件的路径/大小/SHA-256,一致即证明
+      # 重建的 dist 与 CI 验证过的那份相同(不依赖「同一个 SHA 必然产出同样字节」的口头保证)。
+      - name: Download CI dist manifest
+        if: github.event_name == 'push' || inputs.full_verify != true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh run download "${{ needs.gate.outputs.run_id }}" -n ci-diagnostics -D ci-artifacts
+
+      - name: Compare rebuilt dist with CI manifest
+        if: github.event_name == 'push' || inputs.full_verify != true
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const a = fs.readFileSync("ci-artifacts/dist-manifest.json");
+            const b = fs.readFileSync("output/artifacts/dist-manifest.json");
+            if (!a.equals(b)) {
+              console.error("重建的 dist 清单与 CI 留档不一致:同一 SHA 应当产出同样字节");
+              process.exit(1);
+            }
+            console.log("重建的 dist 与 CI 清单逐字节一致");
+          '
 
       # 失败兜底:打包半途失败时留存 release/ 已产出物(如部分安装包/日志)供排查,成功时不触发
       - name: Upload failure artifacts
@@ -176,6 +287,7 @@ jobs:
       # 文件名由 package.json 的 artifactName 模板展开,与 check:release 核对的是同一份产物。
       # 注意:windows-latest 默认 shell 是 pwsh,本步骤为 bash 语法,必须显式 shell: bash
       - name: Create GitHub Release
+        if: github.event_name == 'push' || inputs.dry_run != true
         shell: bash
         run: |
           NOTES=$(node --input-type=module -e "

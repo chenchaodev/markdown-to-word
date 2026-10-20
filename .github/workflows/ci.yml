@@ -136,6 +136,12 @@ jobs:
         env:
           M2W_TEST_CONCURRENCY: 4
 
+      # 发布侧复用:CI 已验证本次提交,Release 在 tag 上只重建 + 打包,不再重跑门禁。
+      # 把本次 dist 的规范化清单(很小)随诊断 artifact 留档,Release 重建后逐字节比对,
+      # 证明「重建的 dist = CI 验证过的那份」;不上传整棵 dist(体积大、且重建只要数秒)。
+      - name: Generate dist manifest for release handoff
+        run: npm run gen:dist-manifest
+
       # 诊断留存:always 语义保证门禁判红时报告与截图仍可下载(几何门禁失败时
       # 逐场景 finding 在报告里,FAILED 截图在同目录)
       - name: Upload diagnostics
@@ -147,6 +153,7 @@ jobs:
             output/artifacts/env-fingerprint.txt
             output/artifacts/ui-geometry/
             output/artifacts/failures/
+            output/artifacts/dist-manifest.json
           if-no-files-found: ignore
           retention-days: 7
 

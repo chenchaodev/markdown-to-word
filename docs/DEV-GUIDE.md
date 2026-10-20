@@ -47,7 +47,7 @@
 | `node dist/mcp/index.js` | AI 助手(MCP) | 纯 node,手写最小 JSON-RPC 2.0 over stdio(不引官方 SDK)。只暴露 `convert_markdown`(`format` 参数选 `docx`(默认)/ `pdf` —— **pdf 也提供**,但经**子进程重入 Electron**,与 CLI 共用 `src/convert/pdf-host-launch.ts` 那份机制,协议通道仍跑纯 node);`degraded: ["mermaid"]` 在 docx 路径上必须出现在返回值里 —— 降级对 agent 不可见即等于造了一台「同样输入偶尔产出不同」的工具;**pdf 产物的 `degraded` 恒为空**(core 的 pdf 分支不产该事实,见 [ADR-060](adr/ADR-060-多层交付面与headless装配层.md) 入口能力矩阵下方的说明),工具描述已据实告知。接入示例见 [MCP 接入](MCP.md) |
 | `electron .` | 图形界面 | 唯一的全功能形态(pdf + mermaid) |
 
-**`verify:ci` 按「消费什么产物」分三组**，不按模块归属 —— 判据是依赖关系不是目录归属，所以判据不按目录归属也会因为消费覆盖率产物而落在第三组：
+**`verify:ci` 按「消费什么产物」分三组**，不按模块归属 —— 判据是依赖关系不是目录归属，所以判据不按目录归属也会因为消费覆盖率产物而落在第三组。三组分别由 `verify:static` / `verify:build` / `verify:test` 持有，`verify:ci` 只做顺序组合（发布侧复用结论的边界见 [ADR-085](adr/ADR-085-Release复用CI结论与验证脚本分层.md)）：
 
 | 组 | 判据 | 成员 |
 | --- | --- | --- |
@@ -126,7 +126,7 @@ MCP 形态的判定要点:stdout 上应恰好两个 JSON 帧(启动横幅与 cra
 | 安装版命令行入口(`m2w.cmd`) | —(**无 npm script**) | **无门禁覆盖**,四档之外(任何档都没有执行体)。现有门禁够不到它:`check:asar` 只核 `app.asar` 内的内容(归档顶层白名单只有 dist/node_modules/package.json,转发器在归档之外,不在其判定面),`check:unpacked-smoke` 与 `check:install-smoke` 走的是应用 exe 的 `--smoke`、不经转发器,`check:install-smoke` 的安装目录校验也只点 exe 与卸载器。**后果**:`build.extraFiles` 被删或 `to` 写错时全链仍绿,而已装用户手上的入口静默消失,只有本文件「交付面入口」节那套手动验证能发现 |
 | 打包产物核对 | `gen:dist-manifest` `check:dist-manifest` `check:asar` `check:release` `check:signature` `check:unpacked-smoke` | `verify:release` 链(`dist` 内部) |
 | 图标资源 | `icons` | 仅本地手动 |
-| 聚合入口 | `verify:ci` `verify:release` `dist` | **`verify:ci` 仅主会话在推送前跑一次,子代理一律不跑**(谁跑哪一档见全局配置目录 `AGENTS.md` 第八节);`verify:release` / `dist` 主会话手动。CI 侧:`ci.yml` 主 job(`verify:ci`)/ `release.yml` 的 release job(`verify:release`);`dist` 是后二者内部的打包步 |
+| 聚合入口 | `verify:ci` `verify:release` `dist` | **`verify:ci` 仅主会话在推送前跑一次,子代理一律不跑**(谁跑哪一档见全局配置目录 `AGENTS.md` 第八节);`verify:release` / `dist` 主会话手动。CI 侧:`ci.yml` 主 job(`verify:ci`)/ `release.yml` 的 release job(默认只跑 `dist`,验证结论复用同 SHA 的 CI;`full_verify=true` 才跑 `verify:release`);`dist` 是打包步 |
 
 ## 本地打包注意事项
 
@@ -223,11 +223,11 @@ npm run dist -- --config.directories.output=C:\m2w-out --config.electronDist=nod
 - **文件头写了 `// @ts-check` ≠ 它被 typecheck 检查过** —— 判据是**有没有人从 `tsconfig.test.json` 的 `include`（只有 `test`）所及的面 import 它**：没被引到的文件不进编译程序，标注形同虚设。实测踩过：`shared/markdown-table.mjs` 带着标注长期躺着 8 条 `noUncheckedIndexedAccess` 错，只因门禁当时还是私有实现、没有任何 `test/` 文件引它；直到解析层归一让测试直接引它，欠账才浮出。**新增被检查文件时确认它真的在程序里**，不要以「我加了标注」为准
 - ⚠ **`… | tail -N; echo "exit=$?"` 报的不是被验命令的退出码，是 `tail` 的（恒为 0）** —— 管道里最后一段的退出码会覆盖整条管道，于是「验证失败」被印成 `exit=0`，而人正是照这个 `exit=0` 记「已验过」的。实测踩过：据此判定 `typecheck` 通过并提交，实则真实退出码是 1，仓里带着 4 条 `TS2304`/`TS7006`/`TS2353` 直到下一次跑整链才暴露。**正确做法（四步，**次序不可换**，缺一不可）**：① 判定用 `set -o pipefail` + `$?`，或 `${PIPESTATUS[0]}`，**退出码与「尾部长什么样」分开取**；② 全量输出重定向留档到 `C:/Users/chenc/AppData/Local/Temp/opencode/` 下的日志文件（**不放仓内**，它是一次性产物，入仓会污染 `git status`）；③ 若非零，**从日志里定位**（首个 `[fail]` / `xxx:fail` / 判据名 / 全部 `error TS` 行），不重跑；④ 只有确认退出码为 0，才去看尾部摘要行确认「全绿」这件事本身。**② 必须在跑之前就设好**：它是 ③ 的唯一前提 —— 跑完才发现红、而当时没留档，就只剩 `tail` 一条路，而 `tail` 只看得到按字典序排在最后的那几条，红在 `main/` 的会被 `renderer/` 的完全遮住（实测：`typecheck` 报 271 条，我按 `tail -8` 报成「4 条」，因为那 4 条恰好排在 `settings-logic` 与 `wizard-state` —— 字母序末尾）。**判据：凡是重跑有代价的链，输出必须留档** —— 与前一条「门禁红了不得为「看是不是还红」重跑整链」同向：那条禁的是盲目重跑，这条给的是不重跑也能定位的手段
 - ⚠ **`verify:ci` 这类慢链：只 `tail` 尾部 = 红了定位不到位置 = 被迫重跑 = 再花一遍十几分钟** —— 本链 44 步、内含全量 `test:coverage`（跑完整个验收树）与 `test:smoke` 与几何门禁。只看尾部时判红那一步早已滚出视野，「是哪一族判据、哪一条」无从查起；而重跑**若同样只看尾部**会再进一次死循环。**做法见上一条的四步**（次序不可换，其中「跑之前就留档」是前提）—— 本条只补它在本链上的具体代价：单趟十几分钟，故 ② 那一秒的留档动作远比平时划算
-- 全量验收在链内的唯一一次是 `verify:ci` 的 `test:coverage`(见 [ADR-016](adr/ADR-016-门禁链内全量验收只跑一遍.md)),本条不与它重复;发版前的全套走 `verify:release`,不由本条覆盖
+- 全量验收在链内的唯一一次是 `verify:ci` 的 `test:coverage`(见 [ADR-016](adr/ADR-016-门禁链内全量验收只跑一遍.md)),本条不与它重复;发版前的全套在本地或 `full_verify` 兜底时走 `verify:release`,不由本条覆盖
 - **谁跑哪一档门禁(子代理跑定向、`verify:ci` 链级由主会话兜底)见全局配置目录 `AGENTS.md` 第八节(并行任务)**;本仓的档位定义在上面「验证分两档」,链的组成见「门禁接入点」表
 - 门禁红了怎么办(不得为「看是不是还红」重跑整链、三级定位法)见全局配置目录 `WORKFLOW.md` 四(测试)
 - 类型检查与构建通过后再提交;打包/构建类改动必须实际构建验证(提交前置 → 全局配置目录 `WORKFLOW.md`「六、收尾」;发布/打包产物属对外动作 → 全局配置目录 `AGENTS.md` 安全底线 3)
-- **发版:人只负责打 tag 与推送,Release 由 tag workflow 建** —— `.github/workflows/release.yml` 在 `tags:` 上触发,末步就是 `gh release create`;它前面依次过版本四源同源 · 工程契约 · action pinning · 供应链门禁 · `verify:release`,所以**产物出自流水线而不是某台机器**。
+- **发版:人只负责打 tag 与推送,Release 由 tag workflow 建** —— `.github/workflows/release.yml` 在 `tags:` 上触发,末步就是 `gh release create`;它前面依次过版本四源同源 · 工程契约 · action pinning · 供应链门禁,再由 gate job 等**同一 SHA 的 CI 绿**后只跑 `dist` 打包,并把重建的 `dist` 清单与 CI 留档逐字节比对。**推荐 CI 绿后再推 tag**(Release 只剩打包);同步推 tag 时 gate 会等 CI,墙钟约等于原来的「CI + 打包」但不再重复跑测试。兜底:`gh workflow run release.yml --ref <tag> -f full_verify=true -f dry_run=true`(必须带 `--ref tag`,`github.sha` 才指向 tag 提交)。所以**产物出自流水线而不是某台机器**。
   - **不要手动 `gh release create`**:会撞 `a release with the same tag name already exists`,整条 run 变红,而它前面十几步全绿 —— 那条红只说明撞车,**不代表产物有问题**(判红时先看是不是这句)。
   - tag 用**轻量**(`git tag vX.Y.Z`);轻量 tag 不随 `git push --follow-tags`,须显式 `git push origin vX.Y.Z`,并用 `git ls-remote --tags` 确认远端存在。
   - 撞车后的收拾顺序:**先删掉手工建的 Release(不加 `--cleanup-tag`,tag 要留),再 `gh run rerun <id> --failed`**,让流水线自己重建 —— 不要改 tag、不要 force push。
