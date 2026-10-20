@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | 现行 |
+| 状态 | 部分被 ADR-084 取代（决定 3 的 zip 压缩档部分） |
 | 日期 | 2026-10-19 |
 | 关联 | 打包配置 [`package.json`](../../package.json) 的 `build.win.target` 与 `build.compression` ｜ 发布资产 [`.github/workflows/release.yml`](../../.github/workflows/release.yml) 的 ASSETS 推导 ｜ 产物核对门禁 [`gates/artifacts/check-release-artifacts.mjs`](../../gates/artifacts/check-release-artifacts.mjs) ｜ 前身:免安装档工作项（REQ-253，单 zip）｜ **不触发** [ADR-013](ADR-013-发布供应链与明确不签名.md) 的签名面（本仓明确不签名） |
 
