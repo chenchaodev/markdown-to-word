@@ -623,8 +623,9 @@ export async function run() {
   // 走与顶层同一条 Office MathML 管线(居中、不编号,KaTeX 真解析失败才降级
   // TeX 源码等宽灰字——公式结构断言见 segments/math-structures.test.js);html/表格、
   // 引用块内代码块/html 此前静默丢弃(内容丢失),按既有降级线转文本
-  // (表格 → 逐行文本段落 / 代码块 → 等宽文本代码块 / 白名单外 html → 原样文本)
+  // (表格 → 逐行文本段落 / 代码块 → 等宽文本代码块 / 白名单外 html → 剥壳留文本)
   // + keyed 警告(warn.unsupportedBlockInContainer,经 warnDedup 按 类型+容器 去重)。
+  // 注意样例用 section:div/p 已是合法容器(无属性时按正文段落渲染),不再走降级通道。
   /** @type {Warning[]} */
   const containerWarnings = [];
   const containerMd = [
@@ -650,7 +651,7 @@ export async function run() {
     "",
     "> 引用含 HTML",
     ">",
-    "> <div>bad-html</div>",
+    "> <section>bad-html</section>",
     "",
   ].join("\n");
   const containerBuffer = await renderDocx(parseMarkdown(containerMd), { warnings: containerWarnings });
@@ -695,9 +696,9 @@ export async function run() {
       throw new Error("basic-render 断言失败:引用块内代码块未渲染(code-in-quote 缺失)");
     }
   });
-  await suite.case("引用块内白名单外 html 降级为原样文本", () => {
-    if (!containerXml.includes("&lt;div&gt;bad-html&lt;/div&gt;")) {
-      throw new Error("basic-render 断言失败:引用块内白名单外 html 未降级为原样文本");
+  await suite.case("引用块内白名单外 html 降级为剥壳文本", () => {
+    if (!containerXml.includes("bad-html")) {
+      throw new Error("basic-render 断言失败:引用块内白名单外 html 未降级为剥壳文本");
     }
   });
   // 警告文案断言(formatWarning 格式化后逐字匹配)

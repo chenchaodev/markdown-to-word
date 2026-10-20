@@ -247,7 +247,7 @@ const MATRIX = [
     anchors: [
       { at: "src/core/convert.ts:256(渲染只吃 md.body)", has: "md.body" },
       { at: "src/core/pipeline/frontmatter.ts:57(parseFrontmatter 单源)", has: "parseFrontmatter" },
-      { at: "src/core/docx/render.ts:192(封面页插入)", has: "renderCoverPage" },
+      { at: "src/core/docx/render.ts:198(封面页插入)", has: "renderCoverPage" },
       { at: "src/core/pdf/template.ts:179(封面 HTML;末尾 page-break)", has: "buildCoverHtml" },
     ],
     verify: async ({ docxXmlText, pdfHtml }) => {
@@ -269,7 +269,7 @@ const MATRIX = [
     docxExtract: "w:pgSz(w/h/orient) + w:pgMar(top/right/bottom/left)",
     pdfExtract: "模板 CSS `@page { size: …; margin: …mm …mm …mm …mm }`",
     anchors: [
-      { at: "src/core/docx/render.ts:209(纸张 twips;四边距在同函数 margin 对象)", has: "mmToTwips" },
+      { at: "src/core/docx/render.ts:229(纸张 twips;四边距在同函数 margin 对象)", has: "mmToTwips" },
       { at: "src/core/pdf/template-css.ts:68(@page size/margin)", has: "@page" },
       { at: "src/core/settings/settings-defaults.ts:399(validatePageSetup 几何门禁,两侧共用)", has: "validatePageSetup" },
     ],
@@ -285,23 +285,30 @@ const MATRIX = [
     mode: "mustMatch",
     covers: [],
     dimension: "内联 HTML 白名单集合(同一 ALLOWED_INLINE_TAGS;白名单外两侧都不渲染为富文本)",
-    docxExtract: "白名单标签 → 对应 run 属性(bold / vertAlign);白名单外 → 整段丢弃",
-    pdfExtract: "白名单标签 → 原样输出标签;白名单外 → 转义为文本",
+    docxExtract: "白名单标签 → 对应 run 属性(bold / vertAlign);容器 → 段落对齐;白名单外 → 剥壳留文本(脚本整段丢弃)",
+    pdfExtract: "白名单标签 → 原样输出标签;容器 → 重新序列化的 style;白名单外 → 剥壳留文本(脚本整段丢弃)",
     anchors: [
-      { at: "src/core/markdown/html-whitelist.ts:12(ALLOWED_INLINE_TAGS 单源)", has: "ALLOWED_INLINE_TAGS" },
-      { at: "src/core/docx/handlers/inline-html.ts:57(标签→样式表,与白名单恒等)", has: "INLINE_TAG_STYLES" },
-      { at: "src/core/pdf/rules/html.ts:77(白名单外转义)", has: "escapeHtml" },
+      { at: "src/core/markdown/html-whitelist.ts:21(ALLOWED_INLINE_TAGS 单源)", has: "ALLOWED_INLINE_TAGS" },
+      { at: "src/core/docx/handlers/inline-html.ts:65(标签→样式表,与白名单恒等)", has: "INLINE_TAG_STYLES" },
+      { at: "src/core/pdf/rules/html.ts:52(白名单外降级为文本)", has: "stripUnsupportedHtml" },
     ],
     verify: async ({ whitelistDocxXml, whitelistPdfHtml }) => {
       must(ALLOWED_INLINE_TAGS.has("strong") && ALLOWED_INLINE_TAGS.has("sub"), "html-whitelist", "白名单缺少样本标签(契约漂移)");
       must(whitelistDocxXml.includes("<w:b/>"), "html-whitelist", "docx <strong> 未渲染为加粗 run");
       must(/<w:vertAlign w:val="subscript"/.test(whitelistDocxXml), "html-whitelist", "docx <sub> 未渲染为下标 run");
+      must(whitelistDocxXml.includes('w:jc w:val="center"'), "html-whitelist", "docx 容器未渲染为居中对齐");
       must(whitelistPdfHtml.includes("<strong>粗</strong>"), "html-whitelist", "PDF <strong> 未原样输出");
       must(whitelistPdfHtml.includes("<sub>下标</sub>"), "html-whitelist", "PDF <sub> 未原样输出");
-      must(!whitelistDocxXml.includes("块级标签"), "html-whitelist", "docx 白名单外块级标签内容不应残留");
+      must(
+        whitelistPdfHtml.includes('<div style="text-align:center">居中容器</div>'),
+        "html-whitelist",
+        "PDF 容器未按 align 重新序列化",
+      );
+      must(whitelistDocxXml.includes("块级标签"), "html-whitelist", "docx 白名单外块级标签文本应保留");
       must(!whitelistDocxXml.includes("alert(1)"), "html-whitelist", "docx script 内容不应残留");
-      must(whitelistPdfHtml.includes("&lt;div"), "html-whitelist", "PDF 白名单外块级标签应转义");
-      must(whitelistPdfHtml.includes("&lt;script&gt;"), "html-whitelist", "PDF script 应转义");
+      must(whitelistPdfHtml.includes("块级标签"), "html-whitelist", "PDF 白名单外块级标签文本应保留");
+      must(!whitelistPdfHtml.includes("&lt;div"), "html-whitelist", "PDF 白名单外块级标签不应再转义成源码");
+      must(!whitelistPdfHtml.includes("alert(1)"), "html-whitelist", "PDF script 内容不应残留");
     },
   },
   {
@@ -312,9 +319,9 @@ const MATRIX = [
     docxExtract: "count(<w:br w:type=\"page\"/>)",
     pdfExtract: "count(<div class=\"page-break\">) 与 <hr>",
     anchors: [
-      { at: "src/core/docx/render.ts:348(trim 后精确匹配 → PageBreak)", has: "page-break" },
-      { at: "src/core/docx/handlers/fallback.ts:63(行内 html 路径同判定)", has: "PageBreak" },
-      { at: "src/core/pdf/rules/html.ts:75(注释 → 分页 div)", has: "page-break" },
+      { at: "src/core/docx/render.ts:356(trim 后精确匹配 → PageBreak)", has: "page-break" },
+      { at: "src/core/docx/handlers/fallback.ts:64(行内 html 路径同判定)", has: "PageBreak" },
+      { at: "src/core/pdf/rules/html.ts:46(注释 → 分页 div)", has: "page-break" },
       { at: "src/core/pdf/template-css.ts:69(break-before: page)", has: "break-before: page" },
     ],
     verify: async ({ pageBreak }) => {
@@ -766,7 +773,7 @@ const MATRIX = [
     docxExtract: "word/footnotes.xml 部件 + w:footnoteReference",
     pdfExtract: "section.footnotes + li.footnote-item + 回链锚点",
     anchors: [
-      { at: "src/core/docx/render.ts:256(footnotes 部件,空则不生成)", has: "ctx.footnote.notes" },
+      { at: "src/core/docx/render.ts:262(footnotes 部件,空则不生成)", has: "ctx.footnote.notes" },
       { at: "src/core/markdown/markdown-it-factory.ts:43(@mdit/plugin-footnote)", has: "md.use(footnote)" },
       { at: "src/core/pdf/template-css.ts:160(脚注区样式;Chromium 无 float: footnote)", has: ".footnotes" },
     ],
@@ -874,8 +881,8 @@ const MATRIX = [
     docxExtract: "注入计数守卫统计 throwIfCanceled 次数(随块数增长)",
     pdfExtract: "同法统计(与文档规模无关的常数)",
     anchors: [
-      { at: "src/core/docx/render.ts:212(块级循环内逐块复查;has 钉住那个块级循环)", has: "for (const node of ast.children)" },
-      { at: "src/core/docx/render.ts:286(打包前最后一道)", has: "Packer.toBuffer" },
+      { at: "src/core/docx/render.ts:218(块级循环内逐块复查;has 钉住那个块级循环)", has: "for (const node of ast.children)" },
+      { at: "src/core/docx/render.ts:292(打包前最后一道)", has: "Packer.toBuffer" },
       { at: "src/core/pdf/render.ts:248(入口:闸门取得后立即复查)", has: "createCancellationGuard" },
       { at: "src/core/pdf/render.ts:295(阶段边界复查)", has: "throwIfCanceled" },
     ],
@@ -944,7 +951,7 @@ const MATRIX = [
     pdfExtract: "模板 CSS body font-family/font-size/line-height;`p { text-indent: 2em }` / `p { text-align: justify }`",
     anchors: [
       { at: "src/core/settings/typography.ts:177(DEFAULT_TYPOGRAPHY 单源)", has: "DEFAULT_TYPOGRAPHY" },
-      { at: "src/core/docx/render.ts:249(排版注入 docDefaults run)", has: "typography.bodySizePt" },
+      { at: "src/core/docx/render.ts:255(排版注入 docDefaults run)", has: "typography.bodySizePt" },
       { at: "src/core/docx/handlers/inline-html.ts:26(正文段 jc/spacing/indent)", has: "renderBodyParagraph" },
       { at: "src/core/pdf/template-css.ts:79(body 字体/字号/行距)", has: "typography.fontEastAsia" },
     ],

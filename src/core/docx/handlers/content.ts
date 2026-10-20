@@ -20,7 +20,7 @@ import type { Blockquote, FootnoteDefinition, List, ListItem, PhrasingContent } 
 import { CODE_FONT, MUTED_TEXT_GRAY, QUOTE_BG_GRAY, RULE_GRAY } from "../theme.js";
 import { inlineCodeFontSizePt, ptToHalfPoints } from "../../settings/typography.js";
 import { texToDocxMath } from "./math.js";
-import { isAllowedInlineHtml } from "../../markdown/html-whitelist.js";
+import { isAllowedInlineHtml, stripUnsupportedHtml } from "../../markdown/html-whitelist.js";
 import { inlineHtmlItemsToRuns, normalizeInlineHtml, parseInlineHtml } from "./inline-html.js";
 import { pushLinkRuns } from "./link-xref.js";
 import { imageToDocx } from "./image-run.js";
@@ -139,9 +139,13 @@ async function pushRuns(runs: InlineChild[], node: PhrasingContent, ctx: Ctx, st
     }
     case "html":
       // 白名单行内 html(经 normalizeInlineHtml 已合并为整串):渲染为样式运行;
-      // 非白名单(理论不可达,防御):跳过
+      // 其余 html(容器/带属性标签)在段落内不做块级对齐,剥标签后按纯文本行内输出 ——
+      // 这里已无块边界,丢弃只会让句中内容凭空消失
       if (isAllowedInlineHtml(node.value)) {
         runs.push(...inlineHtmlItemsToRuns(parseInlineHtml(node.value)));
+      } else {
+        const text = stripUnsupportedHtml(node.value);
+        if (text !== "") runs.push(new TextRun({ text, ...style }));
       }
       break;
     default:

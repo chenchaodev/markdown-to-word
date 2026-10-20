@@ -481,9 +481,11 @@ const dict = {
     // 翻译后的提示,且无任何门禁会红。收窄 KeyedWarning.key 后它必须入字典。
     "warn.precheckFailed": "预检失败,已跳过预检: ${error}",
     // 转换预检「AI 静默丢内容」四类:tag/lineText/snippet 为推送期的源码原文,
-    // lineNo 为行号(number);两者的键名不共用,避免同名异型
+    // lineNo 为行号(number);两者的键名不共用,避免同名异型。HTML 分两级报:
+    // 白名单外标签报 tag,白名单标签上的不受支持属性报 tag+attr
     "warn.unsupportedMathDelimiter": "`\\(` / `\\[` 不是本工具支持的公式定界符,会按普通文字印出而不渲染公式;请改用 `$…$`(行内)或 `$$…$$`(独立成行)",
-    "warn.htmlTagNotAllowed": "HTML 标签 <${tag}> 不在支持范围内,其内容会被丢弃;请改用 Markdown 语法或纯文本",
+    "warn.htmlTagNotAllowed": "HTML 标签 <${tag}> 不在支持范围内,标签本身会被移除(其中的文本会保留;脚本/样式类内容整段丢弃);请改用 Markdown 语法或受支持的标签",
+    "warn.htmlAttributeIgnored": "HTML 标签 <${tag}> 的属性 ${attr} 不在支持范围内,已忽略;请改用受支持的写法",
     "warn.unpairedMathDelimiter": "公式定界符 $ 未配对(疑似:${snippet});未配对的 $ 会按普通文字印出,请补齐闭合的 $",
     "warn.unclosedCodeFence": "代码围栏没有闭合(第 ${lineNo} 行开始):它之后的内容会被整段当作一个代码块显示 —— 标题、表格、公式都会变成代码文本。请补上收尾的围栏。",
     "warn.tableLikeNotParsed": "这段形似表格但未按表格排版(首行:${lineText});请在首行下补一行分隔行(如 | --- | --- |)",

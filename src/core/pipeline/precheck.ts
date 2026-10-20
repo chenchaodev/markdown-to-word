@@ -20,7 +20,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { visit } from "unist-util-visit";
 import { parseMarkdown } from "./parse.js";
 import { createLocalImagePathPolicy } from "../image/image-path-policy.js";
-import { ALLOWED_INLINE_TAGS } from "../markdown/html-whitelist.js";
+import { inspectHtmlUsage } from "../markdown/html-whitelist.js";
 import {
   createSourceRangeQuery,
   mergeSourceRanges,
@@ -43,7 +43,9 @@ const REMOTE_RE = /^(https?:|data:|blob:)/i;
  * (code/inlineCode/html/math/table,取 mdast 权威 position)内的字符不参与判定,
  * 故行内代码、围栏内、HTML 节点内、已正常解析的公式与表格天然免疫。
  * 四类之间的取舍统一为「宁可漏报也不要让正常文档弹确认框」:
- * 每条判据都要求成对/成形的信号,孤立的 \\( 或单个 $ 一律放过。 */
+ * 每条判据都要求成对/成形的信号,孤立的 \\( 或单个 $ 一律放过。
+ * ② 例外地是**标签 + 属性两级**判据:不明标签报「标签被移除」,白名单标签上的
+ * 不受支持属性另报「属性已忽略」—— 两者后果不同,合成一条会让用户改错地方。 */
 
 /** 行内代码/围栏/HTML/公式/表格节点:其覆盖的源码区间不参与静默丢内容判定 */
 const MASKED_SOURCE_NODES = new Set(["code", "inlineCode", "html", "math", "inlineMath", "table"]);
@@ -69,8 +71,10 @@ const MAX_MATH_BODY = 200;
 /** 公式体内出现 CJK 即判非公式:中文括注/目录名与公式同形,而公式体几乎必为 ASCII */
 const CJK_RE = /[⺀-〿㐀-䶿一-鿿豈-﫿＀-￯]/;
 
-/** ② HTML 标签名(开/闭/自闭合同形;属性不参与判定,只判标签名是否在行内白名单内) */
-const HTML_TAG_RE = /<\/?([A-Za-z][A-Za-z0-9-]*)/g;
+/**
+ * ② HTML:标签与属性**两级**判据由共享白名单的 inspectHtmlUsage 给出 ——
+ * 词法与白名单同一份,避免预检与渲染两侧口径漂移。
+ */
 
 /**
  * ③ 行内公式开定界符 `$` 的合法后继:TeX 记号起点。数字、空白与中日韩字符
@@ -107,12 +111,28 @@ function unsupportedMathDelimiterWarning(): KeyedWarning {
   };
 }
 
-/** ② 告警:tag 为白名单外的标签名(报名字不报「有非法标签」,用户要照着改) */
+/**
+ * ② 告警:tag 为白名单外的标签名(报名字不报「有非法标签」,用户要照着改)。
+ * 语义 = 标签本身被移除、内部文本保留(脚本/样式类内容整段丢弃);
+ * 早前写成「内容会被丢弃」会让用户以为正文一并消失,与渲染侧实际行为不符。
+ */
 function htmlTagNotAllowedWarning(tag: string): KeyedWarning {
   return {
     key: "warn.htmlTagNotAllowed",
     params: { tag },
-    fallback: `HTML 标签 <${tag}> 不在支持范围内,其内容会被丢弃;请改用 Markdown 语法或纯文本`,
+    fallback: `HTML 标签 <${tag}> 不在支持范围内,标签本身会被移除(其中的文本会保留;脚本/样式类内容整段丢弃);请改用 Markdown 语法或受支持的标签`,
+  };
+}
+
+/**
+ * ② 告警(属性级):tag 在白名单内但 attr 不受支持(含 align 取值越界)。
+ * 与标签级分开报,因为后果不同 —— 内容照常排版,只是这一项写法不生效。
+ */
+function htmlAttributeIgnoredWarning(tag: string, attr: string): KeyedWarning {
+  return {
+    key: "warn.htmlAttributeIgnored",
+    params: { tag, attr },
+    fallback: `HTML 标签 <${tag}> 的属性 ${attr} 不在支持范围内,已忽略;请改用受支持的写法`,
   };
 }
 
@@ -203,8 +223,9 @@ export function precheckMarkdown(
    *    逐字相同、且不带任何定位信息的行(用户无从据它们区分是哪一个块)⇒ 去重为 1 条,
    *    与 docx 侧「同一门坏语言只报一次」同源同理。
    *  - `warn.crossRefNotFound` / `warn.imageNotFound` / `warn.tableLikeNotParsed` /
-   *    `warn.htmlTagNotAllowed` / `warn.unclosedCodeFence` / `warn.unpairedMathDelimiter`
-   *    **带 params**(ref / src / lineText / tag / lineNo / snippet):指向**不同对象**
+   *    `warn.htmlTagNotAllowed` / `warn.htmlAttributeIgnored` / `warn.unclosedCodeFence` /
+   *    `warn.unpairedMathDelimiter`
+   *    **带 params**(ref / src / lineText / tag / tag+attr / lineNo / snippet):指向**不同对象**
    *    的同类问题各自保留一条,只有「同 key + 同 params」的重复被折叠 —— 折叠的必然是
    *    两行一模一样的提示,不是可定位信息。
    */
@@ -212,11 +233,16 @@ export function precheckMarkdown(
   const warn = (warning: KeyedWarning): void => {
     pushWarningOnce(warnedKeys, warnings, warning);
   };
-  // 静默丢内容四类的中间产物:掩码区间(源码偏移)/白名单外标签/未配对 $ 片段
+  // 静默丢内容四类的中间产物:掩码区间(源码偏移)/白名单外标签/被忽略的标签属性/未配对 $ 片段
   const ranges: SourceRange[] = [];
   // 围栏判定另用一份窄掩码(仅 HTML/公式块):见 RAW_TEXT_SOURCE_NODES 的理由
   const rawTextRanges: SourceRange[] = [];
   const disallowedTags = new Set<string>();
+  /**
+   * 被忽略的属性按 tag+attr 跨节点去重(键含 NUL 分隔符,避免 tag/attr 拼接歧义)。
+   * inspectHtmlUsage 只在单个 html 节点内去重;同一写法散落在多个节点时应合成一条。
+   */
+  const ignoredHtmlAttrs = new Map<string, { tag: string; attr: string }>();
   const unpairedMath: string[] = [];
 
   // mdast 节点异构,字段按需访问;visit 的树参数与节点类型此处统一放宽
@@ -251,7 +277,12 @@ export function precheckMarkdown(
       if (snippet !== null) unpairedMath.push(snippet);
     } else if (node.type === "html") {
       const value: string = node.value ?? "";
-      collectDisallowedHtmlTags(value, disallowedTags);
+      const usage = inspectHtmlUsage(value);
+      for (const tag of usage.unknownTags) disallowedTags.add(tag);
+      for (const { tag, attr } of usage.ignoredAttributes) {
+        const key = `${tag}\u0000${attr}`;
+        if (!ignoredHtmlAttrs.has(key)) ignoredHtmlAttrs.set(key, { tag, attr });
+      }
     } else if (node.type === "link") {
       const url: string = node.url ?? "";
       const m = REF_RE.exec(url);
@@ -272,6 +303,9 @@ export function precheckMarkdown(
   const masked = buildMaskedRanges(ranges);
   if (hasUnsupportedMathDelimiter(content, masked)) warn(unsupportedMathDelimiterWarning());
   for (const tag of [...disallowedTags].sort()) warn(htmlTagNotAllowedWarning(tag));
+  // 键 = tag + NUL + attr,按 key 排序即「先标签后属性」的稳定顺序
+  const ignoredAttrs = [...ignoredHtmlAttrs].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  for (const [, { tag, attr }] of ignoredAttrs) warn(htmlAttributeIgnoredWarning(tag, attr));
   for (const start of fenceStarts) warn(unclosedCodeFenceWarning(start + 1));
   for (const snippet of unpairedMath) warn(unpairedMathDelimiterWarning(snippet));
   for (const lineText of findTableLikeNotParsed(lines, masked)) {
@@ -367,16 +401,6 @@ function hasMathBody(
     return body.length > 0 && body.length <= MAX_MATH_BODY && !CJK_RE.test(body);
   }
   return false;
-}
-
-/** ② 收集 html 节点里白名单外的标签名(只判标签名,故带属性的白名单标签同样不报) */
-function collectDisallowedHtmlTags(value: string, into: Set<string>): void {
-  HTML_TAG_RE.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = HTML_TAG_RE.exec(value))) {
-    const tag = match[1]!.toLowerCase();
-    if (!ALLOWED_INLINE_TAGS.has(tag)) into.add(tag);
-  }
 }
 
 /**

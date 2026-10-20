@@ -141,8 +141,10 @@ $$
 
 /* ---------- 其余行内样例(与矩阵逐行对应,不落盘) ---------- */
 
-/** 白名单:合法行内标签 + 白名单外块级/脚本标签 */
+/** 白名单:合法行内标签 + div/p align 容器 + 白名单外块级/脚本标签 */
 export const whitelistMd = `行内 <strong>粗</strong> 与 <sub>下标</sub>。
+
+<div align="center">居中容器</div>
 
 <div class="x">块级标签</div>
 

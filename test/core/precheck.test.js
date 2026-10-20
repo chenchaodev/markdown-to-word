@@ -185,6 +185,7 @@ export async function run() {
   const SILENT_LOSS_KEYS = new Set([
     "warn.unsupportedMathDelimiter",
     "warn.htmlTagNotAllowed",
+    "warn.htmlAttributeIgnored",
     "warn.unpairedMathDelimiter",
     "warn.unclosedCodeFence",
     "warn.tableLikeNotParsed",
@@ -231,13 +232,14 @@ export async function run() {
   await expectSilentLoss("①反向:中文括注形态", "见 \\(草稿\\) 目录", []);
   await expectSilentLoss("①反向:跨行不成对", "\\(x\ny\\)", []);
 
-  // 9) ② 白名单外的块级/行内 HTML 标签(报出标签名本身)
+  // 9) ② HTML:白名单外标签报标签名;白名单内标签带非法属性报属性名
   await expectSilentLoss("②正向:块级 table", "<table><tr><td>x</td></tr></table>\n\n段落", [
     "warn.htmlTagNotAllowed",
     "warn.htmlTagNotAllowed",
     "warn.htmlTagNotAllowed",
   ]);
-  await expectSilentLoss("②正向:段落内 div", "段落里的 <div>块</div> 标签", ["warn.htmlTagNotAllowed"]);
+  // div/p 是合法容器标签(内容由渲染侧解析),标签本身不再报
+  await expectSilentLoss("②反向:段落内 div(容器标签)", "段落里的 <div>块</div> 标签", []);
   const tagWarning = silentLoss("<table><tr><td>x</td></tr></table>")[0];
   // 索引取值带 undefined;键存在性是本用例的**被测行为**(不是它的前提),故显式断掉:
   // 没报出来就以断言失败报出,而不是炸在下一步的 `.params` 上。
@@ -254,7 +256,20 @@ export async function run() {
       + " <kbd>i</kbd> <sub>j</sub> <sup>k</sup> <mark>l</mark> <br> <span>m</span> <b>n</b>",
     [],
   );
-  await expectSilentLoss("②反向:白名单标签带属性", '这是 <strong class="x">粗</strong> 与 <span style="c">红</span>', []);
+  // 白名单内标签带属性:属性被忽略,按 tag+attr 各报一条
+  await expectSilentLoss(
+    "②正向:白名单标签带属性报属性级",
+    '这是 <strong class="x">粗</strong> 与 <span style="c">红</span>',
+    ["warn.htmlAttributeIgnored", "warn.htmlAttributeIgnored"],
+  );
+  await expectSilentLoss(
+    "②反向:合法容器 align",
+    '<div align="center">居</div>\n\n<p align="right">右</p>',
+    [],
+  );
+  await expectSilentLoss("②正向:容器 align 域外值", '<div align="justify">居</div>', [
+    "warn.htmlAttributeIgnored",
+  ]);
   await expectSilentLoss("②反向:HTML 注释", "<!-- page-break -->\n\n段落", []);
   await expectSilentLoss("②反向:围栏内", "```html\n<table><tr><td>x</td></tr></table>\n```", []);
   await expectSilentLoss("②反向:行内代码内", "`<table>` 与 `<div>` 不报", []);
@@ -485,7 +500,7 @@ export async function run() {
   /** @type {Array<[string, string]>} */
   const noSignalCases = [
     ["①反斜杠定界符", "行内 \\(x\\) 公式"],
-    ["②白名单外 HTML", "段落里的 <div>块</div> 标签"],
+    ["②白名单外 HTML", "段落里的 <blink>块</blink> 标签"],
     ["③$ 不配对", "公式 $x^2 未闭合"],
     ["④伪表格", "| 列1 | 列2 |\n| 数据1 | 数据2 |"],
     ["既有三类", "![图](./missing.png)\n\n```\nplain\n```\n\n见 [章节](#sec:ghost)。"],
@@ -619,7 +634,7 @@ export async function run() {
   const distinctCases = [
     ["warn.imageNotFound", "![a](./a.png)\n\n![b](./b.png)\n", existsNone, "不同 src"],
     ["warn.crossRefNotFound", "见 [一](#sec:a) 与 [二](#sec:b)。", existsAll, "不同 label"],
-    ["warn.htmlTagNotAllowed", "段落里的 <div>一</div>\n\n另一段 <blink>x</blink>", existsAll, "不同 tag"],
+    ["warn.htmlTagNotAllowed", "段落里的 <blink>一</blink>\n\n另一段 <marquee>x</marquee>", existsAll, "不同 tag"],
     ["warn.unpairedMathDelimiter", "甲 $x^2 未闭合\n\n乙 $y_1 未闭合", existsAll, "不同 snippet"],
     [
       "warn.tableLikeNotParsed",

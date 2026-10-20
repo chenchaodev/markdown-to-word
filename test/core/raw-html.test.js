@@ -1,8 +1,9 @@
 // @ts-check
 /**
- * 内联格式白名单测试:
+ * HTML 白名单测试:
  * 双格式一致:白名单无属性标签渲染为对应格式(pdf 原样输出 / docx 样式运行);
- * 危险样例(脚本/块级 div/带属性标签)安全兜底(pdf 转义 / docx 跳过)。
+ * div/p + align 容器在两侧按对齐渲染;白名单外标签(脚本除外)剥壳留文本,
+ * 并在预检里按标签/属性两级告警。
  * 序列化名已实证(docx 9.7.1 index.cjs):bold → <w:b/>(OnOffElement true 无 val)、
  * sub/sup → w:vertAlign w:val="subscript"/"superscript"、mark → w:highlight
  * w:val="yellow"、strike → <w:strike/>、underline → <w:u w:val="single"/>、
@@ -36,6 +37,10 @@ const htmlMd = `# 白名单测试
 
 <strong>粗体</strong> 与 <em>斜体</em>、<code>code()</code>、x<sub>1</sub> 和 y<sup>2</sup>、<u>下划线</u>、<s>删除线</s>、<mark>高亮</mark>、<span>普通</span>、<strong>粗<em>斜</em></strong>。<br>换行后内容。
 
+<div align="center">居中容器</div>
+
+<p align="right">右对齐容器</p>
+
 <script>alert(1)</script>、<div class="x">块级</div>、<strong class="y">带属性</strong>
 `;
 /** 交叉边界场景:行首白名单块 + 危险段交错(落盘为 docs/raw-html-cross.md) */
@@ -68,6 +73,9 @@ export async function run() {
     ["<w:strike/>", "strike 序列化"],
     ['<w:u w:val="single"/>', "underline 序列化"],
     ["Consolas", "code 等宽字体"],
+    ['w:jc w:val="center"', "容器 align=center 的段落对齐"],
+    ['w:jc w:val="right"', "容器 align=right 的段落对齐"],
+    ["居中容器", "容器内文本"],
   ];
   // 断言表逐项一个 case:label 是该片段的稳定标识,一处序列化改名不该掩盖其余各项
   for (const [needle, label] of htmlDocxChecks) {
@@ -75,24 +83,30 @@ export async function run() {
       if (!htmlDocument.includes(needle)) throw new Error(`白名单断言失败:docx 缺少 ${label}(${needle})`);
     });
   }
-  // 危险样例 docx 侧整体跳过(块级 html 节点跳过 + 段落内危险段归一化丢弃,内容文本不残留)
+  // 危险样例:脚本整段丢弃;块级/带属性标签剥壳留文本(属性不残留)
   /** @type {[string, string][]} 断言表 [XML 片段, 中文标签] */
-  const htmlDocxDangerChecks = [
+  const htmlDocxDroppedChecks = [
     ["alert", "script 内容"],
-    ["块级", "div 内容"],
-    ["带属性", "带属性标签内容"],
     ['class="', "属性标签"],
   ];
-  for (const [needle, label] of htmlDocxDangerChecks) {
-    await suite.case(`docx 危险样例已跳过:${label}`, () => {
+  for (const [needle, label] of htmlDocxDroppedChecks) {
+    await suite.case(`docx 危险样例已丢弃:${label}`, () => {
       if (htmlDocument.includes(needle)) throw new Error(`白名单断言失败:docx 不应含 ${label}`);
     });
   }
-  console.log("[ok] docx 白名单:白名单标签渲染 + 危险样例跳过 全部通过");
+  /** @type {[string, string][]} 断言表 [XML 片段, 中文标签] */
+  const htmlDocxKeptChecks = [
+    ["块级", "div 内容(剥壳留文本)"],
+    ["带属性", "带属性标签内容(剥壳留文本)"],
+  ];
+  for (const [needle, label] of htmlDocxKeptChecks) {
+    await suite.case(`docx 白名单外标签保留文本:${label}`, () => {
+      if (!htmlDocument.includes(needle)) throw new Error(`白名单断言失败:docx 缺少 ${label}`);
+    });
+  }
+  console.log("[ok] docx 白名单:白名单标签渲染 + 脚本丢弃 + 未知标签剥壳留文本 全部通过");
 
-  // pdf:白名单整串原样输出(Chromium 渲染);危险样例转义。
-  // 注:转义仅作用于标签字符(< > & "),标签内文本(如 alert(1)、块级)按转义语义
-  // 保留为可见文本,故断言"标签被转义"(&lt;script&gt; / &lt;div)而非文本消失。
+  // pdf:白名单整串原样输出(Chromium 渲染);容器重新序列化;白名单外只留文本。
   const htmlPdf = asPdfArtifact(
     await convertWithFs(htmlMd, "pdf", { baseDir: FIXTURES_DIR, title: "白名单测试", warnings: [] }),
   );
@@ -105,9 +119,10 @@ export async function run() {
     ["<mark>高亮</mark>", "mark 原样输出"],
     ["<strong>粗<em>斜</em></strong>", "嵌套原样输出"],
     ["<br>", "br 原样输出"],
-    ["&lt;script&gt;", "script 转义形式"],
-    ["&lt;div", "div 转义形式"],
-    ["&lt;strong class=", "带属性 strong 转义形式"],
+    ['<div style="text-align:center">居中容器</div>', "容器居中重新序列化"],
+    ['<p style="text-align:right">右对齐容器</p>', "容器右对齐重新序列化"],
+    ["块级", "未知 div 剥壳留文本"],
+    ["带属性", "带属性标签剥壳留文本"],
   ];
   for (const [needle, label] of htmlPdfChecks) {
     await suite.case(`PDF 白名单:${label}`, () => {
@@ -115,26 +130,26 @@ export async function run() {
     });
   }
   /** @type {[string, string][]} 断言表 [HTML 片段, 中文标签] */
-  const htmlPdfDangerChecks = [
+  const htmlPdfDroppedChecks = [
     ["<script", "script 明文标签"],
-    ['<div class="x"', "div 明文标签(用户输入特有,模板 div 为 page-break/cover 等,不受影响)"],
-    ["<strong class=", "带属性 strong 明文标签"],
+    ["alert(1)", "script 内容"],
+    ['class="x"', "未知 div 的属性"],
+    ['class="y"', "带属性 strong 的属性"],
   ];
-  for (const [needle, label] of htmlPdfDangerChecks) {
-    await suite.case(`PDF 危险样例已转义:${label}`, () => {
+  for (const [needle, label] of htmlPdfDroppedChecks) {
+    await suite.case(`PDF 白名单外已丢弃:${label}`, () => {
       if (htmlPdf.html.includes(needle)) throw new Error(`白名单断言失败:PDF 不应含 ${label}`);
     });
   }
-  console.log("[ok] PDF 白名单:白名单原样输出 + 危险样例转义 全部通过");
+  console.log("[ok] PDF 白名单:白名单原样输出 + 容器序列化 + 未知标签剥壳留文本 全部通过");
 
   // 交叉边界(注释级契约点):
-  // 场景 A(pdf 侧):行首白名单整串会被 markdown-it 归为 html_block 而非 html_inline
-  // (pdf/render.ts 304 行注释),overrideHtmlRules 对 html_block 同样走白名单放行 →
-  // 原样输出,而非转义;docx 侧同一输入为 html 块节点,isAllowedInlineHtml 放行渲染。
-  // 场景 B(docx 侧):行内白名单开标签 + 危险闭标签交错(normalizeInlineHtml 危险段
-  // 丢弃语义):「<strong>险</div>」无法构成白名单表达式 → 危险段(开标签起至首个
-  // 闭标签 html 节点)整体丢弃、内容文本(险)不残留;而「<strong>乙</strong></div>」
-  // 白名单整串合并先行 → 乙 保留为粗体运行,孤立危险闭标签丢弃。
+  // 场景 A(pdf 侧):行首白名单整串会被 markdown-it 归为 html_block 而非 html_inline,
+  // overrideHtmlRules 对 html_block 同样走白名单放行 → 原样输出;docx 侧同一输入
+  // 为 html 块节点,isAllowedInlineHtml 放行渲染。
+  // 场景 B:行内白名单开标签 + 另一个闭标签交错时,表达式不成立 → 两侧都改为剥壳留文本:
+  // 「<strong>险</div>」保留「险」、丢掉两个标签;「<strong>乙</strong></div>」先按
+  // 白名单整串合并 → 乙 保留为粗体运行,孤立闭标签丢弃。
   const crossDocument = await unzipPart(
     docxBufferOf(await convertWithFs(crossMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] })),
     "word/document.xml",
@@ -142,14 +157,14 @@ export async function run() {
   const crossPdf = asPdfArtifact(
     await convertWithFs(crossMd, "pdf", { baseDir: FIXTURES_DIR, title: "交叉边界测试", warnings: [] }),
   );
-  await suite.case("docx 交叉边界:不残留危险闭标签 </div>", () => {
+  await suite.case("docx 交叉边界:交错的未知闭标签不残留", () => {
     if (crossDocument.includes("</div>")) {
       throw new Error("交叉边界断言失败:docx 不应残留危险闭标签 </div>");
     }
   });
-  await suite.case("docx 交叉边界:危险段文本(险)不残留(危险段整体丢弃)", () => {
-    if (crossDocument.includes("险")) {
-      throw new Error("交叉边界断言失败:docx 危险段文本(险)不应残留(危险段整体丢弃)");
+  await suite.case("docx 交叉边界:交错段落文本(险)保留", () => {
+    if (!crossDocument.includes("险")) {
+      throw new Error("交叉边界断言失败:docx 应保留交错段落文本(险)");
     }
   });
   await suite.case("docx 交叉边界:白名单整串保留且 乙 渲染为粗体运行", () => {
@@ -174,12 +189,15 @@ export async function run() {
       throw new Error("交叉边界断言失败:PDF 行首白名单不应被转义");
     }
   });
-  await suite.case("PDF 交叉边界:危险交错整体转义", () => {
-    if (!crossPdf.html.includes("&lt;strong&gt;险&lt;/div&gt;")) {
-      throw new Error("交叉边界断言失败:PDF 危险交错应整体转义");
+  await suite.case("PDF 交叉边界:交错标签剥壳后保留文本", () => {
+    if (!crossPdf.html.includes("险")) {
+      throw new Error("交叉边界断言失败:PDF 交错段落应保留文本(险)");
+    }
+    if (crossPdf.html.includes("&lt;strong&gt;险")) {
+      throw new Error("交叉边界断言失败:PDF 交错标签不应以转义形式整段输出");
     }
   });
-  console.log("[ok] PDF 交叉边界:行首 html_block 白名单原样输出 + 危险交错转义");
+  console.log("[ok] PDF 交叉边界:行首 html_block 白名单原样输出 + 交错标签剥壳留文本");
 
   const htmlPdfBin = await htmlToPdf(htmlPdf.html, htmlPdf.footerTemplate);
   await saveArtifact("raw-html", { docx: htmlDocx, pdf: htmlPdfBin });

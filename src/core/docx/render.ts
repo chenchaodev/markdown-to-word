@@ -38,7 +38,13 @@ import { buildHeaders } from "./headers.js";
 import { headerIdentityText } from "../pipeline/header-identity.js";
 import { renderPhrasing, renderList, renderBlockquote, renderThematicBreak } from "./handlers/content.js";
 import { renderCode } from "./handlers/code-block.js";
-import { renderBodyParagraph, renderInlineHtmlParagraph, normalizeInlineHtml } from "./handlers/inline-html.js";
+import {
+  normalizeInlineHtml,
+  renderBodyParagraph,
+  renderContainerParagraph,
+  renderInlineHtmlParagraph,
+  renderPlainHtmlParagraph,
+} from "./handlers/inline-html.js";
 import { renderHeading } from "./handlers/heading.js";
 import { renderTable } from "./handlers/table.js";
 // 页面设置契约单源(settings-defaults;原经 convert.js 导入形成 convert⇄render 环,此处解环)
@@ -57,7 +63,7 @@ import {
   resolveTocMode,
   type SharedRenderOptions,
 } from "../settings/render-options.js";
-import { isAllowedInlineHtml } from "../markdown/html-whitelist.js";
+import { isAllowedInlineHtml, parseAllowedContainer, stripUnsupportedHtml } from "../markdown/html-whitelist.js";
 import { isFigureParagraph } from "../image/image-size.js";
 import { CROSS_REF_KINDS } from "../markdown/cross-ref.js";
 export { CROSS_REF_KINDS };
@@ -340,18 +346,25 @@ async function renderBlock(
       return [renderThematicBreak()];
     case "html":
       // 显式分页符:<!-- page-break -->(trim 后精确匹配);
-      // 内联格式白名单(无属性标签对,契约与 PDF 侧 isAllowedInlineHtml 逐字一致)
+      // 对齐容器 div/p(白名单只放行 align 属性)→ 段落,alignment 覆盖正文默认值;
+      // 行内格式白名单(无属性标签对,契约与 PDF 侧 isAllowedInlineHtml 逐字一致)
       // → 渲染为正文段落(排版设置生效);
-      // 其余 html(脚本/块级/带属性标签)维持现状:跳过,安全兜底
+      // 其余 html(白名单外标签/属性)剥标签留文本后按正文段落输出:整段跳过等于静默
+      // 删掉用户可见内容,只剩脚本/样式等由 stripUnsupportedHtml 整段清掉。
       {
         const value = node.value.trim();
         if (value === "<!-- page-break -->") {
           return [new Paragraph({ children: [new PageBreak()] })];
         }
+        const container = parseAllowedContainer(value);
+        if (container !== null) {
+          return [renderContainerParagraph(container, ctx)];
+        }
         if (isAllowedInlineHtml(value)) {
           return [renderInlineHtmlParagraph(node.value, ctx)];
         }
-        return [];
+        if (stripUnsupportedHtml(node.value).trim() === "") return [];
+        return [renderPlainHtmlParagraph(node.value, ctx)];
       }
     default:
       return [];

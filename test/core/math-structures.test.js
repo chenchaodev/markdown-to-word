@@ -587,18 +587,18 @@ export async function run() {
   });
   console.log("[ok] docx 容器内降级去重:同类型同容器只报 1 条,容器不同各报 1 条");
 
-  // ---------- 容器内非白名单 html → 原文等宽灰字 + 「HTML 在…」警告 ----------
-  // 尖括号按 XML 转义成 &lt;/&gt;(断言可见形态,勿直接找原始尖括号)。
-  const quoteDiv = await renderDocxXml("> <div>提示</div>\n");
-  await suite.case("引用块内非白名单 html → 原文等宽灰字 + 一条 HTML 在… 警告", () => {
+  // ---------- 容器内非白名单 html → 剥壳文本等宽灰字 + 「HTML 在…」警告 ----------
+  // 样例用 section:div/p 已是合法容器(无属性时按正文段落渲染),不再走降级通道。
+  const quoteDiv = await renderDocxXml("> <section>提示</section>\n");
+  await suite.case("引用块内非白名单 html → 剥壳文本等宽灰字 + 一条 HTML 在… 警告", () => {
     expectPresent(
       quoteDiv.xml,
-      [MONO_GRAY_FONT, MONO_GRAY_COLOR, "&lt;div&gt;提示&lt;/div&gt;"],
-      "引用块内非白名单 html 降级为原文等宽灰字",
+      [MONO_GRAY_FONT, MONO_GRAY_COLOR, "提示"],
+      "引用块内非白名单 html 降级为剥壳文本等宽灰字",
     );
     expectWarningCount(quoteDiv.warns, `HTML 在引用块内${UNSUPPORTED_IN_CONTAINER}`, 1, "引用块内 html 警告");
   });
-  console.log("[ok] docx 容器内非白名单 html → 原文(XML 转义)等宽灰字 + 「HTML 在…」警告");
+  console.log("[ok] docx 容器内非白名单 html → 剥壳文本等宽灰字 + 「HTML 在…」警告");
 
   // ---------- 旁路一:`<!-- page-break -->` 在容器内照常分页且不产警告 ----------
   // renderContainerFallback 的 html 分支先判分页注释:注释不显示、分页照做,
@@ -712,7 +712,7 @@ export async function run() {
       ">   A-->B",
       "> ```",
       ">",
-      "> <div>提示</div>",
+      "> <section>提示</section>",
       ">",
       "> | 列一 | 列二 |",
       "> | --- | --- |",
@@ -741,7 +741,7 @@ export async function run() {
     ["quoteHighlightMark", "代码块(语法高亮路径)"],
     ["quotePlainMark", "代码块(等宽文本路径)"],
     ["a:blip", "代码块(mermaid 图片路径)"],
-    ["&lt;div&gt;提示&lt;/div&gt;", "白名单外 html 原文段"],
+    ["提示", "白名单外 html 剥壳文本段"],
     ["列一 | 列二", "表格逐行段(表头行)"],
     ["甲 | 乙", "表格逐行段(数据行)"],
     ["嵌套引用段落", "嵌套引用块段落"],
@@ -809,7 +809,7 @@ export async function run() {
       "",
       "- 列表项含 html",
       "",
-      "  <div>列表提示</div>",
+      "  <section>列表提示</section>",
       "",
     ].join("\n"),
   );
@@ -824,7 +824,7 @@ export async function run() {
     ["单元格", "顶层真表格单元格段"],
     ["列一 | 列二", "列表项内表格逐行段"],
     ["listCodeMark", "列表项内代码块"],
-    ["&lt;div&gt;列表提示&lt;/div&gt;", "列表项内 html 原文段"],
+    ["列表提示", "列表项内 html 剥壳文本段"],
   ])) {
     await suite.case(`反向锁:${label}不被误加引用块装饰`, () => {
       const para = paragraphContaining(nonQuote.xml, needle);

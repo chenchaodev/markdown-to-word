@@ -476,10 +476,11 @@ const dict = {
     "warn.precheckFailed": "Precheck failed, precheck skipped: ${error}",
     // 转换预检「AI 静默丢内容」四类:tag/lineText/snippet 为推送期的源码原文(不译,同
     // warn.unsupportedBlockInContainer 口径);lineNo 为行号(数字,照插值不译);
-    // 两者的键名不共用,避免同名异型。文案须写清后果(按普通文字印出/内容被丢弃)
-    // 与改法($…$ / Markdown 语法 / 补分隔行)
+    // 两者的键名不共用,避免同名异型。文案须写清后果(按普通文字印出/标签被移除
+    // 但其中文本保留)与改法($…$ / Markdown 语法 / 补分隔行)
     "warn.unsupportedMathDelimiter": "`\\(` / `\\[` are not equation delimiters this tool supports: they print as plain text and no equation is rendered. Use `$…$` (inline) or `$$…$$` (on its own line)",
-    "warn.htmlTagNotAllowed": "HTML tag <${tag}> is outside the supported list and its content will be dropped. Use Markdown syntax or plain text instead",
+    "warn.htmlTagNotAllowed": "HTML tag <${tag}> is outside the supported list: the tag itself is removed (its text is kept; script/style content is dropped entirely). Use Markdown syntax or a supported tag instead",
+    "warn.htmlAttributeIgnored": "Attribute ${attr} on HTML tag <${tag}> is outside the supported list and was ignored. Use a supported form instead",
     "warn.unpairedMathDelimiter": "Equation delimiter $ is unpaired (near: ${snippet}); an unpaired $ prints as plain text — add the closing $",
     "warn.unclosedCodeFence": "Code fence is never closed (it starts at line ${lineNo}): everything after it is shown as a single code block — headings, tables and equations turn into code text. Add the closing fence.",
     "warn.tableLikeNotParsed": "This looks like a table but was not laid out as one (first line: ${lineText}); add a delimiter row under the first line (e.g. | --- | --- |)",
