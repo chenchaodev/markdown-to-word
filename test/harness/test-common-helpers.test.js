@@ -20,13 +20,13 @@
  *    (刚退出的 Electron 子进程句柄未释放)。POSIX 无此语义,故该半段按平台跳过并留痕;
  * 3) 退避真的在重试(仅 win32):占位子进程**自己**在数百毫秒后退出,于是删除必然
  *    「先失败、占用解除后才成功」。断言总耗时跨过至少一次 retryDelay —— 只断言「最终成功」
- *    是恒绿的(靠删后复查也能成功),抓不到「有没有真等」这件事;
- * 4) 释放占用后的**有界等待**(仅 win32):releaseOccupancy() 之后紧接着的那次兜底清理仍可能
- *    先失败。这条守的是「有界等待有上界 + 失败必上报」;夹具**显式等占位子进程退出**再清
- *    (holdDirUntilSelfExit 返回的 exited),不拿「释放动作已返回」当句柄已放掉的判据 ——
- *    后者是赌 OS 何时放掉句柄,实测证明那个窗口是 0.5–1ms 量级,而能让 10s 预算耗尽的锁
- *    来自本仓控制不了的东西(实时扫描 / 索引器 / 同机残留进程),故那部分已从阻塞降为诊断告警
- *    (见 cleanupOrDiagnoseBlocked)。「等」这个机制本身仍由锚点 3) 的退避用死守着。
+ *    是恒绿的(靠删后复查也能成功),抓不到「有没有真等」这件事。
+ *
+ * 已删除的锚点(REQ-258):原「释放占用后的有界等待」case 要守的三件事各有确定性守卫 ——
+ * 释放后能删掉在「Windows 真实占用」case 的成功分支,「真的在等」在锚点 3) 的退避,
+ * 「有上界 + 耗尽必抛」在同一 case 里 1ms 预算的负向锚点。删因是它无法区分「等待机制正常」
+ * 与「第一次调用本来就成功」(夹具已先 await 子进程退出),唯一判别性输出是 runner 上外部
+ * 持有者造成的环境性红 —— 那与本仓逻辑无关,却把 10s 预算押在了阻塞发版上。
  *
  * 防假通过三处:
  * 1) 「系统临时区前缀目录集合基线」在 run() 入口取,段末逐项比对 —— helper 真的漏了目录,
@@ -187,19 +187,6 @@ function releaseOccupancy() {
 const HOLDER_LIFETIME_MS = 800;
 
 /**
- * 「延迟释放」锚点里占位子进程的存活时长(ms)。
- *
- * **取值被两侧夹住,不是随手取的**(两侧都是 `cleanupTempResources` 一次调用的真实形态):
- * - 下界:一次调用的默认重试预算 = 5×6/2×100 = **1500ms**(线性退避 100+200+…+500)。存活时长
- *   必须**超过**它,否则第一次调用就删得掉,「释放后需要等」这件事根本不会发生,锚点退化成恒绿。
- * - 上界:有界等待的第二次调用在约 2500ms 处就会成功。存活时长必须**低于**它,否则第一次调用
- *   就够、有界等待那一半又变成恒绿。
- * 取 2200ms:距下界 700ms、距上界约 300ms,两侧都不贴边(Windows 上 rmSync 本身耗时会让实际
- * 时刻略晚于名义值,贴下界会偶发变成「第一次就成功」)。
- */
-const SLOW_RELEASE_HOLDER_MS = 2200;
-
-/**
  * 释放占用后兜底清理的**有界等待**预算(ms)。
  *
  * 这是**上界,不是估计值** —— 取值依据分两侧:
@@ -318,8 +305,9 @@ function holderScript(lifetimeMs) {
 /**
  * 起一个占住 dir 的子进程并等它真的就绪(就绪信号到达即证明 cwd 已被它持有)。
  *
- * 额外返回 `exited`:「子进程**已退出**」这条**事实**。调用方要等的必须是它,而不是
- * 「释放动作已返回」—— 后者在 Windows 上与句柄是否放掉没有任何同步关系。
+ * 额外返回 `exited`:「子进程**已退出**」这条**事实**。当前无调用方(REQ-258 删掉了唯一需要它的
+ * case);若将来有 case 需要在占用解除后再清理,等它,不要拿「释放动作已返回」当句柄已放掉的判据
+ * —— 后者在 Windows 上与句柄是否放掉没有任何同步关系。
  * @param {string} dir 要占住的目录
  * @param {number} [lifetimeMs] 存活时长(ms);缺省 HOLDER_LIFETIME_MS
  * @returns {Promise<{ release(): void; exited: Promise<number | null> }>} 释放句柄(幂等)+ 退出 promise
@@ -670,54 +658,6 @@ export async function run() {
       console.log(
         `[ok] test-common-helpers:Windows 占用(单条抛/汇总抛/保留注册项/${settleNote})`,
       );
-    });
-
-    // 这一条曾直接赌「释放动作已返回 ⇒ Windows 已放掉句柄」(REQ-136 现场那条失败的守门 case)。
-    // 现在夹具**显式等占位子进程退出**后再清(holdDirUntilSelfExit 返回的 exited):那个窗口是
-    // 本段控制不了的(实测可删窗口 0.5–1ms,真锁能让 10s 预算耗尽),赌它就是拿发版去赌 OS。
-    // 「等」这个机制没丢:下一条「退避真的在重试」用 800ms 的占用死守着退避确实在化解 EPERM。
-    await suite.case("释放占用后的有界等待:等子进程真退出后兜底清理能删掉,且等待有上界", async () => {
-      const resource = track(createTempResource({ prefix: SELFTEST_PREFIX, label: "延迟释放沙盒" }));
-      if (process.platform !== "win32") {
-        console.log("[skip] test-common-helpers:延迟释放锚点仅 win32 有效(当前 POSIX)");
-        cleanupTempResources();
-        assertEq(pendingTempResources().length, 0, "跳过分支同样不得残留");
-        return;
-      }
-      const held = path.join(resource.path, "cwd-held");
-      occupyDir(resource.path);
-      const holder = await holdDirUntilSelfExit(held, SLOW_RELEASE_HOLDER_MS);
-      try {
-        releaseOccupancy();
-        // 等的是「子进程**已退出**」这条事实,不是「释放动作已返回」
-        assertEq(
-          await holder.exited,
-          0,
-          "占位子进程应自己正常退出(码 0)—— 非 0 说明它是被信号杀掉的,没走到自退那条路",
-        );
-        const startedAt = Date.now();
-        const cleaned = cleanupWithinBudget();
-        const elapsed = Date.now() - startedAt;
-        assertIncludes(cleaned.removed.join(","), resource.path, "有界等待应最终删掉它");
-        assertEq(fs.existsSync(resource.path), false, "有界等待成功后目录应消失");
-        assert(
-          !pendingTempResources().some((r) => r.path === resource.path),
-          "有界等待成功后应从注册表注销(不留给后续 case 撞第二次)",
-        );
-        // 有界:预算内没耗尽就返回。守护「不是无限重试」—— 若 cleanupWithinBudget 退化成死循环,
-        // 这里永远到不了;而预算耗尽时它会带着「有界等待已用尽」抛错,由上面的断言接住。
-        assert(
-          elapsed < RELEASE_SETTLE_BUDGET_MS,
-          `有界等待须在预算(${RELEASE_SETTLE_BUDGET_MS}ms)内返回,实际 ${elapsed}ms`,
-        );
-        console.log(
-          `[ok] test-common-helpers:释放占用后的有界等待(占位子进程 ${SLOW_RELEASE_HOLDER_MS}ms 后自解,`
-            + `有界等待耗时 ${elapsed}ms < 预算 ${RELEASE_SETTLE_BUDGET_MS}ms)`,
-        );
-      } finally {
-        holder.release();
-        releaseOccupancy();
-      }
     });
 
     await suite.case("退避真的在重试:占用型 EPERM 靠等待化解(不是靠删后复查)", async () => {
