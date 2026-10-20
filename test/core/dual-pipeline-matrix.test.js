@@ -312,7 +312,7 @@ const MATRIX = [
     docxExtract: "count(<w:br w:type=\"page\"/>)",
     pdfExtract: "count(<div class=\"page-break\">) 与 <hr>",
     anchors: [
-      { at: "src/core/docx/render.ts:334(trim 后精确匹配 → PageBreak)", has: "page-break" },
+      { at: "src/core/docx/render.ts:348(trim 后精确匹配 → PageBreak)", has: "page-break" },
       { at: "src/core/docx/handlers/fallback.ts:63(行内 html 路径同判定)", has: "PageBreak" },
       { at: "src/core/pdf/rules/html.ts:75(注释 → 分页 div)", has: "page-break" },
       { at: "src/core/pdf/template-css.ts:69(break-before: page)", has: "break-before: page" },
@@ -384,11 +384,11 @@ const MATRIX = [
     docxExtract: "题注段静态编号文本「图 1.1 …」「图 2.1 …」",
     pdfExtract: "xref 替换出的编号文本 + 模板 CSS counter 规则(显示态编号走伪元素)",
     anchors: [
-      { at: "src/core/docx/handlers/captions.ts:83(图/表序数分配)", has: "++figIndex" },
-      { at: "src/core/docx/handlers/captions.ts:115(captionNumberText 单源)", has: "captionNumberText" },
+      { at: "src/core/docx/handlers/captions.ts:105(图/表序数分配)", has: "++figIndex" },
+      { at: "src/core/docx/handlers/captions.ts:149(captionNumberText 单源)", has: "captionNumberText" },
       { at: "src/core/pdf/template-css.ts:202(fig counter-increment)", has: "counter-increment: figc" },
       { at: "src/core/pdf/template-css.ts:205(h1c 重置)", has: "counter-reset: h1c" },
-      { at: "src/core/pdf/rules/xref.ts:148(编号文本与 CSS counter 同源)", has: "stripTrailingLabel" },
+      { at: "src/core/pdf/rules/xref.ts:176(编号文本与 CSS counter 同源)", has: "stripTrailingLabel" },
     ],
     verify: async ({ capDocxXml, capPdfHtml }) => {
       for (const needle of [
@@ -424,8 +424,8 @@ const MATRIX = [
     docxExtract: "书签 fig-<label>/tab-<label> + 文本无 `{#fig:` 残留;开关关闭 → 无书签、label 原样",
     pdfExtract: "锚点 <span id=\"fig:label\"> + 文本无 `{#fig:` 残留;开关关闭 → 无锚点、无编号 CSS",
     anchors: [
-      { at: "src/core/docx/handlers/captions.ts:92(尾部 label 剥离)", has: "labelMatch" },
-      { at: "src/core/pdf/rules/xref.ts:148(stripTrailingLabel 剥离)", has: "stripTrailingLabel" },
+      { at: "src/core/docx/handlers/captions.ts:114(尾部 label 剥离)", has: "labelMatch" },
+      { at: "src/core/pdf/rules/xref.ts:176(stripTrailingLabel 剥离)", has: "stripTrailingLabel" },
       { at: "src/core/markdown/cross-ref.ts:95(kindLabelRegex 单源)", has: "kindLabelRegex" },
     ],
     verify: async ({ capDocxXml, capPdfHtml, labelOff }) => {
@@ -450,16 +450,26 @@ const MATRIX = [
     mode: "mustMatch",
     covers: [],
     dimension: "交叉引用文案与悬空降级(默认文本→编号;悬空→占位文案 + 同一条去重警告)",
-    docxExtract: "hyperlink anchor + 编号文本;悬空 → 「图 (?)」纯文本 + 警告",
-    pdfExtract: "href + 编号文本;悬空 → 占位纯文本(无死链 href)+ 警告",
+    docxExtract: "hyperlink 链接体内的编号文本(剔除图表清单区,避免清单条目冒充);悬空 → 「图 (?)」纯文本 + 警告",
+    pdfExtract: "href 链接体内的编号文本(剔除清单区);悬空 → 占位纯文本(无死链 href)+ 警告",
     anchors: [
       { at: "src/core/markdown/cross-ref.ts:22(CROSS_REF_KINDS 文案/占位单源)", has: "CROSS_REF_KINDS" },
       { at: "src/core/docx/handlers/link-xref.ts:25(引用替换)", has: "pushLinkRuns" },
-      { at: "src/core/pdf/rules/xref.ts:79(两遍替换 + 悬空解包)", has: "replaceXrefLinks" },
+      { at: "src/core/pdf/rules/xref.ts:238(两遍替换 + 悬空解包)", has: "replaceXrefLinks" },
     ],
     verify: async ({ capDocxXml, capPdfHtml, capDocxWarnings, capPdfWarnings }) => {
-      must(capDocxXml.includes('<w:hyperlink w:history="1" w:anchor="fig-alpha">'), "crossref-text-dangling", "docx 图引用缺跳转");
-      must(capPdfHtml.includes('href="#fig:alpha">图 1.1<'), "crossref-text-dangling", "PDF 图引用文本非「图 1.1」");
+      // 图表清单条目与正文引用同形(同锚点、排在最前),故读链接体前先剔清单区:
+      // 裸锚点/裸 href 判定会被清单条目冒充,读到的必须仍是**正文引用**。
+      must(
+        docxLinkBody(capDocxXml, "fig-alpha").includes("图 1.1"),
+        "crossref-text-dangling",
+        "docx 图引用缺跳转或编号文本非「图 1.1」",
+      );
+      must(
+        pdfLinkBody(capPdfHtml, "fig:alpha").includes("图 1.1"),
+        "crossref-text-dangling",
+        "PDF 图引用文本非「图 1.1」",
+      );
       must(capDocxXml.includes("图 (?)"), "crossref-text-dangling", "docx 悬空引用缺占位「图 (?)」");
       must(capPdfHtml.includes("图 (?)"), "crossref-text-dangling", "PDF 悬空引用缺占位「图 (?)」");
       must(!capPdfHtml.includes('href="#fig:none"'), "crossref-text-dangling", "PDF 悬空引用不应保留死链 href");
@@ -558,7 +568,7 @@ const MATRIX = [
     pdfExtract: "已知语言 → pre.hljs + language-* class;未知/失败 → 无高亮 span + 同文案警告",
     anchors: [
       { at: "src/core/docx/handlers/code-highlight.ts:48(highlightCodeRuns,失败走 onFallback)", has: "highlightCodeRuns" },
-      { at: "src/core/pdf/render.ts:152(highlight 回调,抛错回退转义 + 同 key 警告)", has: "pushWarningOnce" },
+      { at: "src/core/pdf/render.ts:153(highlight 回调,抛错回退转义 + 同 key 警告)", has: "pushWarningOnce" },
       { at: "src/core/style/hljs-palette.ts:22(色板单源)", has: "HLJS_PALETTE" },
     ],
     verify: async ({ code }) => {
@@ -596,7 +606,7 @@ const MATRIX = [
     anchors: [
       { at: "src/core/markdown/cross-ref.ts:84(captionLabelKey 键单源)", has: "captionLabelKey" },
       { at: "src/core/docx/ctx.ts:69(captionLabels 键 = kind + label)", has: "captionLabels" },
-      { at: "src/core/docx/handlers/captions.ts:107(按 kind 登记)", has: "captionLabelKey" },
+      { at: "src/core/docx/handlers/captions.ts:141(按 kind 登记)", has: "captionLabelKey" },
       { at: "src/core/docx/handlers/link-xref.ts:90(按 kind 查找)", has: "captionLabelKey" },
       { at: "src/core/pdf/rules/xref.ts:154(按 kind 登记)", has: "captionLabels.set(captionLabelKey" },
       { at: "src/core/pdf/rules/xref.ts:189(按 kind 查找)", has: "captionLabels.get(captionLabelKey" },
@@ -698,7 +708,7 @@ const MATRIX = [
     anchors: [
       { at: "src/core/docx/handlers/math.ts:83(信任闸门)", has: "hasUntrustedTexCommand" },
       { at: "src/core/docx/handlers/math.ts:99(未覆盖节点 → 整式降级)", has: "components.length === 0" },
-      { at: "src/core/pdf/render.ts:196(guardUntrustedMath 预拦截)", has: "guardUntrustedMath" },
+      { at: "src/core/pdf/render.ts:197(guardUntrustedMath 预拦截)", has: "guardUntrustedMath" },
       { at: "src/core/resource-limits.ts:86(UNTRUSTED_TEX_COMMAND_RE 单源)", has: "UNTRUSTED_TEX_COMMAND_RE" },
     ],
     verify: async ({ degrade }) => {
@@ -756,7 +766,7 @@ const MATRIX = [
     docxExtract: "word/footnotes.xml 部件 + w:footnoteReference",
     pdfExtract: "section.footnotes + li.footnote-item + 回链锚点",
     anchors: [
-      { at: "src/core/docx/render.ts:242(footnotes 部件,空则不生成)", has: "ctx.footnote.notes" },
+      { at: "src/core/docx/render.ts:256(footnotes 部件,空则不生成)", has: "ctx.footnote.notes" },
       { at: "src/core/markdown/markdown-it-factory.ts:43(@mdit/plugin-footnote)", has: "md.use(footnote)" },
       { at: "src/core/pdf/template-css.ts:160(脚注区样式;Chromium 无 float: footnote)", has: ".footnotes" },
     ],
@@ -780,7 +790,7 @@ const MATRIX = [
     pdfExtract: "li.task-list-item + ☑/☐ 字符,无 input/label 残留",
     anchors: [
       { at: "src/core/pipeline/parse.ts:55(remark-gfm 任务列表按普通列表处理)", has: "remarkGfm" },
-      { at: "src/core/pdf/render.ts:290(replaceTaskCheckboxes)", has: "replaceTaskCheckboxes" },
+      { at: "src/core/pdf/render.ts:294(replaceTaskCheckboxes)", has: "replaceTaskCheckboxes" },
     ],
     verify: async ({ task }) => {
       must(task.docxHasList, "tasklist-rendering", "docx 应按普通列表项渲染(ListParagraph)");
@@ -864,10 +874,10 @@ const MATRIX = [
     docxExtract: "注入计数守卫统计 throwIfCanceled 次数(随块数增长)",
     pdfExtract: "同法统计(与文档规模无关的常数)",
     anchors: [
-      { at: "src/core/docx/render.ts:198(块级循环内逐块复查;has 钉住那个块级循环)", has: "for (const node of ast.children)" },
-      { at: "src/core/docx/render.ts:272(打包前最后一道)", has: "Packer.toBuffer" },
-      { at: "src/core/pdf/render.ts:247(入口:闸门取得后立即复查)", has: "createCancellationGuard" },
-      { at: "src/core/pdf/render.ts:320(阶段边界复查)", has: "throwIfCanceled" },
+      { at: "src/core/docx/render.ts:212(块级循环内逐块复查;has 钉住那个块级循环)", has: "for (const node of ast.children)" },
+      { at: "src/core/docx/render.ts:286(打包前最后一道)", has: "Packer.toBuffer" },
+      { at: "src/core/pdf/render.ts:248(入口:闸门取得后立即复查)", has: "createCancellationGuard" },
+      { at: "src/core/pdf/render.ts:295(阶段边界复查)", has: "throwIfCanceled" },
     ],
     verify: async ({ cancel }) => {
       must(
@@ -895,7 +905,7 @@ const MATRIX = [
     docxExtract: "题注静态文本(首图无章节前缀)",
     pdfExtract: "CSS counter 分支(含 h1c 的 ::before 规则,首 h1 前章节号按 0 计)",
     anchors: [
-      { at: "src/core/docx/handlers/captions.ts:97(chapter>0 才给章节号)", has: "chapter > 0" },
+      { at: "src/core/docx/handlers/captions.ts:121(chapter>0 才给章节号)", has: "chapter > 0" },
       { at: "src/core/pdf/template-css.ts:207(hasH1 分支:章节号 + 序数)", has: ".fig-caption::before" },
       { at: "src/core/pdf/rules/caption.ts:30(该边界在规则头注声明为已接受差异)", has: "overrideCaptionRule" },
     ],
@@ -934,7 +944,7 @@ const MATRIX = [
     pdfExtract: "模板 CSS body font-family/font-size/line-height;`p { text-indent: 2em }` / `p { text-align: justify }`",
     anchors: [
       { at: "src/core/settings/typography.ts:177(DEFAULT_TYPOGRAPHY 单源)", has: "DEFAULT_TYPOGRAPHY" },
-      { at: "src/core/docx/render.ts:235(排版注入 docDefaults run)", has: "typography.bodySizePt" },
+      { at: "src/core/docx/render.ts:249(排版注入 docDefaults run)", has: "typography.bodySizePt" },
       { at: "src/core/docx/handlers/inline-html.ts:26(正文段 jc/spacing/indent)", has: "renderBodyParagraph" },
       { at: "src/core/pdf/template-css.ts:79(body 字体/字号/行距)", has: "typography.fontEastAsia" },
     ],
@@ -1001,7 +1011,7 @@ const MATRIX = [
     anchors: [
       { at: "src/core/settings/typography.ts:130(captionFontSizePt 推导单源)", has: "captionFontSizePt" },
       { at: "src/core/settings/typography.ts:141(行内代码 / 代码块两个比例)", has: "INLINE_CODE_SCALE" },
-      { at: "src/core/docx/handlers/captions.ts:125(题注经 ptToHalfPoints 落地)", has: "ptToHalfPoints" },
+      { at: "src/core/docx/handlers/captions.ts:165(题注经 ptToHalfPoints 落地)", has: "ptToHalfPoints" },
       { at: "src/core/docx/handlers/content.ts:84(行内代码字号)", has: "inlineCodeFontSizePt" },
       { at: "src/core/docx/handlers/code-block.ts:49(代码块字号,高亮与等宽兜底共用)", has: "codeBlockFontSizePt" },
       { at: "src/core/pdf/template-css.ts:64(三处字号从 typography 推导)", has: "captionFontSizePt" },
@@ -1162,8 +1172,8 @@ const MATRIX = [
     pdfExtract: ".wm 覆盖层的文字 + color + transform rotate() + opacity",
     anchors: [
       { at: "src/core/settings/settings-defaults.ts:164(角度 → DML rot 换算单点)", has: "watermarkDmlRotation" },
-      { at: "src/core/docx/chrome.ts:384(rot 取自 watermarkDmlRotation)", has: "watermarkDmlRotation" },
-      { at: "src/core/docx/chrome.ts:373(不透明度经 w14:textFill 真消费)", has: "w14:textFill" },
+      { at: "src/core/docx/chrome.ts:435(rot 取自 watermarkDmlRotation)", has: "watermarkDmlRotation" },
+      { at: "src/core/docx/chrome.ts:411(不透明度经 w14:textFill 真消费)", has: "w14:textFill" },
       { at: "src/core/pdf/template.ts:124(水印 CSS 的角度与不透明度)", has: "buildWatermarkCss" },
     ],
     verify: async ({ watermark: wm }) => {

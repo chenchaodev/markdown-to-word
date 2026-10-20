@@ -33,7 +33,7 @@ import { renderCaptionParagraph } from "./handlers/captions.js";
 import { renderDisplayMath, type EquationContext } from "./handlers/equations.js";
 import { type Ctx } from "./ctx.js";
 import { prescanDocument } from "./prescan.js";
-import { renderCoverPage, renderTocPage, renderFooter, type HeaderLogoData } from "./chrome.js";
+import { renderCoverPage, renderCaptionListPage, renderTocPage, renderFooter, type HeaderLogoData } from "./chrome.js";
 import { buildHeaders } from "./headers.js";
 import { headerIdentityText } from "../pipeline/header-identity.js";
 import { renderPhrasing, renderList, renderBlockquote, renderThematicBreak } from "./handlers/content.js";
@@ -185,7 +185,7 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
   }
   // 五轮预扫(脚注定义/题注上下文/章节 label/公式编号/目录条目,详见 prescan.ts);
   // 预扫就地写入 ctx(footnote.definitions/xref.headingLabels/xref.equationLabels)
-  const { tocEntries, captions, equations } = prescanDocument(ast, ctx);
+  const { tocEntries, captionEntries, captions, equations } = prescanDocument(ast, ctx);
   const children: (Paragraph | Table | TableOfContents)[] = [];
   // 封面页:metadata.title 存在时置于文档最前(独占一页,不计入标题层级/书签)
   if (options.metadata?.title) {
@@ -194,6 +194,20 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
   // 目录页:开关开启且正文含标题节点时插入(封面之后/文档最前,独占一页;无标题的短文档不生成)
   if (ctx.config.toc && tocEntries.length > 0) {
     children.push(...renderTocPage(tocEntries, ctx.config.tocMode));
+  }
+  // 图表清单:目录页之后依次「图目录」→「表目录」,各自独占一页;某类题注为 0 时
+  // 整页不生成。开关是派生的(toc && captionNumbering,零新配置键):任一关闭时
+  // captionEntries 为空或本分支不进入 → 产物与改动前一致
+  if (ctx.config.toc && ctx.config.captionNumbering) {
+    for (const [title, kind] of [
+      ["图目录", "figure"],
+      ["表目录", "table"],
+    ] as const) {
+      const entries = captionEntries
+        .filter((entry) => entry.kind === kind)
+        .map((entry) => ({ title: entry.text, level: 1, href: entry.href }));
+      children.push(...renderCaptionListPage(title, entries));
+    }
   }
   for (const node of ast.children) {
     // 块级检查点:逐块复查取消/期限,长文档(块数多、单块重)不必跑完整篇才退出

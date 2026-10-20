@@ -623,6 +623,45 @@ export async function run() {
   });
   console.log("[ok] cross-ref:题注 label 按 kind 分命名空间(同名互不覆盖、跨 kind 悬空、同 kind 重名后写覆盖)断言通过");
 
+  // ============ 场景 J:无 label 题注 → 合成锚点(图表清单逐条可点的前提) ============
+  // 契约:清单对每一枚题注都要可点,有 label 沿用 fig-/tab-<label>,无 label 则按
+  // 「全文题注序数」合成锚点(图/表共用一个计数,不随 h1 重置):docx cap-<n> /
+  // pdf cap:<n>。两侧同值,才能保证同一份文档的双格式清单指向同一目标序位。
+  const mdCapNoLabel = `# 第一章
+
+![图一](input/g1-tiny.png)
+
+图: 甲图
+
+| A | B |
+| --- | --- |
+| 1 | 2 |
+
+表: 乙表
+`;
+  const jD = (await convertInjected(mdCapNoLabel, "docx", { baseDir: B, warnings: [] }));
+  const jX = await unzipPart(docxBufferOf(jD), "word/document.xml");
+  await suite.case("docx 无 label 题注按全文序数合成书签(cap-1 图 / cap-2 表)", () => {
+    if (!jX.includes('<w:bookmarkStart w:name="cap-1"') || !jX.includes('<w:bookmarkStart w:name="cap-2"')) {
+      throw new Error("docx 无 label 题注应按全文序数合成书签(cap-1 图 / cap-2 表)");
+    }
+    if (jX.includes('<w:bookmarkStart w:name="cap-3"')) {
+      throw new Error("docx 合成书签序数越过题注总数(cap-3 不应存在)");
+    }
+  });
+  const jP = (await convertInjected(mdCapNoLabel, "pdf", { baseDir: B, title: "t", warnings: [] }));
+  const jHtml = pdfHtmlOf(jP);
+  await suite.case("pdf 无 label 题注按同一全文序数合成锚点(cap:1 图 / cap:2 表)", () => {
+    if (!jHtml.includes('<span id="cap:1"></span>') || !jHtml.includes('<span id="cap:2"></span>')) {
+      throw new Error("pdf 无 label 题注应按全文序数合成锚点(cap:1 图 / cap:2 表)");
+    }
+    if (jHtml.includes('id="cap:3"')) {
+      throw new Error("pdf 合成锚点序数越过题注总数(cap:3 不应存在)");
+    }
+  });
+
+  console.log("[ok] cross-ref:无 label 题注合成锚点(图/表共用全文序数,docx cap-N 与 pdf cap:N 同值)");
+
   console.log("[ok] cross-ref:docx+pdf 题注/章节/公式交叉引用、悬空降级、开关与 8b 修复断言通过(12 条验收点)");
   return { cases: suite.results };
 }

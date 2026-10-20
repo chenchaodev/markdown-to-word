@@ -10,7 +10,7 @@
  * 修改目录层级/标题提取口径须同步核对 src/core/pdf/postprocess.ts。
  */
 import type { Root, Paragraph as MdParagraph } from "mdast";
-import { buildCaptionContext, type CaptionInfo } from "./handlers/captions.js";
+import { buildCaptionContext, type CaptionInfo, type CaptionListEntry } from "./handlers/captions.js";
 import { buildEquationContext, type EquationContext } from "./handlers/equations.js";
 import { collectPlainText } from "../text/mdast-utils.js";
 import { stripSecLabelSuffix } from "../markdown/cross-ref.js";
@@ -27,6 +27,8 @@ import type { TocEntry } from "./chrome.js";
 export interface DocumentPrescan {
   /** 静态目录条目(ctx.config.toc 开启时收集;标题书签 href,见 chrome.renderTocPage) */
   tocEntries: TocEntry[];
+  /** 图表清单条目(按文档顺序,图/表混排;chrome.renderCaptionListPage 消费) */
+  captionEntries: CaptionListEntry[];
   /** 题注段识别表(段落节点 → CaptionInfo;renderBlock paragraph case 查表) */
   captions: Map<MdParagraph, CaptionInfo>;
   /** 公式编号上下文(display 编号/label 段跳过集;renderBlock math case 查表) */
@@ -36,7 +38,7 @@ export interface DocumentPrescan {
 /**
  * 五轮预扫:
  * 1. 脚注定义索引(identifier → definition 节点,写入 ctx.footnote.definitions);
- * 2. 题注上下文(buildCaptionContext:图/表识别 + xref.captionLabels 登记);
+ * 2. 题注上下文(buildCaptionContext:图/表识别 + xref.captionLabels 登记 + 图表清单条目);
  * 3. 章节 label(xref.headingLabels 登记,引用可能出现在目标标题之前,渲染期登记会漏;
  *    与 captions/equations 预扫模式一致。计数走 heading-numbering.ts 共享纯函数
  *    (pdf xref 同源),headingNumbering 关闭时不计数 → 引用侧按悬空处理);
@@ -53,7 +55,7 @@ export function prescanDocument(ast: Root, ctx: Ctx): DocumentPrescan {
   // 预扫目录条目 + 题注上下文(题注编号:章节号 = 最近 h1 计数,图/表序按 h1 章节重置,
   // 与 Word SEQ \s 1 语义一致;headingNumbering 关闭时无章节号、全文档连续)
   const tocEntries: TocEntry[] = [];
-  const captions = buildCaptionContext(ast, ctx);
+  const { captions, entries: captionEntries } = buildCaptionContext(ast, ctx);
   // 预扫章节 label:渲染前按文档顺序遍历标题,静态章节号计数 +
   // {#sec:label} 登记。(depth 4-6 不计数,与 numbering 只挂 h1-h3 一致)
   // 计数与章节号文本取自共享纯函数(heading-numbering.ts 单源,pdf xref 同源;
@@ -91,5 +93,5 @@ export function prescanDocument(ast: Root, ctx: Ctx): DocumentPrescan {
       }
     }
   }
-  return { tocEntries, captions, equations };
+  return { tocEntries, captionEntries, captions, equations };
 }

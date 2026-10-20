@@ -74,6 +74,31 @@ export function buildTocHtml(headings: readonly PdfHeading[]): string {
 const TOC_ITEM_RE = /^<a href="#([^"]+)">([\s\S]*?)<\/a>(?:<span class="toc-page">[^<]*<\/span>)?$/;
 
 /**
+ * 图表清单 HTML(图目录 / 表目录):复用目录页的容器与条目样式(toc / toc-title /
+ * toc-l1),但用 `data-caption-list` 而不是 `data-toc` 标记 —— injectTocPageNumbers
+ * 只认 `data-toc`,清单不参与页码注入(清单条目是题注锚点,不是标题)。
+ * 空数组返回空串(该类别题注数为 0 时整页不生成);每条一个页内锚点链接
+ * (printToPDF 保留页内锚点为可点击链接,同目录)。
+ * 条目文本与目标锚点由调用方按文档顺序给出(编号文本单源在题注编号侧)。
+ */
+export function buildCaptionListHtml(
+  title: string,
+  entries: readonly { text: string; anchor: string }[],
+): string {
+  if (entries.length === 0) return "";
+  const items = entries.map(
+    ({ text, anchor }) => `<li class="toc-l1"><a href="#${escapeHtml(anchor)}">${escapeHtml(text)}</a></li>`,
+  );
+  return (
+    '<div class="toc">' +
+    `<div class="toc-title">${escapeHtml(title)}</div>` +
+    `<ul data-caption-list>${items.join("")}</ul>` +
+    "</div>" +
+    '<div class="page-break"></div>'
+  );
+}
+
+/**
  * 目录页码注入:将 slug→页码(1-based)映射注入已渲染 HTML 的目录条目,追加
  * `<span class="toc-page">页码</span>`(重复注入时替换旧页码,不叠加)。
  * 定位依据是**已知标题 id 集合**(headingIds,缺省取 pageNumbers 的键),不再解析

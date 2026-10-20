@@ -1,11 +1,12 @@
 /**
- * 文档 chrome 组合根:封面页、目录页、页眉页脚——文档外壳构建逻辑,与正文渲染分离。
+ * 文档 chrome 组合根:封面页、目录页、图表清单页、页眉页脚——文档外壳构建逻辑,与正文渲染分离。
  * 不变量:纯 docx 组件构造,无 AST 依赖。
  * 双管线对应:src/core/pdf/template.ts 为 pdf 侧对应文件(封面 buildCoverHtml、
  * 页眉 buildPdfHeaderTemplate、页脚 PDF_FOOTER_TEMPLATE、水印样式/占位内联于
  * buildTemplate;HeaderLogoData 类型单源在本文件,template.ts 导入)。差异:
  * 目录页对侧不在 template.ts——pdf 目录为 pdf/postprocess.ts buildTocHtml
- * (与本侧 renderTocPage 同开关、同取 h1-h3 标题)。字号/灰度对齐点见下方
+ * (与本侧 renderTocPage 同开关、同取 h1-h3 标题);图表清单对侧同文件
+ * buildCaptionListHtml(与本侧 renderCaptionListPage 同开关、同条目文本口径)。字号/灰度对齐点见下方
  * 常量区与 template.ts 内联注(如页眉页脚 7pt / #888888);修改
  * 封面/页眉页脚/水印的外观或开关须同步核对 src/core/pdf/template.ts。
  * 水印的角度口径与不透明度两侧已对齐(adr-030 6-B1/6-B2):角度单源在
@@ -19,6 +20,7 @@ import {
   Footer,
   Header,
   ImageRun,
+  InternalHyperlink,
   PageBreak,
   PageNumber,
   Paragraph,
@@ -138,6 +140,42 @@ export function renderTocPage(
     }),
     new Paragraph({ children: [new PageBreak()] }),
   ];
+}
+
+/**
+ * 图表清单页(图目录 / 表目录):标题居中加粗(TOC_TITLE_SIZE,与目录页标题同款)+
+ * 每条一个指向题注书签的内部超链接,末尾 PageBreak 独占一页。
+ *
+ * 为什么不用 TableOfContents 渲染清单:TOC 域 \c 收集的是 SEQ 域产物,本仓题注
+ * 编号是渲染期静态注入的文本、零 SEQ 域;Word 一 F9 或「打印时更新域」就会把清单
+ * 清空(已查实,见 docs/evidence/20261017-091039-三条待拍板工作项取证与建议.md §1.4)。
+ * 故清单 = 纯段落 + InternalHyperlink,父容器无域。
+ * 条目沿用 TocEntry(文本 + 层级 + 书签名),与目录页共用同一形状。
+ */
+export function renderCaptionListPage(title: string, entries: readonly TocEntry[]): Paragraph[] {
+  // 空清单不出空页(该类别题注数为 0 时整页不生成)
+  if (entries.length === 0) return [];
+  const paragraphs: Paragraph[] = [
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 240, after: 480 },
+      children: [new TextRun({ text: title, bold: true, size: TOC_TITLE_SIZE })],
+    }),
+  ];
+  for (const entry of entries) {
+    paragraphs.push(
+      new Paragraph({
+        children: [
+          new InternalHyperlink({
+            anchor: entry.href,
+            children: [new TextRun({ text: entry.title })],
+          }),
+        ],
+      }),
+    );
+  }
+  paragraphs.push(new Paragraph({ children: [new PageBreak()] }));
+  return paragraphs;
 }
 
 /** 页眉:身份行(标题 · 单位)居中灰色小字(HEADER_FOOTER_SIZE = 7pt,颜色 MUTED_TEXT_GRAY);身份行为空时不调用 */

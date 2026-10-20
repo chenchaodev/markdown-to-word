@@ -33,7 +33,7 @@ import { highlightFallbackWarning, pushWarningOnce } from "../i18n/index.js";
 import { buildCoverHtml, buildTemplate } from "./template.js";
 import { buildTemplateCss } from "./template-css.js";
 import { loadKatexCss } from "./katex-css.js";
-import { buildTocHtml, checkLocalImages, embedExternalImages, type ImageStageOptions } from "./postprocess.js";
+import { buildCaptionListHtml, buildTocHtml, checkLocalImages, embedExternalImages, type ImageStageOptions } from "./postprocess.js";
 // 目录/书签共享的标题结构单源(见 pdf/bookmarks.ts);结构化标题由 rules/heading-id.ts 产出
 import type { PdfHeading } from "./bookmarks.js";
 import { CROSS_REF_KINDS } from "../markdown/cross-ref.js";
@@ -41,7 +41,7 @@ export { CROSS_REF_KINDS };
 // 渲染规则:按 rule 类别分文件,共享工具单源 rules/shared.ts
 import { overrideCaptionRule } from "./rules/caption.js";
 import { overrideEquationRule } from "./rules/equation.js";
-import { overrideXrefRule } from "./rules/xref.js";
+import { overrideXrefRule, type PdfCaptionEntry } from "./rules/xref.js";
 import { overrideHtmlRules } from "./rules/html.js";
 import { overrideFigureRule, overrideImageRule } from "./rules/image.js";
 import { overrideTableWidthRule } from "./rules/table.js";
@@ -126,6 +126,7 @@ function buildMarkdownIt(
   headingNumbering: boolean,
   captionNumbering: boolean,
   equationNumbering: boolean,
+  toc: boolean,
   warnings: ConvertWarning[],
   warnedKeys: Set<string>,
 ): MarkdownIt {
@@ -178,7 +179,7 @@ function buildMarkdownIt(
   // 隐藏(语法标记不显示),但公式不编号(无 eq-block/eq-num 包裹)、label 不登记、
   // [式](#eq:label) 引用保持原文本(与 docx 侧 numbering=false 语义一致)
   overrideEquationRule(md, equationNumbering);
-  overrideXrefRule(md, { headingNumbering, captionNumbering });
+  overrideXrefRule(md, { headingNumbering, captionNumbering, toc });
   return md;
 }
 
@@ -252,7 +253,7 @@ export async function renderPdfDocument(
   };
   // 开关默认值解析单源(6-D1):一次解析,下游全字段必填
   const switches = resolveRenderSwitches(options);
-  const { pageSetup, typography, headingNumbering, captionNumbering, equationNumbering } = switches;
+  const { pageSetup, typography, headingNumbering, captionNumbering, equationNumbering, toc } = switches;
   // 必须在任何纸张尺寸/内容区计算前执行；与 DOCX 侧共用同一错误契约。
   const pageGeometry = validatePageSetup(pageSetup);
   // warnings 提前创建——buildMarkdownIt 的 highlight 回调需经此上报高亮降级警告
@@ -265,6 +266,7 @@ export async function renderPdfDocument(
     headingNumbering,
     captionNumbering,
     equationNumbering,
+    toc,
     warnings,
     warnedKeys,
   );
@@ -285,9 +287,12 @@ export async function renderPdfDocument(
   // 标题优先级:frontmatter metadata.title > options.title
   const title = options.metadata?.title ?? options.title ?? "文档";
   // warnings 经 env 注入 core 规则(eq_numbering 未知公式标签提示用;脚注插件
-  // 对 env.footnotes 惰性初始化,传入额外键无副作用)
+  // 对 env.footnotes 惰性初始化,传入额外键无副作用);xref_recognize 同经 env
+  // 交回图表清单条目(env 生命周期 = 本次 md.render,与 warnings 同通道)
   options.onStage?.("parse"); // markdown-it 解析渲染阶段
-  const bodyHtml = replaceTaskCheckboxes(md.render(mdSource, { warnings }));
+  const env: { warnings: ConvertWarning[]; captionEntries?: PdfCaptionEntry[] } = { warnings };
+  const bodyHtml = replaceTaskCheckboxes(md.render(mdSource, env));
+  const captionEntries = env.captionEntries ?? [];
   // 阶段边界检查点:同步解析(最易超时的一段)之后先复查取消,再进入图片处理
   guard.throwIfCanceled();
   // 本地图片存在性检查并入 resolver 失败路径(单次 IO;HTML 保持 file:// 由 Chromium 渲染)
@@ -302,7 +307,21 @@ export async function renderPdfDocument(
   // toc 开关(默认开):关闭时不生成目录页(docx 侧同开关,双格式一致);
   // 目录条目取同一次渲染产出的结构化标题(层级口径同 docx 侧 prescan tocEntries)
   const tocHtml = switches.toc ? buildTocHtml(headings) : "";
-  const fullBody = buildCoverHtml(options.metadata) + tocHtml + bodyWithMermaid;
+  // 图表清单:目录之后依次「图目录」→「表目录」,各自独占一页;某类题注为 0 时
+  // 整段为空。开关是派生的(toc && captionNumbering,零新配置键):任一关闭时
+  // 条目为空或本分支不进入 → 产物与改动前一致
+  const captionListHtml =
+    switches.toc && captionNumbering
+      ? buildCaptionListHtml(
+          "图目录",
+          captionEntries.filter((entry) => entry.kind === "figure"),
+        ) +
+        buildCaptionListHtml(
+          "表目录",
+          captionEntries.filter((entry) => entry.kind === "table"),
+        )
+      : "";
+  const fullBody = buildCoverHtml(options.metadata) + tocHtml + captionListHtml + bodyWithMermaid;
   const processedBody = await embedExternalImages(fullBody, options.imageResolver, warnings, imageStage);
   guard.throwIfCanceled();
   options.onStage?.("katex"); // KaTeX 样式装载阶段(loadKatexCss 在 buildTemplate 内执行)

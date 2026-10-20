@@ -36,13 +36,28 @@ interface BlockScanToken extends LinkScanToken {
   hidden: boolean;
 }
 
-/** 第一遍扫描登记结果:xref 引用替换阶段的查表(label → 静态编号文本)。 */
-interface XrefLabelTables {
+/** 第一遍扫描结果:xref 引用替换阶段的查表(label → 静态编号文本)+ 图表清单条目 */
+interface XrefScanResult {
   /** 题注 label → 编号文本(键 = captionLabelKey(kind, label):fig/tab 各占一个
    *  命名空间,同名 label 互不覆盖;caption_recognize 已设 class 的题注段) */
   captionLabels: Map<string, string>;
   /** 章节 label → 章节号文本(headingNumbering 开启且深度 ≤3 时登记) */
   headingLabels: Map<string, string>;
+  /** 图表清单条目(按文档顺序,图/表混排;经 env 传到 render 层拼清单页) */
+  captionEntries: PdfCaptionEntry[];
+}
+
+/**
+ * 图表清单条目(pdf 侧):第一遍扫描时按文档顺序收集,经 env.captionEntries 传给
+ * render 层拼清单 HTML。text 为完整条目文本(编号 + 题注文本),与 docx 侧
+ * prescan 的 CaptionListEntry.text 同口径(两侧条目须逐字一致)。
+ */
+export interface PdfCaptionEntry {
+  kind: "figure" | "table";
+  /** 完整条目文本(编号 + 题注文本;题注文本为空时只出编号) */
+  text: string;
+  /** 目标锚点 id(无 # 前缀):fig:<label> / tab:<label> / cap:<全局序数> */
+  anchor: string;
 }
 
 /**
@@ -61,6 +76,10 @@ interface XrefLabelTables {
  *     (headingNumbering && hasH1 → 「图 <h1c>.<figc>」,否则纯序数「图 <figc>」,
  *     序数按 class 计数、h1 处重置仅当 hasH1,与 template.ts 两分支一一对应);
  *     锚点 <span id="fig:label"> 注入题注段落开头(经 paragraph_open 渲染包装);
+ *     无 label 的题注仅在目录开启时注入合成锚点 <span id="cap:<全局序数>">
+ *     (全文题注序数,图/表共用一格、不随 h1 重置)—— 它唯一的消费方是图表清单,
+ *     目录关闭时不占用,保持产物与改动前一致;只在有锚点时按文档顺序收集为图表
+ *     清单条目(经 env.captionEntries 交渲染层,与 docx 侧 prescan 的条目同口径);
  *   - 标题(顶层,与 docx 只遍历 ast.children 一致):尾部 {#sec:label} 无条件
  *     剥离(语法;不进标题文本/目录/slug),headingNumbering 开启且深度 ≤3 时
  *     登记章节号(计数与章节号文本走 heading-numbering.ts 共享纯函数,与 docx
@@ -73,14 +92,16 @@ interface XrefLabelTables {
  */
 export function overrideXrefRule(
   md: MarkdownIt,
-  opts: { headingNumbering: boolean; captionNumbering: boolean },
+  opts: { headingNumbering: boolean; captionNumbering: boolean; toc: boolean },
 ): void {
   md.core.ruler.push("xref_recognize", (state) => {
     const tokens = state.tokens;
     // hasH1 = 文档任意位置存在 h1(与模板 /<h1[\s>]/i 检查等价,决定 CSS 分支)
     const hasH1 = tokens.some((t) => t.type === "heading_open" && t.tag === "h1");
     // 第一遍:顶层遍历(容器深度跟踪同 caption_recognize/eq_numbering),计数 + 剥离 + 登记
-    const { captionLabels, headingLabels } = scanXrefDefinitions(tokens, opts, hasH1);
+    const { captionLabels, headingLabels, captionEntries } = scanXrefDefinitions(tokens, opts, hasH1);
+    // 清单条目经 env 交回渲染层:env 的生命周期 = 单次 md.render,与 warnings 同通道
+    state.env.captionEntries = captionEntries;
     // 第二遍:链接引用替换(遍历所有 inline 的 children,含容器/脚注内)
     replaceXrefLinks(tokens, state, captionLabels, headingLabels);
   });
@@ -88,18 +109,23 @@ export function overrideXrefRule(
 }
 
 /**
- * 第一段:顶层扫描(标题 sec label + 题注 fig/tab label),计数 + 剥离 + 登记。
- * 返回两张查表供第二段链接替换使用;counters 为局部状态(镜像模板 CSS 计数器)。
+ * 第一段:顶层扫描(标题 sec label + 题注 fig/tab label),计数 + 剥离 + 登记,
+ * 并按文档顺序收集图表清单条目。返回查表与条目供后续使用;counters 为局部状态
+ * (镜像模板 CSS 计数器)。
  */
 function scanXrefDefinitions(
   tokens: BlockScanToken[],
-  opts: { headingNumbering: boolean; captionNumbering: boolean },
+  opts: { headingNumbering: boolean; captionNumbering: boolean; toc: boolean },
   hasH1: boolean,
-): XrefLabelTables {
+): XrefScanResult {
   const headingCounters = createHeadingCounters();
   const captionCounters = createCaptionCounters();
   const captionLabels = new Map<string, string>();
   const headingLabels = new Map<string, string>(); // label → 章节号文本
+  const captionEntries: PdfCaptionEntry[] = [];
+  // 全文题注序数(图/表共用,不随 h1 重置):无 label 题注的合成锚点 cap:<n> 用它,
+  // 与 docx 侧 buildCaptionContext 的同名计数器同口径(两侧必须算出同一序号)
+  let captionSeq = 0;
   const depth = createDepthTracker();
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i]!; // 循环边界刚检查
@@ -145,8 +171,9 @@ function scanXrefDefinitions(
       if (!opts.captionNumbering) continue;
       const kind = cls === "fig-caption" ? "fig" : "tab";
       const seq = bumpCaptionCounter(captionCounters, kind);
+      const globalSeq = ++captionSeq;
+      // label 剥离先于取文本:尾部 {#fig:label} 既不进题注文本,也不进清单条目
       const label = stripTrailingLabel(inline.children, kind);
-      if (label === undefined) continue;
       // 编号文本镜像 CSS ::before 显示(两分支:章节号+序数 / 纯序数);
       // 拼接与剪贴板字面编号同源 caption-numbering.ts
       const numberText = captionNumberText(kind, seq, {
@@ -154,19 +181,53 @@ function scanXrefDefinitions(
         hasH1,
         chapterNumber: headingCounters.h1,
       });
-      // 键按 kind 分命名空间(captionLabelKey 单源,与 docx 侧同一函数):同名
-      // label 的 fig/tab 题注各登记各的,互不覆盖;同一 kind 内重名后写覆盖
-      captionLabels.set(captionLabelKey(kind, label), numberText);
-      pOpen!.attrSet("data-xref-anchor", `${kind}:${label}`); // 契约:i-2 必为 paragraph_open(cls 命中亦证明其存在)
+      // 锚点:有 label 沿用 fig:<label>/tab:<label>(交叉引用既有目标,无条件);无 label
+      // 用合成 cap:<全局序数> —— 图表清单条目对每枚题注都要可点,但清单本身受目录开关
+      // 派生,故目录关闭时不生成锚点(关闭态产物不许多出 <span id>,也不收集该条目)
+      const anchor =
+        label !== undefined ? `${kind}:${label}` : opts.toc ? `cap:${globalSeq}` : undefined;
+      if (label !== undefined) {
+        // 键按 kind 分命名空间(captionLabelKey 单源,与 docx 侧同一函数):同名
+        // label 的 fig/tab 题注各登记各的,互不覆盖;同一 kind 内重名后写覆盖
+        captionLabels.set(captionLabelKey(kind, label), numberText);
+      }
+      if (anchor !== undefined) {
+        pOpen!.attrSet("data-xref-anchor", anchor); // 契约:i-2 必为 paragraph_open(cls 命中亦证明其存在)
+        // 清单条目文本 = 编号 + 题注文本(空文本只出编号),与 docx 侧 captionDisplayText 同口径
+        const text = captionPlainText(inline.children);
+        captionEntries.push({
+          kind: kind === "fig" ? "figure" : "table",
+          text: text === "" ? numberText : `${numberText} ${text}`,
+          anchor,
+        });
+      }
     }
   }
-  return { captionLabels, headingLabels };
+  return { captionLabels, headingLabels, captionEntries };
+}
+
+/**
+ * 题注纯文本:inline children 里 text / code 内容的拼接(与 docx 侧 collectPlainText
+ * 同口径——mdast 的纯文本也只取 value 字面;强调/链接在 markdown-it 里是扁平兄弟
+ * token,其文本节点同样是顶层 text,故无需递归)。调用点须在 stripTrailingLabel
+ * 之后取:尾部 label 已剥掉,不进清单条目。
+ */
+function captionPlainText(children: readonly LinkScanToken[]): string {
+  let text = "";
+  for (const child of children) {
+    if (child.type === "text" || child.type === "code_inline") text += child.content;
+  }
+  return text;
 }
 
 /** core 规则的 state 形态(结构化最小签名,避免深导入 markdown-it/lib/state_core;
  *  真实 StateCore 的 env 为 any,结构兼容)。 */
 interface CoreRuleState {
-  env: { warnings?: ConvertWarning[] };
+  env: {
+    warnings?: ConvertWarning[];
+    /** 第一遍收集的图表清单条目(按文档顺序);render 层拼清单 HTML 消费 */
+    captionEntries?: PdfCaptionEntry[];
+  };
 }
 
 /**
@@ -177,8 +238,8 @@ interface CoreRuleState {
 function replaceXrefLinks(
   tokens: readonly LinkScanToken[],
   state: CoreRuleState,
-  captionLabels: XrefLabelTables["captionLabels"],
-  headingLabels: XrefLabelTables["headingLabels"],
+  captionLabels: XrefScanResult["captionLabels"],
+  headingLabels: XrefScanResult["headingLabels"],
 ): void {
   const warnedKeys = new Set<string>();
   forEachRefLink(tokens, CROSS_REF_HREF_RE, ({ labels, textToken }) => {
