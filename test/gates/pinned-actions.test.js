@@ -33,6 +33,7 @@ import { createCaseSuite } from "../harness/case.js";
 import { captureConsole } from "../harness/console-capture.js";
 import { ROOT } from "../harness/paths.js";
 import { removeTree } from "../harness/temp-resource.js";
+import { expandChainScriptNames } from "../../gates/repo/chain-expand.mjs";
 import {
   BASELINE_SCHEMA,
   DEFAULT_BASELINE,
@@ -258,9 +259,11 @@ export async function run() {
         );
       });
       await suite.case("1. 事实层:门禁已入 verify:ci 且早于 build", () => {
-        const chain = PKG.scripts["verify:ci"].split("&&").map((/** @type {string} */ s) => s.trim());
-        const pinnedAt = chain.indexOf("npm run check:pinned-actions");
-        const buildAt = chain.indexOf("npm run build");
+        // verify:ci 现在由 verify:static / verify:build / verify:test 组合而成;
+        // 用全仓单源的递归展开器看叶子 script,否则分层本身会被误判成「门禁不在链上」。
+        const chain = expandChainScriptNames(PKG.scripts, "verify:ci");
+        const pinnedAt = chain.indexOf("check:pinned-actions");
+        const buildAt = chain.indexOf("build");
         assert(pinnedAt !== -1, `verify:ci 应含 check:pinned-actions,实际 ${chain.join(" -> ")}`);
         assert(pinnedAt < buildAt, `check:pinned-actions 应早于 build(判定 workflow 文本,不消费 dist),实际 ${chain.join(" -> ")}`);
       });

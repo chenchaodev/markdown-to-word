@@ -94,6 +94,12 @@ const CHAIN_ROOT_EXEMPTIONS = CHAIN_ROOTS.map(
 const EXEMPT_SCRIPTS = new Map([
   ...CHAIN_ROOT_EXEMPTIONS,
   /** @type {[string, string]} */
+  ["verify:static", "聚合分层:verify:ci 的组合节点,不是一道门禁(成员单源仍是 package.json)"],
+  /** @type {[string, string]} */
+  ["verify:build", "聚合分层:verify:ci 的组合节点,不是一道门禁(成员单源仍是 package.json)"],
+  /** @type {[string, string]} */
+  ["verify:test", "聚合分层:verify:ci 的组合节点,不是一道门禁(成员单源仍是 package.json)"],
+  /** @type {[string, string]} */
   ["build", "第三方工具:判定体是 TypeScript 编译器 + tools/copy-renderer.mjs,本仓不持有判据"],
   /** @type {[string, string]} */
   ["typecheck", "第三方工具:判定体是 tsc 的两份配置(源码与测试树),本仓不持有判据"],
@@ -839,11 +845,11 @@ export async function run() {
     await suite.case("负向夹具·注入根上从 verify:ci 摘掉一道门禁 ⇒ 判定立刻判红并点名", () => {
       const problems = checkContract(
         contractCtxWith((s) => {
-          // check:geometry 是链尾一步(后面没有 `&&`),故按 `&& npm run X` 形态摘。
-          const before = String(s["verify:ci"]);
+          // verify:ci 分层后,check:geometry 是 verify:test 的链尾一步(后面没有 `&&`)。
+          const before = String(s["verify:test"]);
           const after = before.replace("&& npm run check:geometry", "");
-          if (after === before) throw new Error("verify:ci 里没找到 `&& npm run check:geometry`,夹具前提不成立(链形态变了)");
-          s["verify:ci"] = after;
+          if (after === before) throw new Error("verify:test 里没找到 `&& npm run check:geometry`,夹具前提不成立(链形态变了)");
+          s["verify:test"] = after;
         }),
       );
       expectRed(problems, /verify:ci 缺少门禁步骤 check:geometry/, "链上缺步骤");
@@ -852,9 +858,17 @@ export async function run() {
     await suite.case("负向夹具·注入根上把 check:boundary 挪到 build 之后 ⇒ 链序约束判红", () => {
       const problems = checkContract(
         contractCtxWith((s) => {
-          s["verify:ci"] = String(s["verify:ci"])
-            .replace("npm run check:boundary && ", "")
-            .replace("npm run build && ", "npm run build && npm run check:boundary && ");
+          // verify:ci 分层后,check:boundary 在 verify:static、build 在 verify:build;
+          // 把它从 static 摘出并插到 build 之后,展开后的叶子序即「build → check:boundary」。
+          const beforeStatic = String(s["verify:static"]);
+          s["verify:static"] = beforeStatic.replace("npm run check:boundary && ", "");
+          if (s["verify:static"] === beforeStatic) throw new Error("verify:static 里没找到 check:boundary,夹具前提不成立(链形态变了)");
+          const beforeBuild = String(s["verify:build"]);
+          s["verify:build"] = beforeBuild.replace(
+            "npm run build && ",
+            "npm run build && npm run check:boundary && ",
+          );
+          if (s["verify:build"] === beforeBuild) throw new Error("verify:build 里没找到 build,夹具前提不成立(链形态变了)");
         }),
       );
       expectRed(problems, /verify:ci 须先 check:boundary 再 build/, "链序乱序");

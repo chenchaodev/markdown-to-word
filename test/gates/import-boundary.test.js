@@ -38,6 +38,7 @@ import { createCaseSuite } from "../harness/case.js";
 import { captureConsole } from "../harness/console-capture.js";
 import { ROOT } from "../harness/paths.js";
 import { removeTree } from "../harness/temp-resource.js";
+import { expandChainScriptNames } from "../../gates/repo/chain-expand.mjs";
 import {
   CORE_NODE_BUILTIN_FILES,
   FLAVORS,
@@ -240,10 +241,12 @@ export async function run() {
           PKG.scripts["check:boundary"] === "node gates/repo/check-import-boundary.mjs",
           `check:boundary 应指向 gates/repo/check-import-boundary.mjs,实际 ${String(PKG.scripts["check:boundary"])}`,
         );
-        const chain = PKG.scripts["verify:ci"].split("&&").map((/** @type {string} */ s) => s.trim());
-        const contractAt = chain.indexOf("npm run check:contract");
-        const boundaryAt = chain.indexOf("npm run check:boundary");
-        const buildAt = chain.indexOf("npm run build");
+        // verify:ci 现在由 verify:static / verify:build / verify:test 组合而成;
+        // 用全仓单源的递归展开器看叶子 script,否则分层本身会被误判成「门禁不在链上」。
+        const chain = expandChainScriptNames(PKG.scripts, "verify:ci");
+        const contractAt = chain.indexOf("check:contract");
+        const boundaryAt = chain.indexOf("check:boundary");
+        const buildAt = chain.indexOf("build");
         assert(contractAt !== -1 && boundaryAt !== -1, `verify:ci 应含 check:contract 与 check:boundary,实际 ${chain.join(" -> ")}`);
         assert(boundaryAt > contractAt, `check:boundary 应紧随 check:contract,实际 ${chain.join(" -> ")}`);
         assert(boundaryAt < buildAt, `check:boundary 应早于 build(判定不消费 dist),实际 ${chain.join(" -> ")}`);
