@@ -12,8 +12,8 @@
 
 | 项 | 值 |
 |---|---|
-| 已用最大号 | REQ-259 |
-| 下一个可用号 | REQ-260 |
+| 已用最大号 | REQ-260 |
+| 下一个可用号 | REQ-261 |
 
 「已用最大号」= 下方四节里出现过的最大号，**含待拍板与未开工的行** —— 那些需求已经占号，不因尚未开工而退回池子。
 
@@ -264,6 +264,7 @@
 | REQ-258 | 有界等待锚点耗尽仍阻塞发版 | 已完成 | REQ-136 残留:删掉本段最后一个调 cleanupWithinBudget() 的阻塞点(其余三处已降级诊断)。夹具先 await 退出后该 case 已无法区分「等待正常」与「第一次就成功」,只剩环境性红。覆盖由「Windows 真实占用」成功分支 + 退避锚点 + 1ms 负向锚点承担。 | 该段出现阻塞性有界等待调用点(新增 cleanupWithinBudget 直调)或段末残留判红时 | docs/evidence/20261001-160000-test-common-helpers-EPERM现场取证.md |
 | REQ-259 | Release gate 生产级加固 | 已完成 | 五项已落地：gate 只认 master push CI；master 不取消在途；artifact overwrite；tag/CI/checkout 三方 SHA 校验 + Release 去重；artifact 过期提示。verify:static 通过。 | gate 再误判、artifact 保留期或 tag 移动成为常发故障时 | docs/adr/ADR-085-Release复用CI结论与验证脚本分层.md |
 | REQ-001 | 中文排版包深化 | 已完成 | 交付确认：中文字号九档下拉 + PDF 中西文间距与行首标点缩排落地；不新增持久化键（schema/预设/校验域不动），docx 侧靠 OOXML 默认已开、零改动；全量 152 段 3699 case 绿，用户实测无问题。 | 随时 | docs/evidence/20261021-204905-中文排版包深化事实与决策.md |
+| REQ-260 | 双管线矩阵锚点改按声明名定位 | 已完成 | 交付确认：92 条锚点改按声明名定位（src/文件.ts#声明名），判据不再跟踪行号；声明找不到⇒红，has 不在声明内⇒只告警；负向夹具四档经两次变异注入验证有牙；矩阵段实跑零漂移告警，全量 152 段 3699 case 绿。 | 随时 | test/core/dual-pipeline-matrix.test.js 头注（锚点形态与判定语义） |
 
 ## 已作废
 
