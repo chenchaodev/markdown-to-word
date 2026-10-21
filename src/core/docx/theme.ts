@@ -30,3 +30,14 @@ export const RULE_GRAY = "999999";
 
 /** 表格边框黑(docx 表格 six-side borders;pdf 侧表格边框走模板 CSS #d0d7de,双管线观感既有差异,勿混改) */
 export const TABLE_BORDER_BLACK = "000000";
+
+/**
+ * 目录条目缩进阶梯(单位:twips;下标 0 = 第 1 级,依此类推)。
+ *
+ * 取 **Word 内置值** `0 / 220 / 440`:Word 自己的 TOC1/TOC2/TOC3 用的就是这三档,
+ * 故 field 模式(Word 域目录)下用户按 F9 更新域后,目录缩进**不跳变**。
+ * ⚠ **与 PDF 侧的 em 阶梯(1.5em/3em)有意分歧**:对齐 PDF 侧会让 field 模式更新域后
+ * 缩进跳变一次(缓存目录用的是本仓阶梯,更新后换成 Word 内置阶梯)⇒ 取内置值更稳。
+ * 缩进是样式常量(与字体/颜色同级),故集中在此,不散落硬编码。
+ */
+export const TOC_INDENT_LADDER_TWIPS: readonly number[] = [0, 220, 440];

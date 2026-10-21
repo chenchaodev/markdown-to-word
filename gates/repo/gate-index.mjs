@@ -528,6 +528,20 @@ export const GATE_INDEX = Object.freeze(
       modulePath: "test/core/dual-pipeline-matrix.test.js",
       judgment: { module: "test/core/dual-pipeline-matrix.test.js", export: "run", shaped: "段结果(段内 assertMatrixShape 为判据面)" },
     },
+    "docx-styles": {
+      id: "docx-styles",
+      // ⚠ 零 npm script:与 `dual-matrix` 同款形态 —— 不是 npm script 门禁,而是验收段内
+      // 的一道门禁(由 M2W_ONLY 单独跑)。L12 对它取 `npmScripts[0]` 时得到 undefined,
+      // 判定本体那一档显式容忍「一个 script 都没登记」的 offchain 项。
+      // 判什么:docx 产物样式表自洽(样式引用闭合 / 默认样式齐备 / 命名空间声明完整 /
+      // 部件声明完整 / 关系可解;ADR-086 §二)。**要产物的判据不能落在 `gates/repo/`**
+      // (门禁面是「仓形状」,且 verify:static 排在 build 之前,跑不到产物)⇒ 判定体在
+      // src/core/ooxml/package-integrity.ts(零 IO 纯函数),载体是本段。
+      npmScripts: [],
+      access: ACCESS_OFFCHAIN,
+      modulePath: "test/core/docx-styles.test.js",
+      judgment: { module: "test/core/docx-styles.test.js", export: "run", shaped: "段结果(段内 checkDocxIntegrity 的判据面)" },
+    },
   }),
 );
 

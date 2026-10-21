@@ -35,6 +35,7 @@ import { type Ctx } from "./ctx.js";
 import { prescanDocument } from "./prescan.js";
 import { renderCoverPage, renderCaptionListPage, renderTocPage, renderFooter, type HeaderLogoData } from "./chrome.js";
 import { buildHeaders } from "./headers.js";
+import { buildExternalStylesXml } from "./external-styles.js";
 import { headerIdentityText } from "../pipeline/header-identity.js";
 import { renderPhrasing, renderList, renderBlockquote, renderThematicBreak } from "./handlers/content.js";
 import { renderCode } from "./handlers/code-block.js";
@@ -257,6 +258,14 @@ export async function renderDocx(ast: Root, options: RenderOptions = {}): Promis
         },
       },
     },
+    // 本仓只补**缺失的** 6 个样式(Normal / DefaultParagraphFont / TOC1-3 / IndexLink);
+    // 库内置的 16 个样式与 w:docDefaults 仍由库写(不 fork,库升级自动跟随)。
+    // ⚠ 两个坑(ADR-086,详见 src/core/docx/external-styles.ts 头注):
+    //   ① `externalStyles` 与 `options.styles.paragraphStyles`/`characterStyles` **互斥**
+    //      (库走 external 分支时后两者被整段丢弃)⇒ 本仓自定义样式**只**放外部 XML。
+    //   ② 外部 XML 的根属性**接管** styles.xml 的命名空间集,且库不拦未声明前缀
+    //      ⇒ 命名空间从此是本仓的责任(由产物级判据 C6 兜住)。
+    externalStyles: buildExternalStylesXml(),
     numbering: { config: [...numberingOptions().config, ...headingNumberingOptions().config] },
     // 空脚注表不生成 footnotes part(避免空 part 导致打开异常)
     footnotes: Object.keys(ctx.footnote.notes).length > 0 ? ctx.footnote.notes : undefined,
