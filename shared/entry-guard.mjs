@@ -15,12 +15,16 @@
  *    降级成 warn,不像纯 Node 那样终止进程),进程继续活着 → 同样挂到超时。
  * 3. **`app.quit()` + `process.exitCode = 1` 会退出 0**:quit 走自身退出路径,实测退出码是 0。
  *    「失败但退出 0」比挂死更糟(门禁变成永远通过),故成功/失败一律用 `app.exit(显式码)`。
- * 4. **在未捕获异常的派发窗口里拆进程 = 判定被原生崩溃顶掉**:逃逸异常路径上 `finish()`
- *    是在 uncaughtException 派发里被调起的,它内部 `await flush()` 只把拆卸推到**同一 tick
- *    的微任务**,致命异常的派发栈尚未退回事件循环(实测:派发内排的 setImmediate 在 exit
- *    **之后**才跑)。app.exit 同步拆浏览器进程,在这个窗口里拆,Windows runner 上以
- *    `0xC0000005`(STATUS_ACCESS_VIOLATION)收场 —— 诊断文本已完整落盘、只有退出码被顶掉,
- *    即「判定对、结果错」。故拆卸一律让出一次宏任务(见 `defaultElectronExit`)。
+ * 4. **在脆弱的窗口里拆进程 = 判定被原生崩溃顶掉**:`app.exit` 同步拆浏览器进程,而有两个
+ *    窗口不能在里面拆 —— ① 未捕获异常的派发栈尚未退回事件循环(逃逸异常路径上 `finish()`
+ *    是在 uncaughtException 派发里被调起的,`await flush()` 只把它推到**同一 tick 的微任务**;
+ *    实测派发内排的 setImmediate 在 exit **之后**才跑);② app ready 的派发尚未收尾(启动早期
+ *    就拆,实测探针 `app.whenReady()` 的回调根本来不及跑)。两种窗口里拆,Windows runner 上都
+ *    以 `0xC0000005`(STATUS_ACCESS_VIOLATION)收场,诊断文本已完整落盘、只有退出码被顶掉,
+ *    即「判定对、结果错」。故拆卸一律**先等 app ready、再让出一次宏任务**(见
+ *    `defaultElectronExit`);等 ready 这层是本机实测补上的:旧实现只让宏任务,成功路径的探针
+ *    仍在 ready 之前就退了(实测 WORK 0ms 跑完、READY 一次都没打印),2026-10-20 CI 上正是这条
+ *    路径以 3221225477 判红。
  *
  * 结构性残余(ESM 语义决定,进程内无解,只能靠外层超时兜底):ESM 在**任何求值之前**先完成
  * 整张模块图的 linking,所以「某个静态 import 解析不到 / 缺导出」这类 link 期失败发生在他
@@ -201,22 +205,29 @@ export async function flushOutput() {
 }
 
 /**
- * 默认退出实现:先同步写 `process.exitCode`,再**让出一次宏任务**后 `app.exit(显式码)`,
- * 2s 后仍存活时强制 `process.exit(同码)`。硬退兜底是"绝不静默挂住"的最后一道:app.exit
- * 若在某平台静默失效,到期按同一码退出(码由决策层给出,兜底不会把失败改成 0)。
+ * 默认退出实现:先同步写 `process.exitCode`,然后**等 app ready 的派发收尾 → 让出一次宏任务**
+ * → `app.exit(显式码)`;2s 内还没退成时强制 `process.exit(同码)`。硬退兜底是"绝不静默挂住"
+ * 的最后一道:app.exit 若在某平台静默失效、或 app 一直不 ready,到期按同一码退出(码由决策层
+ * 给出,兜底不会把失败改成 0)。
  *
- * **为什么必须让出一次宏任务**:逃逸异常路径上本函数是在 uncaughtException 派发里被调起的,
- * `finish()` 的 `await flush()` 只把它推到**同一 tick 的微任务** —— 致命异常的派发栈尚未退回
- * 事件循环(实测标尺:派发内排的 setImmediate 在 app.exit **之后**才跑)。app.exit 是同步拆
- * 浏览器进程,在那个窗口里拆会在 Windows runner 上以 `0xC0000005` 收场,判定出的退出码被
- * 原生崩溃顶掉。让出宏任务后拆卸发生在干净栈上(事件循环已重新拿到控制权)。
- * 代价是收尾晚一个事件循环回合:这段窗口里入口自身的后续代码仍会跑几拍 —— 对门禁入口
- * 无害(`process.exitCode` 已同步落码,自然退出也拿到同一个码),而换来的是四条共用路径
+ * **为什么必须等 app ready**:app.exit 同步拆浏览器进程,而 Electron 的启动窗口里拆,Windows
+ * runner 上以 `0xC0000005` 收场。本机实测:成功路径的探针 `work` 在 0ms 就跑完并退出,
+ * `app.whenReady()` 的回调一次都没打印 —— 即拆卸发生在 ready 派发之前。旧实现只让了宏任务,
+ * 而宏任务档位在「ready 还没开始派发」时并不构成安全间隔(2026-10-20 CI 上这条路径以
+ * 3221225477 判红,是 2026-09-26 那次归因的同一形态换了条路径复发)。
+ *
+ * **为什么 ready 之后还要让一次宏任务**:`whenReady()` 在 ready 事件派发**中途**就 resolve,
+ * 其 `.then` 是微任务,仍在同一 tick 的派发栈里;实测派发内排的 setImmediate 在 app.exit
+ * **之后**才跑,故必须再退到下一个事件循环任务才拿到干净栈。
+ *
+ * 代价是收尾晚到 ready 之后:这段窗口里入口自身的后续代码仍会跑几拍 —— 对门禁入口无害
+ * (`process.exitCode` 已同步落码,自然退出也拿到同一个码),而换来的是四条共用路径
  * (正常退出/加载失败/执行期失败/逃逸异常)在任何栈形态下都从干净栈拆卸。
  *
  * 不改用无条件 `process.exit()`:`app.exit` 走 Chromium 的有序拆卸(关窗、收 session),
  * 裸 `process.exit` 是在 Chromium 线程仍活着时直接结束进程,跳过拆卸,原生稳定性更差;
- * 且各入口的 userData/临时目录清理依赖拆卸期完成。
+ * 且各入口的 userData/临时目录清理依赖拆卸期完成。兜底里的 `process.exit` 只在 app.exit
+ * 与 ready 都走不通时才用(那时代码正确性优先于拆卸完整)。
  *
  * @param {number} code 退出码
  * @returns {void}
@@ -224,20 +235,29 @@ export async function flushOutput() {
 function defaultElectronExit(code) {
   // 同步落码:即便后面的拆卸一步都不成立,自然退出也拿到同一个码(不得把失败改成 0)
   process.exitCode = code;
-  setImmediate(() => {
-    try {
-      app.exit(code);
-    } catch (err) {
-      console.error(`[entry] app.exit(${code}) 失效,直接 process.exit:${normalizeError(err)}`);
-      process.exit(code);
-      return;
-    }
-    const timer = setTimeout(() => {
-      console.error(`[entry] app.exit(${code}) 后进程仍存活,强制 process.exit(${code})`);
-      process.exit(code);
-    }, HARD_EXIT_FALLBACK_MS);
-    timer.unref?.();
-  });
+  let teardownStarted = false;
+  const timer = setTimeout(() => {
+    console.error(
+      teardownStarted
+        ? `[entry] app.exit(${code}) 后进程仍存活,强制 process.exit(${code})`
+        : `[entry] 等待 app ready 超时(${String(HARD_EXIT_FALLBACK_MS)}ms),强制 process.exit(${code})`,
+    );
+    process.exit(code);
+  }, HARD_EXIT_FALLBACK_MS);
+  timer.unref?.();
+  const teardown = () => {
+    setImmediate(() => {
+      teardownStarted = true;
+      try {
+        app.exit(code);
+      } catch (err) {
+        console.error(`[entry] app.exit(${code}) 失效,直接 process.exit:${normalizeError(err)}`);
+        process.exit(code);
+      }
+    });
+  };
+  // ready 失败(启动期就崩)同样要收尾:退回让宏任务,不把失败挂成超时
+  void Promise.resolve(app.whenReady()).then(teardown, teardown);
 }
 
 /**

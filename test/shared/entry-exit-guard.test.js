@@ -18,9 +18,10 @@
  * 2. 壳层(编排层,注入 exit/write/flush/armWatchdog,零真实进程):加载失败、ready 抛错、
  *    看门狗到期、非法退出码、门禁自有红灯码各自退出码正确;**work 忘 return 不得退出 0**;
  * 3. 真实进程(端到端,仅本段起真实子进程):生成走本守卫的临时入口脚本,分别注入「载荷加载
- *    失败」「ready 回调内抛错」「逃逸异常(兜底监听接住)」与「拆卸是否让出宏任务」,断言子进程
- *    **真的以非零码退出**且诊断命中阶段标签。第三条路径同时钉住**机制**:拆卸不得在未捕获异常
- *    的派发窗口内启动,否则 Windows 上以原生崩溃收场、退出码被顶掉(见 case 注释)。
+ *    失败」「ready 回调内抛错」「逃逸异常(兜底监听接住)」「拆卸是否等 app ready」「拆卸是否让出宏任务」,断言子进程
+ *    **真的以非零码退出**且诊断命中阶段标签。后两条路径同时钉住**机制**:拆卸不得在未捕获异常
+ *    的派发窗口内、也不得在 app ready 派发收尾前启动,否则 Windows 上以原生崩溃收场、退出码被
+ *    顶掉(见 case 注释)。
  *    这一层是防"纯函数对、接线错"的锚点 —— 前两层都注入假 exit,接线断了它们不会红。
  *    临时脚本落在系统临时区并在段末删除(构造方式不入库)。
  *
@@ -434,6 +435,32 @@ export async function run() {
       assertEq(result.timedOut, false, "成功路径不得挂死");
       assertEq(result.code, 0, `成功路径应退出 0(实际 ${String(result.code)};输出:${result.output})`);
       assertIncludes(result.output, "[probe] work done", "正向锚点须证明守卫通路真的跑起来了");
+    });
+
+    // 机制级断言(2026-10-20 CI 复发):本机实测成功路径的探针 `work` 在 0ms 就跑完并退出,
+    // `app.whenReady()` 的回调一次都没打印 —— 拆卸发生在 ready 派发**之前**。旧实现只让一次
+    // 宏任务,而「ready 还没开始派发」时宏任务不构成安全间隔:Windows runner 上以 3221225477
+    // (0xC0000005)顶掉退出码,诊断只有一句 work done。本 case 用当次进程自己的 ready 回调作标尺,
+    // 正向钉住「先 ready、后拆卸」这条机制;写 fd 用 writeSync 同步落管道,不被流的异步写吞掉。
+    await suite.case("端到端:成功路径的拆卸发生在 app ready 之后(启动窗口内拆进程会被原生崩溃顶掉退出码)", async () => {
+      const result = await runRealEntry(
+        "ok-ready-entry.mjs",
+        [
+          `import fs from "node:fs";`,
+          `import { app } from "electron";`,
+          `import { runEntry } from ${JSON.stringify(GUARD_URL)};`,
+          `app.whenReady().then(() => { fs.writeSync(1, "[probe] app-ready\\n"); });`,
+          `void runEntry({ entry: "probe-ok-ready", work: async () => 0 });`,
+          "",
+        ].join("\n"),
+      );
+      assertEq(result.timedOut, false, "等 ready 不得变成永不退出(那等于把崩溃换回挂死)");
+      assertEq(result.code, 0, `成功路径应退出 0(实际 ${String(result.code)};输出:${result.output})`);
+      assertIncludes(
+        result.output,
+        "[probe] app-ready",
+        "拆卸必须等 app ready 的派发跑完:在启动窗口里 app.exit,Windows runner 上以 0xC0000005 顶掉退出码",
+      );
     });
 
     await suite.case("端到端:加载期抛错(动态 import 失败)→ 非零退出 + 加载期诊断", async () => {
