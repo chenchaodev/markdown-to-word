@@ -2,7 +2,7 @@
 /**
  * 排版设置验收:
  * 双格式共用同一 typography 契约;docx 断言字号/字体/对齐/标题编号关闭,
- * pdf 断言模板 CSS 参数化;双格式产物落盘。
+ * pdf 断言模板 CSS 参数化(含中西文混排间距声明);双格式产物落盘。
  */
 import { FIXTURES_DIR } from "../harness/paths.js";
 import { unzipPart } from "../harness/docx-utils.js";
@@ -20,7 +20,8 @@ import { createCaseSuite } from "../harness/case.js";
  * - docx 侧 `docx/render.ts`(styles.default 的 size = bodySizePt × 2 与 eastAsia 字体)
  *   与 `docx/handlers/inline-html.ts` 的 `renderBodyParagraph`(段内第 56/62 行注释逐条
  *   指名它算 spacing.line=360 与 indent.firstLineChars=200);
- * - pdf 侧 `pdf/template-css.ts` 的 `buildTemplateCss`(font-size/text-indent/text-align)。
+ * - pdf 侧 `pdf/template-css.ts` 的 `buildTemplateCss`(font-size/text-indent/text-align
+ *   与 body 规则内的 text-autospace/text-spacing-trim)。
  */
 export const covers = [
   "src/core/docx/render.ts",
@@ -121,7 +122,29 @@ export async function run() {
       throw new Error("排版断言失败:headingNumbering=false 但 PDF 模板仍有章节编号 CSS");
     }
   });
-  console.log("[ok] PDF 排版设置:14pt/2em 缩进/两端对齐/宋体/编号关闭 全部生效");
+  // 中西文/中数字间距:docx 侧靠 OOXML 默认开启(w:autoSpaceDE/DN 省略即 true),
+  // PDF 侧 Chromium 不自动加 ⇒ 模板 CSS 须显式声明 text-autospace: normal。
+  await suite.case("PDF 模板 CSS 含 text-autospace: normal(中西文间距)", () => {
+    if (!typoPdf.html.includes("text-autospace: normal")) {
+      throw new Error("排版断言失败:PDF 模板缺少 text-autospace: normal(中西文混排间距未显式声明)");
+    }
+  });
+  // 段首/换行到行首的开引号多占半个字宽:收掉它(text-spacing-trim: trim-start)
+  await suite.case("PDF 模板 CSS 含 text-spacing-trim: trim-start(段首标点挤压)", () => {
+    if (!typoPdf.html.includes("text-spacing-trim: trim-start")) {
+      throw new Error("排版断言失败:PDF 模板缺少 text-spacing-trim: trim-start");
+    }
+  });
+  // 反向断言:replace 值当前会破坏间距,见 W3C i18n《Managing inline spaces in
+  // Chinese & Japanese》—— 写成 replace 是观感回归,须当场判红
+  await suite.case("PDF 模板 CSS 不含 text-autospace: replace(该值破坏间距)", () => {
+    if (typoPdf.html.includes("text-autospace: replace")) {
+      throw new Error(
+        "排版断言失败:PDF 模板出现 text-autospace: replace(该值破坏中西文间距,见 W3C i18n 指南)",
+      );
+    }
+  });
+  console.log("[ok] PDF 排版设置:14pt/2em 缩进/两端对齐/宋体/编号关闭/中西文间距(text-autospace+spacing-trim) 全部生效");
   const typoPdfBin = await htmlToPdf(typoPdf.html, typoPdf.footerTemplate);
   await saveArtifact("typography", { docx: typoDocx, pdf: typoPdfBin });
   return { cases: suite.results };

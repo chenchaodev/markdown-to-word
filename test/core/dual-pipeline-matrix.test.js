@@ -270,7 +270,7 @@ const MATRIX = [
     pdfExtract: "模板 CSS `@page { size: …; margin: …mm …mm …mm …mm }`",
     anchors: [
       { at: "src/core/docx/render.ts:229(纸张 twips;四边距在同函数 margin 对象)", has: "mmToTwips" },
-      { at: "src/core/pdf/template-css.ts:68(@page size/margin)", has: "@page" },
+      { at: "src/core/pdf/template-css.ts:77(@page size/margin)", has: "@page" },
       { at: "src/core/settings/settings-defaults.ts:399(validatePageSetup 几何门禁,两侧共用)", has: "validatePageSetup" },
     ],
     verify: async ({ geometry }) => {
@@ -322,7 +322,7 @@ const MATRIX = [
       { at: "src/core/docx/render.ts:356(trim 后精确匹配 → PageBreak)", has: "page-break" },
       { at: "src/core/docx/handlers/fallback.ts:64(行内 html 路径同判定)", has: "PageBreak" },
       { at: "src/core/pdf/rules/html.ts:46(注释 → 分页 div)", has: "page-break" },
-      { at: "src/core/pdf/template-css.ts:69(break-before: page)", has: "break-before: page" },
+      { at: "src/core/pdf/template-css.ts:78(break-before: page)", has: "break-before: page" },
     ],
     verify: async ({ pageBreak }) => {
       must(pageBreak.docxCount === 1, "explicit-page-break", `docx 分页符数量应为 1,实际 ${pageBreak.docxCount}`);
@@ -393,8 +393,8 @@ const MATRIX = [
     anchors: [
       { at: "src/core/docx/handlers/captions.ts:105(图/表序数分配)", has: "++figIndex" },
       { at: "src/core/docx/handlers/captions.ts:149(captionNumberText 单源)", has: "captionNumberText" },
-      { at: "src/core/pdf/template-css.ts:202(fig counter-increment)", has: "counter-increment: figc" },
-      { at: "src/core/pdf/template-css.ts:205(h1c 重置)", has: "counter-reset: h1c" },
+      { at: "src/core/pdf/template-css.ts:213(fig counter-increment)", has: "counter-increment: figc" },
+      { at: "src/core/pdf/template-css.ts:216(h1c 重置)", has: "counter-reset: h1c" },
       { at: "src/core/pdf/rules/xref.ts:176(编号文本与 CSS counter 同源)", has: "stripTrailingLabel" },
     ],
     verify: async ({ capDocxXml, capPdfHtml }) => {
@@ -775,7 +775,7 @@ const MATRIX = [
     anchors: [
       { at: "src/core/docx/render.ts:262(footnotes 部件,空则不生成)", has: "ctx.footnote.notes" },
       { at: "src/core/markdown/markdown-it-factory.ts:43(@mdit/plugin-footnote)", has: "md.use(footnote)" },
-      { at: "src/core/pdf/template-css.ts:160(脚注区样式;Chromium 无 float: footnote)", has: ".footnotes" },
+      { at: "src/core/pdf/template-css.ts:171(脚注区样式;Chromium 无 float: footnote)", has: ".footnotes" },
     ],
     verify: async ({ footnote }) => {
       must(footnote.docxHasPart, "footnote-implementation", "docx 缺少 footnotes.xml 部件");
@@ -913,7 +913,7 @@ const MATRIX = [
     pdfExtract: "CSS counter 分支(含 h1c 的 ::before 规则,首 h1 前章节号按 0 计)",
     anchors: [
       { at: "src/core/docx/handlers/captions.ts:121(chapter>0 才给章节号)", has: "chapter > 0" },
-      { at: "src/core/pdf/template-css.ts:207(hasH1 分支:章节号 + 序数)", has: ".fig-caption::before" },
+      { at: "src/core/pdf/template-css.ts:218(hasH1 分支:章节号 + 序数)", has: ".fig-caption::before" },
       { at: "src/core/pdf/rules/caption.ts:30(该边界在规则头注声明为已接受差异)", has: "overrideCaptionRule" },
     ],
     verify: async ({ beforeH1 }) => {
@@ -946,14 +946,16 @@ const MATRIX = [
     mode: "mustMatch",
     covers: ["typography"],
     dimension:
-      "正文字体/字号/行距/缩进/对齐(同一 typography 设置 → 同一组排版;docx 记 twips/half-points,pdf 记 pt/倍数)",
-    docxExtract: "styles.xml docDefaults rFonts(ascii/eastAsia)+sz;正文段 w:jc + w:spacing/@w:line + w:ind/@w:firstLineChars",
-    pdfExtract: "模板 CSS body font-family/font-size/line-height;`p { text-indent: 2em }` / `p { text-align: justify }`",
+      "正文字体/字号/行距/缩进/对齐 + 中西文混排间距(同一 typography 设置 → 同一组排版;docx 记 twips/half-points,pdf 记 pt/倍数)",
+    docxExtract:
+      "styles.xml docDefaults rFonts(ascii/eastAsia)+sz;正文段 w:jc + w:spacing/@w:line + w:ind/@w:firstLineChars;正文段不出现 w:autoSpaceDE/DN=false(靠 OOXML 默认开启)",
+    pdfExtract:
+      "模板 CSS body font-family/font-size/line-height + text-autospace/text-spacing-trim;`p { text-indent: 2em }` / `p { text-align: justify }`",
     anchors: [
       { at: "src/core/settings/typography.ts:177(DEFAULT_TYPOGRAPHY 单源)", has: "DEFAULT_TYPOGRAPHY" },
       { at: "src/core/docx/render.ts:255(排版注入 docDefaults run)", has: "typography.bodySizePt" },
       { at: "src/core/docx/handlers/inline-html.ts:26(正文段 jc/spacing/indent)", has: "renderBodyParagraph" },
-      { at: "src/core/pdf/template-css.ts:79(body 字体/字号/行距)", has: "typography.fontEastAsia" },
+      { at: "src/core/pdf/template-css.ts:88(body 字体/字号/行距)", has: "typography.fontEastAsia" },
     ],
     verify: async ({ typo, typoDefault }) => {
       // 显式取值:两侧都读到设置值(而非恰好等于默认,故用非默认 typography)
@@ -1005,6 +1007,28 @@ const MATRIX = [
       must(typoDefault.pdfHtml.includes("p { text-indent: 2em; }"), "body-typography", "PDF 缺省首行缩进规则应产出");
       must(typoDefault.pdfHtml.includes("p { text-align: justify; }"), "body-typography", "PDF 缺省对齐规则应产出");
       must(typoDefault.pdfHtml.includes("font-size: 12pt; line-height: 1.5;"), "body-typography", "PDF 缺省字号/行距应取默认值");
+      // ---- 中西文/中数字间距:两侧观感一致,但机制不同(行为断言,不是实现断言) ----
+      // docx 侧靠 OOXML 默认开启(ISO/IEC 29500:省略 w:autoSpaceDE/w:autoSpaceDN 时
+      // 值为 true,docx 库不写这两个元素 ⇒ Word 侧本就开启)⇒ 产物里**不得**出现关断
+      // 形态;PDF 侧 Chromium 不自动加,故模板 CSS 须显式声明 text-autospace: normal。
+      must(
+        !typo.docxXml.includes('w:autoSpaceDE w:val="false"') &&
+          !typo.docxXml.includes('w:autoSpaceDN w:val="false"') &&
+          !typo.stylesXml.includes('w:autoSpaceDE w:val="false"') &&
+          !typo.stylesXml.includes('w:autoSpaceDN w:val="false"'),
+        "body-typography",
+        "docx 侧不应写出 w:autoSpaceDE/DN 的关断形态(OOXML 省略即 true,须靠默认开启)",
+      );
+      must(
+        typo.pdfHtml.includes("text-autospace: normal"),
+        "body-typography",
+        "PDF 模板 CSS 应显式声明 text-autospace: normal(Chromium 不自动加中西文间距)",
+      );
+      must(
+        typo.pdfHtml.includes("text-spacing-trim: trim-start"),
+        "body-typography",
+        "PDF 模板 CSS 应声明 text-spacing-trim: trim-start(收掉段首标点多占的半个字宽)",
+      );
     },
   },
   {
@@ -1021,7 +1045,7 @@ const MATRIX = [
       { at: "src/core/docx/handlers/captions.ts:165(题注经 ptToHalfPoints 落地)", has: "ptToHalfPoints" },
       { at: "src/core/docx/handlers/content.ts:84(行内代码字号)", has: "inlineCodeFontSizePt" },
       { at: "src/core/docx/handlers/code-block.ts:49(代码块字号,高亮与等宽兜底共用)", has: "codeBlockFontSizePt" },
-      { at: "src/core/pdf/template-css.ts:64(三处字号从 typography 推导)", has: "captionFontSizePt" },
+      { at: "src/core/pdf/template-css.ts:73(三处字号从 typography 推导)", has: "captionFontSizePt" },
     ],
     verify: async ({ derivedSizes }) => {
       const { nonDefault, def } = derivedSizes;
@@ -1111,7 +1135,7 @@ const MATRIX = [
     pdfExtract: "模板 CSS `h1 { break-before: page; }`(首个 h1 除外)",
     anchors: [
       { at: "src/core/docx/handlers/heading.ts:49(pageBreakBefore 仅 depth===1)", has: "pageBreakBefore" },
-      { at: "src/core/pdf/template-css.ts:173(h1 break-before + 首 h1 豁免)", has: "break-before: page" },
+      { at: "src/core/pdf/template-css.ts:184(h1 break-before + 首 h1 豁免)", has: "break-before: page" },
       { at: "src/core/settings/render-options.ts:120(breakBeforeH1 默认值解析)", has: "options.breakBeforeH1 ?? false" },
     ],
     verify: async ({ pageBreakH1 }) => {

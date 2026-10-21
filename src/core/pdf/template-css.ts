@@ -45,7 +45,16 @@ function buildHeadingRules(typography: TypographySettings): string {
  *  typography 参数化 body 字体/字号/行距,并追加首行缩进/两端对齐规则;
  *  headingNumbering 为 true 时追加章节编号规则(与 docx 侧 decimal 编号语义一致)。
  *  注意:编号经 ::before 伪元素渲染,不进入 HTML 文本节点,
- *  故 extractHeadings/书签/目录文本不受影响(与 docx 侧书签不含编号一致)。 */
+ *  故 extractHeadings/书签/目录文本不受影响(与 docx 侧书签不含编号一致)。
+ *
+ *  中西文/中数字间距的显式声明(写在 body 规则内,不另起规则块):
+ *  - docx 侧靠 OOXML 默认的 w:autoSpaceDE/w:autoSpaceDN 生效(ISO/IEC 29500:
+ *    省略时值为 true;docx 库不写这两个元素 ⇒ Word 侧本就开启),PDF 侧 Chromium
+ *    不自动加,故此处显式补 text-autospace: normal,让两种格式观感一致。
+ *  - text-spacing-trim: trim-start 收掉段首/换行到行首的开引号多占的半个字宽
+ *    (配合 2em 首行缩进 + 两端对齐)。
+ *  - 勿改成 text-autospace: replace —— 该值当前会破坏间距,
+ *    见 W3C i18n《Managing inline spaces in Chinese & Japanese》。 */
 export function buildTemplateCss(
   pageSetup: PageSetup,
   breakBeforeH1: boolean,
@@ -79,6 +88,8 @@ export function buildTemplateCss(
     font-family: "${typography.fontEastAsia}", "${typography.fontAscii}", sans-serif;
     font-size: ${typography.bodySizePt}pt; line-height: ${typography.lineSpacing}; color: #1f2328; margin: 0;
     orphans: 2; widows: 2;
+    text-autospace: normal;
+    text-spacing-trim: trim-start;
   }
 
   /* 标题节奏:字号/段前段后间距由 headingScale/headingSpacing
