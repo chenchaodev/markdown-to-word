@@ -19,6 +19,14 @@ import {
   type AppSettings,
 } from "../../core/settings/settings-defaults.js";
 import { cjkFontSizeOfPt } from "../../core/settings/typography.js";
+// 未映射字段的标识与常量单源在零依赖模块(core/docx/template-fields.ts):界面要取
+// 「恒不接管的六类」那份**常量**渲染固定说明,不能经 core/docx/template-import.js 取
+// (那会把 jszip 拖进 renderer 产物)。
+import {
+  ALWAYS_UNMAPPED_TEMPLATE_FIELDS,
+  type AlwaysUnmappedTemplateField,
+  type FactualUnmappedTemplateField,
+} from "../../core/docx/template-fields.js";
 import { htmlLangOf } from "../../core/i18n/index.js";
 import {
   headerLogoDisplayName,
@@ -73,6 +81,8 @@ import {
 } from "../dom/refs.js";
 import { state } from "../state/state.js";
 import { setError, setStatus } from "../dom/dom-ops.js";
+// toast 轻提示(单实例,dom/toast):模板导入的「未映射字段」摘要走这条既有通道
+import { showToast } from "../dom/toast.js";
 import { errorMessage } from "../state/pure.js";
 import { applyStaticTexts, setLanguage, t, LANGUAGES, type I18nKey, type Language } from "../../core/i18n/index.js";
 // 抽屉副标题文案写入归抽屉模块(本模块只负责由设置值合成文案)
@@ -493,10 +503,68 @@ export function clearPdfCss(): void {
   syncPdfCssState(""); // 状态行与清除按钮一并复位
 }
 
-/* ---------- docx 模板导入(浅导入 v1;main 内选文件 + 解包提取 + 合并持久化全包) ---------- */
-/** 导入 Word 模板:main 打开对话框 → 解包提取 Normal/Heading1 样式与 sectPr →
+/* ---------- docx 模板导入(字段级深导入;main 内选文件 + 解包提取 + 合并持久化全包) ---------- */
+
+/**
+ * 「未映射字段」的本地化标签表:键 = 稳定标识(单源在 core/docx/template-fields.ts),
+ * 值 = i18n 键。
+ *
+ * 形态约束:值类型写成模板字面量 `template.unmapped.${...}` ⇒
+ * ① 标识集新增成员而此处漏登记 ⇒ tsc 判红(Record 的键必须齐全);
+ * ② 字典缺某个 `template.unmapped.*` 键 ⇒ t() 的入参类型不成立 ⇒ tsc 判红。
+ * 两道都是编译期护栏,不靠人记。
+ *
+ * 分两张表:恒不映射六类(本仓能力边界)与事实性七类(本次模板的诊断)性质不同 ——
+ * 前者渲染成**一句固定说明**,后者**逐条列**(ADR-086 实施约束四)。
+ */
+const ALWAYS_UNMAPPED_LABEL_KEYS: Record<
+  AlwaysUnmappedTemplateField,
+  `template.unmapped.${AlwaysUnmappedTemplateField}`
+> = {
+  color: "template.unmapped.color",
+  themeColor: "template.unmapped.themeColor",
+  numbering: "template.unmapped.numbering",
+  settingsCompat: "template.unmapped.settingsCompat",
+  characterStyle: "template.unmapped.characterStyle",
+  latentStyles: "template.unmapped.latentStyles",
+};
+
+const FACTUAL_UNMAPPED_LABEL_KEYS: Record<
+  FactualUnmappedTemplateField,
+  `template.unmapped.${FactualUnmappedTemplateField}`
+> = {
+  bodySizeOutOfRange: "template.unmapped.bodySizeOutOfRange",
+  lineSpacingRule: "template.unmapped.lineSpacingRule",
+  lineSpacingOutOfRange: "template.unmapped.lineSpacingOutOfRange",
+  alignUnsupported: "template.unmapped.alignUnsupported",
+  headingScaleUndetermined: "template.unmapped.headingScaleUndetermined",
+  headingSpacingUndetermined: "template.unmapped.headingSpacingUndetermined",
+  paperUnrecognized: "template.unmapped.paperUnrecognized",
+};
+
+/** 未映射项之间的分隔符(中性符号,三语通用 —— 同 presetCoveredGroupLabels 的做法) */
+const UNMAPPED_FIELD_SEPARATOR = " · ";
+
+/**
+ * 「本仓不接管」那句固定说明:恒不映射的六类(能力边界)折叠成**一行**,
+ * **不**与本次模板的诊断项混列(混列会把一次性诊断读成常驻能力清单)。
+ *
+ * 顺序取自常量清单本身(单一事实源),文案名取自各标识的 i18n 键。
+ */
+function notManagedSummary(): string {
+  const labels = ALWAYS_UNMAPPED_TEMPLATE_FIELDS.map((field) =>
+    t(ALWAYS_UNMAPPED_LABEL_KEYS[field]),
+  );
+  return t("template.notManaged", { fields: labels.join(UNMAPPED_FIELD_SEPARATOR) });
+}
+
+/** 导入 Word 模板:main 打开对话框 → 解包提取排版/页面字段 →
  *  合并进 typography/pageSetup 并持久化。成功后刷新内存设置并回填控件;取消无动作;
- *  失败状态区提示。v1 浅导入:仅字体/字号/页面尺寸边距,颜色等深导入留后续。 */
+ *  失败状态区提示(**失败态由 main 侧判别,这里不再猜** —— 整包解不开时界面只显示
+ *  错误,绝不显示「已应用」)。
+ *  两类「没吃下的东西」分开呈现(ADR-086 实施约束四):
+ *  - 本仓恒不接管的六类 ⇒ 折叠成**一句固定说明**(不与本次诊断混列);
+ *  - 本次模板判不出的项 ⇒ **逐条列**(警告态可换行,一行放不下),toast 只报事实性条数。 */
 export async function importDocxTemplate(): Promise<void> {
   try {
     const r = await window.api.importDocxTemplate();
@@ -513,7 +581,17 @@ export async function importDocxTemplate(): Promise<void> {
       /* 忽略:刷新失败时控件保持旧值,但设置已持久化 */
     }
     applySettingsToControls();
-    setStatus(t("template.imported"));
+    if (r.unmapped.length === 0) {
+      // 完全吃下:只报「已应用」(能力边界的固定说明只在有诊断时随附,免得每次都糊一长句)
+      setStatus(t("template.imported"));
+      return;
+    }
+    const labels = r.unmapped.map((field) => t(FACTUAL_UNMAPPED_LABEL_KEYS[field]));
+    const diagnosis = t("template.importedPartial", {
+      fields: labels.join(UNMAPPED_FIELD_SEPARATOR),
+    });
+    setStatus(`${diagnosis} ${notManagedSummary()}`, false, true);
+    showToast(t("template.unmappedToast", { count: r.unmapped.length }));
   } catch (err) {
     const message = errorMessage(err);
     setError(t("template.readFailed", { error: message }));

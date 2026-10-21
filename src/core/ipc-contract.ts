@@ -13,6 +13,17 @@
 import type { ConvertWarning } from "./i18n/index.js";
 import type { PageSetup } from "./settings/settings-defaults.js";
 import type { TypographySettings } from "./settings/typography.js";
+// 未映射字段的标识单源在零依赖模块(core/docx/template-fields.ts);此处只作**类型引用**
+// (编译期擦除,运行期零依赖),不得在此转出 —— core 契约的类型不许有第二个声明处。
+import type { FactualUnmappedTemplateField } from "./docx/template-fields.js";
+// docx 回读的三类清单标识与计数形状单源在 core/ooxml/readback/readback-fields.ts;
+// 同样只作类型引用(不许在此转出)。
+import type {
+  ReadbackCounts,
+  ReadbackDroppedField,
+  ReadbackNotManagedField,
+  ReadbackPreservedField,
+} from "./ooxml/readback/readback-fields.js";
 
 /** 同一 webContents 已有转换/预检时的统一 IPC 结果。 */
 export interface OperationBusyResult {
@@ -126,16 +137,60 @@ export type ImportPdfCssResult =
   | { ok: false; error: string };
 
 /**
- * docx 模板导入结果(浅导入 v1):成功返回合并后的完整 typography/pageSetup
- * (供 renderer 回填);取消 → { ok:true, canceled:true };解析/读取异常 → { ok:false, error }。
+ * docx 模板导入结果(字段级深导入):成功返回合并后的完整 typography/pageSetup
+ * (供 renderer 回填)+ **本次模板判不出的**字段类别(事实性;稳定标识,文案在 i18n 层);
+ * 取消 → { ok:true, canceled:true };读取/解包异常 → { ok:false, error }。
+ *
+ * ⚠ 「本仓恒不接管的六类」(字体颜色/主题配色/模板编号/兼容选项/字符样式/潜在样式)是
+ * **能力边界**、与本次模板无关,**不经本契约**:renderer 直接取 core/docx/template-fields.ts
+ * 的常量渲染那句固定说明(ADR-086 实施约束四:两类未映射必须分开呈现,契约面只留诊断项)。
  */
 export type ImportDocxTemplateResult =
   | { ok: true; canceled: true }
-  | { ok: true; canceled: false; typography: TypographySettings; pageSetup: PageSetup }
+  | {
+      ok: true;
+      canceled: false;
+      typography: TypographySettings;
+      pageSetup: PageSetup;
+      /** 本次模板判不出的字段类别(事实性;renderer 据此本地化后提示用户) */
+      unmapped: FactualUnmappedTemplateField[];
+    }
+  | { ok: false; error: string };
+
+/* ---------- docx 回读(readback:docx 的 invoke 结果) ---------- */
+
+/**
+ * docx 回读结果(自家稿 → Markdown)。
+ *
+ * 承诺边界(ADR-086 决定 6):**只承诺读回本仓自己导出的 docx**,不承诺通用 Word 保真。
+ * 故契约面同时带三类清单,让界面把「拿回来的东西是完整的」与「丢了什么」分开讲:
+ * - `preserved`:完整还原的结构(恒定清单);
+ * - `dropped`:本次文档实际发生的丢失(条件产出);
+ * - `notManaged`:本仓恒不还原的类别(能力边界,与本次文档无关)。
+ *
+ * 三类都是**稳定标识**(不是文案),文案在 core/i18n(键末段与标识同名)。
+ */
+export type ReadbackDocxResult =
+  | { ok: true; canceled: true }
+  | {
+      ok: true;
+      canceled: false;
+      /** 写出的 .md 路径 */
+      markdownPath: string;
+      /** 图片目录(无图片时缺省) */
+      mediaDir?: string;
+      /** 各类结构的计数 */
+      counts: ReadbackCounts;
+      /** 完整还原的结构 */
+      preserved: ReadbackPreservedField[];
+      /** 本次文档实际发生的丢失 */
+      dropped: ReadbackDroppedField[];
+      /** 本仓恒不还原的类别 */
+      notManaged: ReadbackNotManagedField[];
+    }
   | { ok: false; error: string };
 
 /* ---------- 剪贴板读取(clipboard:read 的 invoke 结果) ---------- */
-
 /** 剪贴板读取结果:文本写临时 md 返回路径,或返回文件路径,或 empty。 */
 export type ClipboardReadResult =
   | { type: "text"; mdPath: string }

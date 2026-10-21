@@ -409,10 +409,67 @@ const dict = {
     "preset.noneToExport": "暂无自定义预设可导出",
     "preset.readFailed": "读取文件失败:${error}",
     "preset.writeFailed": "写入文件失败:${error}",
-    // docx 模板导入(浅导入)
+    // docx 模板导入(字段级深导入)
     "dialog.importDocxTemplate": "导入 Word 模板",
     "template.readFailed": "导入 Word 模板失败:${error}",
-    "template.imported": "已应用 Word 模板(字体与页面尺寸已更新)",
+    // 整包解不开(非 docx / 损坏):失败态,界面只显示它,绝不显示「已应用」
+    "template.unreadable": "文件不是有效的 Word 文档(.docx),或已损坏",
+    "template.imported": "已应用 Word 模板(排版与页面设置已更新)",
+    // 本次模板判不出的项:状态区逐条列全(可换行),toast 只报条数
+    "template.importedPartial": "已应用 Word 模板;以下字段未映射:${fields}",
+    // 本仓恒不接管的六类(能力边界,与本次模板无关):折叠成的一句固定说明,
+    // 不与上面的诊断项混列
+    "template.notManaged": "本仓不接管:${fields}",
+    "template.unmappedToast": "有 ${count} 项模板字段未映射",
+    "template.unmapped.color": "字体颜色",
+    "template.unmapped.themeColor": "主题配色",
+    "template.unmapped.numbering": "模板编号定义",
+    "template.unmapped.settingsCompat": "兼容选项",
+    "template.unmapped.characterStyle": "字符样式",
+    "template.unmapped.latentStyles": "潜在样式",
+    "template.unmapped.bodySizeOutOfRange": "正文字号(超出可接受范围)",
+    "template.unmapped.lineSpacingRule": "行距规则(非倍数制)",
+    "template.unmapped.lineSpacingOutOfRange": "行距倍数(超出可接受范围)",
+    "template.unmapped.alignUnsupported": "对齐方式(无对应档位)",
+    "template.unmapped.headingScaleUndetermined": "标题字号档位",
+    "template.unmapped.headingSpacingUndetermined": "标题段前段后档位",
+    "template.unmapped.paperUnrecognized": "纸张尺寸(非标准纸)",
+
+    /* ---------- docx 回读(自家稿 → Markdown) ---------- */
+    // 对话框标题
+    "dialog.readbackDocx": "回读 Word 文档为 Markdown",
+    // 失败态:解不开(非 docx / 损坏)—— 绝不谎报成功
+    "readback.unreadable": "文件不是有效的 Word 文档(.docx),或已损坏",
+    "readback.failed": "回读 Word 文档失败:${error}",
+    // 成功态:写出的 .md 路径 + 计数 + 三类清单(会保真 / 会丢弃 / 本仓不接管)
+    "readback.done": "已回读为 Markdown:${path}",
+    "readback.summary":
+      "标题 ${headings} · 段落 ${paragraphs} · 列表 ${listItems} · 表格 ${tables} · 图片 ${images} · 链接 ${links} · 脚注 ${footnotes} · 公式 ${formulas}",
+    "readback.preservedTitle": "会保真:",
+    "readback.droppedTitle": "会丢弃:",
+    "readback.notManagedTitle": "本工具不接管:",
+    "readback.toast": "已回读为 Markdown",
+    // 会丢弃(本次文档实际发生)
+    "readback.dropped.formula": "公式结构(以纯文本保留)",
+    "readback.dropped.comments": "批注正文",
+    "readback.dropped.footnotes": "脚注正文",
+    // 本仓恒不还原(能力边界,与本次文档无关)
+    "readback.notManaged.revisions": "修订标记",
+    "readback.notManaged.headingNumber": "标题自动编号",
+    "readback.notManaged.paragraphLayout": "段落级排版(缩进/对齐/行距/制表位)",
+    "readback.notManaged.runAppearance": "字符级外观(字号/字体/颜色/删除线)",
+    "readback.notManaged.pageSetup": "页面设置与页眉页脚/水印",
+    "readback.notManaged.tableWidth": "表格列宽",
+    "readback.notManaged.imageSize": "图片显示尺寸",
+    "readback.notManaged.codeHighlight": "代码块语法高亮配色",
+    // 会保真(完整还原的结构)
+    "readback.preserved.headings": "标题层级",
+    "readback.preserved.lists": "列表(有序/无序与层级)",
+    "readback.preserved.tables": "表格",
+    "readback.preserved.images": "图片(落地到媒体目录)",
+    "readback.preserved.links": "链接(外链与内部锚点)",
+    "readback.preserved.paragraphs": "段落文本与行内样式(粗体/斜体/行内代码)",
+
     "preset.invalidJson": "文件不是有效的 JSON",
     "preset.unsupportedVersion": "不支持的模板文件版本",
     "preset.noValidPresets": "文件不含有效预设",

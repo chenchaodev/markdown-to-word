@@ -24,6 +24,7 @@ import type {
   ImportPresetsResult,
   OperationBusyResult,
   PrecheckResult,
+  ReadbackDocxResult,
   UiState,
 } from "../core/ipc-contract.js";
 import type { AppSettings } from "../core/settings/settings-defaults.js";
@@ -55,6 +56,7 @@ const CH = {
   presetsExport: "presets:export",
   cssImport: "css:import",
   templateImportDocx: "template:importDocx",
+  readbackDocx: "readback:docx",
   settingsGet: "settings:get",
   settingsSet: "settings:set",
   themeSyncOverlay: "theme:syncOverlay",
@@ -146,6 +148,9 @@ const api: PreloadApi = {
   importPdfCss: (): Promise<ImportPdfCssResult> => ipcRenderer.invoke(CH.cssImport),
   /** 取消 → { ok:true, canceled:true };解析/读取失败 → { ok:false, error } */
   importDocxTemplate: (): Promise<ImportDocxTemplateResult> => ipcRenderer.invoke(CH.templateImportDocx),
+  /** docx 回读(自家稿 → Markdown);不传路径则由 main 弹文件对话框 */
+  readbackDocx: (filePath?: string): Promise<ReadbackDocxResult> =>
+    ipcRenderer.invoke(CH.readbackDocx, filePath),
   uiStateGet: (): Promise<UiState> => ipcRenderer.invoke(CH.uiStateGet),
   uiStateSet: (patch: Partial<UiState>): Promise<UiState> => ipcRenderer.invoke(CH.uiStateSet, patch),
   /** 逐项校验,缺失剔除(保序)。 */

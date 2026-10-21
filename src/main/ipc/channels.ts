@@ -55,6 +55,9 @@ export const IPC_CHANNELS = {
   /* ---- docx 模板导入(浅导入 v1) ---- */
   /** 导入 Word 模板(.docx):解包提取样式/页面映射到当前设置 */
   templateImportDocx: "template:importDocx",
+  /* ---- docx 回读(自家稿 → Markdown) ---- */
+  /** 回读 Word 文档(.docx)为 Markdown:选文件 → 解包还原 → 写 .md + 图片目录 → 回摘要 */
+  readbackDocx: "readback:docx",
   /* ---- 设置域 ---- */
   settingsGet: "settings:get",
   settingsSet: "settings:set",

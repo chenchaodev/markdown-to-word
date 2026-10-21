@@ -7,7 +7,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { ConvertFormat, ThemePreference } from "../../core/settings/settings-defaults.js";
 import type { SettingsMergePatch } from "../../core/settings/merge-patch.js";
-import type { BatchProgressInfo, BatchResult, ConvertMode, ConvertStage, PrecheckResult, UiState } from "../../core/ipc-contract.js";
+import type { BatchProgressInfo, BatchResult, ConvertMode, ConvertStage, PrecheckResult, ReadbackDocxResult, UiState } from "../../core/ipc-contract.js";
 import { t, setLanguage, type Language } from "../../core/i18n/index.js";
 import { precheckMarkdown } from "../../core/pipeline/precheck.js";
 import type { ConvertWarning } from "../../core/i18n/index.js";
@@ -53,6 +53,10 @@ import {
 import { isConversionCanceled } from "../../core/cancel.js";
 import { getKatexDir } from "../services/resource-dirs.js";
 import { importDocxTemplate } from "../../core/docx/template-import.js";
+import { isFactualUnmappedTemplateField } from "../../core/docx/template-fields.js";
+// docx 回读:core 侧只做「字节 → mdast + 图片 + 计数」,落盘在装配层(唯一写文件处)
+import { readbackDocx } from "../../core/ooxml/readback/readback.js";
+import { writeReadbackOutput } from "../../convert/docx-readback/writer.js";
 import type { DocMetadata } from "../../core/pipeline/frontmatter.js";
 import { getMainWindow } from "../windows/main-window.js";
 import { isThemePreference, syncTitleBarOverlay } from "../windows/title-bar-overlay.js";
@@ -659,9 +663,12 @@ export function registerIpc(): void {
     }),
   );
 
-  // 导入 Word 模板(.docx,浅导入 v1):选文件 → 读字节 → 解包提取样式/页面
-  // → 与现有设置合并(typography/pageSetup 各自深合并)→ 持久化 → 返回合并后完整对象;
-  // 取消 → { ok:true, canceled:true },读取/解析异常 → { ok:false, error }(可读文案)。
+  // 导入 Word 模板(.docx,字段级深导入):选文件 → 读字节 → 解包提取排版/页面字段
+  // → 与现有设置合并(typography/pageSetup 各自深合并)→ 持久化 → 返回合并后完整对象
+  // + 本次模板判不出的字段类别(事实性,renderer 侧本地化后提示);
+  // 取消 → { ok:true, canceled:true },读取/解包异常 → { ok:false, error }(可读文案)。
+  // ⚠ 整包解不开(非 docx / 损坏)必须回**失败态**:回 ok:true 会让界面显示「已应用
+  // Word 模板」而实际什么都没导入(ADR-086 实施约束四:失败路径不得谎报成功)。
   ipcMain.handle(CH.templateImportDocx, async (): Promise<ImportDocxTemplateResult> => {
     const paths = await selectAndRememberDir({
       title: t("dialog.importDocxTemplate"),
@@ -675,17 +682,82 @@ export function registerIpc(): void {
       const filePath = paths[0]!; // 上方已拦截取消与空列表,首项必存在
       const buf = await fs.readFile(filePath);
       const partial = await importDocxTemplate(new Uint8Array(buf));
+      if (partial.status === "unreadable") {
+        // 整包解不开:失败态(文案只给原因,前缀由界面侧统一加)
+        return { ok: false, error: t("template.unreadable") };
+      }
       const settings = loadSettings();
       const merged = {
         typography: { ...settings.typography, ...partial.typography },
         pageSetup: { ...settings.pageSetup, ...partial.pageSetup },
       };
       await updateSettings({ typography: merged.typography, pageSetup: merged.pageSetup });
-      return { ok: true, canceled: false, typography: merged.typography, pageSetup: merged.pageSetup };
+      return {
+        ok: true,
+        canceled: false,
+        typography: merged.typography,
+        pageSetup: merged.pageSetup,
+        // 契约面只承载**事实性**未映射:「本仓恒不接管的六类」是能力边界(与本次模板无关),
+        // 界面直接取 core/docx/template-fields.ts 的常量渲染那句固定说明,不经 IPC。
+        unmapped: partial.unmapped.filter(isFactualUnmappedTemplateField),
+      };
     } catch (err) {
-      return { ok: false, error: t("template.readFailed", { error: errorMessage(err) }) };
+      // 文案只给**原因**:「导入 Word 模板失败:」的前缀由界面侧统一加(避免两处各加一次)
+      return { ok: false, error: errorMessage(err) };
     }
   });
+
+  // docx 回读(自家稿 → Markdown):选文件(不传路径时弹对话框)→ 读字节 → 解包还原成
+  // mdast → 落盘(.md + 图片目录)→ 回摘要(计数 + 会保真/会丢弃/本仓不接管三类清单)。
+  // 取消 → { ok:true, canceled:true };解不开(非 docx / 损坏)→ { ok:false, error }(可读文案);
+  // ⚠ 失败路径不得谎报成功:解不开必须回失败态,绝不回「成功但什么都没产出」。
+  ipcMain.handle(
+    CH.readbackDocx,
+    async (_event, filePath: unknown): Promise<ReadbackDocxResult> => {
+      let target: string;
+      if (isString(filePath) && filePath !== "") {
+        target = filePath;
+      } else {
+        const paths = await selectAndRememberDir({
+          title: t("dialog.readbackDocx"),
+          properties: ["openFile"],
+          filters: [{ name: "Word 文档", extensions: ["docx"] }],
+        });
+        if (!paths) {
+          return { ok: true, canceled: true };
+        }
+        target = paths[0]!; // 上方已拦截取消与空列表,首项必存在
+      }
+      try {
+        const buf = await fs.readFile(target);
+        const result = await readbackDocx(new Uint8Array(buf));
+        if (result.status === "unreadable") {
+          // 整包解不开:失败态(文案只给原因,前缀由界面侧统一加)
+          return { ok: false, error: t("readback.unreadable") };
+        }
+        const written = await writeReadbackOutput({
+          sourcePath: target,
+          root: result.root,
+          images: result.images,
+        });
+        // 登记产物路径:回读产物同样是本会话产物,可被「打开所在文件夹/打开文件」放行
+        allowOutputPath(written.markdownPath);
+        return {
+          ok: true,
+          canceled: false,
+          markdownPath: written.markdownPath,
+          ...(written.mediaDir !== undefined ? { mediaDir: written.mediaDir } : {}),
+          counts: result.counts,
+          preserved: result.preserved,
+          dropped: result.dropped,
+          notManaged: result.notManaged,
+        };
+      } catch (err) {
+        // 文案只给**原因**:「回读 Word 文档失败:」的前缀由界面侧统一加(避免两处各加一次)
+        return { ok: false, error: errorMessage(err) };
+      }
+    },
+  );
 
   // UI 状态读写(最近文件/会话文件/记忆目录/窗口位置/面板展开态;独立于 settings)
   ipcMain.handle(CH.uiStateGet, (): UiState => loadUiState());

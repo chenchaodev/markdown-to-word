@@ -34,6 +34,7 @@ import type {
   ImportPresetsResult,
   OperationBusyResult,
   PrecheckResult,
+  ReadbackDocxResult,
   UiState,
 } from "./ipc-contract.js";
 
@@ -91,6 +92,12 @@ export type PreloadApi = {
   importPdfCss: () => Promise<ImportPdfCssResult>;
   /** 取消 → { ok:true, canceled:true };解析/读取失败 → { ok:false, error } */
   importDocxTemplate: () => Promise<ImportDocxTemplateResult>;
+  /**
+   * docx 回读(自家稿 → Markdown):不传路径则弹文件对话框选 .docx,传路径则直接回读该文件。
+   * 取消 → { ok:true, canceled:true };解不开 → { ok:false, error };
+   * 成功 → 写出的 .md 路径 + 计数 + 三类清单(会保真 / 会丢弃 / 本仓不接管)。
+   */
+  readbackDocx: (filePath?: string) => Promise<ReadbackDocxResult>;
   uiStateGet: () => Promise<UiState>;
   uiStateSet: (patch: Partial<UiState>) => Promise<UiState>;
   /** 逐项校验,缺失剔除(保序)。 */
