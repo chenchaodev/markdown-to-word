@@ -28,6 +28,11 @@ import { OUTPUT_UNWRITABLE_CODES as OUTPUT_UNWRITABLE_CODE_TABLE } from "../conv
 import { prepareMarkdown } from "../convert/preprocess.js";
 import { createConvertContext } from "../convert/context.js";
 import { emitConvertedArtifact } from "../convert/run.js";
+// readback 形态(docx → Markdown):回读层在 core(零 IO),落盘在装配层(唯一写文件处)
+import { readbackDocx } from "../core/ooxml/readback/readback.js";
+import { writeReadbackOutput } from "../convert/docx-readback/writer.js";
+import { readDocxSource } from "../convert/docx-readback/source.js";
+import { errorMessage } from "../core/text/error-message.js";
 import {
   exitCodes,
   type CliPdfJob,
@@ -41,7 +46,9 @@ import {
   parseCliArgs,
   resolveCliSettings,
   usageText,
-  type CliOptions,
+  type CliParsedOptions,
+  type CliReadbackOptions,
+  type CliReadbackResultItem,
   type CliResultItem,
 } from "./options.js";
 // pdf 宿主的拉起判定与传话机制与 MCP 共用一份(住在 convert 层:ADR-060 定了 cli 与 mcp
@@ -273,7 +280,7 @@ function worstExit(results: readonly CliResultItem[]): ExitCode {
  * @param argv 进程参数(不含 node 与脚本路径)
  */
 export async function runCli(argv: readonly string[]): Promise<ExitCode> {
-  let options: CliOptions;
+  let options: CliParsedOptions;
   try {
     options = parseCliArgs(argv);
   } catch (error) {
@@ -286,6 +293,10 @@ export async function runCli(argv: readonly string[]): Promise<ExitCode> {
   if (options.help) {
     process.stdout.write(`${usageText()}\n`);
     return exitCodes.ok;
+  }
+  // 两种形态分派:readback 是**独立能力**(docx → Markdown),与 md → docx/pdf 无交集。
+  if (options.mode === "readback") {
+    return runReadback(options);
   }
 
   const settings = resolveCliSettings(options);
@@ -315,6 +326,74 @@ export async function runCli(argv: readonly string[]): Promise<ExitCode> {
     }
   }
   return worstExit(results);
+}
+
+/**
+ * readback 形态的编排:读 .docx → 回读成 Markdown + 落图片目录 → 出结果。
+ *
+ * 落盘经装配层的 `writeReadbackOutput`(这条链路上**唯一**写文件的地方),
+ * 产物固定落在源文件同目录(与 GUI 侧同一口径)—— 本形态不支持指定输出路径
+ * (`--output` 在该形态判用法错,见 options.ts 的 parseReadbackArgs)。
+ *
+ * 退出码复用既有四态表:用法错 1 / 输入读不到 2 / 转换失败 3 / 输出写不了 4。
+ * 「输出写不了」靠**错误码**判定(不读文案):装配层的落盘失败带
+ * `code`(OUTPUT_UNWRITABLE_CODES 族),命中即 4,否则兜底 3 —— 与 convert 形态
+ * 的 itemExitCode 同一口径。
+ */
+async function runReadback(options: CliReadbackOptions): Promise<ExitCode> {
+  const input = path.resolve(options.inputs[0]!);
+  const started = Date.now();
+  let buf: Uint8Array;
+  try {
+    buf = await readDocxSource(input);
+  } catch (err) {
+    process.stderr.write(`[cli] 读不到输入文件:${input}(${errorMessage(err)})\n`);
+    return exitCodes.inputUnreadable;
+  }
+  let result: Awaited<ReturnType<typeof readbackDocx>>;
+  try {
+    result = await readbackDocx(buf);
+  } catch (err) {
+    process.stderr.write(`[cli] 回读失败:${errorMessage(err)}\n`);
+    return exitCodes.convertFailed;
+  }
+  if (result.status === "unreadable") {
+    process.stderr.write("[cli] 回读失败:文件不是有效的 Word 文档(.docx),或已损坏\n");
+    return exitCodes.convertFailed;
+  }
+  let written: Awaited<ReturnType<typeof writeReadbackOutput>>;
+  try {
+    written = await writeReadbackOutput({
+      sourcePath: input,
+      root: result.root,
+      images: result.images,
+    });
+  } catch (err) {
+    const code = errorCodeOf(err);
+    process.stderr.write(`[cli] 回读产物落盘失败:${errorMessage(err)}\n`);
+    // 判「输出写不了」只读**错误码**不读文案(与 convert 形态同一口径):码缺失时兜底判
+    // 转换失败(保守判失败,不当成功)。
+    return code !== undefined && OUTPUT_UNWRITABLE_CODES.has(code)
+      ? exitCodes.outputUnwritable
+      : exitCodes.convertFailed;
+  }
+  const item: CliReadbackResultItem = {
+    input,
+    ok: true,
+    markdownPath: written.markdownPath,
+    ...(written.mediaDir !== undefined ? { mediaDir: written.mediaDir } : {}),
+    counts: result.counts,
+    preserved: result.preserved,
+    dropped: result.dropped,
+    notManaged: result.notManaged,
+    elapsedMs: Date.now() - started,
+  };
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify([item])}\n`);
+  } else {
+    process.stdout.write(`${item.markdownPath}\n`);
+  }
+  return exitCodes.ok;
 }
 
 /**

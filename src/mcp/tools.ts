@@ -37,17 +37,76 @@ import { prepareMarkdown } from "../convert/preprocess.js";
 import { createConvertContext } from "../convert/context.js";
 import { emitConvertedArtifact } from "../convert/run.js";
 import { resolveDeliverySettings, templatePresetIds } from "../convert/delivery-settings.js";
+// readback 形态(docx → Markdown):回读层在 core(零 IO),落盘在装配层(唯一写文件处)。
+// 与 CLI 共用**同一份实现** —— ADR-060 定了 cli 与 mcp 零依赖,共同依赖只能落在两层之下。
+import { readbackDocx } from "../core/ooxml/readback/readback.js";
+import { writeReadbackOutput } from "../convert/docx-readback/writer.js";
+import { readDocxSource } from "../convert/docx-readback/source.js";
 // pdf 的拉起判定 + 传话机制与 CLI 共用一份(ADR-060:cli 与 mcp 零依赖 ⇒ 共同依赖落在 convert)
 import { isElectronProvidedNode, runPdfHostJob } from "../convert/pdf-host-launch.js";
 import type { CliPdfJob } from "../convert/cli-pdf-job.js";
 import type { ConvertFormat } from "../core/settings/settings-defaults.js";
 import type { ConvertWarning } from "../core/i18n/index.js";
+import { errorMessage } from "../core/text/error-message.js";
+import type {
+  ReadbackCounts,
+  ReadbackDroppedField,
+  ReadbackNotManagedField,
+  ReadbackPreservedField,
+} from "../core/ooxml/readback/readback-fields.js";
 
 /** Tool 名(对 agent 可见的契约,改名会打断已配置的客户端)。 */
 export const TOOL_NAME = "convert_markdown";
 
+/**
+ * 回读 tool 的名(第二个 tool;**不改** TOOL_NAME —— 改名会打断已配置客户端)。
+ *
+ * 与既有 tool **平级**而非子命令:agent 面对的是「把 Markdown 变成文档」与「把自家文档
+ * 变回 Markdown」两件独立的事,合成一个带参数的 tool 会让 agent 在参数上做无谓的选择。
+ */
+export const READBACK_TOOL_NAME = "readback_docx";
+
 /** `format` 的取值域(MCP 面只这两种;「一条命令两个格式」是 CLI 独有的形态)。 */
 const FORMATS: readonly ConvertFormat[] = ["docx", "pdf"];
+
+/**
+ * 回读 tool 的**耗时边界**:回读不经 core 的转换管线(没有 ctx、没有渲染),
+ * 故它**没有** deadline 机制可挂 —— 这里的边界是**体积闸门**:
+ * `readDocxSource` 复用 markdown 源文件那道 32MB 上限(单文件超限即拒绝)。
+ *
+ * 为什么不再加一个 deadline 常量:挂不上去的 deadline 是**假闸门** —— 读文件与解析
+ * 都不检查它,却让读者以为有闸。回读是纯内存解析 + 落盘,耗时随文档规模线性增长,
+ * 32MB 闸门已经把它框在可接受的量级内。真要再加时限,得先给回读链路一个**能中断**
+ * 的检查点(在解析循环里判超时),那是独立一步。
+ */
+
+/**
+ * 回读 tool 的规格(进 `tools/list`)。
+ *
+ * description 是 agent 判断「该不该用这个 tool」的唯一依据 ⇒ 必须**据实写清能力与
+ * 边界**:只读**本仓导出的** docx(不是通用 Word 解析器)、公式以纯文本保留、
+ * 批注/脚注正文/修订不还原、哪些内容不进 Markdown。
+ */
+export const READBACK_TOOL_SPEC: ToolSpec = {
+  name: READBACK_TOOL_NAME,
+  description:
+    "把本应用导出的 .docx 文档回读成 Markdown(逆向操作):产出同名 .md 与同名 _media/ 图片目录," +
+    "并返回「完整还原了什么 / 本次丢了什么 / 本应用不还原什么」三类清单。\n" +
+    "适用范围**仅限本应用导出的 .docx**(标题层级、列表、表格、图片、链接、段落与行内样式能完整还原);" +
+    "任意 Word 文档不保证 —— 批注正文、脚注正文、修订记录不还原,公式以纯文本保留(不是 LaTeX)," +
+    "段落级排版(缩进/对齐/行距)与字符级外观(字号/字体/颜色)不进 Markdown。\n" +
+    "产物固定落在源文件同目录(同名已被占用时自动递增,不覆盖既有文件);输入路径需为绝对路径。",
+  inputSchema: {
+    type: "object",
+    properties: {
+      input: {
+        type: "string",
+        description: "本应用导出的 .docx 文件的绝对路径。",
+      },
+    },
+    required: ["input"],
+  },
+};
 
 /**
  * docx 路径的强制截止时间(进 core 的 ctx)。
@@ -393,6 +452,101 @@ function renderSummary(result: McpConvertResult): string {
         "含 mermaid 围栏的文档在 pdf 里同样按等宽代码块渲染,请据此判断是否需要人工补图。",
     );
   }
+  lines.push(`耗时 ${result.elapsedMs}ms`);
+  return lines.join("\n");
+}
+
+/** 回读的结构化结果(进 structuredContent;字段名对 agent 是契约,勿改)。 */
+export interface McpReadbackResult {
+  /** 输入 .docx 绝对路径 */
+  input: string;
+  /** 产出的 .md 绝对路径 */
+  markdownPath: string;
+  /** 图片目录(无图片时缺席) */
+  mediaDir?: string;
+  /** 各结构的条数 */
+  counts: ReadbackCounts;
+  /** 完整还原的结构(稳定标识) */
+  preserved: readonly ReadbackPreservedField[];
+  /** 本次文档实际发生的丢失(稳定标识;空数组 = 没丢) */
+  dropped: readonly ReadbackDroppedField[];
+  /** 本应用恒不还原的类别(稳定标识) */
+  notManaged: readonly ReadbackNotManagedField[];
+  /** 总耗时(ms) */
+  elapsedMs: number;
+}
+
+/**
+ * 执行一次回读(docx → Markdown)。
+ *
+ * 与 CLI 的 readback 形态**共用同一份实现**(回读层在 core、落盘在装配层)——
+ * ADR-060 定了 cli 与 mcp 零依赖,共同依赖只能落在两层之下。
+ *
+ * 失败一律转 `isError`(见文件头「错误形态」):路径不存在 / 不是有效 docx / 落盘失败
+ * 三种都给 agent 一句可行动的话(改路径 / 换文件 / 换个能写的目录)。
+ */
+export async function callReadbackDocx(rawArgs: unknown): Promise<ToolResult> {
+  const started = Date.now();
+  try {
+    const args = asRecord(rawArgs);
+    const input = optionalString(args, "input");
+    if (input === undefined) throw new ToolFailure("缺参数:input");
+    if (!path.isAbsolute(input)) throw new ToolFailure(`input 必须是绝对路径:${input}`);
+    let buf: Uint8Array;
+    try {
+      buf = await readDocxSource(input);
+    } catch (err) {
+      throw new ToolFailure(`读不到输入文件:${input}(${errorMessage(err)})`);
+    }
+    const result = await readbackDocx(buf);
+    if (result.status === "unreadable") {
+      throw new ToolFailure("回读失败:文件不是有效的 Word 文档(.docx),或已损坏");
+    }
+    let written: Awaited<ReturnType<typeof writeReadbackOutput>>;
+    try {
+      written = await writeReadbackOutput({
+        sourcePath: input,
+        root: result.root,
+        images: result.images,
+      });
+    } catch (err) {
+      throw new ToolFailure(`回读产物落盘失败:${errorMessage(err)}`);
+    }
+    const payload: McpReadbackResult = {
+      input,
+      markdownPath: written.markdownPath,
+      ...(written.mediaDir !== undefined ? { mediaDir: written.mediaDir } : {}),
+      counts: result.counts,
+      preserved: result.preserved,
+      dropped: result.dropped,
+      notManaged: result.notManaged,
+      elapsedMs: Date.now() - started,
+    };
+    return { content: [{ type: "text", text: renderReadbackSummary(payload) }], structuredContent: payload };
+  } catch (error) {
+    if (error instanceof ToolFailure) {
+      return { content: [{ type: "text", text: error.message }], isError: true };
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    return { content: [{ type: "text", text: `回读失败:${message}` }], isError: true };
+  }
+}
+
+/** 回读结果的可读摘要(structuredContent 已含全部字段)。 */
+function renderReadbackSummary(result: McpReadbackResult): string {
+  const lines = [result.markdownPath];
+  if (result.mediaDir !== undefined) lines.push(`图片目录 ${result.mediaDir}`);
+  const c = result.counts;
+  lines.push(
+    `结构计数:标题 ${c.headings} · 段落 ${c.paragraphs} · 列表项 ${c.listItems} · ` +
+      `表格 ${c.tables} · 图片 ${c.images} · 链接 ${c.links} · 公式 ${c.formulas} · ` +
+      `脚注 ${c.footnotes} · 批注 ${c.comments}`,
+  );
+  lines.push(`完整还原:${result.preserved.join(", ")}`);
+  if (result.dropped.length > 0) {
+    lines.push(`本次丢失(以纯文本保留或未还原):${result.dropped.join(", ")}`);
+  }
+  lines.push(`本应用不还原:${result.notManaged.join(", ")}`);
   lines.push(`耗时 ${result.elapsedMs}ms`);
   return lines.join("\n");
 }

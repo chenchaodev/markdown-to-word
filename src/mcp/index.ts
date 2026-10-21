@@ -14,7 +14,14 @@
  * 步序 3 开工前」。
  */
 import { serveStdio, type RpcHandlers, type RpcRequest } from "./jsonrpc.js";
-import { callConvertMarkdown, TOOL_NAME, TOOL_SPEC } from "./tools.js";
+import {
+  callConvertMarkdown,
+  callReadbackDocx,
+  READBACK_TOOL_NAME,
+  READBACK_TOOL_SPEC,
+  TOOL_NAME,
+  TOOL_SPEC,
+} from "./tools.js";
 
 /**
  * MCP 协议版本:跟随当前规范(2025-06-18 引入 tool annotations,本工具不用 annotations,
@@ -37,18 +44,25 @@ export function buildHandlers(): RpcHandlers {
     // notification:无 id ⇒ dispatch 不回帧(见 jsonrpc.ts 硬约定 3)
     "notifications/initialized": () => undefined,
     ping: () => Promise.resolve({}),
-    "tools/list": () => Promise.resolve({ tools: [TOOL_SPEC] }),
+    "tools/list": () => Promise.resolve({ tools: [TOOL_SPEC, READBACK_TOOL_SPEC] }),
     "tools/call": (params: unknown) => callTool(params),
   };
 }
 
+/**
+ * tool 分派:**按名**分派到对应实现。
+ *
+ * 两个 tool 平级(`convert_markdown` 转换 / `readback_docx` 回读),互不改名 ——
+ * 既有 tool 的名是对外契约,改名会打断已配置客户端。
+ */
 async function callTool(params: unknown): Promise<unknown> {
   const args = (params ?? {}) as Record<string, unknown>;
   const name = args.name;
-  if (name !== TOOL_NAME) {
-    throw new Error(`未知 tool:${String(name)}(本 server 只提供 ${TOOL_NAME})`);
-  }
-  return callConvertMarkdown(args.arguments);
+  if (name === TOOL_NAME) return callConvertMarkdown(args.arguments);
+  if (name === READBACK_TOOL_NAME) return callReadbackDocx(args.arguments);
+  throw new Error(
+    `未知 tool:${String(name)}(本 server 提供 ${TOOL_NAME} 与 ${READBACK_TOOL_NAME})`,
+  );
 }
 
 /** 起 server 并挂上 stdio。返回停止函数(正常用不到:server 与进程同寿)。 */

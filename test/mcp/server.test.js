@@ -41,7 +41,7 @@ import {
   RPC_PARSE_ERROR,
   serveStdio,
 } from "../../dist/mcp/jsonrpc.js";
-import { callConvertMarkdown, TOOL_NAME } from "../../dist/mcp/tools.js";
+import { callConvertMarkdown, READBACK_TOOL_NAME, TOOL_NAME } from "../../dist/mcp/tools.js";
 import { buildHandlers } from "../../dist/mcp/index.js";
 import { createAsserter } from "../harness/assert.js";
 import { createCaseSuite } from "../harness/case.js";
@@ -216,10 +216,23 @@ export async function run() {
       assert(init.result.capabilities.tools !== undefined, "initialize 应声明 tools 能力");
       assert(typeof init.result.serverInfo.name === "string", "initialize 应给出 serverInfo");
     });
-    await suite.case("tools/list 只暴露一个 tool 且 inputSchema 必填 input", () => {
-      assert(list.result.tools.length === 1, `本 server 只暴露一个 tool,实际 ${list.result.tools.length}`);
-      assert(list.result.tools[0].name === TOOL_NAME, `tool 名应为 ${TOOL_NAME}`);
-      assert(list.result.tools[0].inputSchema.required.includes("input"), "inputSchema 应把 input 列为必填");
+    await suite.case("tools/list 暴露既有 tool(名与形状未变)与回读 tool", () => {
+      // 本 server 现暴露两个 tool:convert_markdown(转换)与 readback_docx(回读)。
+      // 既有 tool 的**名与 inputSchema**是对外契约(改名会打断已配置客户端),
+      // 故此处断言「它仍在且形状未变」,而不是「只有一个 tool」。
+      const tools = /** @type {{ name: string; inputSchema: { required?: string[] } }[]} */ (
+        list.result.tools
+      );
+      assert(tools.length === 2, `本 server 应暴露两个 tool,实际 ${tools.length}`);
+      const legacy = tools.find((tool) => tool.name === TOOL_NAME);
+      assert(
+        legacy !== undefined && (legacy.inputSchema.required ?? []).includes("input"),
+        `tools/list 应含既有 tool ${TOOL_NAME},且它的 input 仍是必填`,
+      );
+      assert(
+        tools.some((tool) => tool.name === READBACK_TOOL_NAME),
+        `tools/list 应含回读 tool ${READBACK_TOOL_NAME}`,
+      );
     });
     // format 必须是**可选**字段且枚举写全:schema 是 agent 选参数的依据,
     // 少一个取值它就只能靠撞一次报错来发现(撞之前它并不知道 pdf 存在)。

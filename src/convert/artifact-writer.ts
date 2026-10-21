@@ -124,6 +124,14 @@ export const OUTPUT_UNWRITABLE_CODES = Object.freeze({
    * 换个输出目录即可 ⇒ 属「输出写不了」。
    */
   tempNameExhausted: "OUTPUT_TEMP_NAME_EXHAUSTED",
+  /**
+   * 写产物文件本身失败(EACCES / ENOSPC / EROFS / EMFILE 等:磁盘满、无权限)。
+   *
+   * 与 `tempUnwritable` 刻意不同码:那条指**起不出同目录临时文件**(提交前的准备阶段),
+   * 这条指**写产物文件**(提交阶段)。两者处置相同(换输出目录或腾出空间)但发生在
+   * 不同阶段,分开登记便于按阶段定位。
+   */
+  writeFailed: "OUTPUT_WRITE_FAILED",
 } as const);
 
 /** 「输出写不了」错误码的联合类型 */
