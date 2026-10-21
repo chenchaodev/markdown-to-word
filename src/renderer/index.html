@@ -657,6 +657,20 @@
               </span>
             </div>
             <p id="bodySizeError" class="field-error hidden" role="alert" aria-controls="bodySizePt"></p>
+            <!-- 中文字号(号数制)下拉:与上方 stepper **同指** typography.bodySizePt ——
+                 唯一真值仍是 pt 数(本控件不新增持久化键),它只是把磅值反解成
+                 「小四 / 五号 / 三号 …」这一档号数制名。选项由 settings-bindings-typography
+                 按 core/settings/typography.ts 的 CJK_FONT_SIZES 动态生成(档位表单源在 core),
+                 故本行不写死选项。行标签独立于「正文字号」:两者是同一磅值的两种说法
+                 (数值档 / 号数制档),共用一个标签会让人误以为是两项设置。
+                 另起一行而非并进上一行:紧凑档抽屉内容列仅 304px,日文行标签
+                 「本文フォントサイズ」已占约 140px,再并一个下拉会把标签挤成折行碎字。 -->
+            <div class="row row--pair">
+              <label class="row-l" for="cjkFontSize" data-i18n="settings.cjkFontSize">中文字号</label>
+              <span class="sel-wrap">
+                <select id="cjkFontSize" class="setting-select"></select>
+              </span>
+            </div>
             <!-- 有界连续数值 → range 滑杆 + mono 实时回显(guidelines §3.1) -->
             <div class="row row--pair">
               <label class="row-l" for="lineSpacing"><span data-i18n="settings.lineSpacing">行距倍数</span><span class="setting-label-hint" data-i18n="settings.lineSpacingHint">(倍数)</span></label>

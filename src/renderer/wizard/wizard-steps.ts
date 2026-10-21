@@ -13,7 +13,7 @@
  * 自 REQ-218 #10 阶段④ 起经组合根注入的 WizardStepsDeps 形参进入,不再有跨功能
  * 静态 import。
  */
-import { t } from "../../core/i18n/index.js";
+import { t, type I18nKey } from "../../core/i18n/index.js";
 import {
   BODY_SIZE_MAX,
   BODY_SIZE_MIN,
@@ -22,6 +22,7 @@ import {
   MARGIN_MAX_MM,
   type CustomPreset,
 } from "../../core/settings/settings-defaults.js";
+import { CJK_FONT_SIZES, cjkFontSizeOfPt, cjkFontSizePtOfId } from "../../core/settings/typography.js";
 import type { TemplatePreset } from "../../core/settings/presets.js";
 import { state } from "../state/state.js";
 import {
@@ -64,6 +65,13 @@ export interface WizardStepsDeps extends WizardFieldsDeps {
   /** settings/settings-panel:导入 docx 模板(选文件 → 解析 → 回填设置)。 */
   importDocxTemplate: () => Promise<void>;
 }
+
+/**
+ * 「自定义」档的 option value:磅值不在号数制表内(如 11pt / 13.5pt)时显示此档。
+ * 它是**状态**而非可选目标,故与档位 id(来自 core 的 CJK_FONT_SIZES)分开定义。
+ * 与设置抽屉同名常量各写一份:两者是平铺功能、互不 import(ADR-075)。
+ */
+const CUSTOM_FONT_SIZE_ID = "custom";
 
 /* 各步需读写的封面控件引用(每次 open 由 buildStepCover 重建)。
  * 私有 let + 只读门面出口,而非可变绑定导出:后者允许任何 import 方重绑,
@@ -183,6 +191,49 @@ export function buildStepTemplate(deps: WizardStepsDeps): HTMLElement {
   bindTypographyNumber(deps, "bodySizePt", bodySizeInput, bodySizeError, BODY_SIZE_MIN, BODY_SIZE_MAX);
   const bodySizeStepper = h("span", { class: "stepper" }, [bodySizeDec, bodySizeInput, bodySizeInc]);
 
+  /* 中文字号(号数制)下拉:与上面那个 stepper **同指** state.settings.typography.bodySizePt
+   * (唯一真值仍是 pt 数,向导不新增持久化键),它只是把磅值反解成「小四 / 五号 / 三号 …」
+   * 这一档号数制名。档位序与磅值取自 core 的 CJK_FONT_SIZES(单源),档位文案经字典。
+   * 写法与设置抽屉同款但**刻意各写一份**:向导与抽屉是平铺功能、互不 import(ADR-075),
+   * 共享的是 core 的档位表与字典这两份真值,不是 DOM 构建代码。 */
+  const cjkFontSizeSelect = h("select", {
+    id: "wiz-cjkFontSize", class: "setting-select",
+  }) as HTMLSelectElement;
+  for (const entry of CJK_FONT_SIZES) {
+    const key = `typography.size.${entry.id}` as I18nKey;
+    cjkFontSizeSelect.appendChild(
+      h("option", { value: entry.id, dataset: { i18n: key }, text: t(key) }),
+    );
+  }
+  // 「自定义」档标 disabled:它是「当前磅值不在号数制表内」的**状态**而非可选目标 ——
+  // 可挑的只有 9 个号数制档,要自定义磅值走上面的 stepper。
+  cjkFontSizeSelect.appendChild(
+    h("option", {
+      value: CUSTOM_FONT_SIZE_ID, disabled: true,
+      dataset: { i18n: "typography.size.custom" }, text: t("typography.size.custom"),
+    }),
+  );
+  /** 回显:当前磅值落在哪一档(不在号数制表内则显示「自定义」);只写下拉,不写设置。 */
+  const syncCjkFontSize = (): void => {
+    const entry = cjkFontSizeOfPt(state.settings.typography.bodySizePt);
+    cjkFontSizeSelect.value = entry?.id ?? CUSTOM_FONT_SIZE_ID;
+  };
+  syncCjkFontSize();
+  // 选中即写:磅值写进 stepper 后派发 change,走向导既有的校验/落盘链路
+  // (bindTypographyNumber 写 state.settings + persistSettings),不另造写回通道。
+  cjkFontSizeSelect.addEventListener("change", () => {
+    const pt = cjkFontSizePtOfId(cjkFontSizeSelect.value);
+    if (pt === null) {
+      syncCjkFontSize(); // 「自定义」不是可选目标:按当前磅值回显,不改设置
+      return;
+    }
+    bodySizeInput.value = String(pt);
+    bodySizeInput.dispatchEvent(new Event("change"));
+  });
+  // stepper 侧改动(含 ± 按钮派发的 change)后回显档位:
+  // 登记在 bindTypographyNumber 之后,故读到的已是落定后的磅值
+  bodySizeInput.addEventListener("change", syncCjkFontSize);
+
   const lineSpacingError = fieldErrorNode();
   const lineSpacingInput = h("input", {
     type: "range", min: String(LINE_SPACING_MIN), max: String(LINE_SPACING_MAX), step: "0.05",
@@ -224,6 +275,7 @@ export function buildStepTemplate(deps: WizardStepsDeps): HTMLElement {
         bodySizeStepper,
         bodySizeError,
       ]),
+      fieldRow("settings.cjkFontSize", cjkFontSizeSelect),
       h("div", { class: "wz-field" }, [
         h("label", { class: "wz-label", for: "wiz-lineSpacing" }, [
           h("span", { dataset: { i18n: "settings.lineSpacing" }, text: t("settings.lineSpacing") }),

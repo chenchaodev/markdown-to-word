@@ -93,6 +93,11 @@ export const bodySizeDecBtn = document.getElementById(
 export const bodySizeIncBtn = document.getElementById(
   "bodySizeIncBtn",
 ) as HTMLButtonElement;
+// 中文字号(号数制)下拉:派生控件 —— 它的值是「当前磅值落在哪一档号数」的结论,
+// 真值仍是 typography.bodySizePt(不新增持久化键);选项由 settings-bindings-typography 生成
+export const cjkFontSizeSelect = document.getElementById(
+  "cjkFontSize",
+) as HTMLSelectElement;
 // 行距改 range 滑杆(input id 不变)+ mono 实时回显
 export const lineSpacingInput = document.getElementById(
   "lineSpacing",

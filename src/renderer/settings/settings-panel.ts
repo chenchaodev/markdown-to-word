@@ -18,6 +18,7 @@ import {
   DEFAULT_SETTINGS,
   type AppSettings,
 } from "../../core/settings/settings-defaults.js";
+import { cjkFontSizeOfPt } from "../../core/settings/typography.js";
 import { htmlLangOf } from "../../core/i18n/index.js";
 import {
   headerLogoDisplayName,
@@ -47,6 +48,7 @@ import {
   aiCleanupTidyInput,
   aiCleanupRewriteInput,
   aiCleanupTiersLocked,
+  cjkFontSizeSelect,
   headerCustomFields,
   headerLogoClearBtn,
   headerLogoStatus,
@@ -75,6 +77,13 @@ import { errorMessage } from "../state/pure.js";
 import { applyStaticTexts, setLanguage, t, LANGUAGES, type I18nKey, type Language } from "../../core/i18n/index.js";
 // 抽屉副标题文案写入归抽屉模块(本模块只负责由设置值合成文案)
 import { updateDrawerMeta } from "./settings-drawer.js";
+
+/**
+ * 「自定义」档的 option value:磅值不在号数制表内(如 11pt / 13.5pt)时显示此档。
+ * 它是**状态**而非可选目标 —— 用户挑不出一个「自定义」来(档位只有 9 个号数制档),
+ * 故与档位 id(来自 core 的 CJK_FONT_SIZES)分开定义。
+ */
+export const CUSTOM_FONT_SIZE_ID = "custom";
 
 /**
  * 外观主题应用到文档根元素:显式 light/dark 设 data-theme,
@@ -246,9 +255,23 @@ export const settingsWriteContext: WriteContext = {
 export function applySettingsToControls(): void {
   hydrateControls(state.settings, controlDom);
   syncPresetSelection();
+  syncCjkFontSizeSelection();
   for (const syncGate of Object.values(GATE_SYNCERS)) syncGate();
   refreshDynamicSettingsText();
   updateDrawerMeta(composeDrawerMetaText());
+}
+
+/**
+ * 中文字号(号数制)下拉回显:把当前正文字号磅值反解成号数制档位写进下拉。
+ *
+ * 派生控件(值是「磅值落在哪一档」的结论,不是设置字段):本函数**只读设置、只写下拉** ——
+ * 程序性赋值不派发 change,故不会产生「回显 → 写回」的回环。
+ * 落在号数制表外的磅值(如 11pt / 13.5pt)显示「自定义」档(它标示状态,不是可选目标)。
+ * 真值仍是 typography.bodySizePt(唯一真值),本控件不新增持久化键。
+ */
+export function syncCjkFontSizeSelection(): void {
+  const entry = cjkFontSizeOfPt(state.settings.typography.bodySizePt);
+  cjkFontSizeSelect.value = entry?.id ?? CUSTOM_FONT_SIZE_ID;
 }
 
 /** 模板预设 select 回填(派生键:值是「当前设置匹配哪个预设」的结论,不是设置字段)。

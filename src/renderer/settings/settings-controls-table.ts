@@ -286,6 +286,14 @@ export const CONTROL_ENTRIES = {
     labelKey: "settings.bodySize",
     toControl: String, locator: { by: "id", id: "bodySizePt" },
   }),
+  // 中文字号(号数制)下拉:**派生键** —— 它的值是「当前磅值落在哪一档号数」的结论,
+  // 不是 AppSettings 的字段(真值仍是 typography.bodySizePt,本控件不新增持久化键)。
+  // 故按派生键登记(先例 templatePreset):定位 + 检索标签在此,写侧与回显手写
+  // (见 settings-bindings-typography 的选中即写 / settings-panel 的回显同步)。
+  cjkFontSize: derivedEntry({
+    group: "typography", locator: { by: "id", id: "cjkFontSize" },
+    labelKey: "settings.cjkFontSize",
+  }),
   lineSpacing: valueEntry({
     form: "number", group: "typography", reset: "reset", block: "typography", path: "lineSpacing",
     labelKey: "settings.lineSpacing",

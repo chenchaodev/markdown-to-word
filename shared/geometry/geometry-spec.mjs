@@ -204,6 +204,9 @@ export const DRAWER_CONTROLS = {
     { id: "fontEastAsia" },
     { id: "fontAscii" },
     { id: "bodySizePt" },
+    // 中文字号(号数制)下拉:派生控件(值是「磅值落在哪一档」的结论,真值仍是 bodySizePt);
+    // 紧随 stepper 一行 —— 声明序即视觉序,故它排在 bodySizePt 之后
+    { id: "cjkFontSize" },
     { id: "lineSpacing" },
     { name: "headingScale" },
     { name: "headingSpacing" },

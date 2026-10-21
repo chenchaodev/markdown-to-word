@@ -272,6 +272,23 @@ const dict = {
     "settings.fontEastAsia": "中文字体",
     "settings.bodySize": "正文字号",
     "settings.bodySizeHint": "(pt)",
+    // 中文字号(号数制)下拉:与上方 stepper **同指** typography.bodySizePt(唯一真值仍是
+    // pt 数,本控件不新增持久化键)。行标签独立于「正文字号」——两者是同一磅值的两种
+    // 说法(数值档 / 号数制档),共用一个标签会让人以为是两项设置。
+    "settings.cjkFontSize": "中文字号",
+    // 号数制档位文案 = 汉字字号名 + 磅值(与 Word 字号下拉同款口径);
+    // 键名后缀取 core/settings/typography.ts 的 CJK_FONT_SIZES 条目 id(拼音键)
+    "typography.size.xiaowu": "小五 9pt",
+    "typography.size.wuhao": "五号 10.5pt",
+    "typography.size.xiaosi": "小四 12pt",
+    "typography.size.sihao": "四号 14pt",
+    "typography.size.xiaosan": "小三 15pt",
+    "typography.size.sanhao": "三号 16pt",
+    "typography.size.xiaoer": "小二 18pt",
+    "typography.size.erhao": "二号 22pt",
+    "typography.size.xiaoyi": "小一 24pt",
+    // 非号数制档的磅值(如 11pt / 13.5pt)显示此档:它是**状态**不是可选目标
+    "typography.size.custom": "自定义",
     "settings.lineSpacing": "行距",
     "settings.lineSpacingHint": "(倍数)",
     "settings.tierCompact": "紧凑",

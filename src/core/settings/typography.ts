@@ -186,3 +186,54 @@ export const DEFAULT_TYPOGRAPHY: TypographySettings = {
   headingScale: "standard",
   headingSpacing: "standard",
 };
+
+/** 中文字号(号数制)条目:id 为拼音键(不含声调),pt 为对应磅值。 */
+export interface CjkFontSizeEntry {
+  readonly id: string;
+  readonly pt: number;
+}
+
+/**
+ * 中文字号表:按 pt 升序。只收正文字号域(BODY_SIZE_MIN=8 / BODY_SIZE_MAX=24)内的 9 档。
+ *
+ * - 为什么只收这 9 档:号数制全表是 初号42/小初36/一号26/小一24/二号22/小二18/三号16/
+ *   小三15/四号14/小四12/五号10.5/小五9/六号7.5/小六6.5/七号5.5/八号5,其中 24pt 以上
+ *   (初号/小初/一号)与 8pt 以下(六号及更小)都落在本仓正文字号域外(域由
+ *   settings-defaults.ts 的 BODY_SIZE_MIN/MAX 定),越界档不选。
+ * - 为什么磅值是这个数:取权威号数制对照表,不是「看着差不多」的取整 —— 三号=16、
+ *   小三=15 是非直觉序列(小三比四号大 1pt、三号比小三大 1pt),按直觉排会把这两档错位。
+ * - 为什么落在本模块:本模块是 bodySizePt 的所有者,且 docx 与 PDF 两侧渲染层已
+ *   import 它,放这里不新增依赖边(不新增依赖、不改依赖方向)。
+ */
+export const CJK_FONT_SIZES: readonly CjkFontSizeEntry[] = [
+  { id: "xiaowu", pt: 9 },
+  { id: "wuhao", pt: 10.5 },
+  { id: "xiaosi", pt: 12 },
+  { id: "sihao", pt: 14 },
+  { id: "xiaosan", pt: 15 },
+  { id: "sanhao", pt: 16 },
+  { id: "xiaoer", pt: 18 },
+  { id: "erhao", pt: 22 },
+  { id: "xiaoyi", pt: 24 },
+];
+
+/**
+ * 磅值 → 字号条目:精确匹配(0.5 粒度),命中不到返回 null。
+ * 输入须落在 0.5 粒度网格上(与正文字号域的步进一致);离网格的值(如 9.2)不吸附到
+ * 任一档,返回 null 交调用方按「自定义字号」处理 —— 静默就近取整会把用户设的
+ * 9.2pt 显示成小五(9pt),两值不同的档被误标。
+ * 比对前按 0.5 网格归一,吸收浮点表示误差(如 12.000000000000002 仍命中小四)。
+ */
+export function cjkFontSizeOfPt(pt: number): CjkFontSizeEntry | null {
+  if (!Number.isFinite(pt)) return null;
+  const halves = pt * 2;
+  const nearest = Math.round(halves);
+  if (Math.abs(halves - nearest) > 1e-9) return null; // 不在 0.5 网格上 → 无对应号数
+  return CJK_FONT_SIZES.find((entry) => entry.pt === nearest / 2) ?? null;
+}
+
+/** 字号 id → 磅值:命中不到返回 null。 */
+export function cjkFontSizePtOfId(id: string): number | null {
+  const found = CJK_FONT_SIZES.find((entry) => entry.id === id);
+  return found?.pt ?? null;
+}
