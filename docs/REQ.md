@@ -43,7 +43,6 @@
 
 | 号 | 标题 | 状态 | 为什么停在这 | 什么条件下重看 | 分析在哪 |
 |---|---|---|---|---|---|
-| REQ-001 | 中文排版包深化 | 在办 | 2026-10-21 用户拍板要做，待排期。缺口两项：中文字号制（正文字号域 8-24pt 内取 小五9/五号10.5/小四12/四号14/小三15/三号16/小二18/二号22/小一24 共 9 档）· 中英混排间距（docx 靠 OOXML 默认 autoSpaceDE/DN=true 已开，PDF 缺 text-autospace）。三项裁决：字号制走 UI 投影不新增持久化键 · 混排间距常开不设开关 · 顺带做 text-spacing-trim: trim-start。 | 随时 | 无 |
 
 ## 已完成
 
@@ -264,6 +263,7 @@
 | REQ-257 | Release 复用 CI 结论与脚本分层 | 已完成 | 4.7.1 实发验证：gate 4s 复用同 SHA CI；dist 重建与 CI 清单逐字节一致；5 个资产与 notes 正常；CI 双 job 并行未做。 | CI 双 job 并行或可复用构建制品时；发布链再现 flake 或 artifact 同名冲突时 | docs/adr/ADR-085-Release复用CI结论与验证脚本分层.md |
 | REQ-258 | 有界等待锚点耗尽仍阻塞发版 | 已完成 | REQ-136 残留:删掉本段最后一个调 cleanupWithinBudget() 的阻塞点(其余三处已降级诊断)。夹具先 await 退出后该 case 已无法区分「等待正常」与「第一次就成功」,只剩环境性红。覆盖由「Windows 真实占用」成功分支 + 退避锚点 + 1ms 负向锚点承担。 | 该段出现阻塞性有界等待调用点(新增 cleanupWithinBudget 直调)或段末残留判红时 | docs/evidence/20261001-160000-test-common-helpers-EPERM现场取证.md |
 | REQ-259 | Release gate 生产级加固 | 已完成 | 五项已落地：gate 只认 master push CI；master 不取消在途；artifact overwrite；tag/CI/checkout 三方 SHA 校验 + Release 去重；artifact 过期提示。verify:static 通过。 | gate 再误判、artifact 保留期或 tag 移动成为常发故障时 | docs/adr/ADR-085-Release复用CI结论与验证脚本分层.md |
+| REQ-001 | 中文排版包深化 | 已完成 | 交付确认：中文字号九档下拉 + PDF 中西文间距与行首标点缩排落地；不新增持久化键（schema/预设/校验域不动），docx 侧靠 OOXML 默认已开、零改动；全量 152 段 3699 case 绿，用户实测无问题。 | 随时 | docs/evidence/20261021-204905-中文排版包深化事实与决策.md |
 
 ## 已作废
 
