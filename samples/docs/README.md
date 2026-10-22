@@ -35,7 +35,7 @@
 | raw-html-cross.md | 内联格式白名单测试:(场景:cross) | test/core/raw-html.test.js |
 | raw-html.md | 内联格式白名单测试:(场景:main) | test/core/raw-html.test.js |
 | task-list.md | 任务列表验收(GFM task list): | test/core/task-list.test.js |
-| template-import.md | docx 模板导入(浅导入 v1)测试: | test/core/template-import.test.js |
+| template-import.md | docx 模板导入(字段级深导入)测试:继承链取值 + 排版/页面字段映射 + 两类未映射划分 + 失败态 | test/core/template-import.test.js |
 | toc-caption.md | TOC 静态目录 + 图/表题注编号测试: | test/core/toc-caption.test.js |
 | toc-pagenum.md | 目录页码(两遍法)测试: | test/core/toc-pagenum.test.js |
 | typography.md | 排版设置验收: | test/core/typography.test.js |
