@@ -11,7 +11,7 @@
  * ① 造一份**真产物**(含 h1-h3 / 目录 / 脚注 / 表格 / 链接 / 图片)并跑判据 ⇒ 必须是绿的;
  * ② **负向夹具**:把产物的 styles.xml 在**内存里**改坏(删样式定义 / 去掉 w:default /
  * 加未声明前缀 / 重复 styleId)后重跑 ⇒ 判据必须**确实报红**(证明判据有牙,不是恒绿);
- * ③ 告警通道:C5(同类多个 w:default="1" = 歧义,库升级可能引入)只告警不判红。
+ * ③ 告警通道:默认样式歧义(同类多个 w:default="1" = 歧义,库升级可能引入)只告警不判红。
  *
  * 级别判别式(ADR-086 §二):闭合性/一致性判据(内容型、稳定)⇒ 判红;快照/位置型(漂移源)⇒ 告警。
  * ⚠ 负向夹具**只改内存里的视图**,绝不改写 output/artifacts/ 里的真产物。
@@ -36,7 +36,7 @@ export const covers = ["src/core/docx/external-styles.ts", "src/core/ooxml/packa
 
 export const meta = {
   description:
-    "docx 样式表自洽验收段:样式引用闭合 + 默认样式齐备 + 命名空间声明完整(C1-C8 判据与负向夹具)",
+    "docx 样式表自洽验收段:样式引用闭合 + 默认样式齐备 + 命名空间声明完整(八项判据 判据与负向夹具)",
 };
 
 /** 本段复用既有验收样例(samples/docs/dual-pipeline-matrix.md),不新增样例文件 */
@@ -93,7 +93,7 @@ function withPartText(view, partName, text) {
 /**
  * 取判红项里属于某条判据的行。
  * @param {string[]} problems 判红项
- * @param {string} criterionId 判据号前缀(如 "C1-style-reference-closure")
+ * @param {string} criterionId 判据号前缀(如 "style-ref-closure")
  * @returns {string[]} 命中行
  */
 function problemsOf(problems, criterionId) {
@@ -175,7 +175,7 @@ export async function run() {
       "styles.xml 缺 IndexLink 字符样式",
     );
   });
-  await suite.case("正文确实引用了 TOC1/IndexLink(C1 的判定面不是空的)", () => {
+  await suite.case("正文确实引用了 TOC1/IndexLink(样式引用闭合判据的判定面不是空的)", () => {
     assert(/<w:pStyle w:val="TOC1"\/>/.test(documentXml), "document.xml 里没有 TOC1 段落样式引用");
     assert(/<w:rStyle w:val="IndexLink"\/>/.test(documentXml), "document.xml 里没有 IndexLink 字符样式引用");
   });
@@ -194,7 +194,7 @@ export async function run() {
 
   /* ---------- 判据全绿 ---------- */
   const green = checkDocxIntegrity(view);
-  await suite.case("判据 C1-C8 在真产物上全绿(零判红、零告警)", () => {
+  await suite.case("判据 八项判据 在真产物上全绿(零判红、零告警)", () => {
     assert(
       green.problems.length === 0,
       `真产物不该有判红项,实得 ${green.problems.length} 条:${green.problems.join(" | ")}`,
@@ -206,35 +206,35 @@ export async function run() {
   });
 
   /* ---------- 负向夹具:改坏产物 ⇒ 判据确实报红 ---------- */
-  await suite.case("负向夹具① 删掉 TOC1 样式定义 ⇒ C1 报红(引用悬空)", () => {
+  await suite.case("负向夹具① 删掉 TOC1 样式定义 ⇒ 样式引用闭合判据报红(引用悬空)", () => {
     const broken = stylesXml.replace(
       /<w:style w:type="paragraph" w:styleId="TOC1">[\s\S]*?<\/w:style>/,
       "",
     );
     assert(broken !== stylesXml, "夹具无效:TOC1 样式块没匹配上(产物形态变了?)");
     const report = checkDocxIntegrity(withPartText(view, "word/styles.xml", broken));
-    const hits = problemsOf(report.problems, "C1-style-reference-closure");
-    assert(hits.length > 0, `删掉 TOC1 定义后 C1 应报红,实得:${report.problems.join(" | ")}`);
+    const hits = problemsOf(report.problems, "style-ref-closure");
+    assert(hits.length > 0, `删掉 TOC1 定义后 样式引用闭合判据应报红,实得:${report.problems.join(" | ")}`);
     assert(
       hits.some((line) => line.includes("TOC1")),
-      `C1 的诊断应点名悬空的 TOC1,实得:${hits.join(" | ")}`,
+      `样式引用闭合判据的诊断应点名悬空的 TOC1,实得:${hits.join(" | ")}`,
     );
   });
-  await suite.case("负向夹具② 去掉 Normal 的 w:default ⇒ C4 报红(默认样式缺位)", () => {
+  await suite.case("负向夹具② 去掉 Normal 的 w:default ⇒ 默认样式判据报红(默认样式缺位)", () => {
     const broken = stylesXml.replace(
       '<w:style w:type="paragraph" w:default="1" w:styleId="Normal">',
       '<w:style w:type="paragraph" w:styleId="Normal">',
     );
     assert(broken !== stylesXml, "夹具无效:Normal 样式块没匹配上(产物形态变了?)");
     const report = checkDocxIntegrity(withPartText(view, "word/styles.xml", broken));
-    const hits = problemsOf(report.problems, "C4-default-style");
-    assert(hits.length > 0, `去掉 w:default 后 C4 应报红,实得:${report.problems.join(" | ")}`);
+    const hits = problemsOf(report.problems, "default-style-missing");
+    assert(hits.length > 0, `去掉 w:default 后 默认样式判据应报红,实得:${report.problems.join(" | ")}`);
     assert(
       hits.some((line) => line.includes("paragraph")),
-      `C4 的诊断应点名段落类型,实得:${hits.join(" | ")}`,
+      `默认样式判据的诊断应点名段落类型,实得:${hits.join(" | ")}`,
     );
   });
-  await suite.case("负向夹具③ 加未声明前缀 ⇒ C6 报红(MCE 非法文档)", () => {
+  await suite.case("负向夹具③ 加未声明前缀 ⇒ 命名空间前缀 报红(MCE 非法文档)", () => {
     // ① mc:Ignorable 列了根上没声明的前缀;② 正文里用了没声明的前缀
     const brokenIgnorable = stylesXml.replace(
       'mc:Ignorable="w14 w15"',
@@ -244,14 +244,14 @@ export async function run() {
     const reportIgnorable = checkDocxIntegrity(
       withPartText(view, "word/styles.xml", brokenIgnorable),
     );
-    const hitsIgnorable = problemsOf(reportIgnorable.problems, "C6-namespace-prefix");
+    const hitsIgnorable = problemsOf(reportIgnorable.problems, "namespace-prefix-undeclared");
     assert(
       hitsIgnorable.length > 0,
-      `mc:Ignorable 列未声明前缀时 C6 应报红,实得:${reportIgnorable.problems.join(" | ")}`,
+      `mc:Ignorable 列未声明前缀时 命名空间前缀 应报红,实得:${reportIgnorable.problems.join(" | ")}`,
     );
     assert(
       hitsIgnorable.some((line) => line.includes("w99")),
-      `C6 的诊断应点名未声明的前缀 w99,实得:${hitsIgnorable.join(" | ")}`,
+      `命名空间前缀 的诊断应点名未声明的前缀 w99,实得:${hitsIgnorable.join(" | ")}`,
     );
     const brokenElement = stylesXml.replace(
       "</w:styles>",
@@ -259,43 +259,43 @@ export async function run() {
     );
     assert(brokenElement !== stylesXml, "夹具无效:styles.xml 结尾没匹配上(产物形态变了?)");
     const reportElement = checkDocxIntegrity(withPartText(view, "word/styles.xml", brokenElement));
-    const hitsElement = problemsOf(reportElement.problems, "C6-namespace-prefix");
+    const hitsElement = problemsOf(reportElement.problems, "namespace-prefix-undeclared");
     assert(
       hitsElement.length > 0,
-      `正文用了未声明前缀时 C6 应报红,实得:${reportElement.problems.join(" | ")}`,
+      `正文用了未声明前缀时 命名空间前缀 应报红,实得:${reportElement.problems.join(" | ")}`,
     );
   });
-  await suite.case("负向夹具④ 重复定义同一 styleId ⇒ C2 报红", () => {
+  await suite.case("负向夹具④ 重复定义同一 styleId ⇒ 样式 id 唯一判据报红", () => {
     const broken = stylesXml.replace(
       "</w:styles>",
       '<w:style w:type="paragraph" w:styleId="TOC1"><w:name w:val="toc 1"/></w:style></w:styles>',
     );
     assert(broken !== stylesXml, "夹具无效:styles.xml 结尾没匹配上(产物形态变了?)");
     const report = checkDocxIntegrity(withPartText(view, "word/styles.xml", broken));
-    const hits = problemsOf(report.problems, "C2-style-id-unique");
-    assert(hits.length > 0, `重复 styleId 时 C2 应报红,实得:${report.problems.join(" | ")}`);
+    const hits = problemsOf(report.problems, "style-id-unique");
+    assert(hits.length > 0, `重复 styleId 时 样式 id 唯一判据应报红,实得:${report.problems.join(" | ")}`);
   });
-  await suite.case("负向夹具⑤ 部件缺失 ⇒ C8 报红(关系目标不存在)", () => {
+  await suite.case("负向夹具⑤ 部件缺失 ⇒ 关系可解 报红(关系目标不存在)", () => {
     const broken = {
       partNames: view.partNames.filter((name) => name !== "word/styles.xml"),
       texts: view.texts,
     };
     const report = checkDocxIntegrity(broken);
-    const hits = problemsOf(report.problems, "C8-relationship");
-    assert(hits.length > 0, `部件缺失时 C8 应报红,实得:${report.problems.join(" | ")}`);
+    const hits = problemsOf(report.problems, "relationship-unresolvable");
+    assert(hits.length > 0, `部件缺失时 关系可解 应报红,实得:${report.problems.join(" | ")}`);
   });
-  await suite.case("负向夹具⑥ 多出一个没被声明的部件 ⇒ C7 报红", () => {
+  await suite.case("负向夹具⑥ 多出一个没被声明的部件 ⇒ 部件声明 报红", () => {
     const broken = { partNames: [...view.partNames, "word/media/undeclared.bin"], texts: view.texts };
     const report = checkDocxIntegrity(broken);
-    const hits = problemsOf(report.problems, "C7-content-types");
-    assert(hits.length > 0, `未声明部件时 C7 应报红,实得:${report.problems.join(" | ")}`);
+    const hits = problemsOf(report.problems, "content-types-uncovered");
+    assert(hits.length > 0, `未声明部件时 部件声明 应报红,实得:${report.problems.join(" | ")}`);
   });
-  await suite.case("负向夹具⑦ 缺 [Content_Types].xml ⇒ C7 报红(声明面无从核对)", () => {
+  await suite.case("负向夹具⑦ 缺 [Content_Types].xml ⇒ 部件声明 报红(声明面无从核对)", () => {
     const broken = { partNames: view.partNames, texts: new Map(view.texts) };
     broken.texts.delete("[Content_Types].xml");
     const report = checkDocxIntegrity(broken);
-    const hits = problemsOf(report.problems, "C7-content-types");
-    assert(hits.length > 0, `缺 [Content_Types].xml 时 C7 应报红,实得:${report.problems.join(" | ")}`);
+    const hits = problemsOf(report.problems, "content-types-uncovered");
+    assert(hits.length > 0, `缺 [Content_Types].xml 时 部件声明 应报红,实得:${report.problems.join(" | ")}`);
   });
   await suite.case("负向夹具⑧ styles.xml 读不出根元素 ⇒ 判红(不许静默放过)", () => {
     const broken = withPartText(view, "word/styles.xml", "这不是 XML");
@@ -306,24 +306,24 @@ export async function run() {
     );
   });
 
-  /* ---------- 告警通道:C5 只告警不判红 ---------- */
-  await suite.case("C5 走告警通道:同类多个 w:default=\"1\" 只告警、不判红", () => {
+  /* ---------- 告警通道:默认样式歧义 只告警不判红 ---------- */
+  await suite.case("默认样式歧义 走告警通道:同类多个 w:default=\"1\" 只告警、不判红", () => {
     const ambiguous = stylesXml.replace(
       '<w:style w:type="paragraph" w:styleId="Title">',
       '<w:style w:type="paragraph" w:default="1" w:styleId="Title">',
     );
     assert(ambiguous !== stylesXml, "夹具无效:Title 样式块没匹配上(产物形态变了?)");
     const report = checkDocxIntegrity(withPartText(view, "word/styles.xml", ambiguous));
-    const warnings = report.warnings.filter((line) => line.startsWith("C5-ambiguous-default:"));
-    assert(warnings.length > 0, `同类多个默认样式应出 C5 告警,实得:${report.warnings.join(" | ")}`);
+    const warnings = report.warnings.filter((line) => line.startsWith("default-style-ambiguous:"));
+    assert(warnings.length > 0, `同类多个默认样式应出 默认样式歧义告警,实得:${report.warnings.join(" | ")}`);
     assert(
-      problemsOf(report.problems, "C4-default-style").length === 0,
-      `同类多个默认样式不该触发 C4 判红,实得:${report.problems.join(" | ")}`,
+      problemsOf(report.problems, "default-style-missing").length === 0,
+      `同类多个默认样式不该触发 默认样式判据判红,实得:${report.problems.join(" | ")}`,
     );
   });
 
   console.log(
-    `[ok] docx-styles(adr-086):产物样式表自洽判据 C1-C8 全绿,负向夹具逐条报红(${suite.results.length} 个 case)`,
+    `[ok] docx-styles(adr-086):产物样式表自洽判据 八项判据 全绿,负向夹具逐条报红(${suite.results.length} 个 case)`,
   );
   return { cases: suite.results };
 }

@@ -1,5 +1,5 @@
 /**
- * OOXML 包级自洽判据(C1–C8):样式引用闭合 / styleId 唯一 / 样式表序列 / 默认样式齐备 /
+ * OOXML 包级自洽判据(八项):样式引用闭合 / styleId 唯一 / 样式表序列 / 默认样式齐备 /
  * 命名空间前缀声明完整 / 部件声明完整 / 关系可解。
  *
  * 为什么要有这一层(ADR-086 §二):产物「样式表自洽」这件事此前**没有任何机器判据**,
@@ -10,7 +10,7 @@
  * `gates/repo/` 跑不到产物。
  *
  * **级别判别式**(ADR-086 §二):闭合性/一致性判据(内容型、稳定)⇒ 判红;
- * 快照/位置型(漂移源)⇒ 告警 + 基线。故 C1–C4、C6–C8 判红,C5(同类多个 `w:default="1"`
+ * 快照/位置型(漂移源)⇒ 告警 + 基线。故前四项与后三项判红,默认样式歧义(同类多个 `w:default="1"`
  * = 歧义,库升级可能引入)**只告警**。行号漂移只能告警正因为它是位置型。
  *
  * **本文件零 IO**:输入是「包视图」(部件名清单 + XML 部件文本),解包由调用方做
@@ -29,7 +29,7 @@ import { attrOf, boolAttr, childrenOf, findDescendants, parseXml, type XmlElemen
 /**
  * 包视图(判据的唯一输入):部件清单 + XML 部件文本。
  *
- * 为什么二进制部件也要进 `partNames`:C7(部件声明完整)与 C8(关系目标存在)要看的是
+ * 为什么二进制部件也要进 `partNames`:部件声明与关系可解两判据要看的是
  * **包里的全部部件**(图片、字体等),只看 XML 部件会让「图片部件没被声明」这类问题
  * 落在判定面之外。
  */
@@ -72,7 +72,7 @@ function walkElements(root: XmlElement, visit: (el: XmlElement) => void): void {
  * 判断一个部件是否参与「样式引用」扫描。
  *
  * 排除 `[Content_Types].xml` 与 `.rels`:前者不是 OOXML 样式载体,后者是关系清单
- * (关系由 C8 单独判)。
+ * (关系由关系可解判据单独判)。
  * @param partName 部件名
  * @returns 是否扫描
  */
@@ -192,7 +192,7 @@ function ownerPartOfRels(relsName: string): string {
 }
 
 /**
- * 判据本体(纯函数):对一份包视图跑 C1–C8。
+ * 判据本体(纯函数):对一份包视图跑这八项。
  *
  * @param view 包视图(部件名清单 + XML 部件文本)
  * @returns 判红项与告警项
@@ -208,16 +208,16 @@ export function checkDocxIntegrity(view: DocxPackageView): DocxIntegrityReport {
   // ---- styles.xml:缺失即判红(样式引用无从闭合)----
   const stylesText = texts.get("word/styles.xml");
   if (stylesText === undefined) {
-    problems.push("C1-style-reference-closure:包内没有 word/styles.xml —— 样式引用无从闭合");
+    problems.push("style-ref-closure:包内没有 word/styles.xml —— 样式引用无从闭合");
     return { problems, warnings };
   }
   const stylesRoot = parseXml(stylesText);
   if (stylesRoot === null) {
-    problems.push("C1-style-reference-closure:word/styles.xml 解析不出根元素 —— 样式表读不出,判定面为空");
+    problems.push("style-ref-closure:word/styles.xml 解析不出根元素 —— 样式表读不出,判定面为空");
     return { problems, warnings };
   }
 
-  // ---- C2:styleId 唯一 ----
+  // ---- 样式 id 唯一 ----
   const styleElements = childrenOf(stylesRoot, "style");
   /** @type {Map<string, number>} styleId → 出现次数 */
   const idCounts = new Map<string, number>();
@@ -226,7 +226,7 @@ export function checkDocxIntegrity(view: DocxPackageView): DocxIntegrityReport {
   for (const el of styleElements) {
     const id = attrOf(el, "styleId");
     if (id === undefined || id === "") {
-      problems.push("C2-style-id-unique:word/styles.xml 里有 w:style 缺 w:styleId 属性");
+      problems.push("style-id-unique:word/styles.xml 里有 w:style 缺 w:styleId 属性");
       continue;
     }
     idCounts.set(id, (idCounts.get(id) ?? 0) + 1);
@@ -234,29 +234,29 @@ export function checkDocxIntegrity(view: DocxPackageView): DocxIntegrityReport {
   }
   for (const [id, count] of idCounts) {
     if (count > 1) {
-      problems.push(`C2-style-id-unique:word/styles.xml 的 styleId「${id}」重复定义了 ${count} 次`);
+      problems.push(`style-id-unique:word/styles.xml 的 styleId「${id}」重复定义了 ${count} 次`);
     }
   }
 
-  // ---- C3:docDefaults 恰好一份;latentStyles 排在所有 w:style 之前 ----
+  // ---- 样式表序列:docDefaults 恰好一份;latentStyles 排在所有 w:style 之前 ----
   const styleChildren = stylesRoot.children;
   const docDefaultsCount = styleChildren.filter((child) => child.localName === "docDefaults").length;
   if (docDefaultsCount !== 1) {
-    problems.push(`C3-styles-sequence:word/styles.xml 的 w:docDefaults 有 ${docDefaultsCount} 个(应恰好 1 个)`);
+    problems.push(`styles-sequence:word/styles.xml 的 w:docDefaults 有 ${docDefaultsCount} 个(应恰好 1 个)`);
   }
   const firstStyleIndex = styleChildren.findIndex((child) => child.localName === "style");
   const docDefaultsIndex = styleChildren.findIndex((child) => child.localName === "docDefaults");
   const latentStylesIndex = styleChildren.findIndex((child) => child.localName === "latentStyles");
   if (docDefaultsIndex >= 0 && firstStyleIndex >= 0 && docDefaultsIndex > firstStyleIndex) {
-    problems.push("C3-styles-sequence:word/styles.xml 的 w:docDefaults 排在 w:style 之后 —— CT_Styles 要求它在前");
+    problems.push("styles-sequence:word/styles.xml 的 w:docDefaults 排在 w:style 之后 —— CT_Styles 要求它在前");
   }
   if (latentStylesIndex >= 0 && firstStyleIndex >= 0 && latentStylesIndex > firstStyleIndex) {
     problems.push(
-      "C3-styles-sequence:word/styles.xml 的 w:latentStyles 排在 w:style 之后 —— CT_Styles 要求它在所有 w:style 之前",
+      "styles-sequence:word/styles.xml 的 w:latentStyles 排在 w:style 之后 —— CT_Styles 要求它在所有 w:style 之前",
     );
   }
 
-  // ---- C4 / C5:段落与字符类型各有唯一 w:default="1" ----
+  // ---- 默认样式齐备:段落与字符类型各有唯一 w:default="1"(多于一个是歧义,走告警)----
   /** @type {Map<string, string[]>} 类型 → 该类型下带 w:default="1" 的 styleId 清单 */
   const defaultsByType = new Map<string, string[]>();
   for (const el of styleElements) {
@@ -270,37 +270,37 @@ export function checkDocxIntegrity(view: DocxPackageView): DocxIntegrityReport {
   for (const type of DEFAULT_STYLE_TYPES) {
     const ids = defaultsByType.get(type) ?? [];
     if (ids.length === 0) {
-      problems.push(`C4-default-style:word/styles.xml 没有类型为 ${type} 的 w:default="1" 样式(默认样式缺位)`);
+      problems.push(`default-style-missing:word/styles.xml 没有类型为 ${type} 的 w:default="1" 样式(默认样式缺位)`);
       continue;
     }
     if (ids.length > 1) {
-      // ⚠ **多于一个走 C5 告警而不是 C4 判红**:这类歧义由库升级引入(库自带样式集可能
+      // ⚠ **多于一个走默认样式歧义告警而不是默认样式齐备判据判红**:这类歧义由库升级引入(库自带样式集可能
       // 变化),不是本仓的错 ⇒ 判红会让「库升级」变成一次失败发布,而告警仍让它可见。
       warnings.push(
-        `C5-ambiguous-default:类型为 ${type} 的 w:default="1" 样式有 ${ids.length} 个(${ids.join("、")})`
+        `default-style-ambiguous:类型为 ${type} 的 w:default="1" 样式有 ${ids.length} 个(${ids.join("、")})`
           + " —— 同类多默认属歧义(库升级可能引入),只告警不判红",
       );
     }
   }
 
-  // ---- C6:命名空间前缀声明完整(只判 styles.xml:它的根属性由本仓接管)----
+  // ---- 命名空间前缀:前缀声明完整(只判 styles.xml:它的根属性由本仓接管)----
   const declared = declaredPrefixesOf(stylesRoot);
   for (const prefix of usedPrefixesOf(stylesRoot)) {
     if (declared.has(prefix)) continue;
-    problems.push(`C6-namespace-prefix:word/styles.xml 用到了前缀「${prefix}」,但根元素上没声明它`);
+    problems.push(`namespace-prefix-undeclared:word/styles.xml 用到了前缀「${prefix}」,但根元素上没声明它`);
   }
   const ignorable = attrOf(stylesRoot, "mc:Ignorable");
   if (ignorable !== undefined) {
     for (const prefix of ignorable.split(/\s+/).filter((token) => token !== "")) {
       if (declared.has(prefix)) continue;
       problems.push(
-        `C6-namespace-prefix:word/styles.xml 的 mc:Ignorable 列了前缀「${prefix}」,但根元素上没声明它`
+        `namespace-prefix-undeclared:word/styles.xml 的 mc:Ignorable 列了前缀「${prefix}」,但根元素上没声明它`
           + " —— MCE 非法文档(Word 可能弹「内容有问题」)",
       );
     }
   }
 
-  // ---- C1:样式引用闭合(各部件的引用都要落在已定义的 styleId 上)----
+  // ---- 样式引用闭合:各部件的引用都要落在已定义的 styleId 上 ----
   for (const partName of view.partNames) {
     if (!isScannableXmlPart(partName)) continue;
     const text = texts.get(partName);
@@ -319,20 +319,20 @@ export function checkDocxIntegrity(view: DocxPackageView): DocxIntegrityReport {
     for (const [key, count] of counts) {
       const [element, value] = key.split(" ");
       problems.push(
-        `C1-style-reference-closure:${partName} 的 w:${element} 引用了未定义的样式 id「${value}」`
+        `style-ref-closure:${partName} 的 w:${element} 引用了未定义的样式 id「${value}」`
           + (count > 1 ? `(${count} 处)` : ""),
       );
     }
   }
 
-  // ---- C7:每个部件都被 [Content_Types].xml 覆盖(Default 扩展名或 Override 皆可)----
+  // ---- 部件声明:每个部件都被 [Content_Types].xml 覆盖(Default 扩展名或 Override 皆可)----
   const contentTypesText = texts.get("[Content_Types].xml");
   if (contentTypesText === undefined) {
-    problems.push("C7-content-types:包内没有 [Content_Types].xml —— 部件声明无从核对");
+    problems.push("content-types-uncovered:包内没有 [Content_Types].xml —— 部件声明无从核对");
   } else {
     const contentTypesRoot = parseXml(contentTypesText);
     if (contentTypesRoot === null) {
-      problems.push("C7-content-types:[Content_Types].xml 解析不出根元素 —— 部件声明无从核对");
+      problems.push("content-types-uncovered:[Content_Types].xml 解析不出根元素 —— 部件声明无从核对");
     } else {
       /** @type {Set<string>} */
       const defaultExtensions = new Set<string>();
@@ -353,13 +353,13 @@ export function checkDocxIntegrity(view: DocxPackageView): DocxIntegrityReport {
         const extension = dot === -1 ? "" : partName.slice(dot + 1).toLowerCase();
         if (defaultExtensions.has(extension)) continue;
         problems.push(
-          `C7-content-types:部件 ${partName} 既没有 Override、也没有 Default 扩展名覆盖(扩展名「${extension}」)`,
+          `content-types-uncovered:部件 ${partName} 既没有 Override、也没有 Default 扩展名覆盖(扩展名「${extension}」)`,
         );
       }
     }
   }
 
-  // ---- C8:r:id 可解 + 非外部关系的目标在包内存在 ----
+  // ---- 关系可解:关系 id 可解 + 非外部关系的目标在包内存在 ----
   for (const relsName of view.partNames) {
     if (!relsName.endsWith(".rels")) continue;
     const relsText = texts.get(relsName);
@@ -371,7 +371,7 @@ export function checkDocxIntegrity(view: DocxPackageView): DocxIntegrityReport {
       const target = resolvePartPath(owner, relationship.target);
       if (partNames.has(target)) continue;
       problems.push(
-        `C8-relationship:${relsName} 的关系 ${relationship.id} 指向 ${relationship.target}(解析为 ${target}),包内没有这个部件`,
+        `relationship-unresolvable:${relsName} 的关系 ${relationship.id} 指向 ${relationship.target}(解析为 ${target}),包内没有这个部件`,
       );
     }
     if (owner === "") continue;
@@ -381,7 +381,7 @@ export function checkDocxIntegrity(view: DocxPackageView): DocxIntegrityReport {
     if (ownerRoot === null) continue;
     for (const reference of relationshipReferencesOf(ownerRoot)) {
       if (relationships.has(reference)) continue;
-      problems.push(`C8-relationship:${owner} 引用了关系 ${reference},${relsName} 里没有这一条`);
+      problems.push(`relationship-unresolvable:${owner} 引用了关系 ${reference},${relsName} 里没有这一条`);
     }
   }
 

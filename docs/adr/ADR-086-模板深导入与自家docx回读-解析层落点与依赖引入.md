@@ -57,15 +57,27 @@
 
 行号漂移之所以只能告警，正因为它是位置型（改一行注释就漂）；样式引用闭合性是集合关系，改代码不会让它偶然成立 ⇒ **可以判红、不会假红**。
 
-判据 C1–C8 判红（引用闭合性 · styleId 唯一 · `docDefaults` 恰好一份且 `latentStyles` 顺序合法 · 段落/字符类型各有唯一 `w:default="1"` · 前缀全声明且 `mc:Ignorable` 所列前缀全声明 · 部件声明完整 · `r:id` 可解且关系目标存在）；C5（同类多个 `w:default="1"` = 歧义，库升级可能引入）**只告警**；`w:latentStyles` / theme 缺失是**恒定告警 ⇒ 不落成判据**（只在本 ADR 记「有意不补」）。
+八项判据判红（引用闭合性 · styleId 唯一 · `docDefaults` 恰好一份且 `latentStyles` 顺序合法 · 段落/字符类型各有唯一 `w:default="1"` · 前缀全声明且 `mc:Ignorable` 所列前缀全声明 · 部件声明完整 · `r:id` 可解且关系目标存在）；其中「同类多个 `w:default="1"`」= 歧义，库升级可能引入 ⇒ **只告警**；`w:latentStyles` / theme 缺失是**恒定告警 ⇒ 不落成判据**（只在本 ADR 记「有意不补」）。
+
+⚠ **判据 id 用描述性 slug、不用编号**（`style-ref-closure` / `style-id-unique` / `styles-sequence` / `default-style-missing` / `default-style-ambiguous` / `namespace-prefix-undeclared` / `content-types-uncovered` / `relationship-unresolvable`）—— 编号形态与本仓已退役的「规划编号」字面量同形（`check:test-numbering` 的退役字母表含 `C[1-4]`），会在测试树里判红；id 是产品级概念，不该长得像规划编号。
 
 **落点：判定逻辑落 `src/core/ooxml/`（零 IO 纯函数，复用现成原语）→ 一个验收段消费它 → `gates/repo/gate-index.mjs` 照 `dual-matrix` 先例登记（`modulePath` 指向验收段、`access: offchain`）**。**不新起 `gates/repo/` 门禁** —— 门禁面是「仓形状」，产品级样式断言的既定家是测试层；且 `verify:static` 排在 build 之前，要产物的门禁在 `gates/repo/` 跑不到产物。真要另起门禁本体，也必须 import 同一个 `dist/core/ooxml/*` 导出，**不得复制判据**。
 
-### 三、跨条目边界（别把别的活记在本条头上）
+### 三、产物级判据的 id 不用编号（2026-10-21 CI 实测教训）
+
+首版判据 id 写成 `C1-style-reference-closure` … `C8-relationship`，CI 的 `check:test-numbering` 判红 17 项 —— 那道门禁退役的是**规划编号**字面量（REQ-028），退役字母表含 `C[1-4]`，而判据 id 与它在测试树的断言消息里**同形**。
+
+**根因不是撞车，是分类错了**：判据 id 是**产品级概念**（会出现在诊断文案里、会被引用），规划编号是**批次内临时语**（晋升为功能名之前不得进交付物）。两者用同一形态 ⇒ 后者退役时前者被牵连。
+
+**修法在根上**：id 改描述性 slug（`style-ref-closure` / `style-id-unique` / `styles-sequence` / `default-style-missing` / `default-style-ambiguous` / `namespace-prefix-undeclared` / `content-types-uncovered` / `relationship-unresolvable`），**不用白名单绕过** —— 白名单是给「确实是纸型 B5」这类同形异义开的后门，给判据 id 开后门等于把门禁关掉。
+
+⚠ **改 id 时别用无边界的批量正则替换**：`C1` 是 `TOC1` 的子串 —— 批量替换会把 `TOC1`/`TOC2`/`TOC3` 这类**真实 styleId** 改坏（本次实测改坏了三处，段内断言才暴露）。**带词边界的替换 + 逐处人工核对**是唯一可靠做法。
+
+### 四、跨条目边界（别把别的活记在本条头上）
 
 补 `Normal` **不解**「浅导入读不到自家稿正文字号」—— 那是 REQ-002 的活，正解是从 `w:docDefaults/w:rPrDefault/w:rPr` 取正文默认值（见 [自家 docx 产物形态实测](../evidence/20261021-220818-自家docx产物形态实测.md)）。本条只负责让产物**自洽**（引用闭合 + 默认样式齐备）。
 
-### 四、深导入的「未映射」分两类（2026-10-21 用户裁决「本轮修」，落步 #02c）
+### 五、深导入的「未映射」分两类（2026-10-21 用户裁决「本轮修」，落步 #02c）
 
 导入结果的「没吃下的东西」有**两种性质**，必须分开呈现：
 
