@@ -90,6 +90,14 @@
 
 **承载位置**：那六类的**类型与常量单源**放一个**零依赖**模块（`src/core/docx/template-fields.ts`）—— renderer 要引用该常量，若经 `template-import.ts` 取会把 jszip 拖进 renderer 产物。
 
+### 六、本地全量验证与 CI 同源（2026-10-21 关口裁决的前提）
+
+关口①定为「提交前跑 `npm run verify:ci` 全量」能成立，靠的是一条**可核对的事实**：CI 的 `ci` job 跑的就是 `npm run verify:ci`，且 `runs-on: windows-latest` 与本地同 OS ⇒ **本地绿与 CI 绿是同一套标准、同一依赖树、同一命令**，不是两套。
+
+因此关口②（推送前）与关口③（tag 前）**不重跑**，只做**同一性核对**与**版本自洽核对** —— 重跑是纯重复；tag 的放行判据在 CI 侧（`release.yml` 自己等同一 SHA 的 CI 绿、自己校验 tag↔package.json↔lockfile、自己重建 dist 并与 CI 清单逐字节比对）。
+
+⚠ **前提会失效，要盯住**：一旦 CI 的 `ci` job 改了命令或换了 OS，本地全量就不再是「同源」，关口②③ 的「不重跑」就要重新评估。判据形态见 `docs/DEV-GUIDE.md`「验证基线」节（关口②③ 的核对项写明「① 跑的 SHA == 要推的 SHA」与「版本三处同号」）。
+
 ## 背景
 
 - 浅导入 v1（ADR-008）已落地：jszip 内存解包，取 `Normal`/`Heading1` 的 rPr 与 `sectPr` ⇒ `Partial<TypographySettings> + Partial<PageSetup>`，入口是设置抽屉的「导入 Word 模板…」。
