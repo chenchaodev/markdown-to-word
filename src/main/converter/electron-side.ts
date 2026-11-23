@@ -19,26 +19,15 @@ import { PDFDocument } from "pdf-lib";
 import type { PdfArtifact } from "../../core/convert.js";
 // 阶段键联合单源 core/ipc-contract.ts(与跨进程 payload 契约同源,避免契约与发射面各留一份)
 import type { ConvertStage } from "../../core/ipc-contract.js";
-import { buildBookmarkTree, injectBookmarks, pageNumbersForNames, type PdfHeading } from "../../core/pdf/bookmarks.js";
+import { buildBookmarkTree, injectBookmarks, pageNumbersForNames } from "../../core/pdf/bookmarks.js";
 import { setPdfMetadata } from "../../core/pdf/metadata.js";
-import { extractHeadings, injectTocPageNumbers } from "../../core/pdf/postprocess.js";
+import { injectTocPageNumbers } from "../../core/pdf/postprocess.js";
 import { commitArtifact, type CommitArtifactOptions } from "../../convert/artifact-writer.js";
 import { throwIfCanceled, type ConversionHandle } from "../../convert/cancellation.js";
 import type { PdfPrinter } from "../../convert/run.js";
 import type { AppSettings } from "../persist/settings.js";
 import { hardenWebContents } from "../services/web-hardening.js";
 import { writeTempHtml } from "../services/temp-html.js";
-
-/**
- * pdf 标题来源:优先用产物透传的结构化标题(与 HTML 同一次渲染管线产出,见
- * core/pdf/render.ts renderPdfDocument);产物未透传(旧产物/直构 PdfArtifact)时
- * 回退 postprocess 的 HTML 反解析兼容层。两条路径的 id 同源(rules/heading-id.ts
- * 生成,与 /Dests 命名目标一一对应),故目录/书签行为一致。
- */
-function resolvePdfHeadings(artifact: PdfArtifact): PdfHeading[] {
-  const structured = (artifact as PdfArtifact & { headings?: PdfHeading[] }).headings;
-  return Array.isArray(structured) && structured.length > 0 ? structured : extractHeadings(artifact.html);
-}
 
 /**
  * pdf 产物落盘:临时 HTML → 隐藏窗口 printToPDF → 经产物提交器提交到 preferredPath。
@@ -89,10 +78,11 @@ export const renderPdf: PdfPrinter = async (
       await cleanup();
     }
   };
-  // 标题(与目录同源,封面/目录本身非 h 标签不受影响):优先结构化数据,缺失时回退
-  // HTML 反解析兼容层。用于注入 PDF 书签大纲(读 /Dests 命名目标,标题 id 即
-  // 命名目标名,无需文本定位)与 field 模式两遍法的目录项定位。
-  const headings = resolvePdfHeadings(artifact);
+  // 标题来源:产物透传的结构化标题(core/pdf/render.ts renderPdfDocument 产出,见
+  // PdfArtifact.headings);兼容层回退(旧产物/直构形态)已删。
+  // 用于注入 PDF 书签大纲(读 /Dests 命名目标,标题 id 即命名目标名,无需文本定位)与
+  // field 模式两遍法的目录项定位。
+  const headings = artifact.headings;
   // field 模式 → 两遍法注入目录页码(第一遍打印解析 /Dests 定位标题页码,
   // 第二遍按已知 id 集合注入页码重印;TOC 后硬分页符保证正文分页一致、页码准确)
   let data = await printOnce(artifact.html);

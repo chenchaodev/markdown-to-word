@@ -851,7 +851,7 @@ export async function run() {
       console.log("[ok] converter:PDF field 模式两遍法(目录页码回填 + 书签大纲 h1-h3)");
     });
 
-    await suite.case("13b. renderPdf 优先消费产物透传的结构化标题(不从 HTML 反解析) 编排层 seam 守护:pdf 产物可携带 headings(同一次渲染管线产出,见 core/pdf/render.ts renderPdfDocument)。此处刻意传入与 HTML 不同的结构化标题, 大纲标题若随之变化即证明编排层取的是结构化数据(缺失时才回退兼容层)。", async () => {
+    await suite.case("13b. renderPdf 从产物透传的结构化标题消费(不从 HTML 反解析) 编排层 seam 守护:pdf 产物可携带 headings(同一次渲染管线产出,见 core/pdf/render.ts renderPdfDocument)。此处刻意传入与 HTML 不同的结构化标题,大纲标题若随之变化即证明编排层取的是结构化数据。", async () => {
       {
         const structuredMd = "# 结构化甲\n\n正文一。\n\n## 结构化乙\n\n正文二。\n";
         const artifact = await convertWithFs(structuredMd, "pdf", {
@@ -877,14 +877,14 @@ export async function run() {
           JSON.stringify(structuredTitles) === JSON.stringify(["结构化甲(取自结构化数据)"]),
           `renderPdf 应优先用产物透传的结构化标题,实际 ${JSON.stringify(structuredTitles)}`,
         );
-        // 兼容层回退:同一 HTML 不带 headings 时,标题回退自 HTML 反解析(行为等价)
-        const fallbackOut = await renderPdf(expectPdfArtifact(artifact), path.join(dir, "fallback-headings.pdf"), createConvertContext());
-        const fallbackTitles = await outlineTitles(await fs.readFile(fallbackOut));
+        // 真实产物自带结构化标题(renderPdfDocument 产出,见 PdfArtifact.headings):renderPdf 直取产物数据
+        const realOut = await renderPdf(expectPdfArtifact(artifact), path.join(dir, "structured-headings-real.pdf"), createConvertContext());
+        const realTitles = await outlineTitles(await fs.readFile(realOut));
         assert(
-          JSON.stringify(fallbackTitles) === JSON.stringify(["结构化甲", "结构化乙"]),
-          `未透传 headings 时应回退兼容层提取,实际 ${JSON.stringify(fallbackTitles)}`,
+          JSON.stringify(realTitles) === JSON.stringify(["结构化甲", "结构化乙"]),
+          `产物透传结构化标题应原样进入书签大纲,实际 ${JSON.stringify(realTitles)}`,
         );
-        console.log("[ok] converter:renderPdf 标题来源(结构化数据优先 / 缺失回退兼容层)");
+        console.log("[ok] converter:renderPdf 标题来源(产物透传结构化数据)");
       }
     });
   } finally {
