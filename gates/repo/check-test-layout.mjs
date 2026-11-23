@@ -761,6 +761,11 @@ export const GATE_SELFTEST_CASE_SOURCES = Object.freeze([
     strategies: Object.freeze([Object.freeze({ kind: "inline-case" })]),
   }),
   Object.freeze({
+    file: "gates/repo/check-test-only-keys.selftest.mjs",
+    // 纯内联档:正例 + 四条负向探针,逐条 `await suite.case('…')`,没有用例表。
+    strategies: Object.freeze([Object.freeze({ kind: "inline-case" })]),
+  }),
+  Object.freeze({
     file: "gates/repo/check-coverage-zero.selftest.mjs",
     strategies: Object.freeze([
       Object.freeze({ kind: "table-field", table: "CASES", field: "name" }),

@@ -1,0 +1,10 @@
+{
+  "_comment": "`case 登记名册`:本族(gates-selftest-case-roster)判的是**名还在不在**,不是「断言一条未删」。按 `check-test-layout.mjs#GATE_SELFTEST_CASE_SOURCES` 那一行的 inline-case 策略抽出,与 `check-test-only-keys.selftest.mjs` 的 `suite.case('…')` 逐字相同(源码出现顺序)。本名册5条。",
+  "cases": [
+    "真仓库状态:A=O,P∩A=∅ → 恒绿",
+    "生产字面量写回围墙键 → 红",
+    "围墙登记了没在 ConvertTestOverrides 声明的幽灭项 → 红",
+    "ConvertTestOverrides 声明了没登记的测试参 → 红",
+    "解析塌缩(A 为空) → 防空过红"
+  ]
+}

@@ -123,6 +123,13 @@ export const GATE_INDEX = Object.freeze(
       modulePath: "gates/repo/check-transform-dispatch.mjs",
       judgment: { module: "gates/repo/check-transform-dispatch.mjs", export: "analyze", shaped: "{ problems: string[], info: string[] }" },
     },
+    "test-only-keys": {
+      id: "test-only-keys",
+      npmScripts: ["check:test-only-keys", "check:test-only-keys:selftest"],
+      access: ACCESS_CHAIN,
+      modulePath: "gates/repo/check-test-only-keys.mjs",
+      judgment: { module: "gates/repo/check-test-only-keys.mjs", export: "analyze", shaped: "{ problems: string[], info: string[], A: Set<string>, O: Set<string>, P: Set<string> }" },
+    },
     "test-numbering": {
       id: "test-numbering",
       npmScripts: ["check:test-numbering"],
