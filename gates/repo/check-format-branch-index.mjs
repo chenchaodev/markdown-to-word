@@ -48,10 +48,9 @@ function listSourceFiles(absRoot) {
   return out.sort((a, b) => a.localeCompare(b));
 }
 
-/** 扫描 `srcRoot` 下的实现分支点:剥注释行后逐行正则,按命中行计,升序排列 */
+/** 扫描 `srcRoot` 下的实现分支点:剥注释行后逐行正则(状态型正则用 test 零态,按命中行计),升序排列 */
 export function scanFormatBranches(srcRoot) {
   const out = [];
-  const re = new RegExp(FORMAT_BRANCH_RE.source, 'g');
   for (const rel of listSourceFiles(srcRoot)) {
     let text;
     try {
@@ -64,12 +63,11 @@ export function scanFormatBranches(srcRoot) {
       const line = lines[i] ?? '';
       const trimmed = line.trim();
       if (trimmed === '' || trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) continue;
-      for (const m of line.matchAll(re)) {
-        out.push({ file: rel, line: i + 1, text: trimmed });
-      }
+      if (!FORMAT_BRANCH_RE.test(line)) continue;
+      out.push({ file: rel, line: i + 1, text: trimmed });
     }
   }
-  return out;
+  return out.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
 }
 
 /** 判定(纯函数):返回 `{ problems, info, hits }` */
