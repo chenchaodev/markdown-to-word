@@ -766,6 +766,11 @@ export const GATE_SELFTEST_CASE_SOURCES = Object.freeze([
     strategies: Object.freeze([Object.freeze({ kind: "inline-case" })]),
   }),
   Object.freeze({
+    file: "gates/repo/check-format-branch-index.selftest.mjs",
+    // CASES 表 + 档名即 case 名(真仓库齐全 / 夹具齐全 / 夹具缺一项)。
+    strategies: Object.freeze([Object.freeze({ kind: "table-field", table: "CASES", field: "name" })]),
+  }),
+  Object.freeze({
     file: "gates/repo/check-coverage-zero.selftest.mjs",
     strategies: Object.freeze([
       Object.freeze({ kind: "table-field", table: "CASES", field: "name" }),

@@ -130,6 +130,13 @@ export const GATE_INDEX = Object.freeze(
       modulePath: "gates/repo/check-test-only-keys.mjs",
       judgment: { module: "gates/repo/check-test-only-keys.mjs", export: "analyze", shaped: "{ problems: string[], info: string[], A: Set<string>, O: Set<string>, P: Set<string> }" },
     },
+    "format-branch-index": {
+      id: "format-branch-index",
+      npmScripts: ["check:format-branch-index"],
+      access: ACCESS_CHAIN,
+      modulePath: "gates/repo/check-format-branch-index.mjs",
+      judgment: { module: "gates/repo/check-format-branch-index.mjs", export: "analyze", shaped: "{ problems, info, hits }" },
+    },
     "test-numbering": {
       id: "test-numbering",
       npmScripts: ["check:test-numbering"],

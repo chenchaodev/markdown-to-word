@@ -1,0 +1,8 @@
+{
+  "_comment": "`case 登记名册`:本族(gates-selftest-case-roster)判的是**名还在不在**,不是「断言一条未删」。按 `check-test-layout.mjs#GATE_SELFTEST_CASE_SOURCES` 那一行的 table-field(CASES.name)策略抽出,与 `check-format-branch-index.selftest.mjs` 的 CASES 表逐字相同(源码出现顺序)。本名册3条。",
+  "cases": [
+    "真仓库当前未漂移 → 通过",
+    "夹具分支齐全(7) → 通过",
+    "夹具缺一个分支(6) → 红"
+  ]
+}
