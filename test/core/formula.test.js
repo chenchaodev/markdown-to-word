@@ -53,7 +53,7 @@ export async function run() {
   const suite = createCaseSuite();
   const katexDir = KATEX_DIR;
   const formulaDocx = (
-    await convertWithFs(formulaMd, "docx", { baseDir: FIXTURES_DIR, warnings: [], katexDir })
+    await convertWithFs(formulaMd, "docx", { baseDir: FIXTURES_DIR, warnings: [] })
   );
   const formulaDocument = await unzipPart(docxBufferOf(formulaDocx), "word/document.xml");
   await suite.case("docx 公式生成 <m:oMath 容器", () => {
@@ -80,7 +80,7 @@ export async function run() {
   console.log("[ok] docx 公式:m:oMath 与 分式/行内上下标/开方/display 求和 序列化齐全");
 
   const formulaPdf = (await convertWithFs(formulaMd, "pdf", {
-    baseDir: FIXTURES_DIR, title: "公式测试", warnings: [], katexDir,
+    baseDir: FIXTURES_DIR, title: "公式测试", warnings: [], pdf: { katexDir },
   }));
   const formulaHtml = pdfHtmlOf(formulaPdf);
   await suite.case("PDF 含 KaTeX 渲染结构", () => {
@@ -112,7 +112,7 @@ export async function run() {
       baseDir: FIXTURES_DIR,
       title: "容器内公式",
       warnings: containerWarnings,
-      katexDir,
+      pdf: { katexDir },
     })
   );
   const containerHtml = pdfHtmlOf(containerPdf);
@@ -152,7 +152,7 @@ export async function run() {
     baseDir: FIXTURES_DIR,
     title: "公式测试",
     warnings: badKatexWarnings,
-    katexDir: path.join(FIXTURES_DIR, "no-such-katex"),
+    pdf: { katexDir: path.join(FIXTURES_DIR, "no-such-katex") },
   }));
   const badKatexHtml = pdfHtmlOf(badKatexPdf);
   await suite.case("无效 katexDir 不内联 @font-face(loadKatexCss 返回空串)", () => {

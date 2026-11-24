@@ -94,10 +94,12 @@ export async function run() {
   await suite.case("生产上下文映射全部设置键", () => {
     for (const k of [
       "pageSetup", "typography", "breakBeforeH1", "toc", "tocMode", "equationNumbering",
-      "pdfCss", "headerFooter", "watermark",
+      "headerFooter", "watermark",
     ]) {
       assert(k in builtCtx, `生产上下文应映射设置键 ${k}`);
     }
+    // pdfCss 映射进 pdf 组(convert 收窄 REQ-279:ConvertContext 顶层无 pdfCss)
+    assert(builtCtx.pdf?.pdfCss !== undefined, "生产上下文的 pdf 组应映射设置键 pdfCss");
   });
   console.log(`[ok] context-mapping(convert):生产上下文映射不含 ${TEST_ONLY_CONTEXT_KEYS.length} 个仅测试注入字段`);
   return { cases: suite.results };

@@ -177,10 +177,10 @@ const afterDocx = globalThis.__fmCount || 0;
 const pdf = await convert(
   { body: prepared.body, metadata: prepared.metadata },
   "pdf",
-  { baseDir: root, warnings: [], title: "探针", fs: {
+  { baseDir: root, warnings: [], title: "探针", pdf: { fs: {
     realpathSync: (p) => realpathSync(p),
     readTextFile: (f) => readFileSync(f, "utf8"),
-  } },
+  } } },
 );
 const afterPdf = globalThis.__fmCount || 0;
 

@@ -167,10 +167,6 @@ export async function buildConvertContext(options: BuildConvertContextOptions): 
   return {
     // —— 宿主与运行时能力(与 settings 无关)——
     baseDir: options.baseDir,
-    // 宿主文件系统能力(REF-025 #07):core 的 pdf 渲染路径自己不 import node:fs,
-    // 其两次读(图片边界 realpathSync、KaTeX CSS 读取)由此注入。能力面刻意收窄到
-    // 这两个函数而非整个 fs 模块 —— 新增用途必须显式改 PdfFsCapabilities。
-    fs: { realpathSync, readTextFile: (file) => readFileSync(file, "utf8") },
     // 取消与时间上限透传(core 渲染层据此在阶段边界与异步回调处退出)
     signal: options.convert?.signal,
     deadline: options.convert?.deadline,
@@ -178,9 +174,7 @@ export async function buildConvertContext(options: BuildConvertContextOptions): 
     metadata: options.metadata,
     warnings: options.warnings,
     imageResolver: options.imageResolver,
-    katexDir: options.katexDir,
     mermaidResolver: options.mermaidResolver,
-    onStage: options.onStage,
 
     // —— 设置映射,按类别成组(键名与 core 同名 → 直通)——
     // 类别一 · 页面几何
@@ -192,12 +186,21 @@ export async function buildConvertContext(options: BuildConvertContextOptions): 
     toc: options.settings.toc,
     tocMode: options.settings.tocMode,
     equationNumbering: options.settings.equationNumbering,
-    // 类别四 · pdf 专用
-    pdfCss: options.settings.pdfCss,
-    // 类别五 · 文档外壳(需先归一化;logo 由 main 读文件后注入,core 零 IO)
+    // 类别四 · 文档外壳(需先归一化;logo 由 main 读文件后注入,core 零 IO)
     headerFooter,
     headerLogo,
     watermark,
+
+    // —— pdf 专用组(main 层构造;fs 必填口径见 core 的 PdfContext)——
+    pdf: {
+      // 宿主文件系统能力(REF-025 #07):core 的 pdf 渲染路径自己不 import node:fs,
+      // 其两次读(图片边界 realpathSync、KaTeX CSS 读取)由此注入。能力面刻意收窄到
+      // 这两个函数而非整个 fs 模块 —— 新增用途必须显式改 PdfFsCapabilities。
+      fs: { realpathSync, readTextFile: (file) => readFileSync(file, "utf8") },
+      katexDir: options.katexDir,
+      pdfCss: options.settings.pdfCss,
+      onStage: options.onStage,
+    },
 
     // ⚠️ 刻意**不在此**的三项:headingNumbering / captionNumbering / imageBudget。
     // 它们生产零写入者(在用的是 typography 的同名字段与 resource-limits 默认预算),

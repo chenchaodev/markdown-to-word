@@ -88,7 +88,7 @@ const B = FIXTURES_DIR;
  * 故下面 60+ 个调用点无一需要知道那个形状。
  */
 const convertTyped = /** @type {(md: string, format: "docx" | "pdf", context: ConvertContextWithBaseDir, overrides?: Record<string, unknown>) => Promise<ConvertArtifact>} */ (
-  (md, format, context, overrides) => convert(prepareForConvert(md), format, { fs: HOST_FS, ...context }, overrides)
+  (md, format, context, overrides) => convert(prepareForConvert(md), format, { ...context, pdf: { fs: HOST_FS, ...(context.pdf ?? {}) } }, overrides)
 );
 
 /**
@@ -241,7 +241,7 @@ export async function buildMatrixCtx() {
   /** @type {Warning[]} */
   const boundaryPdfNoDirW = [];
   const boundaryPdfNoDir = asPdfArtifact(await convertTyped(katexBoundaryMd, "pdf", { baseDir: B, title: "t", warnings: boundaryPdfNoDirW }));
-  const boundaryPdfWithDir = asPdfArtifact(await convertTyped(katexBoundaryMd, "pdf", { baseDir: B, title: "t", warnings: [], katexDir: KATEX_DIR }));
+  const boundaryPdfWithDir = asPdfArtifact(await convertTyped(katexBoundaryMd, "pdf", { baseDir: B, title: "t", warnings: [], pdf: { katexDir: KATEX_DIR } }));
   const boundaryDocxNoDir = await docxXml(asDocxArtifact(await convertTyped(katexBoundaryMd, "docx", { baseDir: B, warnings: [] })).buffer);
   const boundaryDocxWithDir = await docxXml(asDocxArtifact(await convertTyped(katexBoundaryMd, "docx", { baseDir: B, warnings: [], katexDir: KATEX_DIR })).buffer);
 

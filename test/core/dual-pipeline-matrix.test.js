@@ -1570,7 +1570,7 @@ function assertMatrixShape() {
 /** convert() 的类型化包装:注入宿主文件系统能力(与 dual-sandbox 同款,零渲染差异) */
 const convertTyped =
   /** @type {(md: string, format: "docx" | "pdf", context: Ctx) => Promise<ConvertArtifact>} */ (
-    (md, format, context) => convert(prepareForConvert(md), format, { fs: HOST_FS, ...context })
+    (md, format, context) => convert(prepareForConvert(md), format, { ...context, pdf: { fs: HOST_FS, ...context.pdf } })
   );
 
 /**

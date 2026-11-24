@@ -160,7 +160,7 @@ export function docxBufferOf(artifact) {
  */
 export const convertWithFs =
   /** @type {(md: string, format: "docx" | "pdf", context: ConvertContextWithBaseDir) => Promise<ConvertArtifact>} */ (
-    (md, format, context) => convert(prepareForConvert(md), format, { fs: HOST_FS, ...context })
+    (md, format, context) => convert(prepareForConvert(md), format, { ...context, pdf: { fs: HOST_FS, ...(context.pdf ?? {}) } })
   );
 
 /**

@@ -46,15 +46,15 @@ export async function run() {
   // 四份产物都在 case 之外备好:五个断言互不依赖,搬进 case 会让「先跑哪份转换」也变成
   // 失败传播的载体
   const withCss = asPdfArtifact(
-    await convertWithFs(md, "pdf", { baseDir: FIXTURES_DIR, pdfCss: USER_CSS }),
+    await convertWithFs(md, "pdf", { baseDir: FIXTURES_DIR, pdf: { pdfCss: USER_CSS } }),
   );
   const withoutCss = asPdfArtifact(await convertWithFs(md, "pdf", { baseDir: FIXTURES_DIR }));
   const emptyCss = asPdfArtifact(
-    await convertWithFs(md, "pdf", { baseDir: FIXTURES_DIR, pdfCss: "" }),
+    await convertWithFs(md, "pdf", { baseDir: FIXTURES_DIR, pdf: { pdfCss: "" } }),
   );
   const malicious = 'body { color: red; } </style><img src=x onerror=alert(1)>';
   const sanitized = asPdfArtifact(
-    await convertWithFs(md, "pdf", { baseDir: FIXTURES_DIR, pdfCss: malicious }),
+    await convertWithFs(md, "pdf", { baseDir: FIXTURES_DIR, pdf: { pdfCss: malicious } }),
   );
 
   // ---- 1. 传 pdfCss → 用户 CSS 注入且位于默认 CSS 之后(后加载覆盖) ----

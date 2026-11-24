@@ -48,7 +48,7 @@ import { createCaseSuite } from "../harness/case.js";
  * @returns {Promise<Artifact>} 产物
  */
 const convertWithOverrides = /** @type {(md: string, format: "docx" | "pdf", context: Ctx, overrides: ConvertTestOverrides) => Promise<Artifact>} */ (
-  (md, format, context, overrides) => convert(prepareForConvert(md), format, { fs: HOST_FS, ...context }, overrides)
+  (md, format, context, overrides) => convert(prepareForConvert(md), format, { ...context, pdf: { fs: HOST_FS, ...context.pdf } }, overrides)
 );
 
 /** 主样例:TOC + 题注(含孤立题注/缺失图片),gen-fixtures 落盘为 docs/toc-caption.md */

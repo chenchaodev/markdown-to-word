@@ -71,7 +71,7 @@ import { createCaseSuite } from "../harness/case.js";
  * @type {(md: string, format: "docx" | "pdf", context: Ctx) => Promise<Artifact>}
  */
 const convertInjected = /** @type {(md: string, format: "docx" | "pdf", context: Ctx) => Promise<Artifact>} */ (
-  (md, format, context) => convert(prepareForConvert(md), format, { fs: HOST_FS, ...context })
+  (md, format, context) => convert(prepareForConvert(md), format, { ...context, pdf: { fs: HOST_FS, ...context.pdf } })
 );
 
 /** 警告收集器:元素即 ConvertWarning(= `string | KeyedWarning`,见

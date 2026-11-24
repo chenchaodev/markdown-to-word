@@ -640,14 +640,14 @@ export async function run() {
         settings: { ...loadSettings(), pdfCss: "body { color: red; }" },
         imageResolver: getImageResolver(dir),
       });
-      assert(pdfCssCtx.pdfCss === "body { color: red; }", "buildConvertContext 应透传 settings.pdfCss");
+      assert(pdfCssCtx.pdf?.pdfCss === "body { color: red; }", "buildConvertContext 应透传 settings.pdfCss");
       const pdfCssEmptyCtx = await buildConvertContext({
         baseDir: dir,
         title: "t",
         settings: { ...loadSettings(), pdfCss: "" },
         imageResolver: getImageResolver(dir),
       });
-      assert(pdfCssEmptyCtx.pdfCss === "", "buildConvertContext 空串 pdfCss 应原样透传");
+      assert(pdfCssEmptyCtx.pdf?.pdfCss === "", "buildConvertContext 空串 pdfCss 应原样透传");
       console.log("[ok] converter:buildConvertContext pdfCss 透传(设置 → core 上下文)");
     });
 

@@ -222,8 +222,8 @@ export async function run() {
   const { convert } = await import("../../dist/core/convert.js");
   const { unzipPart } = await import("../harness/docx-utils.js");
   const md = "# 默认值样例\n\n正文一段。\n\n$$\nE = mc^2\n$$\n";
-  const docx = asDocxArtifact(await convert(prepareForConvert(md), "docx", { fs: HOST_FS, baseDir: ROOT, warnings: [], title: "标题" }));
-  const pdf = asPdfArtifact(await convert(prepareForConvert(md), "pdf", { fs: HOST_FS, baseDir: ROOT, title: "标题", warnings: [] }));
+  const docx = asDocxArtifact(await convert(prepareForConvert(md), "docx", { baseDir: ROOT, warnings: [], title: "标题" }));
+  const pdf = asPdfArtifact(await convert(prepareForConvert(md), "pdf", { baseDir: ROOT, title: "标题", warnings: [], pdf: { fs: HOST_FS } }));
   // docx 断言必须解包:zip 内条目是 deflate 压缩的,裸 buffer 扫不出 XML 文本
   // (裸扫只有部件名可见 —— 那正是 docx-utils.zipContains 唯一能判的事)
   const docxXml = await unzipPart(docx.buffer, "word/document.xml");

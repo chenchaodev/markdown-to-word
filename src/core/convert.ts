@@ -116,12 +116,6 @@ export interface ConvertContext {
   /** 图片解析回调(契约单源 core/image-resolver.ts):返回 null 表示跳过该图
    *  (缺失检查并入此失败路径,单次 IO);exists 轻量存在性通道可选 */
   imageResolver?: ImageResolver;
-  /** 宿主文件系统能力(REF-025 #07 注入点):pdf 渲染路径不做文件 IO,其两次读
-   *  (图片边界 realpathSync、KaTeX CSS 读取)由 main 层经此提供。
-   *  此处**可选**是因为 ConvertContext 由 docx 与 pdf 共用,docx 路线不消费它;
-   *  但 pdf 分支会强校验(缺则抛错),故不存在「忘注入 → 边界静默不判定」的降级
-   *  —— 那等于把 adr-012 的符号链接逃逸防线变成可静默关闭的开关。 */
-  fs?: PdfFsCapabilities;
   /** 文档标题(pdf 用 <title>) */
   title?: string;
   /** 显式文档元数据(封面用);优先于阶段产物已解析出的 frontmatter metadata(覆盖语义) */
@@ -141,10 +135,6 @@ export interface ConvertContext {
   tocMode?: TocMode;
   /** 公式编号开关(默认开;docx/pdf 双格式同开关,关时公式不编号、label 段原样渲染、引用保持原文本) */
   equationNumbering?: boolean;
-  /** KaTeX 资源目录(pdf 用,见 renderPdfHtml katexDir;docx 走 MathML 不需要) */
-  katexDir?: string;
-  /** 用户自定义样式 CSS(pdf 用,见 renderPdfHtml pdfCss;docx 路线不消费 CSS) */
-  pdfCss?: string;
   /** Mermaid 图表渲染回调(main 进程隐藏窗口服务注入;缺失时 mermaid 围栏按普通代码块渲染) */
   mermaidResolver?: MermaidResolver;
   /** 页眉页脚配置(缺省 DEFAULT_HEADER_FOOTER:标题页眉 + 页码页脚) */
@@ -153,6 +143,27 @@ export interface ConvertContext {
   headerLogo?: HeaderLogoData;
   /** 文字水印(缺省 DEFAULT_WATERMARK = 不启用;text 空串即关闭) */
   watermark?: WatermarkSettings;
+  /**
+   * pdf 专用上下文(main 层手工构造;装配层以 `buildConvertContext` 单点生产)。
+   * `convert(format="pdf")` 入口强校验 `pdf.fs`(缺则抛错而非降级)。
+   */
+  pdf?: PdfContext;
+}
+
+/**
+ * pdf 专用宿主与资源上下文(参见 ConvertContext.pdf)。
+ *
+ * `fs` 必填:core 的 pdf 渲染路径不 import node:fs,其两次读(图片边界 realpathSync、
+ * KaTeX CSS 读取)由 main 层经此注入。必填而非可选:可选会让「忘注入」静默退化成
+ * 「图片边界不判定」—— 那等于把 adr-012 的符号链接逃逸防线变成可静默关闭的开关。
+ */
+export interface PdfContext {
+  /** 宿主文件系统能力(必填) */
+  fs: PdfFsCapabilities;
+  /** KaTeX 资源目录(pdf 用) */
+  katexDir?: string;
+  /** 用户自定义样式 CSS(pdf 用) */
+  pdfCss?: string;
   /**
    * PDF 渲染子阶段进度回调:pdf 链路经此上报 parse / inline / mermaid / katex
    * 四个子阶段(main/converter.ts 在 printToPDF 前另上报 print 阶段)。
@@ -279,15 +290,16 @@ export async function convert(
       // pdf 分支强校验宿主能力(REF-025 #07):core 的 pdf 渲染路径不 import node:fs,
       // 两次读必须由 main 注入。缺能力时**抛错**而非降级 —— 若静默跳过 realpath,
       // 图片的符号链接逃逸防线(adr-012)就变成可静默关闭的开关。
-      if (!context.fs) {
+      const pdf = context.pdf;
+      if (!pdf?.fs) {
         throw new Error(
-          "convert(pdf):调用方未注入 ConvertContext.fs(宿主文件系统能力)"
+          "convert(pdf):调用方未注入 context.pdf.fs(宿主文件系统能力)"
           + "—— core 的 pdf 渲染路径不做文件 IO,图片边界校验与 KaTeX CSS 读取都依赖它",
         );
       }
       const { html, headings } = await renderPdfDocument(body, {
         baseDir: context.baseDir,
-        fs: context.fs,
+        fs: pdf.fs,
         title: context.title,
         metadata,
         warnings,
@@ -302,10 +314,10 @@ export async function convert(
         headingNumbering: testOverrides?.headingNumbering,
         captionNumbering: testOverrides?.captionNumbering,
         equationNumbering: context.equationNumbering,
-        katexDir: context.katexDir,
-        pdfCss: context.pdfCss,
+        katexDir: pdf.katexDir,
+        pdfCss: pdf.pdfCss,
         mermaidResolver,
-        onStage: context.onStage,
+        onStage: pdf.onStage,
         watermark,
       });
       return {
