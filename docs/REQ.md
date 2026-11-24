@@ -42,7 +42,6 @@
 | REQ-273 | MCP 通道拉一把：发现渠道登记 | 待拍板 | 2026-10-22 战略评审路径 C：2026 年新进入 md→docx 的项目绝大多数是 Agent Skill/MCP 而非桌面 GUI（npx skills add 成新安装动作，已有 mcp-markdown-to-docx 等成品）；本仓 MCP 服务端已可用，缺的是发现渠道与一条命令的安装形态。反证：通用 Agent Skill 正在替代专用转换器（实测专用 148s vs 通用 381s/313s），本工具的护城河只剩确定性与不依赖模型。 | 随时（成本极低，可与 REQ-265 并行） | docs/evidence/20261022-223956-产品方向战略评审与路径排序.md |
 | REQ-274 | 收窄默认流与首屏叙述 | 待拍板 | 2026-10-22 战略评审路径 D：界面面已 42 个抽屉控件/6 组/七步向导/5 预设，README 186 行与官网都是功能清单，30 秒内讲不清是干什么的；外部调研同向：2026 年新建 md+docx 仓 1908 个几乎全 <50★，纯转换器形态价值捕获能力差。本条只改叙述与默认预设、不删功能（删是刻意不做：单人维护者删数月成果心理成本最高，且砍掉的可能正是让第 0 位用户愿意试的那部分）。 | REQ-265 显示 ≥3/5 答不出差异化时；若 5 人全能一句话说清则作废 | docs/evidence/20261022-223956-产品方向战略评审与路径排序.md |
 | REQ-275 | 换载体：外部性与领域陌生度 | 未开工 | 2026-10-23 选址完成：探针对象定湿疹（EczemaWise 2026-12-18 关闭，冬季正是发作高峰，季节正相关）与脱发（同角度/同光线是真实痛点，季节中性）。排除：验房等四个中文方向（中文分发被合规否决）、养蜂（北半球 10-2 月越冬，淡季数据会被误判为无需求）、菜谱（证据最弱且落在本人舒适区）。栈与分发已定：Expo CNG + 海外 Android。开工前置是一周门：先读帖并答 3 问，再发 1 个问题帖，48-72 小时看回应。 | 一周门通过后开工：≥5 人描述近 3 个月具体事件 + ≥3 人展示现有 workaround + ≥2 人主动问何时能用，且能逐字引用原话 | docs/evidence/20261023-161612-技能缺口口径复核与换载体制图.md · docs/evidence/20261023-163502-移动端分发合规与栈选型.md · docs/evidence/20261023-163723-陌生领域候选与需求探针选址.md |
-| REQ-278 | 双管线选项语义双侧手动同步整理 | 待拍板 | docx(render.ts)与 pdf(pdf/render.ts)共用选项的默认值与语义要手动互相核对,默认解析散点(options.X ?? typography.X)也须人肉收。收益中(漏改概率随共享选项改动次数累积),成本中 | 改共享选项语义/默认值时互相核对清单 | src/core/docx/render.ts 头注;src/core/pdf/render.ts;src/core/settings/render-options.ts |
 | REQ-279 | ConvertContext 宽接口收窄(记录+改进方向) | 待拍板 | ConvertContext 恒宽接口(~25 字段,docx/pdf 无关字段共存);ADR-030 已建共享契约(SharedRenderOptions),编接口是类型谎言风险。收益中(类型安全与新增字段自洽),成本中(跨 3 处构造点) | 新增 ConvertContext 字段前检查是否归入共享契约 | src/core/convert.ts 字段列表;ADR-030 SharedRenderOptions |
 
 ## 在办
@@ -284,6 +283,7 @@
 | REQ-280 | 测试专用参数(第 4 参) | 已完成 | 生产映射与围墙双向相等(A=O);生产字面量P∩A=∅;负向探针(写回/幽灭/未登记/防空过)红色、撤回复绿。 | 新增 ConvertTestOverrides 字段、或生产映射出现写回测试键 | src/core/convert.ts 第 4 参;src/convert/context.ts TEST_ONLY_CONTEXT_KEYS |
 | REQ-281 | electron-side.ts 回退层清理 | 已完成 | electron-side.ts 的 HTML 反解析回退层已删;renderPdf 直取产物透传的结构化标题(artifact.headings);main/converter.test.js 的 13b 段编排断言随之调整。 | PdfArtifact.headings 弃用/删除时 | src/main/converter/electron-side.ts resolvePdfHeadings |
 | REQ-277 | 格式分支索引漂走护栏(dispatch 或新门禁) | 已完成 | src 里 format 实现分支点(pdf/docx 两类比较,不含注释行)计数恒等 EXPECTED_FORMAT_BRANCHES(7,经 rg 实测);gate 登记进 verify:static 链;负向探针(8/7 漂移)红色、撤回复绿。 | 加第三格式,或第三格式设计定稿 | src/core/convert.ts(头注自述;分支点 grep format ===) |
+| REQ-278 | 双管线选项语义双侧手动同步整理 | 已完成 | docx(render.ts)+convert 默认收进 settings/render-options.ts(resolveRenderGuard/resolveRenderWarnings);pdf 退回——双管线矩阵钉住 pdf 入口 createCancellationGuard。 | 改共享选项语义/默认值时互相核对清单 | src/core/docx/render.ts 头注;src/core/pdf/render.ts;src/core/settings/render-options.ts |
 
 ## 已作废
 
