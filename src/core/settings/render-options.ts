@@ -21,7 +21,7 @@
 import type { DocMetadata } from "../pipeline/frontmatter.js";
 import type { MermaidResolver } from "../markdown/mermaid.js";
 import type { ImageResolver } from "../image/image-resolver.js";
-import type { CancellationGuard } from "../cancel.js";
+import { createCancellationGuard, type CancellationGuard } from "../cancel.js";
 import type { ImageResourceBudget } from "../resource-limits.js";
 // 仅类型导入(编译期擦除):ConvertWarning 契约单源在 core/i18n/warning.ts,与 settings-defaults
 // 导入 Language 同款(type-only,不成运行期依赖)
@@ -152,4 +152,20 @@ export function resolveHeaderFooter(
  */
 export function resolveTocMode(tocMode: TocMode | undefined): TocMode {
   return tocMode ?? DEFAULT_TOC_MODE;
+}
+
+/**
+ * 渲染入口的取消守卫(缺省 = 新建):docx(renderDocx)与 pdf(renderPdfDocument)原先各写一句
+ * `options.guard ?? createCancellationGuard()` —— 同一缺省收进单点(REQ-278),两侧共用。
+ */
+export function resolveRenderGuard(options: { guard?: CancellationGuard }): CancellationGuard {
+  return options.guard ?? createCancellationGuard();
+}
+
+/**
+ * 渲染期告警收集器(缺省 = 空数组):convert 层(core/convert.ts)与 pdf 渲染层原先各写一句
+ * `options.warnings ?? []` —— 同一缺省收进单点(REQ-278),两侧共用。
+ */
+export function resolveRenderWarnings(options: { warnings?: ConvertWarning[] }): ConvertWarning[] {
+  return options.warnings ?? [];
 }

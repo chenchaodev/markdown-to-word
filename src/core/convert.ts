@@ -63,7 +63,7 @@ import {
   type WatermarkSettings,
 } from "./settings/settings-defaults.js";
 // 渲染选项默认值解析单源(adr-030 6-D1):convert 层与两侧渲染层共用同一份
-import { resolveHeaderFooter, resolveRenderSwitches, resolveTocMode } from "./settings/render-options.js";
+import { resolveHeaderFooter, resolveRenderSwitches, resolveRenderWarnings, resolveTocMode } from "./settings/render-options.js";
 // 取消契约单源:signal/deadline → CancellationGuard,两条渲染管线共用同一守卫
 import { createCancellationGuard } from "./cancel.js";
 import type { ImageResourceBudget } from "./resource-limits.js";
@@ -250,7 +250,7 @@ export async function convert(
     guard.throwIfCanceled();
     // 注意:context.warnings 缺省时退化为局部空数组,收集到的警告在调用结束后被丢弃;
     // 需要拿到警告的调用方必须显式传入 context.warnings 数组。
-    const warnings = context.warnings ?? [];
+    const warnings = resolveRenderWarnings(context);
     // frontmatter 已在上游准备阶段隔离并解析(见 PreprocessedMarkdown):本层只取用,
     // **不再解析第二次** —— 裸字符串入参时代这里有一次重复的解析调用。
     const body = md.body;

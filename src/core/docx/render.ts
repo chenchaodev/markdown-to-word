@@ -60,6 +60,7 @@ import {
 // 双管线渲染选项的共有字段与默认值解析单源(adr-030 6-D1/6-D2)
 import {
   resolveHeaderFooter,
+  resolveRenderGuard,
   resolveRenderSwitches,
   resolveTocMode,
   type SharedRenderOptions,
@@ -75,7 +76,6 @@ import {
 } from "../image/image-warning.js";
 // 取消与资源预算:守卫由 convert 层构造并注入(signal/deadline 单源),
 // 图片 resolver 在此包上请求契约(信号/单请求时限/单图与文档字节预算)。
-import { createCancellationGuard } from "../cancel.js";
 import { createGuardedImageResolver } from "../image/request-guard.js";
 import { ImageBudgetLedger, resolveImageBudget } from "../resource-limits.js";
 
@@ -113,7 +113,7 @@ function isSupportedBlock(node: RootContent): node is BlockContent {
  */
 export async function renderDocx(ast: Root, options: RenderOptions = {}): Promise<Buffer> {
   // 入口检查点:预取消/过期 deadline 在建 ctx、预扫之前短路,不启动任何 resolver
-  const guard = options.guard ?? createCancellationGuard();
+  const guard = resolveRenderGuard(options);
   guard.throwIfCanceled();
   // 开关默认值解析单源(6-D1):一次解析,下游全字段必填
   const switches = resolveRenderSwitches(options);
