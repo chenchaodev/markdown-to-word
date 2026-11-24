@@ -132,7 +132,7 @@ export const GATE_INDEX = Object.freeze(
     },
     "format-branch-index": {
       id: "format-branch-index",
-      npmScripts: ["check:format-branch-index"],
+      npmScripts: ["check:format-branch-index", "check:format-branch-index:selftest"],
       access: ACCESS_CHAIN,
       modulePath: "gates/repo/check-format-branch-index.mjs",
       judgment: { module: "gates/repo/check-format-branch-index.mjs", export: "analyze", shaped: "{ problems, info, hits }" },
