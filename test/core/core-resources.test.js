@@ -81,7 +81,7 @@ export async function run() {
     const pending = convertWithFs("# 标题", "pdf", {
       baseDir: ".",
       deadline: Date.now() - 1,
-      onStage: (/** @type {string} */ stage) => stages.push(stage),
+      pdf: { onStage: (/** @type {string} */ stage) => stages.push(stage) },
     });
     await suite.case("core-resources:过期 deadline", () =>
       assertCancelled(pending, "core-resources:过期 deadline"),
@@ -101,7 +101,7 @@ export async function run() {
     const artifact = (await convertWithFs("# 标题\n\n正文\n", "pdf", {
       baseDir: ".",
       deadline: Date.now() + 60_000,
-      onStage: (/** @type {string} */ stage) => stages.push(stage),
+      pdf: { onStage: (/** @type {string} */ stage) => stages.push(stage) },
     }));
     await suite.case("artifact.kind", () => {
       if (artifact.kind !== "pdf" || !pdfHtmlOf(artifact).includes("标题")) {
@@ -200,9 +200,11 @@ export async function run() {
     const pending = convertWithFs("![图](x.png)\n\n正文\n", "pdf", {
       baseDir: ".",
       signal: controller.signal,
-      onStage: (/** @type {string} */ stage) => {
-        stages.push(stage);
-        if (stage === "parse") controller.abort(new Error("cancelled-after-parse"));
+      pdf: {
+        onStage: (/** @type {string} */ stage) => {
+          stages.push(stage);
+          if (stage === "parse") controller.abort(new Error("cancelled-after-parse"));
+        },
       },
       imageResolver: () => new Promise(() => {}), // 永不结算:验证取消不等回调
     });
